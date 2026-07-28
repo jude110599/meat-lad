@@ -200,8 +200,8 @@ input.txt:focus{border-color:var(--meat)}
       <div class="stack" id="pModes">
         <button class="btn modepick on" data-m="versus">Time trial<small>race the same level — fully live online</small></button>
         <button class="btn modepick" data-m="casual">Casual<small>same level, own pace — ghosts, not shared physics</small></button>
-        <button class="btn modepick" data-m="coop" disabled>Chained<small>needs a shared tether — couch only</small></button>
-        <button class="btn modepick" data-m="bomb" disabled>Pass the bomb<small>needs real-time touch — couch only</small></button>
+        <button class="btn modepick" data-m="coop">Chained<small>tether follows your partner's last synced spot — expect lag</small></button>
+        <button class="btn modepick" data-m="bomb">Pass the bomb<small>bomb passes off your partner's last synced spot — expect lag</small></button>
       </div>
       <button class="btn" id="pStart" style="margin-top:10px;border-left-color:var(--meat)">Start for everyone</button>
       <div class="row" style="margin-top:10px">
@@ -268,6 +268,15 @@ var LEVELS=[
 {name:"CROSSFIRE",map:["################","#              #","#              #","#  G           #","#######        #","#              #","#        -     #","#      #########","#              #","#   -          #","#######        #","#              #","#        -     #","#        #######","#              #","#P    -        #","################","################"]},
 {name:"NEEDLE",map:["################","#              #","#             G#","#          #####","#              #","#   ####       #","#              #","#        ####  #","#              #","#  ####        #","#              #","#         #### #","#              #","#  ####        #","#      -       #","#P^^^^^^^^^^^^^#","################","################"]},
 {name:"MEAT GRINDER",map:["################","#    G         #","#  ####        #","#  #           #","#  #           #","#  #     |     #","#  #           #","#  #      ######","#  #           #","#      -       #","############   #","#              #","#      -       #","#        #######","#              #","#P     ^^^^    #","################","################"]},
+{name:"DRIP CEILING",map:["################","#              #","#  vvvv        #","#  ####        #","#              #","#       vvvv   #","#        ####  #","#              #","#  vv          #","#  ##          #","#              #","#              #","#              #","#     G        #","#              #","#P             #","################","################"]},
+{name:"SIDE STEP",map:["################","#              #","#>             #","#      G       #","#    ######   <#","#              #","#>             #","#              #","#    ######   <#","#              #","#>             #","#              #","#    ######   <#","#              #","#              #","#P             #","################","################"]},
+{name:"TICK TOCK",map:["################","#              #","#              #","#      G       #","################","#              #","#####          #","#   -      -   #","#          #####","#              #","################","#              #","#              #","#              #","#              #","#P             #","################","################"]},
+{name:"SPIN CYCLE",map:["################","#              #","#      G       #","#              #","#              #","#   o   o   o  #","#              #","#              #","#              #","#     o   o    #","#              #","#              #","#              #","#   o       o  #","#              #","#P             #","################","################"]},
+{name:"LADDER OF REGRET",map:["################","#              #","#          G   #","#         ######","#              #","#   ^^^        #","# #####        #","#              #","#           ^^^#","#         ######","#              #","#   ^^^        #","# #####        #","#              #","#              #","#P             #","################","################"]},
+{name:"DOUBLE TROUBLE",map:["################","#              #","#              #","#    | G  |    #","#              #","#              #","#              #","#              #","#              #","####        ####","#              #","#              #","#              #","#              #","#              #","#P             #","################","################"]},
+{name:"PIT STOP",map:["################","#              #","#              #","# G            #","####           #","#              #","#     ###      #","#              #","#          ### #","#              #","#     ###      #","#P             #","####           #","#              #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
+{name:"CEILING FAN",map:["################","#              #","#      G       #","#              #","# vvvvvvvvvvvv #","#              #","#              #","#              #","######  - ######","#              #","#              #","#              #","#              #","#              #","#              #","#P             #","################","################"]},
+{name:"GAUNTLET II",map:["################","#              #","#              #","# #G###        #","#              #","#              #","#         ######","#   -          #","#   ^^^        #","# #####        #","#          |   #","#              #","#         ######","#              #","#              #","#P             #","################","################"]},
 {name:"THE CARVER",boss:true,map:["################################","#                              #","#                              #","#                              #","#P          ^^      ^^       G #","################################"]}
 ];
 
@@ -475,6 +484,8 @@ function mkSpike(ch,x,y){ var bx=x*T,by=y*T;
 function curLevels(){ return mode==="coop"&&!online?CHAINED_LEVELS:LEVELS; }
 var online=false;
 function twoP(){ return !online&&(mode==="coop"||mode==="versus"||mode==="casual"||mode==="bomb"); }
+function remoteP(){ return online&&(mode==="coop"||mode==="casual"||mode==="bomb"); }
+function remotePeerId(){ for(var id in party.ghosts)return id; return null; }
 function loadLevel(i){
   level=i;var L=curLevels()[i],sp=L.sawSpeed||1;
   ROWS=L.map.length;COLS=L.map[0].length;
@@ -682,8 +693,9 @@ function mkPlayer(i,x,y){
 }
 function resetLevel(){
   players=[mkPlayer(0,spawn.x,spawn.y)];
-  if(twoP()){ var dx=boxSolid(spawn.x+9,spawn.y,PW,PH)?-9:9;
-    players.push(mkPlayer(1,spawn.x+dx,spawn.y)); }
+  if(twoP()||remoteP()){ var dx=boxSolid(spawn.x+9,spawn.y,PW,PH)?-9:9;
+    players.push(mkPlayer(1,spawn.x+dx,spawn.y));
+    if(remoteP())players[1].remote=true; }
   for(var i=0;i<saws.length;i++){ saws[i].x=saws[i].hx;saws[i].y=saws[i].hy;saws[i].dir=1; }
   drops.length=0;drips.length=0;chunks.length=0;prints.length=0;
   winner=-1;vdeaths=[0,0];
@@ -702,6 +714,17 @@ function updateSaws(dt){
       if(boxSolid(s.x-1,s.y+s.dir*(SAWR+2)-1,2,2)){s.dir*=-1;s.y+=s.spd*s.dir*dt;} } }
 }
 function updatePlayer(p,dt){
+  if(p.remote){
+    if(p.dead){ p.deadT-=dt; if(p.deadT<=0){p.dead=false;p.inv=1;} return; }
+    var gid=remotePeerId(),g=gid&&party.ghosts[gid];
+    if(g&&g.data&&g.data.length>=2){
+      var tx=g.data[g.data.length-2],ty=g.data[g.data.length-1];
+      p.face=tx>p.x+1?1:(tx<p.x-1?-1:p.face);
+      p.x+=(tx-p.x)*Math.min(1,dt*4);p.y+=(ty-p.y)*Math.min(1,dt*4);
+      p.ground=true;
+    }
+    return;
+  }
   if(p.dead){ p.deadT-=dt; if(p.deadT<=0)reviveCoop(p); return; }
   var inp=input[p.i],dir=(inp.right?1:0)-(inp.left?1:0);
   if(p.lock>0)p.lock-=dt;
@@ -1159,7 +1182,7 @@ function render(t){
       for(var gi=0;gi<p.ghost.length-2;gi+=2)
         drawBoy(ctx,p.ghost[gi],p.ghost[gi+1],p.skin,0,p.face,t,.05+gi*.008,!p.ground);
     drawBoy(ctx,p.x,p.y,p.skin,p.sq,p.face,t,1,!p.ground);
-    if(twoP()){ ctx.globalAlpha=.6;ctx.fillStyle=p.i?"#6ff2cf":"#ffd23f";
+    if(twoP()||remoteP()){ ctx.globalAlpha=.6;ctx.fillStyle=p.i?"#6ff2cf":"#ffd23f";
       ctx.font="700 5px ui-monospace,monospace";ctx.textAlign="center";
       ctx.fillText("P"+(p.i+1),p.x+PW/2,p.y-(p.skin.h==="none"?2.5:8.5));ctx.globalAlpha=1; }
     if(mode==="bomb"&&p.i===bomb.holder){
@@ -1386,8 +1409,10 @@ var party={
       for(var id2 in self.members)if(!(id2 in doc)||id2==="__start")delete self.members[id2];
       if(doc.__start&&doc.__start.ts>self.seenStart){
         self.seenStart=doc.__start.ts;
-        if(state==="menu"){ toast("Party starting — "+(doc.__start.mode||"versus"));
-          startGame(doc.__start.mode||"versus",doc.__start.lv||0,true); }
+        if(state==="menu"){ var sm=doc.__start.mode||"versus";
+          toast("Party starting — "+sm);
+          startGame(sm,doc.__start.lv||0,true);
+          if(ONLINE_LAG_TOAST[sm])toast(ONLINE_LAG_TOAST[sm]); }
       }
       self.publish();
       renderParty(); });
@@ -1590,13 +1615,16 @@ $("bJoin").onclick=function(){
     renderParty();toast("Joined the party"); }); };
 $("bCopy").onclick=function(){ try{navigator.clipboard.writeText(party.code);toast("Code copied");}catch(e){} };
 $("bLeave").onclick=function(){sfx.click();party.leave();};
+var ONLINE_LAG_TOAST={coop:"Tether follows your partner's last synced spot — expect lag",
+  bomb:"Bomb passes off your partner's last synced spot — expect lag"};
 $("pStart").onclick=function(){
   if(!party.on)return;
   sfx.click();
   var ts=Date.now();
   party.doc.__start={mode:partyMode,lv:0,ts:ts};party.seenStart=ts;
   party.publish(true);
-  startGame(partyMode,0,true); };
+  startGame(partyMode,0,true);
+  if(ONLINE_LAG_TOAST[partyMode])toast(ONLINE_LAG_TOAST[partyMode]); };
 $("bNext").onclick=function(){sfx.click();nextLevel();};
 $("bWinMenu").onclick=function(){sfx.click();quitToMenu();};
 $("bAgain").onclick=function(){sfx.click();startGame(mode,0,online);};
