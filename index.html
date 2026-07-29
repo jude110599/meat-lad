@@ -138,6 +138,26 @@ h1.logo .b{color:var(--bone);display:block;text-shadow:0 4px 0 #2b2440}
 .mapsub{font-size:9px;letter-spacing:.16em;color:var(--dim);text-align:center;
   margin-top:4px;text-transform:uppercase;min-height:11px}
 .mapfoot .btn{border-left-color:var(--meat)}
+/* ── level editor ── */
+#s-edit{padding:0;display:flex;flex-direction:column}
+.edname{flex:1;padding:8px 10px;font-size:11px;letter-spacing:.14em;min-width:0}
+#edCanvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.edpal{flex:none;display:flex;gap:5px;overflow-x:auto;padding:8px 10px;
+  border-top:1px solid var(--line);background:#0b0909;-webkit-overflow-scrolling:touch}
+.tool{flex:none;width:46px;height:46px;background:var(--panel);border:1.5px solid var(--line);
+  cursor:pointer;padding:0;position:relative;border-radius:3px}
+.tool.on{border-color:#ffd27a;box-shadow:0 0 0 1px #ffd27a44}
+.tool canvas{width:100%;height:100%;display:block}
+.tool span{position:absolute;bottom:1px;left:0;right:0;font-size:6.5px;
+  letter-spacing:.04em;color:var(--ash);text-align:center;pointer-events:none}
+.mylv{display:flex;align-items:center;gap:9px;background:var(--panel);
+  border:1px solid var(--line);padding:8px 10px;margin-bottom:6px}
+.mylv canvas{width:52px;height:58px;flex:none;background:#0a0807;border:1px solid var(--line)}
+.mylv .mn{flex:1}
+.mylv button{background:var(--panel2);border:1px solid var(--line);color:var(--ash);
+  font-family:inherit;font-size:9px;letter-spacing:.1em;padding:7px 9px;cursor:pointer;text-transform:uppercase}
+.mylv button:active{background:#2a2226}
+.mylv button.del{color:var(--meat)}
 .tag.blink{animation:tagpulse 2.6s ease-in-out infinite}
 @keyframes tagpulse{0%,100%{opacity:.55}50%{opacity:1}}
 .btn{transition:transform .06s ease,background .12s ease,border-color .12s ease}
@@ -268,6 +288,27 @@ input.txt:focus{border-color:var(--meat)}
     </div>
   </div>
 
+  <div class="screen hide" id="s-edit">
+    <div class="maptop">
+      <button class="back" id="edBack">&lsaquo;</button>
+      <input class="txt edname" id="edName" maxlength="18" placeholder="LEVEL NAME">
+      <span class="stat" id="edInfo"></span>
+    </div>
+    <div class="mapstage">
+      <canvas id="edCanvas"></canvas>
+    </div>
+    <div class="edpal" id="edPal"></div>
+    <div class="mapfoot">
+      <div class="mapsub" id="edMsg">tap the grid to place · you need one spawn and one exit</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn sub" id="edCheck">Check</button>
+        <button class="btn sub" id="edTest">Test</button>
+        <button class="btn sub" id="edReset">Undo all</button>
+        <button class="btn" id="edSave" style="text-align:center">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="screen hide" id="s-multi">
     <div class="center">
       <div class="hdr"><button class="back" id="mBack">&lsaquo;</button><h2 class="disp">Multiplayer</h2></div>
@@ -319,7 +360,10 @@ input.txt:focus{border-color:var(--meat)}
     <div class="mapfoot">
       <div class="mapname disp" id="mapLvName">FRESH MEAT</div>
       <div class="mapsub" id="mapLvSub"></div>
-      <button class="btn" id="bPlayLv" style="margin-top:10px;text-align:center">Play</button>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sub" id="bEditLv" style="flex:0 0 34%">Edit</button>
+        <button class="btn" id="bPlayLv" style="text-align:center">Play</button>
+      </div>
     </div>
   </div>
 
@@ -467,9 +511,18 @@ input.txt:focus{border-color:var(--meat)}
 (function(){
 "use strict";
 
-var VERSION="2.4.0";
+var VERSION="2.5.0";
 var CHANGELOG=[
-  {v:"2.4.0",d:"latest",items:[
+  {v:"2.5.0",d:"latest",items:[
+    "LEVEL EDITOR — you can now build the levels yourself. Open Singleplayer, pick a level, and hit Edit",
+    "Place blocks, all four spike directions, patrolling saws, vertical saws, spinners, crumbling floors, lasers, the spawn and the exit. Tap or drag to paint",
+    "Your version replaces the built-in level for real — it is what you play, and the map marks it 'your version'",
+    "CHECK button actually plays the level for you and tells you if it can be finished, saws and all. If you wall off the exit it will say so",
+    "TEST drops you straight into your level without saving, so you can try ideas",
+    "UNDO ALL puts the original level back whenever you want",
+    "Your levels save with your account, so they follow you to other devices"
+  ]},
+  {v:"2.4.0",items:[
     "FIXED: in online play your partner was drawn as a faded ghost — they now look like a solid, real player",
     "All 19 World 1 levels rebuilt again. Every one now has spikes, a saw or a spinner, and they are ordered easiest to hardest by an actual measurement instead of guesswork",
     "The level checker now simulates the saws moving too, not just the walls and gaps. It caught a level that genuinely could not be finished because a saw blocked the only route — that is fixed",
@@ -606,6 +659,20 @@ var LEVELS=[
 ];
 
 /* ═════════════ CHAINED LEVELS ═════════════ */
+/* Pristine copies so a player's edits can always be undone */
+var LEVELS_BASE=JSON.parse(JSON.stringify(LEVELS));
+function applyLevelEdits(){
+  var ov=(save&&save.levels)||{};
+  for(var i=0;i<LEVELS.length;i++){
+    var o=ov[i];
+    if(o&&o.map&&o.map.length){
+      LEVELS[i]={name:o.name||LEVELS_BASE[i].name,map:o.map.slice()};
+      if(LEVELS_BASE[i].boss)LEVELS[i].boss=LEVELS_BASE[i].boss;
+      if(LEVELS_BASE[i].sawSpeed)LEVELS[i].sawSpeed=LEVELS_BASE[i].sawSpeed;
+    } else LEVELS[i]=JSON.parse(JSON.stringify(LEVELS_BASE[i]));
+  }
+}
+function isEdited(i){ return !!(save.levels&&save.levels[i]&&save.levels[i].map); }
 var CHAINED_LEVELS=[
 {name:"TWO FOR ONE",map:["################","#              #","#              #","#              #","#              #","#P        G    #","########    ####","#              #","#              #","#              #","#              #","################"]},
 {name:"SHAFT BUDDIES",map:["################","#      G       #","#####   ########","#              #","#####   ########","#              #","#####   ########","#              #","#####   ########","#              #","#####   ########","#              #","#P             #","################"]}
@@ -713,7 +780,7 @@ var store={
     return Promise.resolve(false); }
 };
 var save={unlocked:START.slice(),skins:[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}],
-  name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:""};
+  name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:"",levels:{}};
 /* ── PROFILES ──
    Saves live in this browser's localStorage, one slot per username.
    The password is salted + SHA-256 hashed and only ever stored hashed.
@@ -782,7 +849,8 @@ function resetSaveObj(){
   save.unlocked=START.slice();
   save.skins=[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}];
   save.name="";save.cleared=[];save.best={};save.deaths=0;
-  save.coop=false;save.party=false;save.uid="";
+  save.coop=false;save.party=false;save.uid="";save.levels={};
+  applyLevelEdits();
 }
 function loadSave(){
   return store.get(saveKey()).then(function(raw){
@@ -794,6 +862,8 @@ function loadSave(){
       if(!save.skins||!save.skins[1])save.skins=[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}];
     }catch(e){} }
     if(!save.uid)save.uid=Math.random().toString(36).slice(2,9);
+    if(!save.levels||typeof save.levels!=="object")save.levels={};
+    applyLevelEdits();
     queueSave();
   });
 }
@@ -922,7 +992,9 @@ function mkSpike(ch,x,y){ var bx=x*T,by=y*T;
 var W1COUNT=20;
 function worldOf(i){ return i>=W1COUNT?1:0; }
 function worldLabel(i){ return "W"+(worldOf(i)+1)+"-"+((i%W1COUNT)+1); }
-function curLevels(){ return mode==="coop"&&!online?CHAINED_LEVELS:LEVELS; }
+function curLevels(){
+  if(mode==="custom")return save.custom||[];
+  return mode==="coop"&&!online?CHAINED_LEVELS:LEVELS; }
 var online=false;
 function twoP(){ return !online&&(mode==="coop"||mode==="versus"||mode==="casual"||mode==="bomb"); }
 function remoteP(){ return online&&(mode==="coop"||mode==="casual"||mode==="bomb"||mode==="versus"); }
@@ -1540,6 +1612,7 @@ function levelDone(){
     attempts.push({t:players[i].trail,s:players[i].skin});
   for(i=0;i<22;i++)hearts.push({x:goal.x+rnd(-9,9),y:goal.y-8,t:0,life:rnd(.8,1.9),s:rnd(2.5,5)});
   sfx.win(); if(navigator.vibrate){try{navigator.vibrate([12,50,12]);}catch(e){}}
+  if(mode==="custom"){ showWin();return; }
   if(save.cleared.indexOf(level)<0)save.cleared.push(level);
   if(save.best[level]==null||levelTime<save.best[level])save.best[level]=levelTime;
   if(mode==="coop")save.coop=true;
@@ -2393,7 +2466,7 @@ function show(id){
 }
 function fmt(t){ var m=Math.floor(t/60),s=t-m*60; return m+":"+(s<10?"0":"")+s.toFixed(2); }
 function updateHud(){
-  $("hLv").textContent=(mode==="coop"&&!online)?((level+1<10?"0":"")+(level+1)):worldLabel(level);
+  $("hLv").textContent=(mode==="custom")?"MINE":((mode==="coop"&&!online)?((level+1<10?"0":"")+(level+1)):worldLabel(level));
   $("hName").textContent=curLevels()[level].name+(mode==="coop"?" \u00b7 CHAINED":mode==="versus"?" \u00b7 VERSUS":"");
   $("hDeath").innerHTML="\u2620 <b>"+deaths+"</b>";
 }
@@ -2405,6 +2478,7 @@ function startGame(m,lv,isOnline){
   loadLevel(lv||0);buildZones();audioOn();
 }
 function quitToMenu(){
+  if(edTesting){ edTesting=false;applyLevelEdits(); }
   if(party.on){ party.leave();toast("Left the party"); }
   online=false;
   state="menu";$("hud").classList.add("hide");show("s-title");renderChips(); }
@@ -2426,11 +2500,267 @@ function showWin(){
   show("s-win");
 }
 function nextLevel(){
+  if(mode==="custom"){ quitToMenu();openMyLevels();return; }
   if(level+1>=curLevels().length){
     state="done";$("hud").classList.add("hide");
     $("dTime").textContent=fmt(totalTime);$("dDeaths").textContent=totalDeaths;
     checkUnlocks({});show("s-done");return; }
   show(null);loadLevel(level+1);
+}
+/* ═════════════ LEVEL EDITOR ═════════════ */
+var TOOLS=[
+  {ch:" ",n:"Erase"},
+  {ch:"#",n:"Block"},
+  {ch:"^",n:"Spike"},
+  {ch:"v",n:"Spike"},
+  {ch:">",n:"Spike"},
+  {ch:"<",n:"Spike"},
+  {ch:"-",n:"Saw H"},
+  {ch:"|",n:"Saw V"},
+  {ch:"o",n:"Spinner"},
+  {ch:"c",n:"Crumble"},
+  {ch:"L",n:"Laser"},
+  {ch:"R",n:"Laser 2"},
+  {ch:"P",n:"Spawn"},
+  {ch:"G",n:"Exit"}
+];
+var edIdx=0,edGrid=[],edR=0,edC=0,edTool="#",edPainting=false,edCv=null,edCtx=null,edTesting=false;
+var edVW=0,edVH=0,edCell=0,edOX=0,edOY=0;
+
+function openEditor(i){
+  edIdx=i;
+  var L=LEVELS[i];
+  edR=L.map.length;edC=L.map[0].length;
+  edGrid=L.map.map(function(r){return r.split("");});
+  $("edName").value=L.name;
+  $("edMsg").textContent=isEdited(i)?"your version · Undo all puts the original back":"tap the grid to place blocks";
+  edTool="#";
+  show("s-edit");
+  edCv=$("edCanvas");edCtx=edCv.getContext("2d");
+  buildPalette();edResize();updateEdInfo();
+}
+function updateEdInfo(){
+  var p=0,g=0;
+  for(var y=0;y<edR;y++)for(var x=0;x<edC;x++){
+    if(edGrid[y][x]==="P")p++; if(edGrid[y][x]==="G")g++; }
+  $("edInfo").textContent=(worldOf(edIdx)+1)+"-"+((edIdx%W1COUNT)+1);
+  return {p:p,g:g};
+}
+function toolSprite(ch){
+  var cv=document.createElement("canvas");cv.width=cv.height=42;
+  var c=cv.getContext("2d"),S=42/16;
+  c.setTransform(S,0,0,S,0,0);
+  c.fillStyle="#0c0a09";c.fillRect(0,0,16,16);
+  drawCellArt(c,ch,0,0,16,true);
+  return cv;
+}
+function buildPalette(){
+  var box=$("edPal");box.innerHTML="";
+  TOOLS.forEach(function(tl){
+    var b=document.createElement("button");
+    b.className="tool"+(tl.ch===edTool?" on":"");
+    b.appendChild(toolSprite(tl.ch));
+    var s=document.createElement("span");s.textContent=tl.n;b.appendChild(s);
+    b.onclick=function(){ edTool=tl.ch;sfx.click();buildPalette(); };
+    box.appendChild(b);
+  });
+}
+/* one routine draws a cell both in the palette and on the grid */
+function drawCellArt(c,ch,X,Y,S,icon){
+  if(ch==="#"){
+    c.fillStyle="#2a2420";c.fillRect(X,Y,S,S);
+    c.fillStyle="#0d0b09";c.fillRect(X,Y,S,S*.19);
+    c.fillStyle="rgba(40,64,32,.3)";c.fillRect(X,Y,S,S*.07);
+  } else if(ch==="c"){
+    c.fillStyle="#4a2b30";c.fillRect(X,Y,S,S);
+    c.strokeStyle="rgba(0,0,0,.55)";c.lineWidth=S*.05;
+    c.beginPath();c.moveTo(X+S*.2,Y);c.lineTo(X+S*.32,Y+S);
+    c.moveTo(X+S*.75,Y);c.lineTo(X+S*.62,Y+S);c.stroke();
+  } else if("^v<>".indexOf(ch)>=0){
+    c.save();c.translate(X+S/2,Y+S/2);
+    if(ch==="v")c.rotate(Math.PI); else if(ch===">")c.rotate(-Math.PI/2); else if(ch==="<")c.rotate(Math.PI/2);
+    c.translate(-S/2,-S/2);
+    for(var i=0;i<3;i++){ var x0=i*S/3;
+      c.beginPath();c.moveTo(x0+S*.02,S);c.lineTo(x0+S/6,S*.32);c.lineTo(x0+S/3-S*.02,S);c.closePath();
+      c.fillStyle="#a89a78";c.fill();c.strokeStyle="#0e0c0a";c.lineWidth=S*.035;c.stroke(); }
+    c.fillStyle="#242019";c.fillRect(0,S*.86,S,S*.14);
+    c.restore();
+  } else if(ch==="-"||ch==="|"||ch==="o"){
+    var cx=X+S/2,cy=Y+S/2,R=S*.42;
+    c.fillStyle="#8b8f98";c.beginPath();
+    for(var k=0;k<10;k++){ var a=k/10*6.283,rr2=k%2?R*.6:R;
+      c[k?"lineTo":"moveTo"](cx+Math.cos(a)*rr2,cy+Math.sin(a)*rr2); }
+    c.closePath();c.fill();
+    c.fillStyle="#39323a";c.beginPath();c.arc(cx,cy,R*.32,0,6.283);c.fill();
+    if(ch!=="o"){
+      c.strokeStyle="#ffd27a";c.lineWidth=S*.07;c.lineCap="round";c.beginPath();
+      if(ch==="-"){ c.moveTo(X+S*.1,cy);c.lineTo(X+S*.9,cy); }
+      else { c.moveTo(cx,Y+S*.1);c.lineTo(cx,Y+S*.9); }
+      c.stroke();
+    }
+  } else if(ch==="L"||ch==="R"){
+    c.fillStyle="#2a2030";c.fillRect(X+S*.06,Y+S*.28,S*.88,S*.44);
+    c.fillStyle=ch==="L"?"#ff5a6e":"#ff9a4e";
+    c.beginPath();c.arc(X+S*.68,Y+S/2,S*.14,0,6.283);c.fill();
+    c.fillStyle="rgba(255,120,140,.5)";c.fillRect(X+S*.82,Y+S*.45,S*.18,S*.1);
+  } else if(ch==="P"){
+    c.fillStyle="#3ad35a";c.globalAlpha=.22;c.fillRect(X,Y,S,S);c.globalAlpha=1;
+    c.fillStyle="#3ad35a";c.font="700 "+(S*.5)+"px ui-monospace,monospace";
+    c.textAlign="center";c.textBaseline="middle";c.fillText("P",X+S/2,Y+S/2);
+  } else if(ch==="G"){
+    c.fillStyle="#ff7cae";c.globalAlpha=.22;c.fillRect(X,Y,S,S);c.globalAlpha=1;
+    c.fillStyle="#ff7cae";c.font="700 "+(S*.5)+"px ui-monospace,monospace";
+    c.textAlign="center";c.textBaseline="middle";c.fillText("G",X+S/2,Y+S/2);
+  } else if(icon){
+    c.strokeStyle="#5c5048";c.lineWidth=S*.06;
+    c.beginPath();c.moveTo(X+S*.28,Y+S*.28);c.lineTo(X+S*.72,Y+S*.72);
+    c.moveTo(X+S*.72,Y+S*.28);c.lineTo(X+S*.28,Y+S*.72);c.stroke();
+  }
+}
+function edResize(){
+  if(!edCv)return;
+  var st=edCv.parentNode;
+  edVW=st.clientWidth;edVH=st.clientHeight;
+  edCv.width=Math.round(edVW*DPR);edCv.height=Math.round(edVH*DPR);
+  edCell=Math.max(6,Math.min((edVW-12)/edC,(edVH-12)/edR));
+  edOX=(edVW-edCell*edC)/2;edOY=(edVH-edCell*edR)/2;
+}
+function drawEditor(){
+  if(!edCtx||!edVW)return;
+  var c=edCtx;
+  c.setTransform(DPR,0,0,DPR,0,0);
+  c.fillStyle="#080708";c.fillRect(0,0,edVW,edVH);
+  c.save();c.translate(edOX,edOY);
+  c.fillStyle="#100d0e";c.fillRect(0,0,edCell*edC,edCell*edR);
+  for(var y=0;y<edR;y++)for(var x=0;x<edC;x++){
+    var ch=edGrid[y][x];
+    if(ch!==" ")drawCellArt(c,ch,x*edCell,y*edCell,edCell,false);
+  }
+  c.strokeStyle="rgba(255,255,255,.055)";c.lineWidth=1;
+  for(var gx=0;gx<=edC;gx++){c.beginPath();c.moveTo(gx*edCell,0);c.lineTo(gx*edCell,edCell*edR);c.stroke();}
+  for(var gy=0;gy<=edR;gy++){c.beginPath();c.moveTo(0,gy*edCell);c.lineTo(edCell*edC,gy*edCell);c.stroke();}
+  c.strokeStyle="rgba(211,19,43,.5)";c.lineWidth=1.5;
+  c.strokeRect(0,0,edCell*edC,edCell*edR);
+  c.restore();
+}
+function edCellAt(px,py){
+  var x=Math.floor((px-edOX)/edCell),y=Math.floor((py-edOY)/edCell);
+  if(x<0||y<0||x>=edC||y>=edR)return null;
+  return {x:x,y:y};
+}
+function edPaint(px,py){
+  var p=edCellAt(px,py);if(!p)return;
+  var cur=edGrid[p.y][p.x];
+  if(cur===edTool)return;
+  // only one spawn and one exit
+  if(edTool==="P"||edTool==="G"){
+    for(var y=0;y<edR;y++)for(var x=0;x<edC;x++)
+      if(edGrid[y][x]===edTool)edGrid[y][x]=" ";
+  }
+  edGrid[p.y][p.x]=edTool;
+  updateEdInfo();
+}
+function edMapOut(){ return edGrid.map(function(r){return r.join("");}); }
+function edValidate(){
+  var counts=updateEdInfo();
+  if(counts.p!==1)return {ok:false,msg:"You need exactly one spawn (P)."};
+  if(counts.g!==1)return {ok:false,msg:"You need exactly one exit (G)."};
+  return {ok:true};
+}
+
+/* ── in-game solver: can this level actually be finished? ── */
+function solveLevel(map,budget){
+  var ROWS=map.length,COLS=map[0].length;
+  var grid=[],spawn=null,goal=null,spikes=[],saws=[];
+  for(var y=0;y<ROWS;y++){ var row=[];
+    for(var x=0;x<COLS;x++){ var ch=map[y].charAt(x);
+      row.push(ch==="#"||ch==="c"?1:0);
+      if(ch==="P")spawn={x:x*T+(T-PW)/2,y:y*T+(T-PH)};
+      if(ch==="G")goal={x:x*T+T/2,y:y*T+T};
+      if("^v<>".indexOf(ch)>=0)spikes.push(mkSpike(ch,x,y));
+      if(ch==="o")saws.push({x:x*T+T/2,y:y*T+T/2,ax:0,spd:0,dir:1});
+      if(ch==="-")saws.push({x:x*T+T/2,y:y*T+T/2,ax:1,spd:86,dir:1});
+      if(ch==="|")saws.push({x:x*T+T/2,y:y*T+T/2,ax:2,spd:98,dir:1});
+    }
+    grid.push(row); }
+  if(!spawn)return {ok:false,msg:"No spawn placed."};
+  if(!goal)return {ok:false,msg:"No exit placed."};
+  function sol(cx,cy){ if(cx<0||cx>=COLS)return true; if(cy<0||cy>=ROWS)return false; return grid[cy][cx]===1; }
+  function bs(x,y,w,h){
+    var x0=Math.floor(x/T),x1=Math.floor((x+w-.001)/T),y0=Math.floor(y/T),y1=Math.floor((y+h-.001)/T);
+    for(var yy=y0;yy<=y1;yy++)for(var xx=x0;xx<=x1;xx++)if(sol(xx,yy))return true;
+    return false; }
+  var FR=1500,DTs=1/60;
+  var paths=saws.map(function(s){return {x:s.x,y:s.y,dir:1,ax:s.ax,spd:s.spd,p:[]};});
+  for(var f=0;f<FR+20;f++)for(var si=0;si<paths.length;si++){ var s=paths[si];
+    if(s.ax===1){ s.x+=s.spd*s.dir*DTs;
+      if(bs(s.x+s.dir*(SAWR+2)-1,s.y-1,2,2)){s.dir*=-1;s.x+=s.spd*s.dir*DTs;} }
+    else if(s.ax===2){ s.y+=s.spd*s.dir*DTs;
+      if(bs(s.x-1,s.y+s.dir*(SAWR+2)-1,2,2)){s.dir*=-1;s.y+=s.spd*s.dir*DTs;} }
+    s.p.push(s.x,s.y); }
+  function hitSaw(fr,x,y){
+    for(var i=0;i<paths.length;i++){ var q=paths[i],sx=q.p[fr*2],sy=q.p[fr*2+1];
+      var ax=Math.max(x,Math.min(sx,x+PW)),ay=Math.max(y,Math.min(sy,y+PH));
+      var dx=sx-ax,dy=sy-ay;
+      if(dx*dx+dy*dy<SAWR*SAWR)return true; }
+    return false; }
+  function hitSpike(x,y){
+    for(var i=0;i<spikes.length;i++){ var s=spikes[i];
+      if(x<s.x+s.w&&x+PW>s.x&&y<s.y+s.h&&y+PH>s.y)return true; }
+    return false; }
+  var STEP=7,Q=5,PER=420;
+  function key(x,y,vx,vy,fr){
+    return Math.round(x/Q)+","+Math.round(y/Q)+","+
+      Math.max(-1,Math.min(1,Math.round(vx/150)))+","+
+      Math.max(-1,Math.min(1,Math.round(vy/260)))+","+Math.floor((fr%PER)/STEP); }
+  var seen={},frontier=[{x:spawn.x,y:spawn.y,vx:0,vy:0,f:0}];
+  seen[key(spawn.x,spawn.y,0,0,0)]=1;
+  var acts=[[0,0],[1,0],[-1,0],[0,1],[1,1],[-1,1]],iter=0,CAP=budget||2600000;
+  while(frontier.length&&iter<CAP){
+    var nx2=[];
+    for(var fi=0;fi<frontier.length;fi++){ var st=frontier[fi];
+      for(var ai=0;ai<acts.length;ai++){
+        var dir=acts[ai][0],jmp=acts[ai][1];
+        var x=st.x,y=st.y,vx=st.vx,vy=st.vy,fr=st.f;
+        var ground=bs(x,y+1,PW,PH),wall=0,jumped=false,dead=false;
+        if(bs(x-1,y,PW,PH))wall=-1; else if(bs(x+1,y,PW,PH))wall=1;
+        for(var k=0;k<STEP;k++){
+          iter++;
+          if(fr>=FR){dead=true;break;}
+          if(dir){ vx+=dir*(ground?ACC:AIRACC)*DTs; vx=clamp(vx,-RUN,RUN); }
+          else { var fc=(ground?FRIC:AIRFRIC)*DTs; vx=Math.abs(vx)<=fc?0:vx-(vx>0?fc:-fc); }
+          if(jmp&&!jumped){ if(ground){vy=-JUMP;jumped=true;} else if(wall){vy=-WJY;vx=-wall*WJX;jumped=true;} }
+          vy+=GRAV*DTs;
+          if(wall&&!ground&&vy>SLIDE)vy=SLIDE;
+          if(vy>MAXFALL)vy=MAXFALL;
+          var tx=x+vx*DTs;
+          if(bs(tx,y,PW,PH))vx=0; else x=tx;
+          var ty=y+vy*DTs;
+          if(bs(x,ty,PW,PH)){
+            if(vy>0){ground=true;y=Math.floor((ty+PH)/T)*T-PH;}
+            else y=Math.floor(ty/T)*T+T;
+            vy=0;
+          } else { y=ty;ground=false; }
+          fr++;
+          if(y>ROWS*T+40){dead=true;break;}
+          if(hitSpike(x,y)||hitSaw(paths.length?fr:0,x,y)){dead=true;break;}
+          wall=0;
+          if(bs(x-1,y,PW,PH))wall=-1; else if(bs(x+1,y,PW,PH))wall=1;
+        }
+        if(dead)continue;
+        if(x<0||x>COLS*T)continue;
+        var kk=key(x,y,vx,vy,fr);
+        if(seen[kk])continue;
+        seen[kk]=1;
+        if(x<goal.x+9&&x+PW>goal.x-9&&y<goal.y+2&&y+PH>goal.y-16)
+          return {ok:true,secs:fr/60};
+        nx2.push({x:x,y:y,vx:vx,vy:vy,f:fr});
+      }
+    }
+    frontier=nx2;
+  }
+  if(iter>=CAP)return {ok:null,msg:"Too complex to check fully — test it yourself."};
+  return {ok:false,msg:"No way to reach the exit. Something is blocking the route."};
 }
 /* ═════════════ LEVEL MAP ═════════════ */
 var mapPage=0,mapSel=0,mapAnim=0,mapAnimDir=0,mapNodes=[],mapLadX=0,mapLadY=0,mapLadT=0,mapLastT=0;
@@ -2478,7 +2808,7 @@ function syncMapFoot(){
   $("mapWorld").textContent=mapPage===0?"World 1 · The Meat Works":"World 2 · The Rot";
   $("mapLvName").textContent=L?L.name:"";
   var open=maxOpenLevel(),done=save.cleared.indexOf(mapSel)>=0;
-  $("mapLvSub").textContent=L&&L.boss?"boss fight":(done?"cleared":(mapSel<=open?"not cleared yet":"locked"));
+  $("mapLvSub").textContent=(isEdited(mapSel)?"your version · ":"")+(L&&L.boss?"boss fight":(done?"cleared":(mapSel<=open?"not cleared yet":"locked")));
   $("bPlayLv").disabled=mapSel>open;
   $("bPlayLv").textContent=mapSel>open?"Locked":"Play";
   var r=worldRange(mapPage),c=0;
@@ -2832,6 +3162,59 @@ $("mBack").onclick=function(){sfx.click();show("s-title");};
 $("mapBack").onclick=function(){sfx.click();show("s-title");};
 $("mapPrev").onclick=function(){gotoPage(mapPage-1);};
 $("mapNext").onclick=function(){gotoPage(mapPage+1);};
+$("bEditLv").onclick=function(){ sfx.click();openEditor(mapSel); };
+$("edBack").onclick=function(){ sfx.click();show("s-levels");syncMapFoot(); };
+$("edCheck").onclick=function(){
+  var v=edValidate();
+  if(!v.ok){ $("edMsg").textContent=v.msg;sfx.snap();return; }
+  $("edMsg").textContent="Checking…";sfx.click();
+  setTimeout(function(){
+    var r=solveLevel(edMapOut());
+    if(r.ok===true)$("edMsg").textContent="Looks good — finishable in about "+r.secs.toFixed(1)+"s";
+    else if(r.ok===null)$("edMsg").textContent=r.msg;
+    else { $("edMsg").textContent=r.msg;sfx.snap(); }
+  },30);
+};
+$("edTest").onclick=function(){
+  var v=edValidate();
+  if(!v.ok){ $("edMsg").textContent=v.msg;sfx.snap();return; }
+  sfx.click();
+  edTesting=true;
+  var m=edMapOut();
+  var keep=LEVELS[edIdx];
+  LEVELS[edIdx]={name:$("edName").value||keep.name,map:m};
+  if(keep.boss)LEVELS[edIdx].boss=keep.boss;
+  if(keep.sawSpeed)LEVELS[edIdx].sawSpeed=keep.sawSpeed;
+  startGame("solo",edIdx);
+};
+$("edSave").onclick=function(){
+  var v=edValidate();
+  if(!v.ok){ $("edMsg").textContent=v.msg;sfx.snap();return; }
+  sfx.click();
+  if(!save.levels)save.levels={};
+  save.levels[edIdx]={name:($("edName").value||LEVELS_BASE[edIdx].name).slice(0,18),map:edMapOut()};
+  queueSave();applyLevelEdits();
+  $("edMsg").textContent="Saved — this is your level now";
+  toast("Level saved");
+};
+$("edReset").onclick=function(){
+  sfx.click();
+  if(save.levels&&save.levels[edIdx]){ delete save.levels[edIdx];queueSave();applyLevelEdits(); }
+  openEditor(edIdx);
+  $("edMsg").textContent="Back to the original level";
+  toast("Reset to original");
+};
+(function(){
+  var cv=$("edCanvas");
+  function pos(e){ var r=cv.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+  cv.addEventListener("pointerdown",function(e){
+    edPainting=true;try{cv.setPointerCapture(e.pointerId);}catch(err){}
+    var p=pos(e);edPaint(p.x,p.y);e.preventDefault(); });
+  cv.addEventListener("pointermove",function(e){
+    if(!edPainting)return;var p=pos(e);edPaint(p.x,p.y); });
+  cv.addEventListener("pointerup",function(){edPainting=false;});
+  cv.addEventListener("pointercancel",function(){edPainting=false;});
+})();
 $("bPlayLv").onclick=function(){
   if(mapSel>maxOpenLevel())return;
   sfx.click();startGame("solo",mapSel); };
@@ -2972,6 +3355,10 @@ function frame(now){
   if(hudTick>.1&&state==="play"){hudTick=0;$("hTime").textContent=fmt(levelTime);}
   if($("s-ward").className.indexOf("hide")<0)drawWardAvatar(now/1000);
   if($("s-title").className.indexOf("hide")<0)drawTitleLad(now/1000);
+  if($("s-edit").className.indexOf("hide")<0){
+    if(!edVW||edCv.parentNode.clientWidth!==edVW)edResize();
+    drawEditor();
+  }
   if($("s-levels").className.indexOf("hide")<0){
     if(!mapW||mapCv.parentNode.clientWidth!==mapW)mapResize();
     drawMap(now/1000);
@@ -3051,7 +3438,9 @@ $("bSignIn").onclick=function(){
   }).then(null,function(){ liBusy(false);$("liErr").textContent="Something went wrong signing in."; });
 };
 $("bGuest").onclick=function(){ sfx.click();curUser=null;cloudId=null;
-  store.del(LASTKEY);resetSaveObj();enterGame(); };
+  store.del(LASTKEY);resetSaveObj();
+  /* keep whatever this device already had as a guest (progress + level edits) */
+  enterGame(); };
 $("bSignOut").onclick=function(){
   sfx.click();
   if(party.on)party.leave();
