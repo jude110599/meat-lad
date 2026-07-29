@@ -153,7 +153,26 @@ input.txt:focus{border-color:var(--meat)}
   <div id="toasts"></div>
   <div id="verTag"></div>
 
-  <div class="screen" id="s-title">
+  <div class="screen" id="s-login">
+    <div class="center">
+      <h1 class="logo disp"><span class="a">MEAT</span><span class="b">LAD</span></h1>
+      <div class="drip"></div>
+      <div class="tag" id="loginTag">sign in to save your progress</div>
+      <div class="stack" style="margin-top:22px">
+        <input class="txt" id="liUser" maxlength="14" placeholder="USERNAME" autocomplete="off">
+        <input class="txt" id="liPass" type="password" maxlength="40" placeholder="PASSWORD" autocomplete="off" style="letter-spacing:.1em">
+        <div class="row">
+          <button class="btn" id="bSignIn" style="text-align:center">Sign in</button>
+          <button class="btn" id="bSignUp" style="text-align:center">Create</button>
+        </div>
+        <div class="note" id="liErr" style="color:var(--meat);min-height:14px"></div>
+        <button class="btn sub" id="bGuest">Play without saving</button>
+      </div>
+      <div class="note" style="margin-top:16px;text-align:center">Your save is kept in this browser on this device. The password keeps saves separate if you share a device — it is not an internet account, so your progress won't follow you to another phone or computer.</div>
+    </div>
+  </div>
+
+  <div class="screen hide" id="s-title">
     <div class="center">
       <h1 class="logo disp"><span class="a">MEAT</span><span class="b">LAD</span></h1>
       <div class="drip"></div>
@@ -168,6 +187,9 @@ input.txt:focus{border-color:var(--meat)}
         <div class="row">
           <button class="btn sub" id="bWard">Wardrobe</button>
           <button class="btn sub" id="bLog">Changelog</button>
+        </div>
+        <div class="row">
+          <button class="btn sub" id="bSignOut">Sign out</button>
         </div>
       </div>
       <div class="chips" id="lvChips"></div>
@@ -196,6 +218,8 @@ input.txt:focus{border-color:var(--meat)}
       <button class="btn modepick" data-m="versus">Time trial<small>normal levels, race to the goal</small></button>
       <button class="btn modepick" data-m="bomb">Pass the bomb<small>normal levels, don't be holding it when it goes off</small></button>
     </div>
+    <div class="sect">Starting level <span class="stat" id="cLvName"></span></div>
+    <div class="chips" id="cChips" style="margin-top:0"></div>
     <div class="spacer"></div>
     <button class="btn" id="cStart" style="border-left-color:var(--meat)">Start</button>
   </div></div>
@@ -233,7 +257,9 @@ input.txt:focus{border-color:var(--meat)}
         <button class="btn modepick" data-m="coop">Chained<small>tied by a tether across the connection</small></button>
         <button class="btn modepick" data-m="bomb">Pass the bomb<small>touch your partner to hand off the bomb</small></button>
       </div>
-      <button class="btn" id="pStart" style="margin-top:10px;border-left-color:var(--meat)">Start for everyone</button>
+      <div class="sect">Starting level <span class="stat" id="pLvName"></span></div>
+      <div class="chips" id="pChips" style="margin-top:0"></div>
+      <button class="btn" id="pStart" style="margin-top:12px;border-left-color:var(--meat)">Start for everyone</button>
       </div>
       <div class="note" id="pWait" style="display:none;margin-top:10px;text-align:center;padding:14px">Waiting for the host to pick a mode and start…</div>
       <div class="row" style="margin-top:10px">
@@ -288,9 +314,18 @@ input.txt:focus{border-color:var(--meat)}
 (function(){
 "use strict";
 
-var VERSION="2.0.0";
+var VERSION="2.1.0";
 var CHANGELOG=[
-  {v:"2.0.0",d:"latest",items:[
+  {v:"2.1.0",d:"latest",items:[
+    "FIXED: your progress was never actually saving. The game was looking for a save system that doesn't exist on a normal website, so every level you cleared was lost on refresh. It now saves properly in your browser",
+    "New sign-in screen. Make a username and password and your progress is kept for you, or tap 'Play without saving' to skip it",
+    "Only the host can press Next Level or Restart now, so players can't drift onto different levels",
+    "The host can pick which level the party starts on, in both Couch and Online",
+    "Leaving to the main menu now takes you out of the party",
+    "You can't start a solo game while you're still in a party — it tells you to leave first",
+    "If the host closes the game, everyone else is told and sent back to the menu instead of being left stuck"
+  ]},
+  {v:"2.0.0",items:[
     "The game is now split into two worlds. World 1 (The Meat Works) has 19 levels plus a boss, World 2 (The Rot) has 9 levels plus a boss, with a new purple theme",
     "New boss — THE CARVER. A giant blade chases you down a long corridor and smashes itself apart on the pillars until it dies",
     "New boss — THE BUTCHER. It hovers, picks a spot, and slams down. Bait it onto the spikes three times. The exit stays locked until it goes down",
@@ -460,24 +495,68 @@ function withTimeout(p,ms,fallback){
            function(){ if(!done){done=true;clearTimeout(t);res(fallback);} });
   });
 }
+var lsOK=(function(){ try{ localStorage.setItem("__t","1");localStorage.removeItem("__t");return true; }catch(e){ return false; } })();
+var hostStore=!!(window.storage&&window.storage.get);
 var store={
-  ok:!!(window.storage&&window.storage.get),
-  get:function(k,sh){ if(!this.ok)return Promise.resolve(null);
-    return withTimeout(window.storage.get(k,!!sh).then(function(r){return r?r.value:null;}).catch(function(){return null;}),4000,null); },
-  set:function(k,v,sh){ if(!this.ok)return Promise.resolve(false);
-    return withTimeout(window.storage.set(k,v,!!sh).then(function(){return true;}).catch(function(){return false;}),4000,false); },
-  del:function(k,sh){ if(!this.ok)return Promise.resolve(false);
-    return withTimeout(window.storage.delete(k,!!sh).then(function(){return true;}).catch(function(){return false;}),4000,false); },
-  list:function(p,sh){ if(!this.ok)return Promise.resolve([]);
-    return withTimeout(window.storage.list(p,!!sh).then(function(r){return (r&&r.keys)||[];}).catch(function(){return [];}),7000,[]); }
+  ok:lsOK||hostStore,
+  get:function(k,sh){
+    if(lsOK){ try{ return Promise.resolve(localStorage.getItem(k)); }catch(e){} }
+    if(hostStore)return withTimeout(window.storage.get(k,!!sh).then(function(r){return r?r.value:null;}).catch(function(){return null;}),4000,null);
+    return Promise.resolve(null); },
+  set:function(k,v,sh){
+    if(lsOK){ try{ localStorage.setItem(k,v);return Promise.resolve(true); }catch(e){} }
+    if(hostStore)return withTimeout(window.storage.set(k,v,!!sh).then(function(){return true;}).catch(function(){return false;}),4000,false);
+    return Promise.resolve(false); },
+  del:function(k,sh){
+    if(lsOK){ try{ localStorage.removeItem(k);return Promise.resolve(true); }catch(e){} }
+    if(hostStore)return withTimeout(window.storage.delete(k,!!sh).then(function(){return true;}).catch(function(){return false;}),4000,false);
+    return Promise.resolve(false); }
 };
 var save={unlocked:START.slice(),skins:[{c:"red",h:"none",s:"sneak"},{c:"pink",h:"beanie",s:"nones"}],
   name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:""};
+/* ── PROFILES ──
+   Saves live in this browser's localStorage, one slot per username.
+   The password is salted + SHA-256 hashed and only ever stored hashed.
+   This keeps separate saves apart on a shared device. It is NOT an
+   internet account — progress does not follow you to another device. */
+var PROFKEY="meatlad:profiles",LASTKEY="meatlad:lastuser";
+var curUser=null;
+function saveKey(){ return curUser?("meatlad:save:"+curUser):"meatlad:save"; }
+function normUser(u){ return String(u||"").trim().slice(0,14); }
+function randSalt(){
+  var a=new Uint8Array(12);
+  if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);
+  else for(var i=0;i<12;i++)a[i]=Math.floor(Math.random()*256);
+  return Array.prototype.map.call(a,function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+}
+function hashPw(pw,salt){
+  var msg=salt+"|"+pw;
+  if(window.crypto&&crypto.subtle&&window.isSecureContext){
+    return crypto.subtle.digest("SHA-256",new TextEncoder().encode(msg)).then(function(buf){
+      return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+    });
+  }
+  var h=5381;
+  for(var i=0;i<msg.length;i++){ h=((h<<5)+h)^msg.charCodeAt(i); h=h>>>0; }
+  return Promise.resolve("w"+h.toString(16));
+}
+function getProfiles(){
+  return store.get(PROFKEY).then(function(raw){
+    if(!raw)return {};
+    try{ return JSON.parse(raw)||{}; }catch(e){ return {}; } });
+}
+function putProfiles(p){ return store.set(PROFKEY,JSON.stringify(p)); }
 var saveT=null;
 function queueSave(){ if(saveT)return;
-  saveT=setTimeout(function(){saveT=null;store.set("meatlad:save",JSON.stringify(save));},700); }
+  saveT=setTimeout(function(){saveT=null;store.set(saveKey(),JSON.stringify(save));},700); }
+function resetSaveObj(){
+  save.unlocked=START.slice();
+  save.skins=[{c:"red",h:"none",s:"sneak"},{c:"pink",h:"beanie",s:"nones"}];
+  save.name="";save.cleared=[];save.best={};save.deaths=0;
+  save.coop=false;save.party=false;save.uid="";
+}
 function loadSave(){
-  return store.get("meatlad:save").then(function(raw){
+  return store.get(saveKey()).then(function(raw){
     if(raw){ try{ var s=JSON.parse(raw);
       for(var k in s)if(s.hasOwnProperty(k))save[k]=s[k];
       if(!(save.unlocked instanceof Array))save.unlocked=START.slice();
@@ -1787,6 +1866,13 @@ var party={
     var m=this.members[id];
     if(m)toast((m.n||"a lad")+" left the party");
     delete this.conns[id];delete this.members[id];delete this.ghosts[id];
+    var n=0;for(var k in this.conns)n++;
+    if(!this.leader&&n===0&&this.code){
+      toast("The host closed the party");
+      this.leave();
+      if(state!=="menu"){ online=false;state="menu";$("hud").classList.add("hide");show("s-title");renderChips(); }
+      return;
+    }
     renderParty();
   },
   _send:function(c,obj){
@@ -1835,6 +1921,17 @@ var party={
         startGame(msg.mode||"versus",msg.lv||0,true);
       }
       if(self.leader){ msg.id=from; self._bcast(msg,c.peer); }
+    } else if(msg.t==="go"){
+      if(!self.leader&&online&&state!=="menu"&&msg.lv!==level){
+        show(null);loadLevel(msg.lv);toast("Host moved to "+worldLabel(msg.lv));
+      }
+      if(self.leader){ msg.id=from; self._bcast(msg,c.peer); }
+    } else if(msg.t==="rst"){
+      if(!self.leader&&online&&state!=="menu"){
+        if(msg.lv!==level){ show(null);loadLevel(msg.lv); }
+        else { show(null);resetLevel();updateHud(); }
+      }
+      if(self.leader){ msg.id=from; self._bcast(msg,c.peer); }
     } else if(msg.t==="clear"){
       var mm=self.members[from];
       if(mm)toast((mm.n||"a lad")+" cleared "+(LEVELS[msg.lv]?LEVELS[msg.lv].name:"a level"));
@@ -1854,6 +1951,8 @@ var party={
   startForAll:function(mode,lv){
     this._bcast({t:"start",mode:mode,lv:lv||0});
   },
+  goLevel:function(lv){ this._bcast({t:"go",lv:lv}); },
+  sendRestart:function(){ this._bcast({t:"rst",lv:level}); },
   publish:function(force,extra){
     if(!this.code)return Promise.resolve(false);
     if(extra&&extra.ev==="clear")this._bcast({t:"clear",lv:level});
@@ -1919,7 +2018,10 @@ function startGame(m,lv,isOnline){
   show(null);$("hud").classList.remove("hide");
   loadLevel(lv||0);buildZones();audioOn();
 }
-function quitToMenu(){ state="menu";$("hud").classList.add("hide");show("s-title");renderChips(); }
+function quitToMenu(){
+  if(party.on){ party.leave();toast("Left the party"); }
+  online=false;
+  state="menu";$("hud").classList.add("hide");show("s-title");renderChips(); }
 function togglePause(){
   if(state==="play"||state==="dead"){ state="pause";show("s-pause"); }
   else if(state==="pause"){ show(null);
@@ -1961,7 +2063,7 @@ function renderChips(){
     var isBoss=!!LEVELS[i].boss;
     b.className="chip disp"+(done?" done":"")+(i>maxOpen?" lock":"")+(isBoss?" boss":"");
     b.textContent=isBoss?"\u2620":String((i%W1COUNT)+1);
-    if(i<=maxOpen)(function(n){b.onclick=function(){sfx.click();startGame("solo",n);};})(i);
+    if(i<=maxOpen)(function(n){b.onclick=function(){ if(blockedByParty())return; sfx.click();startGame("solo",n);};})(i);
     c.appendChild(b);
   }
   $("tHint").textContent=save.cleared.length
@@ -2022,6 +2124,7 @@ function renderParty(){
   if(!on)return;
   $("pHostArea").style.display=party.leader?"":"none";
   $("pWait").style.display=party.leader?"none":"";
+  if(party.leader&&$("pChips")&&!$("pChips").childNodes.length)refreshPartyChips();
   $("pCodeBig").textContent=party.code;
   var ids=Object.keys(party.members),list=$("pList"),pd=save.deaths,pc=save.cleared.length;
   list.innerHTML="";
@@ -2050,14 +2153,46 @@ function wireModePicks(containerId,onPick){
       b.classList.add("on"); onPick(b.getAttribute("data-m")); };
   })(btns[i]);
 }
-wireModePicks("cModes",function(m){couchMode=m;});
-wireModePicks("pModes",function(m){partyMode=m;});
-$("bSolo").onclick=function(){sfx.click();startGame("solo",0);};
-$("bCouch").onclick=function(){sfx.click();show("s-couch");};
-$("cStart").onclick=function(){sfx.click();startGame(couchMode,0);toast(COUCH_TOAST[couchMode]||"");};
+var couchLv=0,partyLv=0;
+function mpLevels(m,isOnline){ return (m==="coop"&&!isOnline)?CHAINED_LEVELS:LEVELS; }
+function renderMpChips(chipId,nameId,m,isOnline,cur,onPick){
+  var box=$(chipId);if(!box)return;
+  var list=mpLevels(m,isOnline);
+  if(cur>=list.length)cur=0;
+  box.innerHTML="";
+  var lastW=-1,solo=(list===LEVELS);
+  for(var i=0;i<list.length;i++){
+    if(solo){ var w=worldOf(i);
+      if(w!==lastW){ lastW=w;
+        var hd=document.createElement("div");hd.className="worldhd";
+        hd.textContent=w===0?"World 1":"World 2";box.appendChild(hd); } }
+    var b=document.createElement("button");
+    var isBoss=!!list[i].boss;
+    b.className="chip disp"+(i===cur?" done":"")+(isBoss?" boss":"");
+    b.textContent=isBoss?"☠":String(solo?((i%W1COUNT)+1):(i+1));
+    (function(n){ b.onclick=function(){ sfx.click();onPick(n); }; })(i);
+    box.appendChild(b);
+  }
+  $(nameId).textContent=list[cur]?list[cur].name:"";
+}
+function refreshCouchChips(){
+  renderMpChips("cChips","cLvName",couchMode,false,couchLv,function(n){couchLv=n;refreshCouchChips();});
+}
+function refreshPartyChips(){
+  renderMpChips("pChips","pLvName",partyMode,true,partyLv,function(n){partyLv=n;refreshPartyChips();});
+}
+wireModePicks("cModes",function(m){couchMode=m;couchLv=0;refreshCouchChips();});
+wireModePicks("pModes",function(m){partyMode=m;partyLv=0;refreshPartyChips();});
+function blockedByParty(){
+  if(party.on){ toast("Leave the party first");sfx.snap();return true; }
+  return false;
+}
+$("bSolo").onclick=function(){ if(blockedByParty())return; sfx.click();startGame("solo",0);};
+$("bCouch").onclick=function(){ if(blockedByParty())return; sfx.click();show("s-couch");refreshCouchChips();};
+$("cStart").onclick=function(){sfx.click();startGame(couchMode,couchLv);toast(COUCH_TOAST[couchMode]||"");};
 $("cBack").onclick=function(){sfx.click();show("s-title");renderChips();};
 $("bWard").onclick=function(){sfx.click();show("s-ward");renderWard();};
-$("bOnline").onclick=function(){sfx.click();show("s-party");setPartyBusy(false);$("pErr").textContent="";renderParty();};
+$("bOnline").onclick=function(){sfx.click();show("s-party");setPartyBusy(false);$("pErr").textContent="";renderParty();refreshPartyChips();};
 $("bLog").onclick=function(){sfx.click();show("s-log");renderLog();};
 $("lBack").onclick=function(){sfx.click();show("s-title");renderChips();};
 $("wBack").onclick=function(){sfx.click();show(state==="pause"?"s-pause":"s-title");renderChips();};
@@ -2089,14 +2224,29 @@ $("bLeave").onclick=function(){sfx.click();party.leave();};
 $("pStart").onclick=function(){
   if(!party.on||!party.leader)return;
   sfx.click();
-  party.startForAll(partyMode,0);
-  startGame(partyMode,0,true); };
-$("bNext").onclick=function(){sfx.click();nextLevel();};
+  party.startForAll(partyMode,partyLv);
+  startGame(partyMode,partyLv,true); };
+$("bNext").onclick=function(){
+  if(online&&party.on&&!party.leader){ toast("Only the host can start the next level");sfx.snap();return; }
+  sfx.click();
+  if(online&&party.on&&party.leader){
+    var nx=level+1;
+    if(nx<curLevels().length)party.goLevel(nx);
+  }
+  nextLevel(); };
 $("bWinMenu").onclick=function(){sfx.click();quitToMenu();};
-$("bAgain").onclick=function(){sfx.click();startGame(mode,0,online);};
+$("bAgain").onclick=function(){
+  if(online&&party.on&&!party.leader){ toast("Only the host can restart the run");sfx.snap();return; }
+  sfx.click();
+  if(online&&party.on&&party.leader)party.startForAll(mode,0);
+  startGame(mode,0,online); };
 $("bDoneMenu").onclick=function(){sfx.click();quitToMenu();};
 $("bResume").onclick=function(){sfx.click();togglePause();};
-$("bRetry").onclick=function(){sfx.click();show(null);resetLevel();updateHud();};
+$("bRetry").onclick=function(){
+  if(online&&party.on&&!party.leader){ toast("Only the host can restart the level");sfx.snap();return; }
+  sfx.click();
+  if(online&&party.on&&party.leader)party.sendRestart();
+  show(null);resetLevel();updateHud(); };
 $("bPWard").onclick=function(){sfx.click();show("s-ward");renderWard();};
 $("bQuit").onclick=function(){sfx.click();quitToMenu();};
 $("bPause").onclick=function(){togglePause();};
@@ -2154,16 +2304,75 @@ function frame(now){
   if(hudTick>.1&&state==="play"){hudTick=0;$("hTime").textContent=fmt(levelTime);}
 }
 
+/* ═════════════ AUTH UI ═════════════ */
+function enterGame(){
+  return loadSave().then(function(){
+    renderChips();show("s-title");
+    $("pName").value=save.name||curUser||"";
+    $("bSignOut").textContent=curUser?("Sign out ("+curUser+")"):"Sign in to save";
+    if(!store.ok)$("tHint").textContent="this browser is blocking saves — progress won't stick";
+    else if(!curUser)$("tHint").textContent="playing without saving · tap a number to jump to a level";
+  });
+}
+function liBusy(b){ $("bSignIn").disabled=b;$("bSignUp").disabled=b;$("bGuest").disabled=b; }
+$("bSignUp").onclick=function(){
+  var u=normUser($("liUser").value),pw=$("liPass").value||"";
+  if(u.length<2){$("liErr").textContent="Pick a username with at least 2 characters.";return;}
+  if(pw.length<3){$("liErr").textContent="Pick a password with at least 3 characters.";return;}
+  sfx.click();$("liErr").textContent="";liBusy(true);
+  getProfiles().then(function(profs){
+    if(profs[u.toLowerCase()]){ liBusy(false);$("liErr").textContent="That username already exists here. Try signing in.";return; }
+    var salt=randSalt();
+    return hashPw(pw,salt).then(function(h){
+      profs[u.toLowerCase()]={u:u,salt:salt,h:h};
+      return putProfiles(profs).then(function(){
+        curUser=u;resetSaveObj();save.name=u;
+        return store.set(LASTKEY,u).then(function(){
+          liBusy(false);toast("Account created — progress will save");
+          return enterGame(); }); }); });
+  }).then(null,function(){ liBusy(false);$("liErr").textContent="Couldn't save the account on this device."; });
+};
+$("bSignIn").onclick=function(){
+  var u=normUser($("liUser").value),pw=$("liPass").value||"";
+  if(!u||!pw){$("liErr").textContent="Enter your username and password.";return;}
+  sfx.click();$("liErr").textContent="";liBusy(true);
+  getProfiles().then(function(profs){
+    var p=profs[u.toLowerCase()];
+    if(!p){ liBusy(false);$("liErr").textContent="No account with that name on this device.";return; }
+    return hashPw(pw,p.salt).then(function(h){
+      liBusy(false);
+      if(h!==p.h){ $("liErr").textContent="Wrong password.";return; }
+      curUser=p.u;
+      return store.set(LASTKEY,p.u).then(function(){
+        toast("Signed in as "+p.u);
+        return enterGame(); }); });
+  }).then(null,function(){ liBusy(false);$("liErr").textContent="Couldn't read saved accounts."; });
+};
+$("bGuest").onclick=function(){ sfx.click();curUser=null;
+  store.del(LASTKEY);resetSaveObj();enterGame(); };
+$("bSignOut").onclick=function(){
+  sfx.click();
+  if(party.on)party.leave();
+  curUser=null;store.del(LASTKEY);resetSaveObj();
+  $("liUser").value="";$("liPass").value="";$("liErr").textContent="";
+  liBusy(false);show("s-login");
+};
+
 /* ═════════════ BOOT ═════════════ */
 resize();
 $("verTag").textContent="v"+VERSION;
-loadSave().then(function(){
-  COLS=16;ROWS=18;
-  renderChips();show("s-title");
-  $("pName").value=save.name||"";
-  if(!store.ok)$("tHint").textContent="progress won't save in this preview";
-  requestAnimationFrame(frame);
-});
+COLS=16;ROWS=18;
+store.get(LASTKEY).then(function(last){
+  if(last){
+    return getProfiles().then(function(profs){
+      var p=profs[String(last).toLowerCase()];
+      if(p){ curUser=p.u; return enterGame(); }
+      show("s-login");
+    });
+  }
+  show("s-login");
+}).then(function(){ requestAnimationFrame(frame); },
+        function(){ show("s-login");requestAnimationFrame(frame); });
 })();
 </script>
 </body>
