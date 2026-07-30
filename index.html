@@ -158,6 +158,14 @@ h1.logo .b{color:var(--bone);display:block;text-shadow:0 4px 0 #2b2440}
   font-family:inherit;font-size:9px;letter-spacing:.1em;padding:7px 9px;cursor:pointer;text-transform:uppercase}
 .mylv button:active{background:#2a2226}
 .mylv button.del{color:var(--meat)}
+.frrow{display:flex;align-items:center;gap:8px;background:var(--panel);
+  border:1px solid var(--line);padding:8px 10px;margin-bottom:5px;border-radius:3px}
+.frbtn{background:var(--panel2);border:1px solid var(--line);color:var(--ash);
+  font-family:inherit;font-size:9px;letter-spacing:.11em;padding:8px 11px;
+  cursor:pointer;text-transform:uppercase;flex:none;border-radius:2px}
+.frbtn:active{background:#2a2226}
+.frbtn.del{color:var(--meat)}
+.frbtn.go{color:#8ff5cf;border-color:#2f6f57}
 #inviteBox{display:none;position:absolute;left:50%;transform:translateX(-50%);
   top:calc(58px + env(safe-area-inset-top,0px));width:min(340px,92vw);z-index:12;
   background:#151019f2;border:1px solid var(--line);border-left:4px solid #39d353;
@@ -338,6 +346,7 @@ input.txt:focus{border-color:var(--meat)}
       <div class="note" id="frErr" style="color:var(--meat);min-height:12px;margin-bottom:6px"></div>
       <div id="frList"></div>
       <div class="note" id="frEmpty" style="display:none">No friends added yet. Type their username above.</div>
+      <div class="note" style="margin-top:10px">Invite them once you've made a party in Online.</div>
     </div>
   </div>
 
@@ -493,6 +502,9 @@ input.txt:focus{border-color:var(--meat)}
       </div>
       <div class="sect">Starting level <span class="stat" id="pLvName"></span></div>
       <div class="chips" id="pChips" style="margin-top:0"></div>
+      <div class="sect">Invite friends <span class="stat" id="invCount"></span></div>
+      <div id="invList"></div>
+      <div class="note" id="invEmpty" style="display:none;margin-bottom:4px">No friends yet — add them in the Multiplayer menu.</div>
       <button class="btn" id="pStart" style="margin-top:12px;border-left-color:var(--meat)">Start for everyone</button>
       </div>
       <div class="note" id="pWait" style="display:none;margin-top:10px;text-align:center;padding:14px">Waiting for the host to pick a mode and start…</div>
@@ -538,6 +550,7 @@ input.txt:focus{border-color:var(--meat)}
         <button class="btn" id="bResume">Resume</button>
         <button class="btn sub" id="bRetry">Restart level</button>
         <button class="btn sub" id="bPWard">Wardrobe</button>
+        <button class="btn sub" id="bPEdit" style="display:none">Edit this level</button>
         <button class="btn sub" id="bQuit">Quit to menu</button>
       </div>
     </div>
@@ -548,10 +561,18 @@ input.txt:focus{border-color:var(--meat)}
 (function(){
 "use strict";
 
-var VERSION="2.6.0";
+var VERSION="2.7.0";
 var CHANGELOG=[
-  {v:"2.6.0",d:"latest",items:[
-    "Damage bricks — the cracked orange blocks. The World 1 boss only takes damage when it smashes one of those, so the plain pillars just slow it down now",
+  {v:"2.7.0",d:"latest",items:[
+    "FIXED the friends system — accounts made before friends existed were never registered, so nobody could be found by name. Signing in now registers you automatically",
+    "Invite buttons moved into the host's party screen, next to the mode and level picker, where you actually need them",
+    "The full cutscene now only plays after the World 1 boss. Every other level ends with him stomping in and carrying her off inside the level itself, Meat Boy style",
+    "Damage zones are now an invisible overlay instead of a block — red dashed outline in the editor, nothing at all in game. You can paint one straight on top of a saw so it looks like the saw is what kills the boss",
+    "When the editor is unlocked, Edit this level appears in the pause menu too",
+    "The level map now reopens on the level you last played instead of jumping to the newest one"
+  ]},
+  {v:"2.6.0",items:[
+    "Damage zones — invisible markers you paint in the editor (red dashed outline there, nothing in-game). The World 1 boss only loses health when it smashes into one, and you can put them on top of a saw so it looks like the saw kills it",
     "Coins — 27 of them hidden across 9 levels, with a counter in the corner while you play",
     "4 secret items that only appear when you find coins: 1 coin gives the Coin Crown, 3 gives Star Eyes, 5 gives the Gold Halo, 8 gives Treasure meat",
     "Cutscene — a figure in a robot suit takes the girl. Full dramatic version after the World 1 boss, and a shorter swipe at the end of every World 2 level. Tap to skip",
@@ -694,7 +715,7 @@ var LEVELS=[
 {name:"PINCUSHION",map:["################","#              #","# G            #","######         #","#              #","#         -    #","#    ###########","#              #","#              #","###########    #","#              #","#              #","#P     -       #","################","#              #","#              #","################","################"]},
 {name:"MEAT GRINDER",map:["################","#              #","#              #","#            G$#","#       ########","#              #","#  ^           #","##########     #","#              #","#              #","#       ########","#              #","#      ^       #","##########     #","#              #","#P $     $     #","################","################"]},
 {name:"THE WRINGER",map:["################","#              #","#              #","#            G #","#     ##########","#              #","#    ^         #","#########      #","#              #","#              #","#      #########","#              #","#              #","##########     #","#              #","#P             #","################","################"]},
-{name:"THE CARVER",boss:"chase",map:["################################################################","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#         D   ^  D   ^  D   ^  D   ^  D   ^  D   ^  D          #","# P       D      D      D      D      D      D      D        G #","################################################################","################################################################"]},
+{name:"THE CARVER",boss:"chase",dmg:["10,8","17,8","24,8","31,8","38,8","45,8","52,8","10,9","17,9","24,9","31,9","38,9","45,9","52,9"],map:["################################################################","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#         #   ^  #   ^  #   ^  #   ^  #   ^  #   ^  #          #","# P       #      #      #      #      #      #      #        G #","################################################################","################################################################"]},
 {name:"ROT",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#              #","# #######      #","#              #","#              #","#      ccccccc #","#              #","#              #","# ccccccc      #","#              #","#P             #","################","################"]},
 {name:"GIVE WAY",map:["################","#              #","#              #","#           G$ #","#      ####### #","#              #","#              #","# ccccccc      #","#              #","#              #","#      ccccccc #","#              #","#   ^^^        #","# ccccccc      #","# $            #","#P          $  #","################","################"]},
 {name:"EYE OF THE BEAM",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#              #","# #######      #","#              #","#L             #","#      ####### #","#              #","#L             #","# #######      #","#              #","#P             #","################","################"]},
@@ -715,7 +736,8 @@ function applyLevelEdits(){
   for(var i=0;i<LEVELS.length;i++){
     var o=ov[i];
     if(o&&o.map&&o.map.length){
-      LEVELS[i]={name:o.name||LEVELS_BASE[i].name,map:o.map.slice()};
+      LEVELS[i]={name:o.name||LEVELS_BASE[i].name,map:o.map.slice(),
+        dmg:(o.dmg||LEVELS_BASE[i].dmg||[]).slice()};
       if(LEVELS_BASE[i].boss)LEVELS[i].boss=LEVELS_BASE[i].boss;
       if(LEVELS_BASE[i].sawSpeed)LEVELS[i].sawSpeed=LEVELS_BASE[i].sawSpeed;
     } else LEVELS[i]=JSON.parse(JSON.stringify(LEVELS_BASE[i]));
@@ -850,7 +872,7 @@ var store={
     return Promise.resolve(false); }
 };
 var save={unlocked:START.slice(),skins:[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}],
-  name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:"",levels:{},coins:0,friends:[]};
+  name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:"",levels:{},coins:0,friends:[],lastLevel:0};
 /* ── PROFILES ──
    Saves live in this browser's localStorage, one slot per username.
    The password is salted + SHA-256 hashed and only ever stored hashed.
@@ -919,7 +941,7 @@ function resetSaveObj(){
   save.unlocked=START.slice();
   save.skins=[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}];
   save.name="";save.cleared=[];save.best={};save.deaths=0;
-  save.coop=false;save.party=false;save.uid="";save.levels={};save.coins=0;save.friends=[];
+  save.coop=false;save.party=false;save.uid="";save.levels={};save.coins=0;save.friends=[];save.lastLevel=0;
   applyLevelEdits();
 }
 function loadSave(){
@@ -1077,7 +1099,9 @@ function remotePeerId(){ for(var id in party.ghosts)return id; return null; }
 function loadLevel(i){
   level=i;var L=curLevels()[i],sp=L.sawSpeed||1;
   ROWS=L.map.length;COLS=L.map[0].length;
-  grid=[];spikes=[];saws=[];crumbs=[];lasers=[];bricks=[];coins=[];boss=null;
+  grid=[];spikes=[];saws=[];crumbs=[];lasers=[];coins=[];boss=null;
+  dmgSet={};
+  if(L.dmg)for(var di=0;di<L.dmg.length;di++)dmgSet[L.dmg[di]]=1;
   drops.length=0;drips.length=0;pools.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=L.map[y].charAt(x); row.push(ch==="#"?1:0);
@@ -1088,7 +1112,6 @@ function loadLevel(i){
       else if(ch==="-")saws.push({hx:x*T+T/2,hy:y*T+T/2,x:0,y:0,ax:1,dir:1,spd:86*sp,rot:0});
       else if(ch==="|")saws.push({hx:x*T+T/2,hy:y*T+T/2,x:0,y:0,ax:2,dir:1,spd:98*sp,rot:0});
       else if(ch==="c"){ row[x]=1;crumbs.push({gx:x,gy:y,t:-1,gone:0}); }
-      else if(ch==="D"){ row[x]=1;bricks.push({gx:x,gy:y,hit:0}); }
       else if(ch==="$")coins.push({gx:x,gy:y,x:x*T+T/2,y:y*T+T/2,got:0,t:Math.random()*6.28});
       else if(ch==="L")lasers.push({gx:x,gy:y,x:x*T,y:y*T+T/2,ph:(x*7+y*11)%10/10,on:0});
       else if(ch==="R")lasers.push({gx:x,gy:y,x:x*T,y:y*T+T/2,ph:((x*7+y*11)%10/10+.5)%1,on:0}); }
@@ -1145,13 +1168,12 @@ function drawSpike(b,s){
 }
 
 /* ═════════════ CRUMBLE / LASER / BOSS ═════════════ */
-var crumbs=[],lasers=[],bricks=[],coins=[],boss=null,coinsGot=0;
+var crumbs=[],lasers=[],coins=[],boss=null,coinsGot=0,dmgSet={};
 var CRUMB_WARN=.42,CRUMB_BACK=2.6;
 function resetHazards(){
   var i;
   for(i=0;i<crumbs.length;i++){ var c=crumbs[i];c.t=-1;c.gone=0;grid[c.gy][c.gx]=1; }
   for(i=0;i<lasers.length;i++)lasers[i].on=0;
-  for(i=0;i<bricks.length;i++){ bricks[i].hit=0;grid[bricks[i].gy][bricks[i].gx]=1; }
   // coins already banked stay collected; un-banked ones come back
   for(i=0;i<coins.length;i++)coins[i].got=0;
   coinsGot=0;
@@ -1190,25 +1212,6 @@ function drawCoins(t){
     ctx.restore(); }
 }
 /* ── DAMAGE BRICKS ── */
-function drawBricks(t){
-  for(var i=0;i<bricks.length;i++){ var b=bricks[i];
-    if(!grid[b.gy][b.gx])continue;
-    var X=b.gx*T,Y=b.gy*T;
-    ctx.fillStyle="#5c3a1a";ctx.fillRect(X,Y,T,T);
-    ctx.fillStyle="#7a4f22";ctx.fillRect(X+1,Y+1,T-2,T/2-1);
-    ctx.strokeStyle="rgba(0,0,0,.5)";ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(X,Y+T/2);ctx.lineTo(X+T,Y+T/2);
-    ctx.moveTo(X+T/2,Y);ctx.lineTo(X+T/2,Y+T/2);
-    ctx.moveTo(X+T/4,Y+T/2);ctx.lineTo(X+T/4,Y+T);
-    ctx.moveTo(X+T*.75,Y+T/2);ctx.lineTo(X+T*.75,Y+T);ctx.stroke();
-    ctx.strokeStyle="rgba(255,120,60,"+(.35+Math.sin(t*4+i)*.2)+")";ctx.lineWidth=1.4;
-    ctx.strokeRect(X+.7,Y+.7,T-1.4,T-1.4);
-  }
-}
-function brickAt(gx,gy){
-  for(var i=0;i<bricks.length;i++)if(bricks[i].gx===gx&&bricks[i].gy===gy)return bricks[i];
-  return null;
-}
 function crumbStep(dt){
   for(var i=0;i<crumbs.length;i++){ var c=crumbs[i];
     if(c.gone>0){ c.gone-=dt;
@@ -1295,8 +1298,8 @@ function bossStep(dt){
     boss.spd=Math.min(205,boss.spd+dt*4);
     var gx=Math.floor((boss.x+16)/T),gy=Math.floor(boss.y/T);
     if(gx>=0&&gx<COLS&&gy>=0&&gy<ROWS&&solidAt(gx,gy)&&boss.smash<=0){
-      // only the cracked damage bricks actually hurt it
-      var br=brickAt(gx,gy)||brickAt(gx,gy+1);
+      // only marked damage zones actually hurt it (invisible during play)
+      var br=dmgSet[gx+","+gy]||dmgSet[gx+","+(gy+1)];
       grid[gy][gx]=0;if(gy+1<ROWS)grid[gy+1][gx]=0;
       bakeLevel();
       boss.smash=.55;boss.spd=Math.max(105,boss.spd-95);
@@ -1564,7 +1567,7 @@ function resetLevel(){
     if(remoteP())players[1].remote=true; }
   for(var i=0;i<saws.length;i++){ saws[i].x=saws[i].hx;saws[i].y=saws[i].hy;saws[i].dir=1; }
   drops.length=0;drips.length=0;chunks.length=0;prints.length=0;
-  winner=-1;vdeaths=[0,0];
+  winner=-1;vdeaths=[0,0];grab=null;
   bomb.holder=0;bomb.timer=BOMB_TIME;bomb.pass=0;
   var L=curLevels()[level];
   if(L&&L.boss){ restoreGrid();initBoss(L.boss);bakeLevel(); }
@@ -1575,7 +1578,7 @@ function restoreGrid(){
   var L=curLevels()[level];
   for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++){
     var ch=L.map[y].charAt(x);
-    grid[y][x]=(ch==="#"||ch==="c"||ch==="D")?1:0; }
+    grid[y][x]=(ch==="#"||ch==="c")?1:0; }
 }
 function updateSaws(dt){
   for(var i=0;i<saws.length;i++){ var s=saws[i];s.rot+=(s.ax?9:7)*dt;if(!s.ax)continue;
@@ -1748,12 +1751,18 @@ function reviveCoop(p){
   p.x=x;p.y=y;p.vx=other.vx*.4;p.vy=-160;p.dead=false;p.inv=.75;p.trail=[];
   spurt(x+PW/2,y+PH/2,14,120);sfx.wall();
 }
+/* full-screen cutscene is boss-only; everywhere else he snatches her in-level */
 function cutsceneFor(lv){
   if(mode==="custom")return null;
   var L=curLevels()[lv];
   if(L&&L.boss==="chase")return "boss";
-  if(worldOf(lv)===1&&!(L&&L.boss))return "swipe";
   return null;
+}
+function grabFor(lv){
+  if(mode==="custom"||online)return false;
+  var L=curLevels()[lv];
+  if(L&&L.boss)return false;
+  return worldOf(lv)===1;
 }
 function levelDone(){
   state="win";winT=0;flash=.6;
@@ -1761,6 +1770,7 @@ function levelDone(){
     attempts.push({t:players[i].trail,s:players[i].skin});
   for(i=0;i<22;i++)hearts.push({x:goal.x+rnd(-9,9),y:goal.y-8,t:0,life:rnd(.8,1.9),s:rnd(2.5,5)});
   sfx.win(); if(navigator.vibrate){try{navigator.vibrate([12,50,12]);}catch(e){}}
+  if(mode==="solo"){ save.lastLevel=level;queueSave(); }
   if(mode==="custom"){ showWin();return; }
   if(save.cleared.indexOf(level)<0)save.cleared.push(level);
   if(save.best[level]==null||levelTime<save.best[level])save.best[level]=levelTime;
@@ -1772,7 +1782,52 @@ function levelDone(){
   if(cs&&!online){ var lv=level;
     startCutscene(cs,function(){ state="win";$("hud").classList.remove("hide");level=lv;showWin(); });
     return; }
+  if(grabFor(level)){ grab={t:0,dur:2.0};state="grab";return; }
   showWin();
+}
+/* Meat-Boy style: the suit stomps in at the exit and carries her off */
+var grab=null;
+function grabStep(dt){
+  if(!grab)return;
+  grab.t+=dt;
+  if(!grab.land&&grab.t>.55){ grab.land=1;shakeT=.34;sfx.smash(); }
+  if(!grab.snatch&&grab.t>1.0){ grab.snatch=1;sfx.die("saw");
+    for(var i=0;i<10;i++)puffs.push({x:goal.x+rnd(-8,8),y:goal.y-6,r:rnd(1,2.6),t:0,life:rnd(.3,.7)}); }
+  if(grab.t>=grab.dur){ grab=null;state="win";showWin(); }
+}
+function drawGrab(t){
+  if(!grab)return;
+  var gx=goal.x,gy=goal.y-15,tt=grab.t;
+  // suit drops in from above-right, lands, grabs, then walks off right
+  var inK=Math.min(1,tt/.55);
+  var sx=gx+34-24*inK, sy=gy-46+46*inK;
+  if(tt>1.0){ var out=Math.min(1,(tt-1.0)/1.0);
+    sx=gx+10+34*out; sy=gy; }
+  var carried=tt>1.0;
+  // her: bobbing, then lifted and struggling
+  var hx=gx,hy=gy;
+  if(carried){ hx=sx-2;hy=sy-11; }
+  ctx.save();
+  ctx.globalAlpha=.4;ctx.fillStyle="#000";
+  ctx.beginPath();ctx.ellipse(sx,gy+15,8,2,0,0,6.283);ctx.fill();
+  ctx.restore();
+  // girl (the exit sprite)
+  ctx.save();ctx.translate(hx,hy);
+  if(carried)ctx.rotate(Math.sin(t*15)*.2);
+  ctx.scale(.62,.62);
+  drawBoy(ctx,-PW/2,-PH/2,{c:byId(COLORS,"pink"),h:"bow",s:"nones",e:carried?"wide":"sad",
+    no:"button",mo:carried?"open":"frown",r:"nonee",hc:null,sc:null,ec:"#160c12",nc:null,mc:null,rc:null},
+    0,-1,t,1,carried);
+  ctx.restore();
+  // the suit, small enough to read at level scale
+  ctx.save();ctx.translate(sx,sy);ctx.scale(.58,.58);
+  drawSuit(ctx,0,0,1,carried,t);
+  ctx.restore();
+  if(tt>1.0){
+    ctx.save();ctx.globalAlpha=Math.max(0,1-(tt-1.0)/.9);
+    ctx.fillStyle="#e4d8c4";ctx.font="700 6px ui-monospace,monospace";ctx.textAlign="center";
+    ctx.fillText("HEY!",gx,gy-22);ctx.restore();
+  }
 }
 
 /* ═════════════ ART ═════════════ */
@@ -2305,8 +2360,7 @@ function render(t){
     ctx.beginPath();ctx.ellipse(pr.x,pr.y,pr.r,pr.r*.4,0,0,6.283);ctx.fill(); }
   ctx.globalAlpha=1;
 
-  drawGoal(t);
-  if(bricks.length)drawBricks(t);
+  if(grab)drawGrab(t); else drawGoal(t);
   if(coins.length)drawCoins(t);
   if(crumbs.length)drawCrumbs(t);
   if(lasers.length)drawLasers(t);
@@ -2764,18 +2818,21 @@ function updateHud(){
 }
 function startGame(m,lv,isOnline){
   mode=m;online=!!isOnline;totalTime=0;totalDeaths=0;
+  if(m==="solo"){ save.lastLevel=lv|0;queueSave(); }
   if(m==="coop"&&!online){save.coop=true;queueSave();checkUnlocks({});}
   input[0].edge=input[1].edge=false;
   show(null);$("hud").classList.remove("hide");
   loadLevel(lv||0);buildZones();audioOn();
 }
 function quitToMenu(){
+  grab=null;cut=null;
   if(edTesting){ edTesting=false;applyLevelEdits(); }
   if(party.on){ party.leave();toast("Left the party"); }
   online=false;
   state="menu";$("hud").classList.add("hide");show("s-title");renderChips(); }
 function togglePause(){
-  if(state==="play"||state==="dead"){ state="pause";show("s-pause"); }
+  if(state==="play"||state==="dead"){ state="pause";show("s-pause");
+    $("bPEdit").style.display=(editUnlocked&&mode==="solo")?"":"none"; }
   else if(state==="pause"){ show(null);
     var alive=0;for(var i=0;i<players.length;i++)if(!players[i].dead)alive++;
     state=alive?"play":"dead"; }
@@ -2952,12 +3009,13 @@ var TOOLS=[
   {ch:"c",n:"Crumble"},
   {ch:"L",n:"Laser"},
   {ch:"R",n:"Laser 2"},
-  {ch:"D",n:"Dmg Brick"},
+  {ch:"D",n:"Dmg Zone"},
   {ch:"$",n:"Coin"},
   {ch:"P",n:"Spawn"},
   {ch:"G",n:"Exit"}
 ];
-var edIdx=0,edGrid=[],edR=0,edC=0,edTool="#",edPainting=false,edCv=null,edCtx=null,edTesting=false;
+var edPaintErase=false;
+var edIdx=0,edGrid=[],edR=0,edC=0,edTool="#",edPainting=false,edCv=null,edCtx=null,edTesting=false,edDmg={};
 var edVW=0,edVH=0,edCell=0,edOX=0,edOY=0;
 
 function openEditor(i){
@@ -2965,8 +3023,10 @@ function openEditor(i){
   var L=LEVELS[i];
   edR=L.map.length;edC=L.map[0].length;
   edGrid=L.map.map(function(r){return r.split("");});
+  edDmg={};
+  if(L.dmg)for(var di=0;di<L.dmg.length;di++)edDmg[L.dmg[di]]=1;
   $("edName").value=L.name;
-  $("edMsg").textContent=isEdited(i)?"your version · Undo all puts the original back":"tap the grid to place blocks";
+  $("edMsg").textContent=isEdited(i)?"your version · Undo all puts the original back":"Dmg Zone marks where the boss gets hurt — invisible in play";
   edTool="#";
   show("s-edit");
   edCv=$("edCanvas");edCtx=edCv.getContext("2d");
@@ -3037,15 +3097,9 @@ function drawCellArt(c,ch,X,Y,S,icon){
     c.beginPath();c.arc(X+S*.68,Y+S/2,S*.14,0,6.283);c.fill();
     c.fillStyle="rgba(255,120,140,.5)";c.fillRect(X+S*.82,Y+S*.45,S*.18,S*.1);
   } else if(ch==="D"){
-    c.fillStyle="#5c3a1a";c.fillRect(X,Y,S,S);
-    c.fillStyle="#7a4f22";c.fillRect(X+S*.06,Y+S*.06,S*.88,S*.44);
-    c.strokeStyle="rgba(0,0,0,.5)";c.lineWidth=S*.05;
-    c.beginPath();c.moveTo(X,Y+S/2);c.lineTo(X+S,Y+S/2);
-    c.moveTo(X+S/2,Y);c.lineTo(X+S/2,Y+S/2);
-    c.moveTo(X+S/4,Y+S/2);c.lineTo(X+S/4,Y+S);
-    c.moveTo(X+S*.75,Y+S/2);c.lineTo(X+S*.75,Y+S);c.stroke();
-    c.strokeStyle="rgba(255,120,60,.6)";c.lineWidth=S*.08;
-    c.strokeRect(X+S*.05,Y+S*.05,S*.9,S*.9);
+    c.fillStyle="rgba(211,19,43,.18)";c.fillRect(X,Y,S,S);
+    c.strokeStyle="#ff2d45";c.lineWidth=S*.11;c.setLineDash([S*.19,S*.13]);
+    c.strokeRect(X+S*.1,Y+S*.1,S*.8,S*.8);c.setLineDash([]);
   } else if(ch==="$"){
     var ccx=X+S/2,ccy=Y+S/2;
     c.fillStyle="#c48c00";c.beginPath();c.arc(ccx,ccy,S*.3,0,6.283);c.fill();
@@ -3084,6 +3138,12 @@ function drawEditor(){
     var ch=edGrid[y][x];
     if(ch!==" ")drawCellArt(c,ch,x*edCell,y*edCell,edCell,false);
   }
+  for(var k in edDmg){
+    var pp=k.split(","),dx=+pp[0]*edCell,dy=+pp[1]*edCell;
+    c.fillStyle="rgba(211,19,43,.16)";c.fillRect(dx,dy,edCell,edCell);
+    c.strokeStyle="#ff2d45";c.lineWidth=2;c.setLineDash([3,2]);
+    c.strokeRect(dx+1.5,dy+1.5,edCell-3,edCell-3);c.setLineDash([]);
+  }
   c.strokeStyle="rgba(255,255,255,.055)";c.lineWidth=1;
   for(var gx=0;gx<=edC;gx++){c.beginPath();c.moveTo(gx*edCell,0);c.lineTo(gx*edCell,edCell*edR);c.stroke();}
   for(var gy=0;gy<=edR;gy++){c.beginPath();c.moveTo(0,gy*edCell);c.lineTo(edCell*edC,gy*edCell);c.stroke();}
@@ -3098,6 +3158,11 @@ function edCellAt(px,py){
 }
 function edPaint(px,py){
   var p=edCellAt(px,py);if(!p)return;
+  if(edTool==="D"){                       // overlay: sits on top of whatever is there
+    var k=p.x+","+p.y;
+    if(edPaintErase)delete edDmg[k]; else edDmg[k]=1;
+    return;
+  }
   var cur=edGrid[p.y][p.x];
   if(cur===edTool)return;
   // only one spawn and one exit
@@ -3109,6 +3174,7 @@ function edPaint(px,py){
   updateEdInfo();
 }
 function edMapOut(){ return edGrid.map(function(r){return r.join("");}); }
+function edDmgOut(){ var a=[];for(var k in edDmg)a.push(k);return a; }
 function edValidate(){
   var counts=updateEdInfo();
   if(counts.p!==1)return {ok:false,msg:"You need exactly one spawn (P)."};
@@ -3122,7 +3188,7 @@ function solveLevel(map,budget){
   var grid=[],spawn=null,goal=null,spikes=[],saws=[];
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=map[y].charAt(x);
-      row.push(ch==="#"||ch==="c"||ch==="D"?1:0);
+      row.push(ch==="#"||ch==="c"?1:0);
       if(ch==="P")spawn={x:x*T+(T-PW)/2,y:y*T+(T-PH)};
       if(ch==="G")goal={x:x*T+T/2,y:y*T+T};
       if("^v<>".indexOf(ch)>=0)spikes.push(mkSpike(ch,x,y));
@@ -3242,7 +3308,8 @@ function nodePos(nd){
   return {x:padX+nd.fx*(mapW-padX*2),y:padY+nd.fy*(mapH-padY*2)};
 }
 function openLevelMap(){
-  mapSel=Math.min(maxOpenLevel(),LEVELS.length-1);
+  var last=(typeof save.lastLevel==="number")?save.lastLevel:0;
+  mapSel=Math.min(Math.max(0,Math.max(last,0)),Math.min(maxOpenLevel(),LEVELS.length-1));
   mapPage=worldOf(mapSel);
   mapNodes=buildMapNodes(mapPage);
   show("s-levels");
@@ -3554,6 +3621,7 @@ function renderParty(){
   $("pHostArea").style.display=party.leader?"":"none";
   $("pWait").style.display=party.leader?"none":"";
   if(party.leader&&$("pChips")&&!$("pChips").childNodes.length)refreshPartyChips();
+  if(party.leader)renderInviteList();
   $("pCodeBig").textContent=party.code;
   var ids=Object.keys(party.members),list=$("pList"),pd=save.deaths,pc=save.cleared.length;
   list.innerHTML="";
@@ -3567,10 +3635,22 @@ function renderParty(){
   $("pDeaths").textContent=pd;
   $("pClears").textContent=pc;
   if($("s-multi")&&$("s-multi").className.indexOf("hide")<0)renderFriends();
+  if(party.leader&&$("invList")&&!$("invList").childNodes.length)renderInviteList();
 }
 
 /* ═════════════ FRIENDS & INVITES ═════════════ */
 var frIdx=null,inboxTimer=null,seenInvite=0;
+function registerName(){
+  if(!curUser||!cloudId)return Promise.resolve(false);
+  return cloudGet(CLOUD_INDEX).then(function(idx){
+    if(!idx)return false;
+    if(!idx.names)idx.names={};
+    var k=curUser.toLowerCase();
+    if(idx.names[k]===cloudId)return true;      // already correct
+    idx.names[k]=cloudId;
+    return cloudPut(CLOUD_INDEX,idx).then(function(ok){ if(ok)frIdx=idx; return ok; });
+  });
+}
 function loadIndex(){
   return cloudGet(CLOUD_INDEX).then(function(idx){ frIdx=idx;return idx; });
 }
@@ -3585,28 +3665,43 @@ function renderFriends(){
   $("frCount").textContent=fr.length?("("+fr.length+")"):"";
   $("frEmpty").style.display=fr.length?"none":"";
   fr.forEach(function(nm){
-    var row=document.createElement("div");row.className="mylv";
-    var info=document.createElement("div");info.className="mn";
-    info.textContent=nm;
-    var sub=document.createElement("div");sub.className="ms";
-    sub.textContent=party.on&&party.leader?"in your party? invite them":"make a party to invite";
-    var wrap=document.createElement("div");wrap.style.flex="1";
-    wrap.appendChild(info);wrap.appendChild(sub);
+    var row=document.createElement("div");row.className="frrow";
+    var wrap=document.createElement("div");wrap.style.flex="1";wrap.style.minWidth="0";
+    var a=document.createElement("div");a.className="mn";a.textContent=nm;
+    wrap.appendChild(a);
     row.appendChild(wrap);
-    var inv=document.createElement("button");
-    inv.textContent="Invite";
-    inv.onclick=function(){ inviteFriend(nm,inv); };
-    if(!(party.on&&party.leader)){ inv.disabled=true;inv.style.opacity=".4"; }
-    row.appendChild(inv);
     var del=document.createElement("button");
-    del.className="del";del.textContent="Remove";
+    del.className="frbtn del";del.textContent="Remove";
     del.onclick=function(){
       save.friends=(save.friends||[]).filter(function(x){return x!==nm;});
-      queueSave();sfx.click();renderFriends(); };
+      queueSave();sfx.click();renderFriends();renderInviteList(); };
     row.appendChild(del);
     list.appendChild(row);
   });
 }
+/* host-side list with the Invite buttons */
+function renderInviteList(){
+  var list=$("invList");if(!list)return;
+  var fr=(save.friends||[]);
+  $("invCount").textContent=fr.length?("("+fr.length+")"):"";
+  $("invEmpty").style.display=fr.length?"none":"";
+  list.innerHTML="";
+  fr.forEach(function(nm){
+    var row=document.createElement("div");row.className="frrow";
+    var wrap=document.createElement("div");wrap.style.flex="1";wrap.style.minWidth="0";
+    var a=document.createElement("div");a.className="mn";a.textContent=nm;
+    var b=document.createElement("div");b.className="ms";
+    b.textContent=inviteState[nm]||"not invited";
+    wrap.appendChild(a);wrap.appendChild(b);
+    row.appendChild(wrap);
+    var inv=document.createElement("button");
+    inv.className="frbtn go";inv.textContent="Invite";
+    inv.onclick=function(){ inviteFriend(nm,inv); };
+    row.appendChild(inv);
+    list.appendChild(row);
+  });
+}
+var inviteState={};
 $("bAddFr").onclick=function(){
   var nm=normUser($("frName").value);
   if(!nm){ $("frErr").textContent="Type a username first.";return; }
@@ -3638,7 +3733,9 @@ function inviteFriend(nm,btn){
       if(doc.inbox.length>8)doc.inbox=doc.inbox.slice(-8);
       return cloudPut(b,doc).then(function(ok){
         toast(ok?("Invite sent to "+nm):"Invite failed");
-        if(btn){btn.textContent="Invite";btn.disabled=false;} });
+        inviteState[nm]=ok?"invited just now":"invite failed";
+        if(btn){btn.textContent="Invite";btn.disabled=false;}
+        renderInviteList(); });
     });
   });
 }
@@ -3793,7 +3890,7 @@ $("edTest").onclick=function(){
   edTesting=true;
   var m=edMapOut();
   var keep=LEVELS[edIdx];
-  LEVELS[edIdx]={name:$("edName").value||keep.name,map:m};
+  LEVELS[edIdx]={name:$("edName").value||keep.name,map:m,dmg:edDmgOut()};
   if(keep.boss)LEVELS[edIdx].boss=keep.boss;
   if(keep.sawSpeed)LEVELS[edIdx].sawSpeed=keep.sawSpeed;
   startGame("solo",edIdx);
@@ -3803,7 +3900,7 @@ $("edSave").onclick=function(){
   if(!v.ok){ $("edMsg").textContent=v.msg;sfx.snap();return; }
   sfx.click();
   if(!save.levels)save.levels={};
-  save.levels[edIdx]={name:($("edName").value||LEVELS_BASE[edIdx].name).slice(0,18),map:edMapOut()};
+  save.levels[edIdx]={name:($("edName").value||LEVELS_BASE[edIdx].name).slice(0,18),map:edMapOut(),dmg:edDmgOut()};
   queueSave();applyLevelEdits();
   $("edMsg").textContent="Saved — this is your level now";
   toast("Level saved");
@@ -3820,7 +3917,10 @@ $("edReset").onclick=function(){
   function pos(e){ var r=cv.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}; }
   cv.addEventListener("pointerdown",function(e){
     edPainting=true;try{cv.setPointerCapture(e.pointerId);}catch(err){}
-    var p=pos(e);edPaint(p.x,p.y);e.preventDefault(); });
+    var p=pos(e);
+    if(edTool==="D"){ var cc=edCellAt(p.x,p.y);
+      edPaintErase=!!(cc&&edDmg[cc.x+","+cc.y]); }
+    edPaint(p.x,p.y);e.preventDefault(); });
   cv.addEventListener("pointermove",function(e){
     if(!edPainting)return;var p=pos(e);edPaint(p.x,p.y); });
   cv.addEventListener("pointerup",function(){edPainting=false;});
@@ -3910,6 +4010,8 @@ $("bRetry").onclick=function(){
   if(online&&party.on&&party.leader)party.sendRestart();
   show(null);resetLevel();updateHud(); };
 $("bPWard").onclick=function(){sfx.click();show("s-ward");renderWard();};
+$("bPEdit").onclick=function(){ if(!editUnlocked)return; sfx.click();
+  state="menu";$("hud").classList.add("hide");openEditor(level); };
 $("bQuit").onclick=function(){sfx.click();quitToMenu();};
 $("bPause").onclick=function(){togglePause();};
 $("bRestart").onclick=function(){ if(state==="play")
@@ -3921,6 +4023,7 @@ function step(dt){
   if(introT>0)introT-=dt;
   var i;
   if(state==="cut"){ cutStep(dt);return; }
+  if(state==="grab"){ grabStep(dt);tick++;return; }
   if(state==="play"){
     levelTime+=dt;totalTime+=dt;
     updateSaws(dt);
@@ -3986,7 +4089,7 @@ function enterGame(){
     $("bSignOut").textContent=curUser?("Sign out ("+curUser+")"):"Sign in to save";
     if(!store.ok)$("tHint").textContent="this browser is blocking saves — progress won't stick";
     else if(!curUser)$("tHint").textContent="playing without saving · tap a number to jump to a level";
-    if(curUser)startInbox();
+    if(curUser){ startInbox();registerName(); }
   });
 }
 function liBusy(b){ $("bSignIn").disabled=b;$("bSignUp").disabled=b;$("bGuest").disabled=b; }
