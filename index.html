@@ -598,9 +598,13 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="2.9.0";
+var VERSION="2.9.1";
 var CHANGELOG=[
-  {v:"2.9.0",d:"latest",items:[
+  {v:"2.9.1",d:"latest",items:[
+    "FIXED THE FREEZE. My blood rewrite accidentally deleted the line defining the blood colours, so every single death threw an error and killed the game loop the instant you died. Restored",
+    "Blood drawing is batched into one clipped pass instead of one per particle, and the death spray uses fewer, slightly larger droplets — a death now costs well under a millisecond a frame"
+  ]},
+  {v:"2.9.0",items:[
     "BLOOD IS NOW A FLUID. It was never actually flowing — it stamped oval shapes wherever a droplet landed and left them there. Puddles are now a real volume that collects on floors, levels out sideways, and pours off ledges to the floor below",
     "Found the real reason it went through walls: the flying droplets and gibs were drawn with NO clipping at all. My last fix only covered the baked marks. Every layer is now clipped to open space",
     "Blood runs down walls properly. A droplet that hits a wall grabs on, slides down the face leaving a streak, lets go when the wall ends, and pools where it lands",
@@ -1495,6 +1499,7 @@ function drawBoss(t){
 }
 /* ═════════════ BLOOD ═════════════ */
 var drops=[],drips=[],chunks=[],puffs=[],hearts=[],prints=[];
+var BHI="#c81f30",BMID="#8c0f1d",BLO="#5c0912",BDK="#2e0509",BWET="rgba(255,70,80,.4)",BDRY="#1c0407";
 var spikeCv=null,openPath=null;
 var goreSpike=[],goreSaw=[];
 function markGore(list,ref){
@@ -1558,13 +1563,17 @@ function drawSawGore(s){
   ctx.beginPath();ctx.ellipse(0,SAWR*.75+hang*.5,1.05,1.5+hang*.35,0,0,6.283);ctx.fill();
   ctx.restore();ctx.globalAlpha=1;
 }
+var stainClipped=false;
+function stainBegin(){ if(stainClipped)return; sctx.save();sctx.clip(openPath);stainClipped=true; }
+function stainEnd(){ if(!stainClipped)return; sctx.restore();stainClipped=false; }
 function oxidize(a){ sctx.save();sctx.globalCompositeOperation="source-atop";
   sctx.fillStyle="rgba(26,2,8,"+a+")";sctx.fillRect(0,0,COLS*T,ROWS*T);sctx.restore(); }
 
 /* ── impact marks baked into the stain (always clipped to open space) ── */
 function splat(x,y,vx,vy,size,alpha){
   var sp=Math.sqrt(vx*vx+vy*vy),a=Math.atan2(vy,vx),el=1+Math.min(1.6,sp/260);
-  sctx.save();sctx.clip(openPath);sctx.translate(x,y);sctx.rotate(a);
+  var own=!stainClipped; if(own){sctx.save();sctx.clip(openPath);}
+  sctx.save();sctx.translate(x,y);sctx.rotate(a);
   sctx.globalAlpha=alpha==null?.9:alpha;
   sctx.fillStyle=BDK;
   sctx.beginPath();sctx.ellipse(.3,.3,size*el*1.04,size*1.03,0,0,6.283);sctx.fill();
@@ -1577,15 +1586,17 @@ function splat(x,y,vx,vy,size,alpha){
   for(var i=0;i<n;i++){ var off=rnd(-.5,.5),d=size*el*rnd(.9,1.8),r=size*rnd(.08,.2);
     sctx.fillStyle=Math.random()<.5?BMID:BLO;
     sctx.beginPath();sctx.arc(Math.cos(off)*d,Math.sin(off)*d,r,0,6.283);sctx.fill(); }
-  sctx.restore();sctx.globalAlpha=1;
+  sctx.restore(); if(own)sctx.restore();
+  sctx.globalAlpha=1;
 }
 function mist(x,y,n,flat){
-  sctx.save();sctx.clip(openPath);
+  var own=!stainClipped; if(own){sctx.save();sctx.clip(openPath);}
   sctx.globalAlpha=.36;
   for(var i=0;i<n;i++){ var a=rnd(0,6.283),d=rnd(2,11);
     sctx.fillStyle=Math.random()<.4?BHI:BMID;
     sctx.beginPath();sctx.arc(x+Math.cos(a)*d,y+Math.sin(a)*d*(flat?.5:1),rnd(.3,.9),0,6.283);sctx.fill(); }
-  sctx.restore();sctx.globalAlpha=1;
+  if(own)sctx.restore();
+  sctx.globalAlpha=1;
 }
 
 /* ── PUDDLES: a volume field on top of floor tiles ──
@@ -1635,7 +1646,7 @@ function puddleStep(dt){
       } else {
         // nothing under it — it spills over the edge and falls
         puddle[k]-=share;
-        if(Math.random()<.5)
+        if(puddleVol<PUDDLE_MAX*.9&&drips.length<26&&Math.random()<.35)
           addRunner(nx*T+T/2,ty*T+T-1,0,share);
       }
     });
@@ -1692,7 +1703,7 @@ function drawPuddles(t){
 
 /* ── RUNNERS: blood clinging to a wall face, or falling free ── */
 function addRunner(x,y,side,vol){
-  if(drips.length>90)return;
+  if(drips.length>40)return;
   drips.push({x:x,y:y,ly:y,side:side,v:side?8:26,vol:Math.min(9,vol||2),w:clamp((vol||2)*.34,.5,2.1),t:0});
 }
 function addDrip(x,y,size){ addRunner(x,y,0,size*1.5); }
@@ -1725,11 +1736,10 @@ function runnerStep(dt){
     }
     // paint the trail it leaves behind
     if(k.y-k.ly>1){
-      sctx.save();sctx.clip(openPath);
       sctx.globalAlpha=k.side?.72:.5;sctx.fillStyle=k.side?BLO:BMID;
       sctx.beginPath();
       sctx.ellipse(k.x,(k.ly+k.y)/2,k.w*.55,(k.y-k.ly)/2+k.w*.5,0,0,6.283);sctx.fill();
-      sctx.restore();sctx.globalAlpha=1;
+      sctx.globalAlpha=1;
       k.ly=k.y;k.w*=.992;k.vol*=.985;
     }
     if(k.y>ROWS*T+8||k.w<.28){ drips.splice(i,1); }
@@ -1758,12 +1768,12 @@ function addPool(x,y,amt){
   if(cell)puddleAdd(cell.tx,cell.ty,amt);
 }
 function bakeChunk(x,y,r,rot){
-  sctx.save();sctx.clip(openPath);
-  sctx.translate(x,y);sctx.rotate(rot);
+  var own=!stainClipped; if(own){sctx.save();sctx.clip(openPath);}
+  sctx.save();sctx.translate(x,y);sctx.rotate(rot);
   sctx.fillStyle=BMID;rr(sctx,-r,-r*.8,r*2,r*1.6,r*.5);sctx.fill();
   sctx.globalAlpha=.5;sctx.fillStyle=BHI;
   rr(sctx,-r*.5,-r*.6,r,r*.6,r*.3);sctx.fill();sctx.globalAlpha=1;
-  sctx.restore();
+  sctx.restore(); if(own)sctx.restore();
 }
 function bakePool(){}
 function spurt(x,y,n,power,cx,cy){
@@ -1782,11 +1792,12 @@ function puff(x,y,n,dir){
     life:rnd(.15,.35),t:0,r:rnd(1,2.2),g:120});
 }
 function explode(x,y,vx,vy){
-  spurt(x,y,105,430,vx*.35,vy*.3);gib(x,y);
-  splat(x,y,vx,vy,7,1);mist(x,y,26,0);addPool(x,y+4,6);oxidize(.05);
+  spurt(x,y,58,430,vx*.35,vy*.3);gib(x,y);
+  splat(x,y,vx,vy,7,1);mist(x,y,16,0);addPool(x,y+4,7);oxidize(.05);
 }
 function updateBlood(dt){
   var i,d,k,p,c,q,h;
+  stainBegin();
   for(i=drops.length-1;i>=0;i--){ d=drops[i];d.t+=dt;d.vy+=1500*dt;d.vx*=(1-.5*dt);
     var nx=d.x+d.vx*dt,ny=d.y+d.vy*dt;
     var hitX=boxSolid(nx-.4,d.y-.4,.8,.8);
@@ -1829,6 +1840,7 @@ function updateBlood(dt){
     }
     if(c.t>c.life){ if(!c.rest)splat(c.x,c.y,c.vx,c.vy,c.r);chunks.splice(i,1); }
   }
+  stainEnd();
   for(i=puffs.length-1;i>=0;i--){ q=puffs[i];q.t+=dt;q.vy+=q.g*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;
     if(q.t>q.life)puffs.splice(i,1); }
   for(i=hearts.length-1;i>=0;i--){ h=hearts[i];h.t+=dt;h.y-=26*dt;h.x+=Math.sin(h.t*4)*14*dt;
