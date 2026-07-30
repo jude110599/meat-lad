@@ -598,9 +598,14 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="2.7.0";
+var VERSION="2.7.1";
 var CHANGELOG=[
-  {v:"2.7.0",d:"latest",items:[
+  {v:"2.7.1",d:"latest",items:[
+    "FIXED: damage zones did nothing. The damage only counted if the boss smashed a solid block in that cell — and a saw is not solid, so a zone placed on a saw could never fire",
+    "Zones now hurt the boss the moment it touches one, whether that cell holds a block, a saw, or nothing at all. Put one over a saw and the saw appears to do the killing",
+    "One hit per zone with a short cooldown, so a single zone cannot drain the whole health bar"
+  ]},
+  {v:"2.7.0",items:[
     "FIXED the friends system — accounts made before friends existed were never registered, so nobody could be found by name. Signing in now registers you automatically",
     "Invite buttons moved into the host's party screen, next to the mode and level picker, where you actually need them",
     "The full cutscene now only plays after the World 1 boss. Every other level ends with him stomping in and carrying her off inside the level itself, Meat Boy style",
@@ -1315,10 +1320,32 @@ function drawCrumbs(t){
 /* ── BOSS ── */
 function initBoss(kind){
   if(kind==="chase"){
-    boss={kind:"chase",hp:3,x:spawn.x-125,y:spawn.y-6,vy:0,spd:118,rot:0,hit:0,dead:0,t:0,smash:0};
+    boss={kind:"chase",hp:3,x:spawn.x-125,y:spawn.y-6,vy:0,spd:118,rot:0,hit:0,dead:0,t:0,smash:0,hurtCd:0};
   } else {
-    boss={kind:"slam",hp:3,x:COLS*T/2,y:34,vx:74,vy:0,phase:"hover",tmr:1.6,rot:0,hit:0,dead:0,t:0};
+    boss={kind:"slam",hp:3,x:COLS*T/2,y:34,vx:74,vy:0,phase:"hover",tmr:1.6,rot:0,hit:0,dead:0,t:0,hurtCd:0};
   }
+}
+/* A damage zone hurts the boss the moment it touches one — it does not matter
+   whether the cell holds a block, a saw, or nothing at all. */
+function bossZoneHurt(dt){
+  if(!boss||boss.dead>0)return;
+  if(boss.hurtCd>0){ boss.hurtCd-=dt; return; }
+  var R=boss.kind==="chase"?15:17;
+  var x0=Math.floor((boss.x-R)/T),x1=Math.floor((boss.x+R)/T);
+  var y0=Math.floor((boss.y-R)/T),y1=Math.floor((boss.y+R)/T);
+  var hitX=-1,hitY=-1;
+  for(var zx=x0;zx<=x1&&hitX<0;zx++)
+    for(var zy=y0;zy<=y1;zy++)
+      if(dmgSet[zx+","+zy]){ hitX=zx;hitY=zy;break; }
+  if(hitX<0)return;
+  boss.hp--;boss.hit=.4;boss.hurtCd=1.0;flash=.4;shakeT=.45;
+  sfx.smash();
+  for(var d=0;d<14;d++)hearts.push({x:hitX*T+rnd(0,T),y:hitY*T+rnd(0,T),
+    t:0,life:rnd(.5,1.2),s:rnd(2,4)});
+  if(boss.kind==="chase")boss.spd=Math.max(105,boss.spd-70);
+  if(boss.hp<=0){ boss.dead=1.5;shakeT=.75;flash=.65;sfx.win();
+    for(var h=0;h<26;h++)hearts.push({x:boss.x+rnd(-14,14),y:boss.y+rnd(-14,14),
+      t:0,life:rnd(.7,1.7),s:rnd(2.5,5)}); }
 }
 function bossStep(dt){
   if(!boss)return;
@@ -1329,25 +1356,20 @@ function bossStep(dt){
     return; }
   var alive=null,i;
   for(i=0;i<players.length;i++)if(players[i]&&!players[i].dead)alive=players[i];
+  bossZoneHurt(dt);
+  if(!boss)return;
   if(boss.kind==="chase"){
     boss.rot+=dt*7;
     boss.x+=boss.spd*dt;
     boss.spd=Math.min(205,boss.spd+dt*4);
     var gx=Math.floor((boss.x+16)/T),gy=Math.floor(boss.y/T);
     if(gx>=0&&gx<COLS&&gy>=0&&gy<ROWS&&solidAt(gx,gy)&&boss.smash<=0){
-      // only marked damage zones actually hurt it (invisible during play)
-      var br=dmgSet[gx+","+gy]||dmgSet[gx+","+(gy+1)];
+      // plain blocks just get smashed and slow it down; damage comes from zones
       grid[gy][gx]=0;if(gy+1<ROWS)grid[gy+1][gx]=0;
       bakeLevel();
       boss.smash=.55;boss.spd=Math.max(105,boss.spd-95);
       shakeT=.4;sfx.smash();
       for(var d=0;d<16;d++)puffs.push({x:gx*T+rnd(0,T),y:gy*T+rnd(0,T),r:rnd(1,3),t:0,life:rnd(.4,1)});
-      if(br){
-        boss.hp--;boss.hit=.35;flash=.4;
-        for(var hb=0;hb<12;hb++)hearts.push({x:gx*T+rnd(0,T),y:gy*T+rnd(0,T),t:0,life:rnd(.5,1.1),s:rnd(2,4)});
-        if(boss.hp<=0){ boss.dead=1.5;shakeT=.7;flash=.6;sfx.win();
-          for(var h=0;h<26;h++)hearts.push({x:boss.x+rnd(-14,14),y:boss.y+rnd(-14,14),t:0,life:rnd(.7,1.7),s:rnd(2.5,5)}); }
-      }
     }
     if(boss.smash>0)boss.smash-=dt;
     for(i=0;i<players.length;i++){ var p=players[i];
