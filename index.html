@@ -598,9 +598,15 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="2.9.2";
+var VERSION="2.9.3";
 var CHANGELOG=[
-  {v:"2.9.2",d:"latest",items:[
+  {v:"2.9.3",d:"latest",items:[
+    "BLOOD IS NO LONGER A LIQUID SIM. Standing in a puddle made it multiply and creep outwards — puddles were a simulated volume that levelled out sideways and poured off ledges, and the spill spawned a drip that settled and added the same volume straight back. It recirculated forever. Gone",
+    "Blood now splatters and stays put. It sprays wide on death, marks whatever it hits, and never moves again once it lands",
+    "Blood that hits a wall clings to the face and runs down it, and where a run reaches the ground it leaves a pool on the floor",
+    "Pools are painted once as an irregular blobby mark instead of an animated oval, and are capped per level so a long session can't pile up"
+  ]},
+  {v:"2.9.2",items:[
     "FOUND THE REAL FREEZE — the one where you're stuck in midair right before the blood shows up. It was never an error, which is why it kept surviving my fixes. The game measures how long each frame took, and on some devices that measurement can come back as a negative number. That negative number was being subtracted from the hit-pause timer, so instead of counting down to zero the pause grew, and grew, forever. The game kept drawing but stopped updating: you hang in the air, the blood never moves",
     "The frame timer is now clamped so a bad or backwards clock reading can't stall the game, and the leftover-time counter can't run away either",
     "Added a watchdog: if you're ever dead for more than 3 seconds without respawning, the level resets itself. Dying can't be a dead end again, whatever goes wrong",
@@ -1171,7 +1177,7 @@ function loadLevel(i){
   dmgSet={};
   if(L.dmg)for(var di=0;di<L.dmg.length;di++)dmgSet[L.dmg[di]]=1;
   drops.length=0;drips.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
-  puddle={};puddleVol=0;
+  wetCells={};poolCount=0;
   goreSpike.length=0;goreSaw.length=0;
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=L.map[y].charAt(x); row.push(ch==="#"?1:0);
@@ -1605,21 +1611,16 @@ function mist(x,y,n,flat){
   sctx.globalAlpha=1;
 }
 
-/* ── PUDDLES: a volume field on top of floor tiles ──
-   Blood collects per tile, levels out into neighbours, and pours off ledges. */
-var puddle={};            // "tx,ty" -> volume (ty = the OPEN tile sitting on a floor)
-var PCAP=13;              // volume at which a cell is "full" and starts spreading
+/* ── POOLS: blood that has come to rest on a floor ──
+   These are painted once into the stain layer and never move again. The old
+   version simulated a volume per tile that levelled out and poured off ledges;
+   the pour-off spawned a runner which settled and added the volume straight
+   back, so a puddle near an edge kept recirculating and visibly grew while you
+   stood in it. Nothing here accumulates: a pool is a mark, not an amount. */
+var wetCells={};                    // "tx,ty" -> 1, only so feet pick up blood
+var poolCount=0,POOL_MAX=260;       // hard cap so a long session can't pile up
 function hasFloor(tx,ty){ return solidAt(tx,ty+1); }
-var puddleVol=0,PUDDLE_MAX=1500;
-function puddleAdd(tx,ty,vol){
-  if(tx<0||tx>=COLS||ty<0||ty>=ROWS)return;
-  if(solidAt(tx,ty))return;
-  if(puddleVol>PUDDLE_MAX)return;          // level is already drenched
-  var k=tx+","+ty;
-  puddle[k]=(puddle[k]||0)+vol;
-  puddleVol+=vol;
-}
-function puddleAt(x,y){                 // world coords -> settle onto the floor below
+function floorCellAt(x,y){          // world coords -> settle onto the floor below
   var tx=Math.floor(x/T),ty=Math.floor(y/T);
   if(tx<0||tx>=COLS)return null;
   // if we ended up inside a block, back out upward to the open tile above it
@@ -1631,80 +1632,39 @@ function puddleAt(x,y){                 // world coords -> settle onto the floor
   }
   return null;
 }
-function puddleStep(dt){
-  var keys=Object.keys(puddle);
-  if(!keys.length)return;
-  for(var i=0;i<keys.length;i++){
-    var k=keys[i],v=puddle[k];
-    if(v<=0){ delete puddle[k];continue; }
-    var p=k.split(","),tx=+p[0],ty=+p[1];
-    if(v<=PCAP)continue;
-    var over=(v-PCAP)*Math.min(1,dt*3.2);
-    // level out sideways, and pour off any ledge
-    [-1,1].forEach(function(d){
-      var nx=tx+d;
-      if(nx<0||nx>=COLS)return;
-      if(solidAt(nx,ty))return;                       // wall blocks the flow
-      var share=over*.5;
-      if(hasFloor(nx,ty)){
-        var nk=nx+","+ty;
-        if((puddle[nk]||0)<v){ puddle[nk]=(puddle[nk]||0)+share;puddle[k]-=share; }
-      } else {
-        // nothing under it — it spills over the edge and falls
-        puddle[k]-=share;
-        if(puddleVol<PUDDLE_MAX*.9&&drips.length<26&&Math.random()<.35)
-          addRunner(nx*T+T/2,ty*T+T-1,0,share);
-      }
-    });
+/* Paint a pool of blood resting on the floor beneath (x,y). Baked straight
+   into the stain layer, clipped to open space, so it can never cross a wall
+   and never changes after it is drawn. */
+function poolBlob(cx,cy,w,h){
+  sctx.beginPath();
+  var n=3+(Math.random()*3|0);
+  for(var i=0;i<n;i++){
+    var f=n>1?(i/(n-1))-.5:0;
+    sctx.ellipse(cx+f*w*1.25,cy+rnd(-.3,.3),w*rnd(.45,.72),h*rnd(.7,1.1),0,0,6.283);
   }
+  sctx.fill();
 }
-function puddleTotal(){ var s=0;for(var k in puddle)s+=puddle[k];return s; }
-function drawPuddles(t){
-  var keys=Object.keys(puddle);
-  if(!keys.length)return;
-  // group cells into horizontal runs on the same floor so they render as one body
-  var byRow={};
-  for(var i=0;i<keys.length;i++){
-    var p=keys[i].split(","),tx=+p[0],ty=+p[1];
-    (byRow[ty]||(byRow[ty]=[])).push(tx);
-  }
-  ctx.save();ctx.clip(openPath);
-  for(var ry in byRow){
-    var ty=+ry,xs=byRow[ry].sort(function(a,b){return a-b;});
-    var run=[];
-    for(var j=0;j<=xs.length;j++){
-      if(j<xs.length&&(run.length===0||xs[j]===run[run.length-1]+1)){ run.push(xs[j]);continue; }
-      if(run.length){
-        var baseY=(ty+1)*T;
-        ctx.beginPath();
-        ctx.moveTo(run[0]*T,baseY);
-        // top surface follows the volume in each cell, with a gentle ripple
-        for(var s=0;s<run.length;s++){
-          var vol=puddle[run[s]+","+ty]||0;
-          var hgt=Math.min(T*.72,1.1+vol*.42);
-          var x0=run[s]*T,x1=x0+T;
-          var wob=Math.sin(t*2.1+run[s]*.9)*.35;
-          ctx.lineTo(x0,baseY-hgt+wob);
-          ctx.quadraticCurveTo((x0+x1)/2,baseY-hgt-1.1+wob,x1,baseY-hgt+wob);
-        }
-        ctx.lineTo(run[run.length-1]*T+T,baseY);
-        ctx.closePath();
-        var g=ctx.createLinearGradient(0,baseY-T*.7,0,baseY);
-        g.addColorStop(0,BMID);g.addColorStop(.55,BLO);g.addColorStop(1,BDK);
-        ctx.fillStyle=g;ctx.fill();
-        // wet highlight along the surface
-        ctx.save();ctx.clip();
-        ctx.globalAlpha=.28;ctx.fillStyle="#ff6b7a";
-        for(var s2=0;s2<run.length;s2++){
-          var v2=puddle[run[s2]+","+ty]||0,h2=Math.min(T*.72,1.1+v2*.42);
-          ctx.fillRect(run[s2]*T+1.5,(ty+1)*T-h2+.3,T-3,.8);
-        }
-        ctx.restore();ctx.globalAlpha=1;
-      }
-      run=j<xs.length?[xs[j]]:[];
-    }
-  }
-  ctx.restore();
+function bakePool(x,y,amt){
+  if(poolCount>POOL_MAX)return;
+  var cell=floorCellAt(x,y);
+  if(!cell)return;
+  poolCount++;
+  wetCells[cell.tx+","+cell.ty]=1;
+  var baseY=(cell.ty+1)*T;
+  var w=clamp(2.4+(amt||2)*.6,2.6,T*.95);
+  var h=clamp(1.2+(amt||2)*.17,1.2,3.6);
+  var own=!stainClipped; if(own){sctx.save();sctx.clip(openPath);}
+  sctx.save();
+  sctx.globalAlpha=.9;sctx.fillStyle=BDK;
+  poolBlob(x,baseY-h*.5+.45,w*1.07,h*1.12);
+  sctx.globalAlpha=1;sctx.fillStyle=BLO;
+  poolBlob(x,baseY-h*.5,w,h);
+  sctx.globalAlpha=.85;sctx.fillStyle=BMID;
+  poolBlob(x-w*.14,baseY-h*.72,w*.55,h*.5);
+  sctx.globalAlpha=.2;sctx.fillStyle="#ff6b7a";      // wet sheen on the surface
+  sctx.beginPath();sctx.ellipse(x-w*.1,baseY-h*.95,w*.4,.5,0,0,6.283);sctx.fill();
+  sctx.globalAlpha=1;sctx.restore();
+  if(own)sctx.restore();
 }
 
 /* ── RUNNERS: blood clinging to a wall face, or falling free ── */
@@ -1752,8 +1712,7 @@ function runnerStep(dt){
   }
 }
 function settleRunner(k,i){
-  var cell=puddleAt(k.x,k.y);
-  if(cell)puddleAdd(cell.tx,cell.ty,k.vol);
+  if(floorCellAt(k.x,k.y))bakePool(k.x,k.y,k.vol);
   else splat(k.x,k.y,0,40,k.w*1.4,.8);
   drips.splice(i,1);
 }
@@ -1769,10 +1728,7 @@ function drawRunners(){
   }
   ctx.restore();
 }
-function addPool(x,y,amt){
-  var cell=puddleAt(x,y);
-  if(cell)puddleAdd(cell.tx,cell.ty,amt);
-}
+
 function bakeChunk(x,y,r,rot){
   var own=!stainClipped; if(own){sctx.save();sctx.clip(openPath);}
   sctx.save();sctx.translate(x,y);sctx.rotate(rot);
@@ -1781,7 +1737,6 @@ function bakeChunk(x,y,r,rot){
   rr(sctx,-r*.5,-r*.6,r,r*.6,r*.3);sctx.fill();sctx.globalAlpha=1;
   sctx.restore(); if(own)sctx.restore();
 }
-function bakePool(){}
 function spurt(x,y,n,power,cx,cy){
   if(drops.length>430)return;
   for(var i=0;i<n;i++){ var a=rnd(0,6.283),s=rnd(.15,1)*power;
@@ -1798,8 +1753,13 @@ function puff(x,y,n,dir){
     life:rnd(.15,.35),t:0,r:rnd(1,2.2),g:120});
 }
 function explode(x,y,vx,vy){
-  spurt(x,y,58,430,vx*.35,vy*.3);gib(x,y);
-  splat(x,y,vx,vy,7,1);mist(x,y,16,0);addPool(x,y+4,7);oxidize(.05);
+  // thrown wide: a fast outer spray that reaches walls and ceilings, plus a
+  // slower core that stays near the body
+  spurt(x,y,46,700,vx*.4,vy*.35);
+  spurt(x,y,26,300,vx*.3,vy*.25);
+  gib(x,y);
+  splat(x,y,vx,vy,7,1);mist(x,y,22,0);
+  bakePool(x,y+4,7);oxidize(.05);
 }
 function updateBlood(dt){
   var i,d,k,p,c,q,h;
@@ -1813,9 +1773,8 @@ function updateBlood(dt){
       splat(d.x,d.y,d.vx,d.vy,sz*.85);
       if(sp>300)mist(d.x,d.y,2,1);
       if(hitY&&d.vy>0){
-        // landed on a floor -> straight into the puddle under it
-        var cell=puddleAt(d.x,d.y);
-        if(cell)puddleAdd(cell.tx,cell.ty,d.r*1.5);
+        // landed on a floor -> leaves a pool where it settled
+        if(d.r>1.1)bakePool(d.x,d.y,d.r*1.4);
       } else if(hitX){
         // hit a wall -> cling on and run down the face
         addRunner(d.x,d.y,d.vx>0?1:-1,d.r*1.2);
@@ -1826,20 +1785,18 @@ function updateBlood(dt){
       drops.splice(i,1);continue; }
     d.x=nx;d.y=ny;
     if(d.t>d.life||d.y>ROWS*T+40){
-      var c2=puddleAt(d.x,d.y);
-      if(c2&&d.r>1)puddleAdd(c2.tx,c2.ty,d.r*.5);
+      if(d.r>1.6)bakePool(d.x,d.y,d.r*.6);
       drops.splice(i,1);
     }
   }
   runnerStep(dt);
-  puddleStep(dt);
   for(i=chunks.length-1;i>=0;i--){ c=chunks[i];c.t+=dt;
     if(!c.rest){ c.vy+=1500*dt;c.rot+=c.vr*dt;
       var cx2=c.x+c.vx*dt,cy2=c.y+c.vy*dt;
       if(boxSolid(cx2-c.r,c.y-c.r,c.r*2,c.r*2))c.vx*=-.35;else c.x=cx2;
       if(boxSolid(c.x-c.r,cy2-c.r,c.r*2,c.r*2)){
         if(Math.abs(c.vy)<70){ c.rest=1;
-          splat(c.x,c.y,rnd(-8,8),0,c.r*.6,.9);addPool(c.x,c.y+c.r*.6,c.r*1.1);
+          splat(c.x,c.y,rnd(-8,8),0,c.r*.6,.9);bakePool(c.x,c.y+c.r*.6,c.r*1.1);
           bakeChunk(c.x,c.y,c.r,c.rot); }
         else { c.vy*=-.32;c.vx*=.6;splat(c.x,c.y,c.vx,c.vy,c.r*.8); }
       } else c.y=cy2;
@@ -1967,7 +1924,7 @@ function updatePlayer(p,dt){
   p.wet-=dt*.3;
   if(p.ground){
     var ftx=Math.floor((p.x+PW/2)/T),fty=Math.floor((p.y+PH-1)/T);
-    if((puddle[ftx+","+fty]||0)>1.2)p.wet=1.3;
+    if(wetCells[ftx+","+fty])p.wet=1.3;
   }
   if(p.wet>0){
     if(p.ground&&Math.abs(p.vx)>55){
@@ -2749,7 +2706,6 @@ function render(t){
   if(spikeCv)ctx.drawImage(spikeCv,0,0,w,h);
   if(goreSpike.length)drawSpikeGore(t);
 
-  drawPuddles(t);
   drawRunners();
   for(i=0;i<prints.length;i++){ var pr=prints[i],fa=Math.max(0,1-pr.t/pr.life)*pr.a;
     ctx.globalAlpha=fa;ctx.fillStyle=BMID;
