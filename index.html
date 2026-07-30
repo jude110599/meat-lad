@@ -598,9 +598,15 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="2.9.1";
+var VERSION="2.9.2";
 var CHANGELOG=[
-  {v:"2.9.1",d:"latest",items:[
+  {v:"2.9.2",d:"latest",items:[
+    "FOUND THE REAL FREEZE — the one where you're stuck in midair right before the blood shows up. It was never an error, which is why it kept surviving my fixes. The game measures how long each frame took, and on some devices that measurement can come back as a negative number. That negative number was being subtracted from the hit-pause timer, so instead of counting down to zero the pause grew, and grew, forever. The game kept drawing but stopped updating: you hang in the air, the blood never moves",
+    "The frame timer is now clamped so a bad or backwards clock reading can't stall the game, and the leftover-time counter can't run away either",
+    "Added a watchdog: if you're ever dead for more than 3 seconds without respawning, the level resets itself. Dying can't be a dead end again, whatever goes wrong",
+    "One bad frame can no longer take the whole game down — errors in the loop are caught, cleaned up and skipped instead of stopping everything"
+  ]},
+  {v:"2.9.1",items:[
     "FIXED THE FREEZE. My blood rewrite accidentally deleted the line defining the blood colours, so every single death threw an error and killed the game loop the instant you died. Restored",
     "Blood drawing is batched into one clipped pass instead of one per particle, and the death spray uses fewer, slightly larger droplets — a death now costs well under a millisecond a frame"
   ]},
@@ -4468,15 +4474,41 @@ function step(dt){
   }
   updateBlood(dt);
 }
-var last=performance.now(),acc=0,hudTick=0;
+var last=performance.now(),acc=0,hudTick=0,stuckT=0;
+var frameErrs=0;
 function frame(now){
   requestAnimationFrame(frame);
+  try{ frameBody(now); }
+  catch(err){
+    // Never let one bad frame freeze the game.
+    frameErrs++;
+    if(frameErrs<6)console.error("frame error:",err);
+    if(frameErrs===1&&typeof toast==="function")toast("recovered from a glitch");
+    // Drop anything that could be in a bad state, then carry on.
+    try{ stainEnd(); }catch(e2){}
+    try{ ctx.restore(); }catch(e2){}
+    drops.length=0;drips.length=0;chunks.length=0;puffs.length=0;
+    last=now;acc=0;
+  }
+}
+function frameBody(now){
   var dt=(now-last)/1000;last=now;
+  // A negative or NaN delta (clock-origin mismatch between performance.now()
+  // and the rAF timestamp) used to inflate freezeT and drive acc negative,
+  // which stopped step() forever while render() kept drawing: frozen mid-air.
+  if(!(dt>0))dt=0;
   if(dt>.25)dt=.25;
-  if(freezeT>0){freezeT-=dt;dt=0;}
-  else if(slowT>0){slowT-=dt;dt*=.42;}
-  acc+=dt;var guard=0;
+  var realDt=dt;                   // wall-clock, unaffected by hitstop
+  if(freezeT>0){freezeT=Math.max(0,freezeT-dt);dt=0;}
+  else if(slowT>0){slowT=Math.max(0,slowT-dt);dt*=.42;}
+  acc+=dt;
+  if(!(acc>0))acc=0;
+  if(acc>.25)acc=.25;              // never build a backlog we can't pay off
+  var guard=0;
   while(acc>=FIXED&&guard++<8){step(FIXED);acc-=FIXED;}
+  // Watchdog: dying must never be a dead end, whatever else goes wrong.
+  if(state==="dead"){ stuckT+=realDt; if(stuckT>3){stuckT=0;freezeT=0;slowT=0;acc=0;resetLevel();} }
+  else stuckT=0;
   render(now/1000);
   hudTick+=dt;
   if(hudTick>.1&&state==="play"){hudTick=0;$("hTime").textContent=fmt(levelTime);}
