@@ -158,6 +158,12 @@ h1.logo .b{color:var(--bone);display:block;text-shadow:0 4px 0 #2b2440}
   font-family:inherit;font-size:9px;letter-spacing:.1em;padding:7px 9px;cursor:pointer;text-transform:uppercase}
 .mylv button:active{background:#2a2226}
 .mylv button.del{color:var(--meat)}
+#inviteBox{display:none;position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(58px + env(safe-area-inset-top,0px));width:min(340px,92vw);z-index:12;
+  background:#151019f2;border:1px solid var(--line);border-left:4px solid #39d353;
+  padding:12px 13px;pointer-events:auto;box-shadow:0 8px 26px #000a}
+.invtxt{font-size:11px;letter-spacing:.09em;color:var(--bone);margin-bottom:9px;line-height:1.5}
+.invrow{display:flex;gap:7px}.invrow>*{flex:1}
 .tag.blink{animation:tagpulse 2.6s ease-in-out infinite}
 @keyframes tagpulse{0%,100%{opacity:.55}50%{opacity:1}}
 .btn{transition:transform .06s ease,background .12s ease,border-color .12s ease}
@@ -241,12 +247,20 @@ input.txt:focus{border-color:var(--meat)}
     <span id="hLv" class="disp">01</span>
     <span id="hName" class="disp">FRESH MEAT</span>
     <span class="stat" id="hTime">0:00.00</span>
+    <span class="stat" id="hCoin" style="color:#ffc927">&#9679; <b>0</b></span>
     <span class="stat" id="hDeath">&#9760; <b>0</b></span>
     <button class="iconbtn" id="bRestart" title="Restart">&#8635;</button>
     <button class="iconbtn" id="bPause" title="Pause">&#10073;&#10073;</button>
   </div>
   <div id="toasts"></div>
   <div id="verTag"></div>
+  <div id="inviteBox">
+    <div class="invtxt" id="invText"></div>
+    <div class="invrow">
+      <button class="btn sub" id="invNo">Later</button>
+      <button class="btn" id="invJoin" style="text-align:center">Join</button>
+    </div>
+  </div>
 
   <div class="screen" id="s-login">
     <div class="center">
@@ -316,6 +330,14 @@ input.txt:focus{border-color:var(--meat)}
         <button class="btn big2" id="bCouch">Couch<small>two players, one screen, split controls</small></button>
         <button class="btn big2" id="bOnline">Online<small>room code — play with someone anywhere</small></button>
       </div>
+      <div class="sect">Friends <span class="stat" id="frCount"></span></div>
+      <div class="row" style="margin-bottom:8px">
+        <input class="txt" id="frName" maxlength="14" placeholder="USERNAME" autocomplete="off">
+        <button class="btn" id="bAddFr" style="flex:0 0 88px;text-align:center">Add</button>
+      </div>
+      <div class="note" id="frErr" style="color:var(--meat);min-height:12px;margin-bottom:6px"></div>
+      <div id="frList"></div>
+      <div class="note" id="frEmpty" style="display:none">No friends added yet. Type their username above.</div>
     </div>
   </div>
 
@@ -361,7 +383,7 @@ input.txt:focus{border-color:var(--meat)}
       <div class="mapname disp" id="mapLvName">FRESH MEAT</div>
       <div class="mapsub" id="mapLvSub"></div>
       <div class="row" style="margin-top:10px">
-        <button class="btn sub" id="bEditLv" style="flex:0 0 34%">Edit</button>
+        <button class="btn sub" id="bEditLv" style="flex:0 0 34%;display:none">Edit</button>
         <button class="btn" id="bPlayLv" style="text-align:center">Play</button>
       </div>
     </div>
@@ -391,12 +413,27 @@ input.txt:focus{border-color:var(--meat)}
             <span class="tintlbl">Pupils</span>
             <div class="swatches" id="tPupil"></div>
           </div>
+          <div class="tintrow">
+            <span class="tintlbl">Nose colour</span>
+            <div class="swatches" id="tNose"></div>
+          </div>
+          <div class="tintrow">
+            <span class="tintlbl">Mouth colour</span>
+            <div class="swatches" id="tMouth"></div>
+          </div>
+          <div class="tintrow">
+            <span class="tintlbl">Ear colour</span>
+            <div class="swatches" id="tEar"></div>
+          </div>
         </div>
       </div>
       <div class="wardcols">
         <div class="tabs"><button class="tab on" data-p="0">Player 1</button><button class="tab" data-p="1">Player 2</button></div>
         <div class="sect">Meat</div><div class="grid" id="gColor"></div>
         <div class="sect">Eyes</div><div class="grid" id="gEye"></div>
+        <div class="sect">Noses</div><div class="grid" id="gNose"></div>
+        <div class="sect">Mouths</div><div class="grid" id="gMouth"></div>
+        <div class="sect">Ears</div><div class="grid" id="gEar"></div>
         <div class="sect">Hats</div><div class="grid" id="gHat"></div>
         <div class="sect">Shoes</div><div class="grid" id="gShoe"></div>
         <div class="note" style="margin-top:18px">Cosmetics are cosmetic. No hat has ever saved anyone from a saw blade.</div>
@@ -511,9 +548,21 @@ input.txt:focus{border-color:var(--meat)}
 (function(){
 "use strict";
 
-var VERSION="2.5.0";
+var VERSION="2.6.0";
 var CHANGELOG=[
-  {v:"2.5.0",d:"latest",items:[
+  {v:"2.6.0",d:"latest",items:[
+    "Damage bricks — the cracked orange blocks. The World 1 boss only takes damage when it smashes one of those, so the plain pillars just slow it down now",
+    "Coins — 27 of them hidden across 9 levels, with a counter in the corner while you play",
+    "4 secret items that only appear when you find coins: 1 coin gives the Coin Crown, 3 gives Star Eyes, 5 gives the Gold Halo, 8 gives Treasure meat",
+    "Cutscene — a figure in a robot suit takes the girl. Full dramatic version after the World 1 boss, and a shorter swipe at the end of every World 2 level. Tap to skip",
+    "Both bosses redrawn — the blade has proper teeth and a glowing core, the Butcher has a visor, chest light and antenna",
+    "Wardrobe: added noses, mouths and ears (6 / 8 / 6 of them), two new eye styles, and 21 colours for every single part",
+    "The level editor is now hidden. Press 1, 0 and L together, then enter the password",
+    "Friends — add people by username in the Multiplayer menu, then invite them straight into your party",
+    "Usernames are now unique, so two people can't take the same name",
+    "You get a popup when a friend invites you, but only while you're in a menu or paused — never mid-jump"
+  ]},
+  {v:"2.5.0",items:[
     "LEVEL EDITOR — you can now build the levels yourself. Open Singleplayer, pick a level, and hit Edit",
     "Place blocks, all four spike directions, patrolling saws, vertical saws, spinners, crumbling floors, lasers, the spawn and the exit. Tap or drag to paint",
     "Your version replaces the built-in level for real — it is what you play, and the map marks it 'your version'",
@@ -628,32 +677,32 @@ function renderLog(){
 var LEVELS=[
 {name:"FRESH MEAT",map:["################","#              #","# P            #","############   #","#          #   #","#          #   #","#          #   #","#          #   #","#          #   #","#   ########   #","#    vvvvv     #","#            G #","#   ^    #######","#######        #","#              #","#              #","################","################"]},
 {name:"WARM UP",map:["################","#              #","# G            #","#####          #","#              #","#              #","#######  #######","#              #","#              #","# ############ #","#  vvvvvvvvvv  #","#              #","#P  ^^^^^^^^   #","################","#              #","#              #","################","################"]},
-{name:"FIRST BLOOD",map:["################","#              #","#  ^G          #","######         #","#              #","#         vvv  #","#         ######","#   ^^^  -     #","#######        #","#              #","#              #","#         o ####","#P    ###      #","####           #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
+{name:"FIRST BLOOD",map:["################","#$             #","#  ^G          #","######         #","#              #","#         vvv  #","#         ######","#   ^^^  -     #","#######        #","#      $       #","#              #","#         o ####","#P    ###      #","####  $        #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
 {name:"MIND THE GAP",map:["################","#              #","# G            #","#####          #","#              #","#       ########","#              #","######         #","#              #","#              #","# ###########  #","#  vvvvvvvvv   #","#P       -     #","################","#              #","#              #","################","################"]},
 {name:"DOWNPIPE",map:["################","#              #","# G            #","#####          #","#              #","#        #######","#    ^         #","########       #","#              #","#              #","# ############ #","#  vvvvvvvvvv  #","#P -       -   #","################","#              #","#              #","################","################"]},
-{name:"LOW CEILING",map:["################","#              #","#   #    G #   #","#   #  #####   #","#   #      #   #","#   #     <#   #","#   #####  #   #","#   #      #   #","#   #>     #   #","#   #  #####   #","#   #      #   #","#   #     <#   #","#   #####  #   #","#   #      #   #","#   #      #   #","#   #P     #   #","################","################"]},
+{name:"LOW CEILING",map:["################","#              #","#   #    G #   #","#   #  #####   #","#   #      #   #","#   # $   <#   #","#   #####  #   #","#   #      #   #","#   #>     #   #","#   #  #####   #","#   #      #   #","#   #     <#   #","#   #####  #   #","#   #      # $ #","#   #  $   #   #","#   #P     #   #","################","################"]},
 {name:"STEPPING STONES",map:["################","#              #","#  #      G #  #","#  #    #####  #","#  #        #  #","#  #        #  #","#  ######   #  #","#  #        #  #","#  #        #  #","#  #    #####  #","#  #        #  #","#  #        #  #","#  ###### | #  #","#  #        #  #","#  #        #  #","#  #P       #  #","################","################"]},
 {name:"SAWMILL",map:["################","#              #","# G            #","#####          #","#              #","#          ^   #","#        ##### #","# ####         #","#              #","#              #","#          ##  #","#   ##  o      #","#P             #","###    ###     #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
-{name:"SWITCHBACK",map:["################","#              #","# ^G           #","#####          #","#              #","#        |     #","#    ###########","#              #","#      -       #","###########    #","#              #","#              #","#P    -   ^^^  #","################","#              #","#              #","################","################"]},
+{name:"SWITCHBACK",map:["################","#              #","# ^G           #","#####          #","#              #","#        |     #","#   $###########","#              #","#      -       #","###########    #","#              #","#             $#","#P    -   ^^^  #","################","#            $ #","#              #","################","################"]},
 {name:"THE VICE",map:["################","# G            #","####           #","#              #","#   ############","#              #","#    o   o     #","#              #","############   #","#              #","#              #","#   o   o   o  #","#P             #","################","#              #","#              #","################","################"]},
 {name:"DUMBWAITER",map:["################","#              #","# G            #","####           #","#     ^^^^     #","#  #############","#              #","#              #","#   ^^^  ^^^   #","############   #","#              #","#              #","#P ^^^  ^^^    #","################","#              #","#              #","################","################"]},
-{name:"TWIN BLADES",map:["################","#              #","#              #","#              #","#  G           #","# #####        #","#         ^    #","#       #####  #","#              #","#              #","#            ###","#      ##      #","#P  ##    ##   #","###            #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
+{name:"TWIN BLADES",map:["################","#              #","#              #","#              #","#  G           #","# ##### $   $  #","#         ^    #","#       #####  #","#              #","#              #","#            ###","#      ##      #","#P  ##    ##   #","###            #","# $            #","#^^^^^^^^^^^^^^#","################","################"]},
 {name:"SPIN CYCLE",map:["################","#              #","# #        G # #","# #     ###### #","# #          # #","# #  -       # #","# #######    # #","# #          # #","# #          # #","# #     ###### #","# #          # #","# #    ^     # #","# #######    # #","# #          # #","# #          # #","# #P         # #","################","################"]},
 {name:"ARCHIPELAGO",map:["################","#              #","#              #","#              #","#              #","#  G^          #","# #####        #","#              #","#       #####  #","#              #","#              #","#            ###","#P    ##       #","####      ##   #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
-{name:"CHIMNEY",map:["################","#              #","#  G           #","#####          #","#              #","#   ############","#              #","#              #","#       -      #","############   #","#              #","#              #","#P   -         #","################","#              #","#              #","################","################"]},
+{name:"CHIMNEY",map:["################","#              #","#  G           #","#####          #","#          $   #","#   ############","#              #","#              #","#       -      #","############   #","#    $         #","#              #","#P   -         #","################","#         $    #","#              #","################","################"]},
 {name:"THE CLIMB",map:["################","#              #","# G            #","#####          #","#              #","#  -           #","######   ^     #","#      #####   #","#              #","#              #","#           ####","#              #","#P  ## o ##    #","###            #","#              #","#^^^^^^^^^^^^^^#","################","################"]},
 {name:"PINCUSHION",map:["################","#              #","# G            #","######         #","#              #","#         -    #","#    ###########","#              #","#              #","###########    #","#              #","#              #","#P     -       #","################","#              #","#              #","################","################"]},
-{name:"MEAT GRINDER",map:["################","#              #","#              #","#            G #","#       ########","#              #","#  ^           #","##########     #","#              #","#              #","#       ########","#              #","#      ^       #","##########     #","#              #","#P             #","################","################"]},
+{name:"MEAT GRINDER",map:["################","#              #","#              #","#            G$#","#       ########","#              #","#  ^           #","##########     #","#              #","#              #","#       ########","#              #","#      ^       #","##########     #","#              #","#P $     $     #","################","################"]},
 {name:"THE WRINGER",map:["################","#              #","#              #","#            G #","#     ##########","#              #","#    ^         #","#########      #","#              #","#              #","#      #########","#              #","#              #","##########     #","#              #","#P             #","################","################"]},
-{name:"THE CARVER",boss:"chase",map:["################################################################","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#         #   ^  #   ^  #   ^  #   ^  #   ^  #   ^  #          #","# P       #      #      #      #      #      #      #        G #","################################################################","################################################################"]},
+{name:"THE CARVER",boss:"chase",map:["################################################################","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#                                                              #","#         D   ^  D   ^  D   ^  D   ^  D   ^  D   ^  D          #","# P       D      D      D      D      D      D      D        G #","################################################################","################################################################"]},
 {name:"ROT",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#              #","# #######      #","#              #","#              #","#      ccccccc #","#              #","#              #","# ccccccc      #","#              #","#P             #","################","################"]},
-{name:"GIVE WAY",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#              #","# ccccccc      #","#              #","#              #","#      ccccccc #","#              #","#   ^^^        #","# ccccccc      #","#              #","#P             #","################","################"]},
+{name:"GIVE WAY",map:["################","#              #","#              #","#           G$ #","#      ####### #","#              #","#              #","# ccccccc      #","#              #","#              #","#      ccccccc #","#              #","#   ^^^        #","# ccccccc      #","# $            #","#P          $  #","################","################"]},
 {name:"EYE OF THE BEAM",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#              #","# #######      #","#              #","#L             #","#      ####### #","#              #","#L             #","# #######      #","#              #","#P             #","################","################"]},
 {name:"STROBE",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#L             #","# #######      #","#              #","#R             #","#      ####### #","#              #","#L             #","# #######      #","#              #","#P             #","################","################"]},
-{name:"SHORT FUSE",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#R             #","# ccccccc      #","#              #","#              #","#      ####### #","#              #","#L             #","# ccccccc      #","#              #","#P             #","################","################"]},
+{name:"SHORT FUSE",map:["################","#           $  #","#              #","#           G  #","#      ####### #","#              #","#R             #","# ccccccc      #","#              #","#              #","#      ####### #","#              #","#L             #","# ccccccc      #","#           $  #","#P    $        #","################","################"]},
 {name:"CUTTING ROOM",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#R             #","# #######      #","#              #","#         -    #","#      ####### #","#              #","#L   |         #","# #######      #","#              #","#P             #","################","################"]},
 {name:"COLLAPSE",map:["################","#              #","#              #","#           G  #","#      ccccccc #","#              #","#              #","# ccccccc      #","#              #","#              #","#      ccccccc #","#              #","#              #","# ccccccc      #","#              #","#P             #","################","################"]},
-{name:"MEAT LOCKER",map:["################","#              #","#              #","#           G  #","#      ####### #","#              #","#R             #","# #######      #","#              #","#         |    #","#      ccccccc #","#              #","#L  ^^^        #","# #######      #","#              #","#P             #","################","################"]},
+{name:"MEAT LOCKER",map:["################","#              #","#       $      #","#           G$ #","#      ####### #","#    $         #","#R             #","# #######      #","#              #","#         |    #","#      ccccccc #","#              #","#L  ^^^        #","# #######      #","#              #","#P             #","################","################"]},
 {name:"LAST RITES",map:["################","#              #","#              #","#          oG  #","#      ####### #","#              #","#R             #","# ccccccc      #","#              #","#    -   ^^^   #","#      ####### #","#              #","#L             #","# ccccccc      #","#              #","#P             #","################","################"]},
 {name:"THE BUTCHER",boss:"slam",map:["####################","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","#                  #","# P  ^   ^   ^  ^ G#","####################","####################"]}
 ];
@@ -702,14 +751,16 @@ var COLORS=[
  {id:"steel",n:"Blue Steel",hi:"#a9c9ff",mid:"#4f7fe0",lo:"#2b4fa3",out:"#132a5c"},
  {id:"ecto",n:"Ectoplasm",hi:"#c9fff0",mid:"#6ff2cf",lo:"#2fae93",out:"#12564a",ghost:1},
  {id:"rain",n:"Rainbow",rainbow:1,hi:"#fff",mid:"#f0f",lo:"#0ff",out:"#2a1030"},
- {id:"void",n:"Void",hi:"#241d33",mid:"#100c1a",lo:"#07050c",out:"#3b2f5c",stars:1}
+ {id:"void",n:"Void",hi:"#241d33",mid:"#100c1a",lo:"#07050c",out:"#3b2f5c",stars:1},
+ {id:"treasure",n:"Treasure",hi:"#fff3a8",mid:"#e0a415",lo:"#8a5a10",out:"#4a2f04",shine:1}
 ];
 var HATS=[{id:"none",n:"Bare"},{id:"beanie",n:"Beanie"},{id:"cowboy",n:"Cowboy"},{id:"top",n:"Top Hat"},
  {id:"crown",n:"Crown"},{id:"halo",n:"Halo"},{id:"party",n:"Party"},{id:"cone",n:"Traffic Cone"},
  {id:"wrap",n:"Bandages"},{id:"horns",n:"Horns"},{id:"prop",n:"Propeller"},{id:"chef",n:"Chef"},
  {id:"viking",n:"Viking"},{id:"box",n:"Cardboard"},{id:"flame",n:"On Fire"},
  {id:"cap",n:"Ball Cap"},{id:"bow",n:"Bow"},{id:"tophorn",n:"Antenna"},
- {id:"bucket",n:"Bucket"},{id:"beret",n:"Beret"},{id:"hardhat",n:"Hard Hat"}];
+ {id:"bucket",n:"Bucket"},{id:"beret",n:"Beret"},{id:"hardhat",n:"Hard Hat"},
+ {id:"coinhat",n:"Coin Crown"},{id:"halo2",n:"Gold Halo"}];
 var SHOES=[{id:"nones",n:"Barefoot"},{id:"sneak",n:"Sneakers"},{id:"boots",n:"Boots"},{id:"skate",n:"Skates"},
  {id:"flip",n:"Flippers"},{id:"rocket",n:"Rocket Boots"},{id:"sock",n:"Socks"},{id:"cleat",n:"Cleats"},
  {id:"slip",n:"Slippers"},{id:"spur",n:"Spurs"},
@@ -735,23 +786,42 @@ var UNLOCKS=[
  {t:"h",id:"beret",k:"lvl",v:5,x:"Clear lv 5"},{t:"h",id:"hardhat",k:"lvl",v:7,x:"Clear lv 7"},
  {t:"h",id:"bucket",k:"die",v:40,x:"40 deaths"},{t:"h",id:"tophorn",k:"lvl",v:11,x:"Clear lv 11"},
  {t:"s",id:"wellie",k:"lvl",v:3,x:"Clear lv 3"},{t:"s",id:"sandal",k:"lvl",v:5,x:"Clear lv 5"},
- {t:"s",id:"tall",k:"lvl",v:12,x:"Clear lv 12"}
+ {t:"s",id:"tall",k:"lvl",v:12,x:"Clear lv 12"},
+ {t:"h",id:"coinhat",k:"coin",v:1,x:"Find 1 coin"},
+ {t:"e",id:"star",k:"coin",v:3,x:"Find 3 coins"},
+ {t:"h",id:"halo2",k:"coin",v:5,x:"Find 5 coins"},
+ {t:"c",id:"treasure",k:"coin",v:8,x:"Find 8 coins"}
 ];
 var EYES=[{id:"normal",n:"Normal"},{id:"happy",n:"Happy"},{id:"angry",n:"Angry"},
- {id:"sad",n:"Sad"},{id:"wide",n:"Shocked"},{id:"sleepy",n:"Sleepy"},{id:"dead",n:"X Eyes"}];
+ {id:"sad",n:"Sad"},{id:"wide",n:"Shocked"},{id:"sleepy",n:"Sleepy"},{id:"dead",n:"X Eyes"},
+ {id:"star",n:"Star Eyes"},{id:"spiral",n:"Dizzy"}];
+var NOSES=[{id:"nonen",n:"None"},{id:"button",n:"Button"},{id:"snout",n:"Snout"},
+ {id:"beak",n:"Beak"},{id:"clown",n:"Clown"},{id:"piggy",n:"Piggy"}];
+var MOUTHS=[{id:"nonem",n:"None"},{id:"smile",n:"Smile"},{id:"frown",n:"Frown"},
+ {id:"open",n:"Gasp"},{id:"grin",n:"Grin"},{id:"fangs",n:"Fangs"},
+ {id:"stitch",n:"Stitches"},{id:"tongue",n:"Tongue"}];
+var EARS=[{id:"nonee",n:"None"},{id:"round",n:"Round"},{id:"cat",n:"Cat"},
+ {id:"bunny",n:"Bunny"},{id:"bat",n:"Bat"},{id:"fin",n:"Fins"}];
 var TINTS=[{id:"none",n:"Original",hex:null},
  {id:"tred",n:"Red",hex:"#d3132b"},{id:"tpink",n:"Pink",hex:"#ff7cae"},
  {id:"torange",n:"Orange",hex:"#ff8a3c"},{id:"tyellow",n:"Yellow",hex:"#ffc927"},
  {id:"tlime",n:"Lime",hex:"#8fdb1f"},{id:"tgreen",n:"Green",hex:"#2fae6b"},
  {id:"tteal",n:"Teal",hex:"#3ed4ea"},{id:"tblue",n:"Blue",hex:"#4f7fe0"},
  {id:"tpurple",n:"Purple",hex:"#8f52e0"},{id:"tblack",n:"Black",hex:"#171420"},
- {id:"twhite",n:"White",hex:"#e8e2d6"},{id:"tgold",n:"Gold",hex:"#e0a415"}];
+ {id:"twhite",n:"White",hex:"#e8e2d6"},{id:"tgold",n:"Gold",hex:"#e0a415"},
+ {id:"tmint",n:"Mint",hex:"#7ee8b0"},{id:"tlav",n:"Lavender",hex:"#c3a6ff"},
+ {id:"tbrown",n:"Brown",hex:"#8a5a34"},{id:"tslate",n:"Slate",hex:"#66707d"},
+ {id:"tcrim",n:"Crimson",hex:"#8f0f22"},{id:"tsky",n:"Sky",hex:"#9fd8ff"},
+ {id:"trose",n:"Rose",hex:"#ffb3c7"},{id:"tolive",n:"Olive",hex:"#7a7f2a"}];
 var PUPILS=[{id:"#160c12",n:"Black"},{id:"#2f6fd0",n:"Blue"},{id:"#2aa05a",n:"Green"},
  {id:"#c62233",n:"Red"},{id:"#8f52e0",n:"Violet"},{id:"#d99a1e",n:"Amber"},
- {id:"#39d0d8",n:"Cyan"},{id:"#e8e2d6",n:"Ghost"}];
+ {id:"#39d0d8",n:"Cyan"},{id:"#e8e2d6",n:"Ghost"},
+ {id:"#ff7cae",n:"Pink"},{id:"#8fdb1f",n:"Lime"},{id:"#ff8a3c",n:"Orange"},
+ {id:"#5c4a7a",n:"Dusk"}];
 var START=["red","bone","pink","none","beanie","nones","sneak"];
-var TOTAL=COLORS.length+HATS.length+SHOES.length+EYES.length;
-function unlockRule(t,id){for(var i=0;i<UNLOCKS.length;i++)if(UNLOCKS[i].t===t&&UNLOCKS[i].id===id)return UNLOCKS[i];return null;}
+var TOTAL=COLORS.length+HATS.length+SHOES.length+EYES.length+NOSES.length+MOUTHS.length+EARS.length;
+var FREE_TYPES={e:1,no:1,mo:1,r:1};
+function unlockRule(t,id){ if(FREE_TYPES[t])return null;for(var i=0;i<UNLOCKS.length;i++)if(UNLOCKS[i].t===t&&UNLOCKS[i].id===id)return UNLOCKS[i];return null;}
 function byId(list,id){for(var i=0;i<list.length;i++)if(list[i].id===id)return list[i];return list[0];}
 
 /* ═════════════ SAVE ═════════════ */
@@ -780,7 +850,7 @@ var store={
     return Promise.resolve(false); }
 };
 var save={unlocked:START.slice(),skins:[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}],
-  name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:"",levels:{}};
+  name:"",cleared:[],best:{},deaths:0,coop:false,party:false,uid:"",levels:{},coins:0,friends:[]};
 /* ── PROFILES ──
    Saves live in this browser's localStorage, one slot per username.
    The password is salted + SHA-256 hashed and only ever stored hashed.
@@ -849,7 +919,7 @@ function resetSaveObj(){
   save.unlocked=START.slice();
   save.skins=[{c:"red",h:"none",s:"sneak",e:"normal",hc:"none",sc:"none",ec:"#160c12"},{c:"pink",h:"beanie",s:"nones",e:"normal",hc:"none",sc:"none",ec:"#160c12"}];
   save.name="";save.cleared=[];save.best={};save.deaths=0;
-  save.coop=false;save.party=false;save.uid="";save.levels={};
+  save.coop=false;save.party=false;save.uid="";save.levels={};save.coins=0;save.friends=[];
   applyLevelEdits();
 }
 function loadSave(){
@@ -863,6 +933,8 @@ function loadSave(){
     }catch(e){} }
     if(!save.uid)save.uid=Math.random().toString(36).slice(2,9);
     if(!save.levels||typeof save.levels!=="object")save.levels={};
+    if(typeof save.coins!=="number")save.coins=0;
+    if(!(save.friends instanceof Array))save.friends=[];
     applyLevelEdits();
     queueSave();
   });
@@ -881,9 +953,11 @@ function checkUnlocks(ev){
     else if(u.k==="nodeath")ok=!!ev.nodeath;
     else if(u.k==="coopclear")ok=!!ev.coopclear;
     else if(u.k==="fast")ok=(ev.time!=null&&ev.time<u.v);
+    else if(u.k==="coin")ok=(save.coins|0)>=u.v;
     if(ok){ save.unlocked.push(u.id); queueSave();
-      var L=u.t==="c"?COLORS:(u.t==="h"?HATS:SHOES);
-      toast("Unlocked \u00b7 "+byId(L,u.id).n+" "+(u.t==="c"?"meat":u.t==="h"?"hat":"shoes"));
+      var L=u.t==="c"?COLORS:(u.t==="h"?HATS:(u.t==="s"?SHOES:EYES));
+      var word=u.t==="c"?"meat":(u.t==="h"?"hat":(u.t==="s"?"shoes":"eyes"));
+      toast((u.k==="coin"?"SECRET \u00b7 ":"Unlocked \u00b7 ")+byId(L,u.id).n+" "+word);
       sfx.unlock(); }
   }
 }
@@ -924,6 +998,7 @@ var sfx={
     else if(cause==="laser"){tone(1800,220,.12,"sawtooth",.04);noiz(.1,.1,3200);}
     else noiz(.14,.13,900); },
   crumb:function(){noiz(.09,.05,1400);tone(220,150,.07,"triangle",.02);},
+  coin:function(){tone(1050,1600,.06,"square",.03);tone(1600,2100,.07,"square",.025,.05);},
   smash:function(){noiz(.34,.18,900);tone(110,45,.26,"sawtooth",.05);},
   win:function(){var f=[523,659,784,1047];for(var i=0;i<4;i++)tone(f[i],f[i],.11,"square",.05,i*.075);},
   unlock:function(){var f=[784,988,1319];for(var i=0;i<3;i++)tone(f[i],f[i],.09,"triangle",.05,i*.06);},
@@ -1002,7 +1077,7 @@ function remotePeerId(){ for(var id in party.ghosts)return id; return null; }
 function loadLevel(i){
   level=i;var L=curLevels()[i],sp=L.sawSpeed||1;
   ROWS=L.map.length;COLS=L.map[0].length;
-  grid=[];spikes=[];saws=[];crumbs=[];lasers=[];boss=null;
+  grid=[];spikes=[];saws=[];crumbs=[];lasers=[];bricks=[];coins=[];boss=null;
   drops.length=0;drips.length=0;pools.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=L.map[y].charAt(x); row.push(ch==="#"?1:0);
@@ -1013,6 +1088,8 @@ function loadLevel(i){
       else if(ch==="-")saws.push({hx:x*T+T/2,hy:y*T+T/2,x:0,y:0,ax:1,dir:1,spd:86*sp,rot:0});
       else if(ch==="|")saws.push({hx:x*T+T/2,hy:y*T+T/2,x:0,y:0,ax:2,dir:1,spd:98*sp,rot:0});
       else if(ch==="c"){ row[x]=1;crumbs.push({gx:x,gy:y,t:-1,gone:0}); }
+      else if(ch==="D"){ row[x]=1;bricks.push({gx:x,gy:y,hit:0}); }
+      else if(ch==="$")coins.push({gx:x,gy:y,x:x*T+T/2,y:y*T+T/2,got:0,t:Math.random()*6.28});
       else if(ch==="L")lasers.push({gx:x,gy:y,x:x*T,y:y*T+T/2,ph:(x*7+y*11)%10/10,on:0});
       else if(ch==="R")lasers.push({gx:x,gy:y,x:x*T,y:y*T+T/2,ph:((x*7+y*11)%10/10+.5)%1,on:0}); }
     grid.push(row); }
@@ -1068,12 +1145,69 @@ function drawSpike(b,s){
 }
 
 /* ═════════════ CRUMBLE / LASER / BOSS ═════════════ */
-var crumbs=[],lasers=[],boss=null;
+var crumbs=[],lasers=[],bricks=[],coins=[],boss=null,coinsGot=0;
 var CRUMB_WARN=.42,CRUMB_BACK=2.6;
 function resetHazards(){
   var i;
   for(i=0;i<crumbs.length;i++){ var c=crumbs[i];c.t=-1;c.gone=0;grid[c.gy][c.gx]=1; }
   for(i=0;i<lasers.length;i++)lasers[i].on=0;
+  for(i=0;i<bricks.length;i++){ bricks[i].hit=0;grid[bricks[i].gy][bricks[i].gx]=1; }
+  // coins already banked stay collected; un-banked ones come back
+  for(i=0;i<coins.length;i++)coins[i].got=0;
+  coinsGot=0;
+}
+/* ── COINS ── */
+function coinStep(dt){
+  for(var i=0;i<coins.length;i++){ var c=coins[i];
+    if(c.got)continue;
+    c.t+=dt;
+    for(var j=0;j<players.length;j++){ var p=players[j];
+      if(p.dead)continue;
+      if(p.x<c.x+7&&p.x+PW>c.x-7&&p.y<c.y+7&&p.y+PH>c.y-7){
+        c.got=1;coinsGot++;
+        save.coins=(save.coins|0)+1;queueSave();
+        sfx.coin();
+        for(var k=0;k<9;k++)hearts.push({x:c.x+rnd(-4,4),y:c.y,t:0,life:rnd(.4,.9),s:rnd(1.6,3)});
+        checkUnlocks({});
+        updateHud();
+        break; } }
+  }
+}
+function drawCoins(t){
+  for(var i=0;i<coins.length;i++){ var c=coins[i];
+    if(c.got)continue;
+    var bob=Math.sin(c.t*3)*1.3,w=Math.abs(Math.cos(c.t*2.4));
+    ctx.save();ctx.translate(c.x,c.y+bob);
+    var gl=ctx.createRadialGradient(0,0,1,0,0,11);
+    gl.addColorStop(0,"rgba(255,201,39,.30)");gl.addColorStop(1,"rgba(255,201,39,0)");
+    ctx.fillStyle=gl;ctx.fillRect(-11,-11,22,22);
+    ctx.fillStyle="#c48c00";
+    ctx.beginPath();ctx.ellipse(0,0,4.4*Math.max(.18,w),4.4,0,0,6.283);ctx.fill();
+    ctx.fillStyle="#ffc927";
+    ctx.beginPath();ctx.ellipse(0,0,3.5*Math.max(.14,w),3.5,0,0,6.283);ctx.fill();
+    if(w>.5){ ctx.fillStyle="#fff3a8";
+      ctx.beginPath();ctx.ellipse(-1*w,-1,1.1*w,1.5,0,0,6.283);ctx.fill(); }
+    ctx.restore(); }
+}
+/* ── DAMAGE BRICKS ── */
+function drawBricks(t){
+  for(var i=0;i<bricks.length;i++){ var b=bricks[i];
+    if(!grid[b.gy][b.gx])continue;
+    var X=b.gx*T,Y=b.gy*T;
+    ctx.fillStyle="#5c3a1a";ctx.fillRect(X,Y,T,T);
+    ctx.fillStyle="#7a4f22";ctx.fillRect(X+1,Y+1,T-2,T/2-1);
+    ctx.strokeStyle="rgba(0,0,0,.5)";ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(X,Y+T/2);ctx.lineTo(X+T,Y+T/2);
+    ctx.moveTo(X+T/2,Y);ctx.lineTo(X+T/2,Y+T/2);
+    ctx.moveTo(X+T/4,Y+T/2);ctx.lineTo(X+T/4,Y+T);
+    ctx.moveTo(X+T*.75,Y+T/2);ctx.lineTo(X+T*.75,Y+T);ctx.stroke();
+    ctx.strokeStyle="rgba(255,120,60,"+(.35+Math.sin(t*4+i)*.2)+")";ctx.lineWidth=1.4;
+    ctx.strokeRect(X+.7,Y+.7,T-1.4,T-1.4);
+  }
+}
+function brickAt(gx,gy){
+  for(var i=0;i<bricks.length;i++)if(bricks[i].gx===gx&&bricks[i].gy===gy)return bricks[i];
+  return null;
 }
 function crumbStep(dt){
   for(var i=0;i<crumbs.length;i++){ var c=crumbs[i];
@@ -1161,13 +1295,19 @@ function bossStep(dt){
     boss.spd=Math.min(205,boss.spd+dt*4);
     var gx=Math.floor((boss.x+16)/T),gy=Math.floor(boss.y/T);
     if(gx>=0&&gx<COLS&&gy>=0&&gy<ROWS&&solidAt(gx,gy)&&boss.smash<=0){
+      // only the cracked damage bricks actually hurt it
+      var br=brickAt(gx,gy)||brickAt(gx,gy+1);
       grid[gy][gx]=0;if(gy+1<ROWS)grid[gy+1][gx]=0;
       bakeLevel();
-      boss.hp--;boss.smash=.55;boss.hit=.35;boss.spd=Math.max(105,boss.spd-95);
+      boss.smash=.55;boss.spd=Math.max(105,boss.spd-95);
       shakeT=.4;sfx.smash();
       for(var d=0;d<16;d++)puffs.push({x:gx*T+rnd(0,T),y:gy*T+rnd(0,T),r:rnd(1,3),t:0,life:rnd(.4,1)});
-      if(boss.hp<=0){ boss.dead=1.5;shakeT=.7;flash=.6;sfx.win();
-        for(var h=0;h<26;h++)hearts.push({x:boss.x+rnd(-14,14),y:boss.y+rnd(-14,14),t:0,life:rnd(.7,1.7),s:rnd(2.5,5)}); }
+      if(br){
+        boss.hp--;boss.hit=.35;flash=.4;
+        for(var hb=0;hb<12;hb++)hearts.push({x:gx*T+rnd(0,T),y:gy*T+rnd(0,T),t:0,life:rnd(.5,1.1),s:rnd(2,4)});
+        if(boss.hp<=0){ boss.dead=1.5;shakeT=.7;flash=.6;sfx.win();
+          for(var h=0;h<26;h++)hearts.push({x:boss.x+rnd(-14,14),y:boss.y+rnd(-14,14),t:0,life:rnd(.7,1.7),s:rnd(2.5,5)}); }
+      }
     }
     if(boss.smash>0)boss.smash-=dt;
     for(i=0;i<players.length;i++){ var p=players[i];
@@ -1403,7 +1543,9 @@ var BOMB_TIME=13,bomb={holder:0,timer:BOMB_TIME,pass:0};
 function tintHex(id){ if(!id||id==="none")return null; var e=byId(TINTS,id); return e?e.hex:null; }
 function skinOf(i){ var s=save.skins[i]||save.skins[0];
   return {c:byId(COLORS,s.c),h:s.h,s:s.s,e:s.e||"normal",
-    hc:tintHex(s.hc),sc:tintHex(s.sc),ec:s.ec||"#160c12"}; }
+    no:s.no||"nonen",mo:s.mo||"nonem",r:s.r||"nonee",
+    hc:tintHex(s.hc),sc:tintHex(s.sc),ec:s.ec||"#160c12",
+    nc:tintHex(s.nc),mc:tintHex(s.mc),rc:tintHex(s.rc)}; }
 function refreshPlayerSkins(){
   for(var k=0;k<players.length;k++)
     if(!players[k].remote)players[k].skin=skinOf(players[k].i);
@@ -1433,7 +1575,7 @@ function restoreGrid(){
   var L=curLevels()[level];
   for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++){
     var ch=L.map[y].charAt(x);
-    grid[y][x]=(ch==="#"||ch==="c")?1:0; }
+    grid[y][x]=(ch==="#"||ch==="c"||ch==="D")?1:0; }
 }
 function updateSaws(dt){
   for(var i=0;i<saws.length;i++){ var s=saws[i];s.rot+=(s.ax?9:7)*dt;if(!s.ax)continue;
@@ -1606,6 +1748,13 @@ function reviveCoop(p){
   p.x=x;p.y=y;p.vx=other.vx*.4;p.vy=-160;p.dead=false;p.inv=.75;p.trail=[];
   spurt(x+PW/2,y+PH/2,14,120);sfx.wall();
 }
+function cutsceneFor(lv){
+  if(mode==="custom")return null;
+  var L=curLevels()[lv];
+  if(L&&L.boss==="chase")return "boss";
+  if(worldOf(lv)===1&&!(L&&L.boss))return "swipe";
+  return null;
+}
 function levelDone(){
   state="win";winT=0;flash=.6;
   for(var i=0;i<players.length;i++)if(players[i].trail.length>4)
@@ -1619,6 +1768,10 @@ function levelDone(){
   queueSave();
   checkUnlocks({nodeath:deaths===0,time:levelTime,coopclear:mode==="coop"});
   party.publish(true,{ev:"clear"});
+  var cs=cutsceneFor(level);
+  if(cs&&!online){ var lv=level;
+    startCutscene(cs,function(){ state="win";$("hud").classList.remove("hide");level=lv;showWin(); });
+    return; }
   showWin();
 }
 
@@ -1747,6 +1900,24 @@ function drawHatRaw(c,id,t,face){
     c.fillStyle="#8f1729";
     c.beginPath();c.ellipse(M-.4,-1.9,5.6,1.7,-.1,0,6.283);c.fill();
     c.fillStyle="#c4243c";c.beginPath();c.arc(M+1.4,-5.6,.9,0,6.283);c.fill();
+  } else if(id==="coinhat"){
+    c.fillStyle="#e0a415";
+    c.beginPath();
+    c.moveTo(M-5.4,-1);c.lineTo(M-5.4,-6);c.lineTo(M-2.7,-3.6);c.lineTo(M,-7);
+    c.lineTo(M+2.7,-3.6);c.lineTo(M+5.4,-6);c.lineTo(M+5.4,-1);c.closePath();c.fill();
+    c.fillStyle="#fff3a8";c.fillRect(M-5.4,-2.4,10.8,1);
+    for(i=0;i<3;i++){ c.fillStyle="#ffc927";
+      c.beginPath();c.arc(M-3+i*3,-4.2+Math.sin(t*4+i)*.4,1.15,0,6.283);c.fill();
+      c.fillStyle="#8a5a10";
+      c.beginPath();c.arc(M-3+i*3,-4.2+Math.sin(t*4+i)*.4,.45,0,6.283);c.fill(); }
+  } else if(id==="halo2"){
+    y=-6.8+Math.sin(t*2)*.6;
+    c.save();c.shadowColor="#ffc927";c.shadowBlur=9;
+    c.strokeStyle="#ffd85e";c.lineWidth=2;
+    c.beginPath();c.ellipse(M,y,5.6,1.9,0,0,6.283);c.stroke();
+    c.strokeStyle="#fff6c9";c.lineWidth=.8;
+    c.beginPath();c.ellipse(M,y,5.6,1.9,0,0,6.283);c.stroke();
+    c.restore();
   } else if(id==="hardhat"){
     c.fillStyle="#ffc927";
     c.beginPath();c.ellipse(M,-2.2,6.4,2,0,0,6.283);c.fill();
@@ -1827,14 +1998,19 @@ function drawBoy(c,x,y,skin,sq,face,t,alpha,air){
   var col=skin.c;
   c.save();c.globalAlpha=alpha*(col.ghost?.78:1);
   c.translate(x+PW/2,y+PH);c.scale(1-sq*.75,1+sq*.75);c.translate(-PW/2,-PH);
+  drawEars(c,skin.r,t,face,skin.rc);
   drawShoes(c,skin.s,t,face,air,skin.sc);
   rr(c,-.6,-.6,PW+1.2,PH+1.2,3.2);c.fillStyle=col.out;c.fill();
   rr(c,.4,.4,PW-.8,PH-.8,2.6);c.fillStyle=bodyGrad(c,col,t);c.fill();
+  if(col.shine){ c.fillStyle="rgba(255,255,255,"+(.25+Math.sin(t*5)*.18)+")";
+    c.fillRect(1.4,2+((t*7)%(PH-4)),PW-2.8,1.4); }
   if(col.stars){ c.fillStyle="#cbb8ff";
     for(var i=0;i<5;i++){ var r=hashv(i*13,7);
       c.fillRect(1.5+r*7,1.5+((r*77)%8),.9,.9); } }
   c.fillStyle="rgba(255,255,255,.22)";rr(c,1.6,1.4,PW-6,2,1);c.fill();
   drawEyes(c,skin,t,face);
+  drawNose(c,skin.no,t,face,skin.nc);
+  drawMouth(c,skin.mo,t,face,skin.mc);
   drawHat(c,skin.h,t,face,skin.hc);
   c.restore();c.globalAlpha=1;
 }
@@ -1879,6 +2055,95 @@ function drawShoes(c,id,t,face,air,tint){
   c.drawImage(e.cv,-e.ox,-e.oy,e.cv.width/e.SS,e.cv.height/e.SS);
   c.restore();
 }
+function drawEars(c,id,t,face,tint){
+  if(!id||id==="nonee")return;
+  var col=tint||"#8a5560";
+  c.fillStyle=col;
+  if(id==="round"){
+    c.beginPath();c.arc(-1.2,PH*.3,2.6,0,6.283);c.fill();
+    c.beginPath();c.arc(PW+1.2,PH*.3,2.6,0,6.283);c.fill();
+  } else if(id==="cat"){
+    c.beginPath();c.moveTo(1,.4);c.lineTo(2.6,-4.4);c.lineTo(4.6,.4);c.closePath();c.fill();
+    c.beginPath();c.moveTo(PW-4.6,.4);c.lineTo(PW-2.6,-4.4);c.lineTo(PW-1,.4);c.closePath();c.fill();
+    c.fillStyle="rgba(255,190,205,.75)";
+    c.beginPath();c.moveTo(2,.2);c.lineTo(2.7,-2.6);c.lineTo(3.6,.2);c.closePath();c.fill();
+    c.beginPath();c.moveTo(PW-3.6,.2);c.lineTo(PW-2.7,-2.6);c.lineTo(PW-2,.2);c.closePath();c.fill();
+  } else if(id==="bunny"){
+    c.beginPath();c.ellipse(2.6,-4.2,1.5,5,-.12,0,6.283);c.fill();
+    c.beginPath();c.ellipse(PW-2.6,-4.2,1.5,5,.12,0,6.283);c.fill();
+    c.fillStyle="rgba(255,190,205,.7)";
+    c.beginPath();c.ellipse(2.6,-4.2,.7,3.4,-.12,0,6.283);c.fill();
+    c.beginPath();c.ellipse(PW-2.6,-4.2,.7,3.4,.12,0,6.283);c.fill();
+  } else if(id==="bat"){
+    c.beginPath();c.moveTo(1.4,.6);c.lineTo(-1.6,-4.6);c.lineTo(4.4,-1.4);c.closePath();c.fill();
+    c.beginPath();c.moveTo(PW-1.4,.6);c.lineTo(PW+1.6,-4.6);c.lineTo(PW-4.4,-1.4);c.closePath();c.fill();
+  } else if(id==="fin"){
+    c.beginPath();c.moveTo(-.6,PH*.2);c.lineTo(-4.4,PH*.34);c.lineTo(-.6,PH*.5);c.closePath();c.fill();
+    c.beginPath();c.moveTo(PW+.6,PH*.2);c.lineTo(PW+4.4,PH*.34);c.lineTo(PW+.6,PH*.5);c.closePath();c.fill();
+  }
+}
+function drawNose(c,id,t,face,tint){
+  if(!id||id==="nonen")return;
+  var M=PW/2,ny=PH*.58,ex=face>0?.8:-.8;
+  var col=tint||"#c4626f";
+  c.fillStyle=col;
+  if(id==="button"){
+    c.beginPath();c.arc(M+ex,ny,1.15,0,6.283);c.fill();
+  } else if(id==="snout"){
+    c.beginPath();c.ellipse(M+ex,ny,2.4,1.6,0,0,6.283);c.fill();
+    c.fillStyle="rgba(0,0,0,.45)";
+    c.beginPath();c.arc(M+ex-.9,ny,.42,0,6.283);c.fill();
+    c.beginPath();c.arc(M+ex+.9,ny,.42,0,6.283);c.fill();
+  } else if(id==="beak"){
+    c.fillStyle=tint||"#e0a415";
+    c.beginPath();c.moveTo(M+ex-1.8,ny-1);c.lineTo(M+ex+(face>0?4.4:-4.4),ny+.4);
+    c.lineTo(M+ex-1.8,ny+1.8);c.closePath();c.fill();
+  } else if(id==="clown"){
+    c.fillStyle=tint||"#ff4d6d";
+    c.beginPath();c.arc(M+ex,ny,2.1,0,6.283);c.fill();
+    c.fillStyle="rgba(255,255,255,.5)";
+    c.beginPath();c.arc(M+ex-.7,ny-.7,.7,0,6.283);c.fill();
+  } else if(id==="piggy"){
+    c.fillStyle=tint||"#ff9ec4";
+    c.beginPath();c.ellipse(M+ex,ny,2.7,1.9,0,0,6.283);c.fill();
+    c.fillStyle="rgba(0,0,0,.4)";
+    c.beginPath();c.ellipse(M+ex-1,ny,.5,.8,0,0,6.283);c.fill();
+    c.beginPath();c.ellipse(M+ex+1,ny,.5,.8,0,0,6.283);c.fill();
+  }
+}
+function drawMouth(c,id,t,face,tint){
+  if(!id||id==="nonem")return;
+  var M=PW/2,my=PH*.76,ex=face>0?.7:-.7;
+  var col=tint||"#2a1016";
+  c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1;c.lineCap="round";
+  if(id==="smile"){
+    c.beginPath();c.arc(M+ex,my-1.2,2.3,.35,Math.PI-.35);c.stroke();
+  } else if(id==="frown"){
+    c.beginPath();c.arc(M+ex,my+1.6,2.3,Math.PI+.35,-.35);c.stroke();
+  } else if(id==="open"){
+    c.beginPath();c.ellipse(M+ex,my,1.7,2.1,0,0,6.283);c.fill();
+  } else if(id==="grin"){
+    c.beginPath();c.moveTo(M+ex-2.6,my-1);c.quadraticCurveTo(M+ex,my+2.4,M+ex+2.6,my-1);
+    c.closePath();c.fill();
+    c.strokeStyle="rgba(255,255,255,.85)";c.lineWidth=.6;
+    c.beginPath();c.moveTo(M+ex-2.2,my-.5);c.lineTo(M+ex+2.2,my-.5);c.stroke();
+  } else if(id==="fangs"){
+    c.beginPath();c.moveTo(M+ex-2.6,my-1);c.quadraticCurveTo(M+ex,my+2.2,M+ex+2.6,my-1);
+    c.closePath();c.fill();
+    c.fillStyle="#fff";
+    c.beginPath();c.moveTo(M+ex-1.7,my-.6);c.lineTo(M+ex-.9,my+1.5);c.lineTo(M+ex-.2,my-.6);c.closePath();c.fill();
+    c.beginPath();c.moveTo(M+ex+.2,my-.6);c.lineTo(M+ex+.9,my+1.5);c.lineTo(M+ex+1.7,my-.6);c.closePath();c.fill();
+  } else if(id==="stitch"){
+    c.lineWidth=.85;
+    c.beginPath();c.moveTo(M+ex-3,my);c.lineTo(M+ex+3,my);c.stroke();
+    for(var i=-2;i<=2;i++){ c.beginPath();
+      c.moveTo(M+ex+i*1.3,my-1.2);c.lineTo(M+ex+i*1.3,my+1.2);c.stroke(); }
+  } else if(id==="tongue"){
+    c.beginPath();c.arc(M+ex,my-1.1,2.2,.3,Math.PI-.3);c.stroke();
+    c.fillStyle=tint||"#ff6f91";
+    c.beginPath();c.ellipse(M+ex+.4,my+1.5,1.4,1.9,0,0,6.283);c.fill();
+  }
+}
 function drawEyes(c,skin,t,face){
   var ex=face>0?1.2:-1.2,id=skin.e||"normal",pup=skin.ec||"#160c12";
   var lx=PW*.31,rx=PW*.71,ey=PH*.42;
@@ -1893,6 +2158,24 @@ function drawEyes(c,skin,t,face){
     c.strokeStyle=pup;c.lineWidth=1.2;c.lineCap="round";
     [lx,rx].forEach(function(px){
       c.beginPath();c.arc(px,ey,2,.15,Math.PI-.15);c.stroke(); });
+    return;
+  }
+  if(id==="star"){
+    c.fillStyle=pup;
+    [lx,rx].forEach(function(px){
+      c.beginPath();
+      for(var i=0;i<10;i++){ var a=-Math.PI/2+i/10*6.283,rr=i%2?1:2.5;
+        c[i?"lineTo":"moveTo"](px+Math.cos(a)*rr,ey+Math.sin(a)*rr); }
+      c.closePath();c.fill(); });
+    return;
+  }
+  if(id==="spiral"){
+    c.strokeStyle=pup;c.lineWidth=.75;
+    [lx,rx].forEach(function(px){
+      c.beginPath();
+      for(var a=0;a<11;a+=.35){ var rr=a*.22, xx=px+Math.cos(a+t*3)*rr, yy=ey+Math.sin(a+t*3)*rr;
+        if(a===0)c.moveTo(xx,yy); else c.lineTo(xx,yy); }
+      c.stroke(); });
     return;
   }
   // white of the eye
@@ -1991,6 +2274,7 @@ function render(t){
   var bg=ctx.createLinearGradient(0,0,0,H);
   bg.addColorStop(0,"#0a0807");bg.addColorStop(1,"#020202");
   ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  if(state==="cut"){ drawCutscene(t);return; }
   if(!COLS||!grid.length||state==="menu")return;
   var i,p;
   ctx.save();
@@ -2022,6 +2306,8 @@ function render(t){
   ctx.globalAlpha=1;
 
   drawGoal(t);
+  if(bricks.length)drawBricks(t);
+  if(coins.length)drawCoins(t);
   if(crumbs.length)drawCrumbs(t);
   if(lasers.length)drawLasers(t);
   for(i=0;i<saws.length;i++)drawSaw(saws[i]);
@@ -2182,6 +2468,7 @@ window.addEventListener("pointermove",function(e){
   refresh();
 });
 function dropP(e){ if(held[e.pointerId]){delete held[e.pointerId];refresh();} }
+window.addEventListener("pointerdown",function(){ if(state==="cut"&&cut){ var af=cut.after;cut=null;if(af)af();else quitToMenu(); } });
 window.addEventListener("pointerup",dropP);
 window.addEventListener("pointercancel",dropP);
 cvs.addEventListener("lostpointercapture",dropP);
@@ -2190,6 +2477,7 @@ window.addEventListener("blur",function(){ held={};keys[0].l=keys[0].r=keys[0].j
 cvs.addEventListener("contextmenu",function(e){e.preventDefault();});
 window.addEventListener("keydown",function(e){
   audioOn();
+  if(state==="cut"&&cut){ var af=cut.after;cut=null;if(af)af();else quitToMenu(); return; }
   if(e.target&&e.target.tagName==="INPUT")return;
   var k=e.key.toLowerCase(),p2=twoP()?1:0,i;
   if(k==="a"){keys[0].l=1;e.preventDefault();}
@@ -2469,6 +2757,10 @@ function updateHud(){
   $("hLv").textContent=(mode==="custom")?"MINE":((mode==="coop"&&!online)?((level+1<10?"0":"")+(level+1)):worldLabel(level));
   $("hName").textContent=curLevels()[level].name+(mode==="coop"?" \u00b7 CHAINED":mode==="versus"?" \u00b7 VERSUS":"");
   $("hDeath").innerHTML="\u2620 <b>"+deaths+"</b>";
+  var hc=$("hCoin");
+  if(coins.length){ hc.style.display="";
+    hc.innerHTML="\u25cf <b>"+coinsGot+"/"+coins.length+"</b>"; }
+  else hc.style.display="none";
 }
 function startGame(m,lv,isOnline){
   mode=m;online=!!isOnline;totalTime=0;totalDeaths=0;
@@ -2507,6 +2799,145 @@ function nextLevel(){
     checkUnlocks({});show("s-done");return; }
   show(null);loadLevel(level+1);
 }
+/* ═════════════ CUTSCENE — the suit takes her ═════════════ */
+var cut=null;
+function startCutscene(kind,after){
+  cut={k:kind,t:0,dur:kind==="boss"?7.4:3.2,after:after||null,shk:0,flashT:0};
+  state="cut";
+  $("hud").classList.add("hide");
+  show(null);
+  sfx.snap();
+}
+function cutStep(dt){
+  if(!cut)return;
+  cut.t+=dt;
+  if(cut.shk>0)cut.shk-=dt;
+  if(cut.flashT>0)cut.flashT-=dt;
+  var T1=cut.k==="boss";
+  // beats: entrance -> grab -> lift -> leave
+  var t=cut.t;
+  if(!cut.beat1&&t>(T1?2.0:0.7)){ cut.beat1=1;cut.shk=.5;sfx.smash();shakeT=.4; }
+  if(!cut.beat2&&t>(T1?3.6:1.5)){ cut.beat2=1;cut.flashT=.4;sfx.die("saw"); }
+  if(!cut.beat3&&t>(T1?5.0:2.2)){ cut.beat3=1;sfx.wall(); }
+  if(cut.t>=cut.dur){
+    var af=cut.after;cut=null;
+    if(af)af(); else quitToMenu();
+  }
+}
+function drawSuit(c,x,y,S,armUp,t){
+  c.save();c.translate(x,y);c.scale(S,S);
+  // legs
+  c.fillStyle="#2b303a";
+  c.fillRect(-7,6,5,11);c.fillRect(2,6,5,11);
+  c.fillStyle="#1b1f26";c.fillRect(-7.6,16,6,3);c.fillRect(1.4,16,6,3);
+  // torso
+  var g=c.createLinearGradient(0,-8,0,8);
+  g.addColorStop(0,"#5a6472");g.addColorStop(1,"#333a45");
+  c.fillStyle=g;rr(c,-9,-9,18,16,3);c.fill();
+  c.strokeStyle="#12151a";c.lineWidth=1.1;rr(c,-9,-9,18,16,3);c.stroke();
+  // chest light
+  c.fillStyle="rgba(255,80,90,"+(.55+Math.sin(t*7)*.35)+")";
+  c.beginPath();c.arc(0,-2,2.6,0,6.283);c.fill();
+  c.fillStyle="#ffd9dc";c.beginPath();c.arc(0,-2,1.1,0,6.283);c.fill();
+  // shoulders
+  c.fillStyle="#6b7686";
+  rr(c,-13,-9.5,5.5,7,2);c.fill();rr(c,7.5,-9.5,5.5,7,2);c.fill();
+  // head / visor
+  c.fillStyle="#454e5b";rr(c,-6,-19,12,10,3);c.fill();
+  c.strokeStyle="#12151a";c.lineWidth=1;rr(c,-6,-19,12,10,3);c.stroke();
+  c.fillStyle="#0d1014";rr(c,-4.4,-16.6,8.8,4.4,1.6);c.fill();
+  c.fillStyle="rgba(120,225,255,"+(.6+Math.sin(t*5)*.25)+")";
+  rr(c,-4,-16.2,8,1.6,.8);c.fill();
+  // antenna
+  c.strokeStyle="#6b7686";c.lineWidth=1;
+  c.beginPath();c.moveTo(4,-19);c.lineTo(6.5,-24);c.stroke();
+  c.fillStyle="#ff4d5e";c.beginPath();c.arc(6.5,-24.6,1.3,0,6.283);c.fill();
+  // arms — the grabbing one reaches up when armUp
+  c.strokeStyle="#5a6472";c.lineWidth=4.4;c.lineCap="round";
+  c.beginPath();c.moveTo(-10,-5);c.lineTo(-13,4);c.stroke();
+  c.beginPath();c.moveTo(10,-5);
+  if(armUp)c.lineTo(15,-13); else c.lineTo(13,3);
+  c.stroke();
+  c.fillStyle="#7d8896";
+  c.beginPath();c.arc(-13.4,4.6,2.2,0,6.283);c.fill();
+  c.beginPath();c.arc(armUp?15.6:13.4,armUp?-13.8:3.6,2.4,0,6.283);c.fill();
+  c.restore();
+}
+function drawGirl(c,x,y,S,t,struggle){
+  c.save();c.translate(x,y);c.scale(S,S);
+  if(struggle)c.rotate(Math.sin(t*13)*.16);
+  var sk={c:byId(COLORS,"pink"),h:"bow",s:"nones",e:"sad",no:"button",mo:"frown",r:"nonee",
+    hc:null,sc:null,ec:"#160c12",nc:null,mc:null,rc:null};
+  drawBoy(c,-PW/2,-PH/2,sk,0,-1,t,1,!!struggle);
+  c.restore();
+}
+function drawCutscene(t){
+  if(!cut)return;
+  var w=W,h=H,cx=w/2,cy=h*.52;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  // dark stage
+  var bg=ctx.createLinearGradient(0,0,0,h);
+  bg.addColorStop(0,"#100a0e");bg.addColorStop(1,"#040305");
+  ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
+  var S=Math.max(1.6,Math.min(w,h)/150);
+  ctx.save();
+  if(cut.shk>0){var q=cut.shk*10;ctx.translate(rnd(-q,q),rnd(-q,q));}
+  // floor
+  ctx.fillStyle="#1a1418";ctx.fillRect(0,cy+18*S,w,h);
+  ctx.fillStyle="rgba(211,19,43,.35)";ctx.fillRect(0,cy+18*S,w,2);
+  // spotlight
+  var sp=ctx.createRadialGradient(cx,cy,4,cx,cy,120*S*.9);
+  sp.addColorStop(0,"rgba(255,220,235,.14)");sp.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=sp;ctx.fillRect(0,0,w,h);
+
+  var T1=cut.k==="boss",tt=cut.t;
+  // timeline positions
+  var suitX,girlX,girlY,armUp=false,struggle=false,carried=false;
+  if(T1){
+    var enter=Math.min(1,tt/2.0);
+    suitX=w+70*S-(w*.5+70*S)*ease(enter);
+    girlX=cx+26*S;girlY=cy;
+    if(tt>2.0&&tt<3.6){ armUp=true;struggle=true; }
+    if(tt>=3.6){ carried=true;armUp=true; }
+    if(tt>=5.0){ var out=Math.min(1,(tt-5.0)/2.4);
+      suitX-= (w*.75)*ease(out); }
+  } else {
+    var e2=Math.min(1,tt/0.7);
+    suitX=w+60*S-(w*.5+60*S)*ease(e2);
+    girlX=cx+24*S;girlY=cy;
+    if(tt>0.7&&tt<1.5){ armUp=true;struggle=true; }
+    if(tt>=1.5){ carried=true;armUp=true; }
+    if(tt>=2.2){ var o2=Math.min(1,(tt-2.2)/1.0);
+      suitX-=(w*.8)*ease(o2); }
+  }
+  if(carried){ girlX=suitX+16*S;girlY=cy-14*S; }
+  // her, then him in front
+  drawGirl(ctx,girlX,girlY,S*1.05,t,struggle&&!carried);
+  drawSuit(ctx,suitX,girlY+(carried?14*S:0),S,armUp,t);
+  ctx.restore();
+  if(cut.flashT>0){ ctx.fillStyle="rgba(255,255,255,"+(cut.flashT*.5)+")";ctx.fillRect(0,0,w,h); }
+  // letterbox + caption
+  var bar=Math.max(26,h*.09);
+  ctx.fillStyle="#000";ctx.fillRect(0,0,w,bar);ctx.fillRect(0,h-bar,w,bar);
+  ctx.textAlign="center";
+  var line="";
+  if(T1){
+    if(tt<2.0)line="SOMETHING IS COMING…";
+    else if(tt<3.6)line="HEY — LET GO OF HER";
+    else if(tt<5.0)line="NO!";
+    else line="HE'S TAKING HER INTO THE ROT";
+  } else {
+    if(tt<1.5)line="NOT AGAIN";
+    else line="HE TOOK HER AGAIN";
+  }
+  ctx.fillStyle="#e4d8c4";
+  ctx.font="900 "+Math.max(11,Math.min(20,w/34))+"px 'Arial Black',system-ui,sans-serif";
+  ctx.fillText(line,cx,h-bar/2+5);
+  ctx.fillStyle="var(--dim)";ctx.fillStyle="#6a5f56";
+  ctx.font="700 9px ui-monospace,monospace";
+  ctx.fillText("tap to skip",cx,bar/2+4);
+}
+function ease(x){ return x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2; }
 /* ═════════════ LEVEL EDITOR ═════════════ */
 var TOOLS=[
   {ch:" ",n:"Erase"},
@@ -2521,6 +2952,8 @@ var TOOLS=[
   {ch:"c",n:"Crumble"},
   {ch:"L",n:"Laser"},
   {ch:"R",n:"Laser 2"},
+  {ch:"D",n:"Dmg Brick"},
+  {ch:"$",n:"Coin"},
   {ch:"P",n:"Spawn"},
   {ch:"G",n:"Exit"}
 ];
@@ -2603,6 +3036,21 @@ function drawCellArt(c,ch,X,Y,S,icon){
     c.fillStyle=ch==="L"?"#ff5a6e":"#ff9a4e";
     c.beginPath();c.arc(X+S*.68,Y+S/2,S*.14,0,6.283);c.fill();
     c.fillStyle="rgba(255,120,140,.5)";c.fillRect(X+S*.82,Y+S*.45,S*.18,S*.1);
+  } else if(ch==="D"){
+    c.fillStyle="#5c3a1a";c.fillRect(X,Y,S,S);
+    c.fillStyle="#7a4f22";c.fillRect(X+S*.06,Y+S*.06,S*.88,S*.44);
+    c.strokeStyle="rgba(0,0,0,.5)";c.lineWidth=S*.05;
+    c.beginPath();c.moveTo(X,Y+S/2);c.lineTo(X+S,Y+S/2);
+    c.moveTo(X+S/2,Y);c.lineTo(X+S/2,Y+S/2);
+    c.moveTo(X+S/4,Y+S/2);c.lineTo(X+S/4,Y+S);
+    c.moveTo(X+S*.75,Y+S/2);c.lineTo(X+S*.75,Y+S);c.stroke();
+    c.strokeStyle="rgba(255,120,60,.6)";c.lineWidth=S*.08;
+    c.strokeRect(X+S*.05,Y+S*.05,S*.9,S*.9);
+  } else if(ch==="$"){
+    var ccx=X+S/2,ccy=Y+S/2;
+    c.fillStyle="#c48c00";c.beginPath();c.arc(ccx,ccy,S*.3,0,6.283);c.fill();
+    c.fillStyle="#ffc927";c.beginPath();c.arc(ccx,ccy,S*.23,0,6.283);c.fill();
+    c.fillStyle="#fff3a8";c.beginPath();c.arc(ccx-S*.07,ccy-S*.07,S*.08,0,6.283);c.fill();
   } else if(ch==="P"){
     c.fillStyle="#3ad35a";c.globalAlpha=.22;c.fillRect(X,Y,S,S);c.globalAlpha=1;
     c.fillStyle="#3ad35a";c.font="700 "+(S*.5)+"px ui-monospace,monospace";
@@ -2674,7 +3122,7 @@ function solveLevel(map,budget){
   var grid=[],spawn=null,goal=null,spikes=[],saws=[];
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=map[y].charAt(x);
-      row.push(ch==="#"||ch==="c"?1:0);
+      row.push(ch==="#"||ch==="c"||ch==="D"?1:0);
       if(ch==="P")spawn={x:x*T+(T-PW)/2,y:y*T+(T-PH)};
       if(ch==="G")goal={x:x*T+T/2,y:y*T+T};
       if("^v<>".indexOf(ch)>=0)spikes.push(mkSpike(ch,x,y));
@@ -2966,6 +3414,18 @@ function previewEye(cv,id,pup){
   drawEyes(c,{e:id,ec:pup},performance.now()/1000,1);
   c.restore();
 }
+function previewFace(cv,kind,id,tint){
+  var c=cv.getContext("2d"),S=cv.width/16;
+  c.setTransform(S,0,0,S,0,0);c.clearRect(0,0,16,16);
+  c.save();c.translate(2.5,2.2);
+  c.fillStyle="#4a3f44";rr(c,-.4,-.4,PW+.8,PH+.8,2.8);c.fill();
+  var t=performance.now()/1000;
+  if(kind==="r")drawEars(c,id,t,1,tint);
+  c.fillStyle="#3a3136";rr(c,0,0,PW,PH,2.6);c.fill();
+  if(kind==="no")drawNose(c,id,t,1,tint);
+  else if(kind==="mo")drawMouth(c,id,t,1,tint);
+  c.restore();
+}
 function buildSwatches(gid,list,sel,key){
   var box=$(gid);if(!box)return;
   box.innerHTML="";
@@ -3031,13 +3491,16 @@ function renderWard(){
   function build(list,type,sel,key,gid){
     var g=$(gid);g.innerHTML="";
     for(var i=0;i<list.length;i++){ (function(it){
-      var un=(type==="e")||has(it.id),d=document.createElement("div");
+      var un=FREE_TYPES[type]||has(it.id),d=document.createElement("div");
       d.className="item"+(sel===it.id?" on":"")+(un?"":" locked");
       var cv=document.createElement("canvas");cv.width=cv.height=80;
       d.appendChild(cv);
       if(type==="c")previewColor(cv,it);
       else if(type==="h")previewHat(cv,it.id,tintHex(cur.hc));
       else if(type==="e")previewEye(cv,it.id,cur.ec);
+      else if(type==="no")previewFace(cv,"no",it.id,tintHex(cur.nc));
+      else if(type==="mo")previewFace(cv,"mo",it.id,tintHex(cur.mc));
+      else if(type==="r")previewFace(cv,"r",it.id,tintHex(cur.rc));
       else previewShoe(cv,it.id,tintHex(cur.sc));
       var sp=document.createElement("span");sp.textContent=it.n;d.appendChild(sp);
       if(!un){ var r=unlockRule(type,it.id),l=document.createElement("span");
@@ -3055,11 +3518,17 @@ function renderWard(){
   }
   build(COLORS,"c",cur.c,"c","gColor");
   build(EYES,"e",cur.e||"normal","e","gEye");
+  build(NOSES,"no",cur.no||"nonen","no","gNose");
+  build(MOUTHS,"mo",cur.mo||"nonem","mo","gMouth");
+  build(EARS,"r",cur.r||"nonee","r","gEar");
   build(HATS,"h",cur.h,"h","gHat");
   build(SHOES,"s",cur.s,"s","gShoe");
   buildSwatches("tHat",TINTS,cur.hc||"none","hc");
   buildSwatches("tShoe",TINTS,cur.sc||"none","sc");
   buildSwatches("tPupil",PUPILS,cur.ec||"#160c12","ec");
+  buildSwatches("tNose",TINTS,cur.nc||"none","nc");
+  buildSwatches("tMouth",TINTS,cur.mc||"none","mc");
+  buildSwatches("tEar",TINTS,cur.rc||"none","rc");
   $("wCount").textContent=save.unlocked.length+"/"+TOTAL;
   $("wardWho").textContent="Player "+(wardP+1);
   var tabs=document.querySelectorAll(".tab");
@@ -3097,8 +3566,121 @@ function renderParty(){
     pd+=m.d|0;pc+=m.cl|0; }
   $("pDeaths").textContent=pd;
   $("pClears").textContent=pc;
+  if($("s-multi")&&$("s-multi").className.indexOf("hide")<0)renderFriends();
 }
 
+/* ═════════════ FRIENDS & INVITES ═════════════ */
+var frIdx=null,inboxTimer=null,seenInvite=0;
+function loadIndex(){
+  return cloudGet(CLOUD_INDEX).then(function(idx){ frIdx=idx;return idx; });
+}
+function friendBlob(name){
+  if(!frIdx||!frIdx.names)return null;
+  return frIdx.names[String(name).toLowerCase()]||null;
+}
+function renderFriends(){
+  var list=$("frList");if(!list)return;
+  list.innerHTML="";
+  var fr=(save.friends||[]);
+  $("frCount").textContent=fr.length?("("+fr.length+")"):"";
+  $("frEmpty").style.display=fr.length?"none":"";
+  fr.forEach(function(nm){
+    var row=document.createElement("div");row.className="mylv";
+    var info=document.createElement("div");info.className="mn";
+    info.textContent=nm;
+    var sub=document.createElement("div");sub.className="ms";
+    sub.textContent=party.on&&party.leader?"in your party? invite them":"make a party to invite";
+    var wrap=document.createElement("div");wrap.style.flex="1";
+    wrap.appendChild(info);wrap.appendChild(sub);
+    row.appendChild(wrap);
+    var inv=document.createElement("button");
+    inv.textContent="Invite";
+    inv.onclick=function(){ inviteFriend(nm,inv); };
+    if(!(party.on&&party.leader)){ inv.disabled=true;inv.style.opacity=".4"; }
+    row.appendChild(inv);
+    var del=document.createElement("button");
+    del.className="del";del.textContent="Remove";
+    del.onclick=function(){
+      save.friends=(save.friends||[]).filter(function(x){return x!==nm;});
+      queueSave();sfx.click();renderFriends(); };
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+}
+$("bAddFr").onclick=function(){
+  var nm=normUser($("frName").value);
+  if(!nm){ $("frErr").textContent="Type a username first.";return; }
+  if(!curUser){ $("frErr").textContent="Sign in to add friends.";return; }
+  if(nm.toLowerCase()===curUser.toLowerCase()){ $("frErr").textContent="That's you.";return; }
+  save.friends=save.friends||[];
+  if(save.friends.some(function(x){return x.toLowerCase()===nm.toLowerCase();})){
+    $("frErr").textContent="Already on your list.";return; }
+  sfx.click();$("frErr").textContent="Looking…";
+  loadIndex().then(function(){
+    var b=friendBlob(nm);
+    if(!b){ $("frErr").textContent="No player called “"+nm+"”.";return; }
+    save.friends.push(nm);queueSave();
+    $("frName").value="";$("frErr").textContent="";
+    toast(nm+" added");renderFriends();
+  });
+};
+function inviteFriend(nm,btn){
+  if(!(party.on&&party.leader)){ toast("Make a party first");sfx.snap();return; }
+  sfx.click();
+  if(btn){btn.textContent="…";btn.disabled=true;}
+  loadIndex().then(function(){
+    var b=friendBlob(nm);
+    if(!b){ toast("Couldn't find "+nm);if(btn){btn.textContent="Invite";btn.disabled=false;}return; }
+    return cloudGet(b).then(function(doc){
+      if(!doc){ toast("Couldn't reach "+nm);if(btn){btn.textContent="Invite";btn.disabled=false;}return; }
+      doc.inbox=(doc.inbox||[]).filter(function(m){return Date.now()-m.ts<600000;});
+      doc.inbox.push({from:curUser||"a lad",code:party.code,ts:Date.now()});
+      if(doc.inbox.length>8)doc.inbox=doc.inbox.slice(-8);
+      return cloudPut(b,doc).then(function(ok){
+        toast(ok?("Invite sent to "+nm):"Invite failed");
+        if(btn){btn.textContent="Invite";btn.disabled=false;} });
+    });
+  });
+}
+/* only listen for invites while sitting in a menu or paused */
+function inboxEligible(){
+  return !!curUser&&!!cloudId&&(state==="menu"||state==="pause");
+}
+function startInbox(){
+  if(inboxTimer)clearInterval(inboxTimer);
+  inboxTimer=setInterval(function(){
+    if(!inboxEligible())return;
+    cloudGet(cloudId).then(function(doc){
+      if(!doc||!doc.inbox||!doc.inbox.length)return;
+      var latest=null;
+      doc.inbox.forEach(function(m){ if(m.ts>seenInvite&&Date.now()-m.ts<600000&&(!latest||m.ts>latest.ts))latest=m; });
+      if(!latest)return;
+      seenInvite=latest.ts;
+      showInvite(latest);
+    });
+  },9000);
+}
+function showInvite(m){
+  var box=$("inviteBox");
+  $("invText").textContent=m.from+" invited you to their party";
+  box.style.display="block";
+  sfx.unlock();
+  box.__code=m.code;
+}
+$("invJoin").onclick=function(){
+  var code=$("inviteBox").__code;
+  $("inviteBox").style.display="none";
+  if(!code)return;
+  sfx.click();
+  if(party.on)party.leave();
+  show("s-party");setPartyBusy(true);$("pErr").textContent="";
+  party.join(code).then(function(ok){
+    setPartyBusy(false);
+    if(!ok){ $("pErr").textContent="That party has closed."; }
+    else { renderParty();refreshPartyChips();toast("Joined the party"); }
+  });
+};
+$("invNo").onclick=function(){ $("inviteBox").style.display="none";sfx.click(); };
 /* buttons */
 var COUCH_TOAST={coop:"P1 left side \u00b7 P2 right side",
   casual:"P1 left side \u00b7 P2 right side \u00b7 reach the goal together",
@@ -3157,12 +3739,41 @@ function blockedByParty(){
   return false;
 }
 $("bSolo").onclick=function(){ if(blockedByParty())return; sfx.click();openLevelMap();};
-$("bMulti").onclick=function(){ if(blockedByParty())return; sfx.click();show("s-multi");};
+$("bMulti").onclick=function(){ if(blockedByParty())return; sfx.click();show("s-multi");renderFriends();$("frErr").textContent=curUser?"":"Sign in to use friends.";};
 $("mBack").onclick=function(){sfx.click();show("s-title");};
 $("mapBack").onclick=function(){sfx.click();show("s-title");};
 $("mapPrev").onclick=function(){gotoPage(mapPage-1);};
 $("mapNext").onclick=function(){gotoPage(mapPage+1);};
-$("bEditLv").onclick=function(){ sfx.click();openEditor(mapSel); };
+/* ── editor is hidden behind a chord + password ── */
+var EDIT_PW="Mouse!",editUnlocked=false,chordKeys={};
+function revealEditor(){
+  editUnlocked=true;
+  $("bEditLv").style.display="";
+  toast("Editor unlocked");
+}
+function askEditorPw(){
+  if(editUnlocked){ toast("Editor already unlocked");return; }
+  var v=prompt("Password:");
+  if(v===null)return;
+  if(v===EDIT_PW){ sfx.unlock();revealEditor(); }
+  else { sfx.snap();toast("Wrong password"); }
+}
+window.addEventListener("keydown",function(e){
+  var k=e.key;
+  if(k==="1"||k==="0"||k==="l"||k==="L"){
+    chordKeys[String(k).toLowerCase()]=1;
+    if(chordKeys["1"]&&chordKeys["0"]&&chordKeys["l"]){
+      chordKeys={};
+      if(!editUnlocked)askEditorPw();
+    }
+  }
+});
+window.addEventListener("keyup",function(e){
+  var k=String(e.key).toLowerCase();
+  if(k==="1"||k==="0"||k==="l")delete chordKeys[k];
+});
+window.addEventListener("blur",function(){ chordKeys={}; });
+$("bEditLv").onclick=function(){ if(!editUnlocked)return; sfx.click();openEditor(mapSel); };
 $("edBack").onclick=function(){ sfx.click();show("s-levels");syncMapFoot(); };
 $("edCheck").onclick=function(){
   var v=edValidate();
@@ -3309,11 +3920,13 @@ function step(dt){
   shakeT=Math.max(0,shakeT-dt);flash=Math.max(0,flash-dt*2);
   if(introT>0)introT-=dt;
   var i;
+  if(state==="cut"){ cutStep(dt);return; }
   if(state==="play"){
     levelTime+=dt;totalTime+=dt;
     updateSaws(dt);
     for(i=0;i<players.length;i++)updatePlayer(players[i],dt);
     if(crumbs.length)crumbStep(dt);
+    if(coins.length)coinStep(dt);
     if(lasers.length)laserStep(dt);
     if(boss)bossStep(dt);
     if(mode==="coop")tetherStep(dt);
@@ -3373,6 +3986,7 @@ function enterGame(){
     $("bSignOut").textContent=curUser?("Sign out ("+curUser+")"):"Sign in to save";
     if(!store.ok)$("tHint").textContent="this browser is blocking saves — progress won't stick";
     else if(!curUser)$("tHint").textContent="playing without saving · tap a number to jump to a level";
+    if(curUser)startInbox();
   });
 }
 function liBusy(b){ $("bSignIn").disabled=b;$("bSignUp").disabled=b;$("bGuest").disabled=b; }
@@ -3390,10 +4004,13 @@ $("bSignUp").onclick=function(){
     return cloudGet(CLOUD_INDEX).then(function(idx){
       if(!idx||!idx.accounts){ liBusy(false);$("liErr").textContent="Can't reach the account server. Check your connection.";return; }
       if(idx.accounts[key]){ liBusy(false);$("liErr").textContent="That username and password is already taken. Try signing in.";return; }
+      if(!idx.names)idx.names={};
+      if(idx.names[u.toLowerCase()]){ liBusy(false);$("liErr").textContent="That username is taken. Pick another one.";return; }
       resetSaveObj();curUser=u;save.name=u;
-      return cloudNew({n:u,save:save,ts:Date.now()}).then(function(bid){
+      return cloudNew({n:u,save:save,ts:Date.now(),inbox:[]}).then(function(bid){
         if(!bid){ liBusy(false);$("liErr").textContent="Couldn't create the account. Try again.";return; }
         idx.accounts[key]=bid;
+        idx.names[u.toLowerCase()]=bid;
         return cloudPut(CLOUD_INDEX,idx).then(function(ok){
           if(!ok){ liBusy(false);$("liErr").textContent="Couldn't finish creating the account. Try again.";return; }
           cloudId=bid;
