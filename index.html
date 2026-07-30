@@ -598,9 +598,16 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="2.7.1";
+var VERSION="2.8.0";
 var CHANGELOG=[
-  {v:"2.7.1",d:"latest",items:[
+  {v:"2.8.0",d:"latest",items:[
+    "BLOOD REBUILT. It was clipped to a small window around each splat, so anything landing further out painted straight over the walls. There is now one clip region per level covering only open space — blood physically cannot touch a solid block any more",
+    "Puddles merge instead of stacking. Blood landing near an existing puddle grows it and drifts it, rather than dropping another oval on top — that is what caused the pile of ovals at the bottom",
+    "Blood no longer hangs in mid-air. If it lands with nothing underneath, runners break off and trickle down to the first floor below and start a puddle there",
+    "Spikes now draw ON TOP of blood instead of under it, so blood sits behind them and you can see both — no cut-out holes around hazards",
+    "The exact spike or saw that killed you keeps wet blood on it, so when you respawn you can see where you died"
+  ]},
+  {v:"2.7.1",items:[
     "FIXED: damage zones did nothing. The damage only counted if the boss smashed a solid block in that cell — and a saw is not solid, so a zone placed on a saw could never fire",
     "Zones now hurt the boss the moment it touches one, whether that cell holds a block, a saw, or nothing at all. Put one over a saw and the saw appears to do the killing",
     "One hit per zone with a short cooldown, so a single zone cannot drain the whole health bar"
@@ -1145,6 +1152,7 @@ function loadLevel(i){
   dmgSet={};
   if(L.dmg)for(var di=0;di<L.dmg.length;di++)dmgSet[L.dmg[di]]=1;
   drops.length=0;drips.length=0;pools.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
+  goreSpike.length=0;goreSaw.length=0;
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=L.map[y].charAt(x); row.push(ch==="#"?1:0);
       if(ch==="P")spawn={x:x*T+(T-PW)/2,y:y*T+(T-PH)};
@@ -1194,7 +1202,24 @@ function bakeLevel(){
     if(!solidAt(x-1,y)){b.fillStyle=TH.side;b.fillRect(X,Y,2,T);}
     if(!solidAt(x+1,y)){b.fillStyle=TH.side;b.fillRect(X+T-2,Y,2,T);}
   }
-  for(var i=0;i<spikes.length;i++)drawSpike(b,spikes[i]);
+  spikeCv=document.createElement("canvas");
+  spikeCv.width=COLS*T*2;spikeCv.height=ROWS*T*2;
+  var sk=spikeCv.getContext("2d");sk.scale(2,2);
+  for(var i=0;i<spikes.length;i++)drawSpike(sk,spikes[i]);
+  buildOpenPath();
+}
+/* One clip path per level: everywhere blood is allowed to land (all non-solid
+   cells). Spikes are NOT excluded, so blood sits behind them and both show. */
+function buildOpenPath(){
+  openPath=new Path2D();
+  for(var y=0;y<ROWS;y++){
+    var run=-1;
+    for(var x=0;x<=COLS;x++){
+      var open=(x<COLS)&&!solidAt(x,y);
+      if(open&&run<0)run=x;
+      else if(!open&&run>=0){ openPath.rect(run*T,y*T,(x-run)*T,T);run=-1; }
+    }
+  }
 }
 function drawSpike(b,s){
   var n=3,st=T/n;b.save();b.translate(s.cx+T/2,s.cy+T/2);
@@ -1460,22 +1485,56 @@ function drawBoss(t){
 }
 /* ═════════════ BLOOD ═════════════ */
 var drops=[],drips=[],pools=[],chunks=[],puffs=[],hearts=[],prints=[];
-var BHI="#c81f30",BMID="#8c0f1d",BLO="#5c0912",BDK="#2e0509",BWET="rgba(255,70,80,.4)",BDRY="#1c0407";
-function openClip(x,y,pad){
-  var path=new Path2D(),tx=Math.floor(x/T),ty=Math.floor(y/T),cx,cy;
-  path.rect((tx-pad)*T,(ty-pad)*T,(pad*2+1)*T,(pad*2+1)*T);
-  for(cy=ty-pad;cy<=ty+pad;cy++)for(cx=tx-pad;cx<=tx+pad;cx++)
-    if(solidAt(cx,cy))path.rect(cx*T,cy*T,T,T);
-  for(var i=0;i<spikes.length;i++){ var s=spikes[i];
-    if(s.x+s.w>x-pad*T&&s.x<x+pad*T&&s.y+s.h>y-pad*T&&s.y<y+pad*T)path.rect(s.x,s.y,s.w,s.h); }
-  return path;
+var spikeCv=null,openPath=null;
+var goreSpike=[],goreSaw=[];
+function markGore(list,ref){
+  for(var i=0;i<list.length;i++)if(list[i].o===ref){ list[i].a=Math.min(1,list[i].a+.35);return; }
+  list.push({o:ref,a:.55});
 }
+/* wet blood left on the exact spike/saw that killed you */
+function drawSpikeGore(t){
+  for(var i=0;i<goreSpike.length;i++){
+    var g=goreSpike[i],sp=g.o;
+    ctx.save();ctx.globalAlpha=Math.min(.85,g.a);
+    ctx.translate(sp.cx+T/2,sp.cy+T/2);
+    if(sp.d===1)ctx.rotate(Math.PI);else if(sp.d===2)ctx.rotate(-Math.PI/2);else if(sp.d===3)ctx.rotate(Math.PI/2);
+    ctx.translate(-T/2,-T/2);
+    var n=3,st=T/n;
+    for(var k=0;k<n;k++){ var x0=k*st;
+      ctx.fillStyle=BMID;
+      ctx.beginPath();ctx.moveTo(x0+.6,T);ctx.lineTo(x0+st/2,T-10.4);ctx.lineTo(x0+st-.6,T);ctx.closePath();ctx.fill();
+      ctx.fillStyle=BHI;ctx.globalAlpha*=.8;
+      ctx.beginPath();ctx.moveTo(x0+st*.34,T-1.4);ctx.lineTo(x0+st/2,T-7.4);ctx.lineTo(x0+st*.66,T-1.4);ctx.closePath();ctx.fill();
+      ctx.globalAlpha=Math.min(.85,g.a);
+    }
+    ctx.fillStyle=BLO;ctx.fillRect(0,T-2.6,T,2.6);
+    ctx.restore();
+  }
+  ctx.globalAlpha=1;
+}
+function drawSawGore(s){
+  var g=null;
+  for(var i=0;i<goreSaw.length;i++)if(goreSaw[i].o===s)g=goreSaw[i];
+  if(!g)return;
+  ctx.save();ctx.globalAlpha=Math.min(.8,g.a);
+  ctx.translate(s.x,s.y);ctx.rotate(s.rot);
+  ctx.fillStyle=BMID;
+  ctx.beginPath();
+  for(var k=0;k<12;k++){ var a=k/12*6.283,rr2=k%2?SAWR*.58:SAWR*.93;
+    ctx[k?"lineTo":"moveTo"](Math.cos(a)*rr2,Math.sin(a)*rr2); }
+  ctx.closePath();ctx.fill();
+  ctx.globalAlpha*=.75;ctx.fillStyle=BHI;
+  ctx.beginPath();ctx.arc(0,0,SAWR*.42,0,6.283);ctx.fill();
+  ctx.restore();ctx.globalAlpha=1;
+}
+var BHI="#c81f30",BMID="#8c0f1d",BLO="#5c0912",BDK="#2e0509",BWET="rgba(255,70,80,.4)",BDRY="#1c0407";
+function openClip(){ return openPath; }
 
 function oxidize(a){ sctx.save();sctx.globalCompositeOperation="source-atop";
   sctx.fillStyle="rgba(26,2,8,"+a+")";sctx.fillRect(0,0,COLS*T,ROWS*T);sctx.restore(); }
 function splat(x,y,vx,vy,size,alpha){
   var sp=Math.sqrt(vx*vx+vy*vy),a=Math.atan2(vy,vx),el=1+Math.min(2.4,sp/180);
-  sctx.save();sctx.clip(openClip(x,y,2),"evenodd");sctx.translate(x,y);sctx.rotate(a);
+  sctx.save();sctx.clip(openPath);sctx.translate(x,y);sctx.rotate(a);
   sctx.globalAlpha=alpha==null?.92:alpha;
   sctx.fillStyle=BDK;
   sctx.beginPath();sctx.ellipse(.3,.3,size*el*1.06,size*1.05,0,0,6.283);sctx.fill();
@@ -1490,25 +1549,44 @@ function splat(x,y,vx,vy,size,alpha){
   sctx.globalAlpha*=.5;sctx.fillStyle=BWET;
   sctx.beginPath();sctx.ellipse(-size*.25,-size*.3,size*el*.34,size*.22,0,0,6.283);sctx.fill();
   sctx.restore();sctx.globalAlpha=1;
+  if(size>1.2)bleedDown(x,y,size);
 }
 function mist(x,y,n,flat){
-  sctx.save();sctx.clip(openClip(x,y,2),"evenodd");
+  sctx.save();sctx.clip(openPath);
   sctx.globalAlpha=.4;
   for(var i=0;i<n;i++){ var a=rnd(0,6.283),d=rnd(2,17);
     sctx.fillStyle=Math.random()<.4?BHI:BMID;
     sctx.beginPath();sctx.arc(x+Math.cos(a)*d,y+Math.sin(a)*d*(flat?.5:1),rnd(.3,1.1),0,6.283);sctx.fill(); }
   sctx.restore();sctx.globalAlpha=1;
 }
-function addDrip(x,y,size){ if(drips.length>44)return;
+function addDrip(x,y,size){ if(drips.length>60)return;
   drips.push({x:x,y:y,ly:y,w:clamp(size*.7,.7,2.6),v:rnd(4,16),life:rnd(1.4,4.2),t:0}); }
+function floorBelow(x,y){
+  var tx=Math.floor(x/T);
+  for(var ty=Math.floor(y/T);ty<ROWS;ty++)if(solidAt(tx,ty))return ty*T;
+  return -1;
+}
+/* if the splat is hanging in open space, send runners down the wall to the floor */
+function bleedDown(x,y,size){
+  var f=floorBelow(x,y+2);
+  if(f<0)return;
+  if(f-y<T*0.9)return;                       // already basically on the floor
+  var n=1+(Math.random()*2|0);
+  for(var i=0;i<n;i++)addDrip(x+rnd(-size*.6,size*.6),y+rnd(0,2),size*rnd(.6,1));
+}
 function addPool(x,y,amt){
+  // snap to the floor line so puddles on the same surface line up
+  y=Math.round(y*2)/2;
   for(var i=0;i<pools.length;i++){ var p=pools[i];
-    if(Math.abs(p.x-x)<10&&Math.abs(p.y-y)<5){p.tr=Math.min(12,p.tr+amt*.4);p.age=0;return;} }
-  if(pools.length>16)bakePool(pools.shift());
-  pools.push({x:x,y:y,r:amt*.28,tr:Math.min(12,amt),age:0});
+    if(Math.abs(p.x-x)<20&&Math.abs(p.y-y)<6){
+      p.tr=Math.min(26,p.tr+amt*.55);
+      p.x=(p.x*p.tr+x*amt)/(p.tr+amt);   // drift toward the new blood
+      p.age=0;return; } }
+  if(pools.length>7)bakePool(pools.shift());
+  pools.push({x:x,y:y,r:amt*.3,tr:Math.min(26,amt*1.4),age:0});
 }
 function bakeChunk(x,y,r,rot){
-  sctx.save();sctx.clip(openClip(x,y,2),"evenodd");
+  sctx.save();sctx.clip(openPath);
   sctx.translate(x,y);sctx.rotate(rot);
   sctx.fillStyle=BMID;rr(sctx,-r,-r*.8,r*2,r*1.6,r*.5);sctx.fill();
   sctx.globalAlpha=.5;sctx.fillStyle=BHI;
@@ -1516,7 +1594,7 @@ function bakeChunk(x,y,r,rot){
   sctx.restore();
 }
 function bakePool(p){
-  sctx.save();sctx.clip(openClip(p.x,p.y,2),"evenodd");
+  sctx.save();sctx.clip(openPath);
   sctx.globalAlpha=.95;sctx.fillStyle=BLO;
   sctx.beginPath();sctx.ellipse(p.x,p.y,p.r,p.r*.34,0,0,6.283);sctx.fill();
   sctx.globalAlpha=.55;sctx.fillStyle=BDK;
@@ -1564,11 +1642,12 @@ function updateBlood(dt){
     if(boxSolid(k.x-.4,y2+.7,.8,.8)){
       addPool(k.x,Math.floor((y2+1)/T)*T-.8,k.w*1.8);drips.splice(i,1);continue; }
     k.y=y2;
-    if(k.y-k.ly>1.2){ sctx.save();sctx.clip(openClip(k.x,k.y,2),"evenodd");
+    if(k.y-k.ly>1.2){ sctx.save();sctx.clip(openPath);
       sctx.globalAlpha=.6;sctx.fillStyle=BLO;
       sctx.beginPath();sctx.ellipse(k.x,(k.ly+k.y)/2,k.w*.5,(k.y-k.ly)/2+k.w*.5,0,0,6.283);sctx.fill();
       sctx.restore();sctx.globalAlpha=1;k.ly=k.y;k.w*=.985; }
-    if(k.t>k.life||k.w<.45){ sctx.save();sctx.clip(openClip(k.x,k.y,2),"evenodd");
+    if(k.y>ROWS*T+8){ drips.splice(i,1);continue; }
+    if((k.t>k.life&&floorBelow(k.x,k.y)<0)||k.w<.3){ sctx.save();sctx.clip(openPath);
       sctx.globalAlpha=.75;sctx.fillStyle=BMID;
       sctx.beginPath();sctx.arc(k.x,k.y,k.w*1.3,0,6.283);sctx.fill();
       sctx.restore();sctx.globalAlpha=1;
@@ -1762,10 +1841,10 @@ function hazardCheck(p){
   if(p.reachedGoal&&players.length>1)return;
   var i,s;
   for(i=0;i<spikes.length;i++){ s=spikes[i];
-    if(p.x<s.x+s.w&&p.x+PW>s.x&&p.y<s.y+s.h&&p.y+PH>s.y){kill(p,p.vx,p.vy,"spike");return;} }
+    if(p.x<s.x+s.w&&p.x+PW>s.x&&p.y<s.y+s.h&&p.y+PH>s.y){markGore(goreSpike,s);kill(p,p.vx,p.vy,"spike");return;} }
   for(i=0;i<saws.length;i++){ s=saws[i];
     var cx=clamp(s.x,p.x,p.x+PW),cy=clamp(s.y,p.y,p.y+PH),dx=s.x-cx,dy=s.y-cy;
-    if(dx*dx+dy*dy<SAWR*SAWR){ var a=s.rot*2;
+    if(dx*dx+dy*dy<SAWR*SAWR){ var a=s.rot*2;markGore(goreSaw,s);
       kill(p,Math.cos(a)*260+(s.ax===1?s.dir*180:0),Math.sin(a)*260,"saw");return; } }
   p.atGoal=(p.x<goal.x+9&&p.x+PW>goal.x-9&&p.y<goal.y+2&&p.y+PH>goal.y-16);
   if(goalLocked())p.atGoal=false;
@@ -2486,10 +2565,12 @@ function render(t){
   for(var y=T;y<h;y+=T*2){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
   ctx.drawImage(bake,0,0,w,h);
   ctx.drawImage(stain,0,0,w,h);
+  if(spikeCv)ctx.drawImage(spikeCv,0,0,w,h);
+  if(goreSpike.length)drawSpikeGore(t);
 
   for(i=0;i<pools.length;i++){ p=pools[i];
     var wet=clamp(1-p.age/16,0,1);
-    ctx.save();ctx.clip(openClip(p.x,p.y,2),"evenodd");
+    ctx.save();ctx.clip(openPath);
     ctx.globalAlpha=.92;ctx.fillStyle=BLO;
     ctx.beginPath();ctx.ellipse(p.x,p.y,p.r,p.r*.34,0,0,6.283);ctx.fill();
     ctx.globalAlpha=.55*wet+.2;ctx.fillStyle=BMID;
@@ -2506,7 +2587,7 @@ function render(t){
   if(coins.length)drawCoins(t);
   if(crumbs.length)drawCrumbs(t);
   if(lasers.length)drawLasers(t);
-  for(i=0;i<saws.length;i++)drawSaw(saws[i]);
+  for(i=0;i<saws.length;i++){ drawSaw(saws[i]); if(goreSaw.length)drawSawGore(saws[i]); }
   if(boss)drawBoss(t);
   party.drawGhosts(t);
 
@@ -2517,7 +2598,7 @@ function render(t){
       drawBoy(ctx,tr[j],tr[j+1],attempts[i].s,0,1,t,idx>=tr.length-2?.1:.26,false); }
   }
   for(i=0;i<chunks.length;i++){ var c=chunks[i];
-    ctx.save();if(c.rest)ctx.clip(openClip(c.x,c.y,2),"evenodd");ctx.translate(c.x,c.y);ctx.rotate(c.rot);
+    ctx.save();if(c.rest)ctx.clip(openPath);ctx.translate(c.x,c.y);ctx.rotate(c.rot);
     ctx.fillStyle=BMID;rr(ctx,-c.r,-c.r*.8,c.r*2,c.r*1.6,c.r*.5);ctx.fill();
     ctx.globalAlpha=.5;ctx.fillStyle=BHI;
     rr(ctx,-c.r*.5,-c.r*.6,c.r,c.r*.6,c.r*.3);ctx.fill();ctx.globalAlpha=1;ctx.restore(); }
