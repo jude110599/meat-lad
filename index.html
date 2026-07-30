@@ -598,9 +598,18 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="2.8.0";
+var VERSION="2.9.0";
 var CHANGELOG=[
-  {v:"2.8.0",d:"latest",items:[
+  {v:"2.9.0",d:"latest",items:[
+    "BLOOD IS NOW A FLUID. It was never actually flowing — it stamped oval shapes wherever a droplet landed and left them there. Puddles are now a real volume that collects on floors, levels out sideways, and pours off ledges to the floor below",
+    "Found the real reason it went through walls: the flying droplets and gibs were drawn with NO clipping at all. My last fix only covered the baked marks. Every layer is now clipped to open space",
+    "Blood runs down walls properly. A droplet that hits a wall grabs on, slides down the face leaving a streak, lets go when the wall ends, and pools where it lands",
+    "Die up high and the blood makes its way down as far as it can reach, pooling on each surface and spilling over the edges",
+    "Puddles draw as one connected body with a rippling surface and wet highlight instead of a heap of separate ovals",
+    "The saw that kills you now has blood caught in its teeth, smeared round the hub and a drip swinging off the bottom, instead of just being tinted red",
+    "Blood volume is conserved when it moves and capped per level, so it cannot multiply forever"
+  ]},
+  {v:"2.8.0",items:[
     "BLOOD REBUILT. It was clipped to a small window around each splat, so anything landing further out painted straight over the walls. There is now one clip region per level covering only open space — blood physically cannot touch a solid block any more",
     "Puddles merge instead of stacking. Blood landing near an existing puddle grows it and drifts it, rather than dropping another oval on top — that is what caused the pile of ovals at the bottom",
     "Blood no longer hangs in mid-air. If it lands with nothing underneath, runners break off and trickle down to the first floor below and start a puddle there",
@@ -1151,7 +1160,8 @@ function loadLevel(i){
   grid=[];spikes=[];saws=[];crumbs=[];lasers=[];coins=[];boss=null;
   dmgSet={};
   if(L.dmg)for(var di=0;di<L.dmg.length;di++)dmgSet[L.dmg[di]]=1;
-  drops.length=0;drips.length=0;pools.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
+  drops.length=0;drips.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
+  puddle={};puddleVol=0;
   goreSpike.length=0;goreSaw.length=0;
   for(var y=0;y<ROWS;y++){ var row=[];
     for(var x=0;x<COLS;x++){ var ch=L.map[y].charAt(x); row.push(ch==="#"?1:0);
@@ -1484,12 +1494,12 @@ function drawBoss(t){
   }
 }
 /* ═════════════ BLOOD ═════════════ */
-var drops=[],drips=[],pools=[],chunks=[],puffs=[],hearts=[],prints=[];
+var drops=[],drips=[],chunks=[],puffs=[],hearts=[],prints=[];
 var spikeCv=null,openPath=null;
 var goreSpike=[],goreSaw=[];
 function markGore(list,ref){
   for(var i=0;i<list.length;i++)if(list[i].o===ref){ list[i].a=Math.min(1,list[i].a+.35);return; }
-  list.push({o:ref,a:.55});
+  list.push({o:ref,a:.62,seed:(Math.random()*5|0)});
 }
 /* wet blood left on the exact spike/saw that killed you */
 function drawSpikeGore(t){
@@ -1516,74 +1526,236 @@ function drawSawGore(s){
   var g=null;
   for(var i=0;i<goreSaw.length;i++)if(goreSaw[i].o===s)g=goreSaw[i];
   if(!g)return;
-  ctx.save();ctx.globalAlpha=Math.min(.8,g.a);
-  ctx.translate(s.x,s.y);ctx.rotate(s.rot);
+  // smeared blood caught in the teeth, plus a couple of flung strings
+  ctx.save();ctx.translate(s.x,s.y);
+  ctx.save();ctx.rotate(s.rot);
+  for(var k=0;k<12;k+=2){
+    var a=k/12*6.283;
+    if(((k*7+g.seed)%5)>2)continue;
+    ctx.save();ctx.rotate(a);
+    ctx.globalAlpha=Math.min(.9,g.a);
+    ctx.fillStyle=BLO;
+    ctx.beginPath();
+    ctx.moveTo(SAWR*.42,-1.5);
+    ctx.quadraticCurveTo(SAWR*.86,-.6,SAWR*.99,0);
+    ctx.quadraticCurveTo(SAWR*.86,.9,SAWR*.42,1.7);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha*=.6;ctx.fillStyle=BHI;
+    ctx.beginPath();ctx.ellipse(SAWR*.66,0,SAWR*.16,.7,0,0,6.283);ctx.fill();
+    ctx.restore();
+  }
+  // blood pooled around the hub
+  ctx.globalAlpha=Math.min(.72,g.a);
   ctx.fillStyle=BMID;
-  ctx.beginPath();
-  for(var k=0;k<12;k++){ var a=k/12*6.283,rr2=k%2?SAWR*.58:SAWR*.93;
-    ctx[k?"lineTo":"moveTo"](Math.cos(a)*rr2,Math.sin(a)*rr2); }
-  ctx.closePath();ctx.fill();
-  ctx.globalAlpha*=.75;ctx.fillStyle=BHI;
-  ctx.beginPath();ctx.arc(0,0,SAWR*.42,0,6.283);ctx.fill();
+  ctx.beginPath();ctx.arc(0,0,SAWR*.4,0,6.283);ctx.fill();
+  ctx.globalAlpha=Math.min(.5,g.a);ctx.fillStyle=BDK;
+  ctx.beginPath();ctx.arc(.6,.6,SAWR*.3,0,6.283);ctx.fill();
+  ctx.restore();
+  // a drip hanging off the bottom of the blade
+  ctx.globalAlpha=Math.min(.8,g.a);
+  ctx.fillStyle=BLO;
+  var hang=2.2+Math.sin(performance.now()/420+s.hx)*1.1;
+  ctx.beginPath();ctx.ellipse(0,SAWR*.75+hang*.5,1.05,1.5+hang*.35,0,0,6.283);ctx.fill();
   ctx.restore();ctx.globalAlpha=1;
 }
-var BHI="#c81f30",BMID="#8c0f1d",BLO="#5c0912",BDK="#2e0509",BWET="rgba(255,70,80,.4)",BDRY="#1c0407";
-function openClip(){ return openPath; }
-
 function oxidize(a){ sctx.save();sctx.globalCompositeOperation="source-atop";
   sctx.fillStyle="rgba(26,2,8,"+a+")";sctx.fillRect(0,0,COLS*T,ROWS*T);sctx.restore(); }
+
+/* ── impact marks baked into the stain (always clipped to open space) ── */
 function splat(x,y,vx,vy,size,alpha){
-  var sp=Math.sqrt(vx*vx+vy*vy),a=Math.atan2(vy,vx),el=1+Math.min(2.4,sp/180);
+  var sp=Math.sqrt(vx*vx+vy*vy),a=Math.atan2(vy,vx),el=1+Math.min(1.6,sp/260);
   sctx.save();sctx.clip(openPath);sctx.translate(x,y);sctx.rotate(a);
-  sctx.globalAlpha=alpha==null?.92:alpha;
+  sctx.globalAlpha=alpha==null?.9:alpha;
   sctx.fillStyle=BDK;
-  sctx.beginPath();sctx.ellipse(.3,.3,size*el*1.06,size*1.05,0,0,6.283);sctx.fill();
+  sctx.beginPath();sctx.ellipse(.3,.3,size*el*1.04,size*1.03,0,0,6.283);sctx.fill();
   sctx.fillStyle=BLO;
   sctx.beginPath();sctx.ellipse(0,0,size*el,size,0,0,6.283);sctx.fill();
   sctx.fillStyle=BMID;
-  sctx.beginPath();sctx.ellipse(-size*.18,-size*.08,size*el*.58,size*.6,0,0,6.283);sctx.fill();
-  var n=3+(Math.random()*4|0);
-  for(var i=0;i<n;i++){ var off=rnd(-.6,.6),d=size*el*rnd(1.1,3),r=size*rnd(.12,.42);
-    sctx.fillStyle=Math.random()<.6?BMID:(Math.random()<.5?BHI:BLO);
-    sctx.beginPath();sctx.ellipse(Math.cos(off)*d,Math.sin(off)*d,r*1.8,r,off,0,6.283);sctx.fill(); }
-  sctx.globalAlpha*=.5;sctx.fillStyle=BWET;
-  sctx.beginPath();sctx.ellipse(-size*.25,-size*.3,size*el*.34,size*.22,0,0,6.283);sctx.fill();
+  sctx.beginPath();sctx.ellipse(-size*.16,-size*.07,size*el*.55,size*.56,0,0,6.283);sctx.fill();
+  // a few fine flecks, small and close so they read as spray not ovals
+  var n=2+(Math.random()*3|0);
+  for(var i=0;i<n;i++){ var off=rnd(-.5,.5),d=size*el*rnd(.9,1.8),r=size*rnd(.08,.2);
+    sctx.fillStyle=Math.random()<.5?BMID:BLO;
+    sctx.beginPath();sctx.arc(Math.cos(off)*d,Math.sin(off)*d,r,0,6.283);sctx.fill(); }
   sctx.restore();sctx.globalAlpha=1;
-  if(size>1.2)bleedDown(x,y,size);
 }
 function mist(x,y,n,flat){
   sctx.save();sctx.clip(openPath);
-  sctx.globalAlpha=.4;
-  for(var i=0;i<n;i++){ var a=rnd(0,6.283),d=rnd(2,17);
+  sctx.globalAlpha=.36;
+  for(var i=0;i<n;i++){ var a=rnd(0,6.283),d=rnd(2,11);
     sctx.fillStyle=Math.random()<.4?BHI:BMID;
-    sctx.beginPath();sctx.arc(x+Math.cos(a)*d,y+Math.sin(a)*d*(flat?.5:1),rnd(.3,1.1),0,6.283);sctx.fill(); }
+    sctx.beginPath();sctx.arc(x+Math.cos(a)*d,y+Math.sin(a)*d*(flat?.5:1),rnd(.3,.9),0,6.283);sctx.fill(); }
   sctx.restore();sctx.globalAlpha=1;
 }
-function addDrip(x,y,size){ if(drips.length>60)return;
-  drips.push({x:x,y:y,ly:y,w:clamp(size*.7,.7,2.6),v:rnd(4,16),life:rnd(1.4,4.2),t:0}); }
+
+/* ── PUDDLES: a volume field on top of floor tiles ──
+   Blood collects per tile, levels out into neighbours, and pours off ledges. */
+var puddle={};            // "tx,ty" -> volume (ty = the OPEN tile sitting on a floor)
+var PCAP=13;              // volume at which a cell is "full" and starts spreading
+function hasFloor(tx,ty){ return solidAt(tx,ty+1); }
+var puddleVol=0,PUDDLE_MAX=1500;
+function puddleAdd(tx,ty,vol){
+  if(tx<0||tx>=COLS||ty<0||ty>=ROWS)return;
+  if(solidAt(tx,ty))return;
+  if(puddleVol>PUDDLE_MAX)return;          // level is already drenched
+  var k=tx+","+ty;
+  puddle[k]=(puddle[k]||0)+vol;
+  puddleVol+=vol;
+}
+function puddleAt(x,y){                 // world coords -> settle onto the floor below
+  var tx=Math.floor(x/T),ty=Math.floor(y/T);
+  if(tx<0||tx>=COLS)return null;
+  // if we ended up inside a block, back out upward to the open tile above it
+  while(ty>=0&&solidAt(tx,ty))ty--;
+  if(ty<0)return null;
+  for(var i=ty;i<ROWS;i++){
+    if(solidAt(tx,i))return null;
+    if(hasFloor(tx,i))return {tx:tx,ty:i};
+  }
+  return null;
+}
+function puddleStep(dt){
+  var keys=Object.keys(puddle);
+  if(!keys.length)return;
+  for(var i=0;i<keys.length;i++){
+    var k=keys[i],v=puddle[k];
+    if(v<=0){ delete puddle[k];continue; }
+    var p=k.split(","),tx=+p[0],ty=+p[1];
+    if(v<=PCAP)continue;
+    var over=(v-PCAP)*Math.min(1,dt*3.2);
+    // level out sideways, and pour off any ledge
+    [-1,1].forEach(function(d){
+      var nx=tx+d;
+      if(nx<0||nx>=COLS)return;
+      if(solidAt(nx,ty))return;                       // wall blocks the flow
+      var share=over*.5;
+      if(hasFloor(nx,ty)){
+        var nk=nx+","+ty;
+        if((puddle[nk]||0)<v){ puddle[nk]=(puddle[nk]||0)+share;puddle[k]-=share; }
+      } else {
+        // nothing under it — it spills over the edge and falls
+        puddle[k]-=share;
+        if(Math.random()<.5)
+          addRunner(nx*T+T/2,ty*T+T-1,0,share);
+      }
+    });
+  }
+}
+function puddleTotal(){ var s=0;for(var k in puddle)s+=puddle[k];return s; }
+function drawPuddles(t){
+  var keys=Object.keys(puddle);
+  if(!keys.length)return;
+  // group cells into horizontal runs on the same floor so they render as one body
+  var byRow={};
+  for(var i=0;i<keys.length;i++){
+    var p=keys[i].split(","),tx=+p[0],ty=+p[1];
+    (byRow[ty]||(byRow[ty]=[])).push(tx);
+  }
+  ctx.save();ctx.clip(openPath);
+  for(var ry in byRow){
+    var ty=+ry,xs=byRow[ry].sort(function(a,b){return a-b;});
+    var run=[];
+    for(var j=0;j<=xs.length;j++){
+      if(j<xs.length&&(run.length===0||xs[j]===run[run.length-1]+1)){ run.push(xs[j]);continue; }
+      if(run.length){
+        var baseY=(ty+1)*T;
+        ctx.beginPath();
+        ctx.moveTo(run[0]*T,baseY);
+        // top surface follows the volume in each cell, with a gentle ripple
+        for(var s=0;s<run.length;s++){
+          var vol=puddle[run[s]+","+ty]||0;
+          var hgt=Math.min(T*.72,1.1+vol*.42);
+          var x0=run[s]*T,x1=x0+T;
+          var wob=Math.sin(t*2.1+run[s]*.9)*.35;
+          ctx.lineTo(x0,baseY-hgt+wob);
+          ctx.quadraticCurveTo((x0+x1)/2,baseY-hgt-1.1+wob,x1,baseY-hgt+wob);
+        }
+        ctx.lineTo(run[run.length-1]*T+T,baseY);
+        ctx.closePath();
+        var g=ctx.createLinearGradient(0,baseY-T*.7,0,baseY);
+        g.addColorStop(0,BMID);g.addColorStop(.55,BLO);g.addColorStop(1,BDK);
+        ctx.fillStyle=g;ctx.fill();
+        // wet highlight along the surface
+        ctx.save();ctx.clip();
+        ctx.globalAlpha=.28;ctx.fillStyle="#ff6b7a";
+        for(var s2=0;s2<run.length;s2++){
+          var v2=puddle[run[s2]+","+ty]||0,h2=Math.min(T*.72,1.1+v2*.42);
+          ctx.fillRect(run[s2]*T+1.5,(ty+1)*T-h2+.3,T-3,.8);
+        }
+        ctx.restore();ctx.globalAlpha=1;
+      }
+      run=j<xs.length?[xs[j]]:[];
+    }
+  }
+  ctx.restore();
+}
+
+/* ── RUNNERS: blood clinging to a wall face, or falling free ── */
+function addRunner(x,y,side,vol){
+  if(drips.length>90)return;
+  drips.push({x:x,y:y,ly:y,side:side,v:side?8:26,vol:Math.min(9,vol||2),w:clamp((vol||2)*.34,.5,2.1),t:0});
+}
+function addDrip(x,y,size){ addRunner(x,y,0,size*1.5); }
 function floorBelow(x,y){
   var tx=Math.floor(x/T);
   for(var ty=Math.floor(y/T);ty<ROWS;ty++)if(solidAt(tx,ty))return ty*T;
   return -1;
 }
-/* if the splat is hanging in open space, send runners down the wall to the floor */
-function bleedDown(x,y,size){
-  var f=floorBelow(x,y+2);
-  if(f<0)return;
-  if(f-y<T*0.9)return;                       // already basically on the floor
-  var n=1+(Math.random()*2|0);
-  for(var i=0;i<n;i++)addDrip(x+rnd(-size*.6,size*.6),y+rnd(0,2),size*rnd(.6,1));
+function runnerStep(dt){
+  for(var i=drips.length-1;i>=0;i--){
+    var k=drips[i];k.t+=dt;
+    if(k.side){
+      // clinging to a wall: creep down, slower and thinner over time
+      k.v=Math.min(30,k.v+34*dt);
+      var ny=k.y+k.v*dt;
+      var tx=Math.floor((k.x+k.side*2)/T),ty=Math.floor(ny/T);
+      if(solidAt(Math.floor(k.x/T),ty)){ k.y=ty*T-.6;settleRunner(k,i);continue; }
+      if(!solidAt(tx,ty)){ k.side=0;k.v=Math.max(k.v,20); }   // wall ended, it falls free
+      k.y=ny;
+    } else {
+      k.v=Math.min(150,k.v+520*dt);
+      var ny2=k.y+k.v*dt;
+      if(boxSolid(k.x-.4,ny2+.6,.8,.8)){ k.y=Math.floor((ny2+1)/T)*T-.6;settleRunner(k,i);continue; }
+      // if a wall is right beside it, grab on and start running down the face
+      if(k.v<70){
+        if(solidAt(Math.floor((k.x+3)/T),Math.floor(ny2/T))){k.side=1;k.v=10;}
+        else if(solidAt(Math.floor((k.x-3)/T),Math.floor(ny2/T))){k.side=-1;k.v=10;}
+      }
+      k.y=ny2;
+    }
+    // paint the trail it leaves behind
+    if(k.y-k.ly>1){
+      sctx.save();sctx.clip(openPath);
+      sctx.globalAlpha=k.side?.72:.5;sctx.fillStyle=k.side?BLO:BMID;
+      sctx.beginPath();
+      sctx.ellipse(k.x,(k.ly+k.y)/2,k.w*.55,(k.y-k.ly)/2+k.w*.5,0,0,6.283);sctx.fill();
+      sctx.restore();sctx.globalAlpha=1;
+      k.ly=k.y;k.w*=.992;k.vol*=.985;
+    }
+    if(k.y>ROWS*T+8||k.w<.28){ drips.splice(i,1); }
+  }
+}
+function settleRunner(k,i){
+  var cell=puddleAt(k.x,k.y);
+  if(cell)puddleAdd(cell.tx,cell.ty,k.vol);
+  else splat(k.x,k.y,0,40,k.w*1.4,.8);
+  drips.splice(i,1);
+}
+function drawRunners(){
+  if(!drips.length)return;
+  ctx.save();ctx.clip(openPath);
+  for(var i=0;i<drips.length;i++){
+    var k=drips[i];
+    ctx.fillStyle=BLO;
+    ctx.beginPath();ctx.ellipse(k.x,k.y,k.w*.8,k.w*1.5,0,0,6.283);ctx.fill();
+    ctx.fillStyle=BMID;
+    ctx.beginPath();ctx.ellipse(k.x-k.w*.2,k.y-k.w*.3,k.w*.42,k.w*.7,0,0,6.283);ctx.fill();
+  }
+  ctx.restore();
 }
 function addPool(x,y,amt){
-  // snap to the floor line so puddles on the same surface line up
-  y=Math.round(y*2)/2;
-  for(var i=0;i<pools.length;i++){ var p=pools[i];
-    if(Math.abs(p.x-x)<20&&Math.abs(p.y-y)<6){
-      p.tr=Math.min(26,p.tr+amt*.55);
-      p.x=(p.x*p.tr+x*amt)/(p.tr+amt);   // drift toward the new blood
-      p.age=0;return; } }
-  if(pools.length>7)bakePool(pools.shift());
-  pools.push({x:x,y:y,r:amt*.3,tr:Math.min(26,amt*1.4),age:0});
+  var cell=puddleAt(x,y);
+  if(cell)puddleAdd(cell.tx,cell.ty,amt);
 }
 function bakeChunk(x,y,r,rot){
   sctx.save();sctx.clip(openPath);
@@ -1593,16 +1765,7 @@ function bakeChunk(x,y,r,rot){
   rr(sctx,-r*.5,-r*.6,r,r*.6,r*.3);sctx.fill();sctx.globalAlpha=1;
   sctx.restore();
 }
-function bakePool(p){
-  sctx.save();sctx.clip(openPath);
-  sctx.globalAlpha=.95;sctx.fillStyle=BLO;
-  sctx.beginPath();sctx.ellipse(p.x,p.y,p.r,p.r*.34,0,0,6.283);sctx.fill();
-  sctx.globalAlpha=.55;sctx.fillStyle=BDK;
-  sctx.beginPath();sctx.ellipse(p.x,p.y+p.r*.06,p.r*.96,p.r*.3,0,0,6.283);sctx.fill();
-  sctx.globalAlpha=.4;sctx.strokeStyle=BDRY;sctx.lineWidth=p.r*.05+.4;
-  sctx.beginPath();sctx.ellipse(p.x,p.y,p.r*1.02,p.r*.35,0,0,6.283);sctx.stroke();
-  sctx.restore();sctx.globalAlpha=1;
-}
+function bakePool(){}
 function spurt(x,y,n,power,cx,cy){
   if(drops.length>430)return;
   for(var i=0;i<n;i++){ var a=rnd(0,6.283),s=rnd(.15,1)*power;
@@ -1626,35 +1789,33 @@ function updateBlood(dt){
   var i,d,k,p,c,q,h;
   for(i=drops.length-1;i>=0;i--){ d=drops[i];d.t+=dt;d.vy+=1500*dt;d.vx*=(1-.5*dt);
     var nx=d.x+d.vx*dt,ny=d.y+d.vy*dt;
-    if(boxSolid(nx-.4,ny-.4,.8,.8)){
-      var sp=Math.sqrt(d.vx*d.vx+d.vy*d.vy),sz=d.r*(1+Math.min(1.4,sp/420));
-      splat(d.x,d.y,d.vx,d.vy,sz);
-      if(sp>260)mist(d.x,d.y,3,1);
-      var onFloor=boxSolid(d.x-.4,d.y+1.8,.8,.8);
-      if(onFloor&&d.r>1.6)addPool(d.x,Math.floor((d.y+2)/T)*T-.8,d.r*1.4);
-      else if(!onFloor&&d.r>1.2&&Math.random()<.5)addDrip(d.x,d.y,d.r);
+    var hitX=boxSolid(nx-.4,d.y-.4,.8,.8);
+    var hitY=boxSolid(d.x-.4,ny-.4,.8,.8);
+    if(hitX||hitY){
+      var sp=Math.sqrt(d.vx*d.vx+d.vy*d.vy),sz=d.r*(1+Math.min(1.1,sp/460));
+      splat(d.x,d.y,d.vx,d.vy,sz*.85);
+      if(sp>300)mist(d.x,d.y,2,1);
+      if(hitY&&d.vy>0){
+        // landed on a floor -> straight into the puddle under it
+        var cell=puddleAt(d.x,d.y);
+        if(cell)puddleAdd(cell.tx,cell.ty,d.r*1.5);
+      } else if(hitX){
+        // hit a wall -> cling on and run down the face
+        addRunner(d.x,d.y,d.vx>0?1:-1,d.r*1.2);
+      } else {
+        // clipped a ceiling -> hang, then fall
+        addRunner(d.x,d.y+1.5,0,d.r);
+      }
       drops.splice(i,1);continue; }
     d.x=nx;d.y=ny;
-    if(d.t>d.life||d.y>ROWS*T+40)drops.splice(i,1);
+    if(d.t>d.life||d.y>ROWS*T+40){
+      var c2=puddleAt(d.x,d.y);
+      if(c2&&d.r>1)puddleAdd(c2.tx,c2.ty,d.r*.5);
+      drops.splice(i,1);
+    }
   }
-  for(i=drips.length-1;i>=0;i--){ k=drips[i];k.t+=dt;
-    var y2=k.y+k.v*dt;k.v=Math.min(34,k.v+42*dt);
-    if(boxSolid(k.x-.4,y2+.7,.8,.8)){
-      addPool(k.x,Math.floor((y2+1)/T)*T-.8,k.w*1.8);drips.splice(i,1);continue; }
-    k.y=y2;
-    if(k.y-k.ly>1.2){ sctx.save();sctx.clip(openPath);
-      sctx.globalAlpha=.6;sctx.fillStyle=BLO;
-      sctx.beginPath();sctx.ellipse(k.x,(k.ly+k.y)/2,k.w*.5,(k.y-k.ly)/2+k.w*.5,0,0,6.283);sctx.fill();
-      sctx.restore();sctx.globalAlpha=1;k.ly=k.y;k.w*=.985; }
-    if(k.y>ROWS*T+8){ drips.splice(i,1);continue; }
-    if((k.t>k.life&&floorBelow(k.x,k.y)<0)||k.w<.3){ sctx.save();sctx.clip(openPath);
-      sctx.globalAlpha=.75;sctx.fillStyle=BMID;
-      sctx.beginPath();sctx.arc(k.x,k.y,k.w*1.3,0,6.283);sctx.fill();
-      sctx.restore();sctx.globalAlpha=1;
-      drips.splice(i,1); }
-  }
-  for(i=pools.length-1;i>=0;i--){ p=pools[i];p.age+=dt;p.r+=(p.tr-p.r)*Math.min(1,dt*1.7);
-    if(p.age>16){bakePool(p);pools.splice(i,1);} }
+  runnerStep(dt);
+  puddleStep(dt);
   for(i=chunks.length-1;i>=0;i--){ c=chunks[i];c.t+=dt;
     if(!c.rest){ c.vy+=1500*dt;c.rot+=c.vr*dt;
       var cx2=c.x+c.vx*dt,cy2=c.y+c.vy*dt;
@@ -1786,8 +1947,10 @@ function updatePlayer(p,dt){
   p.sq+=(0-p.sq)*Math.min(1,dt*11);
 
   p.wet-=dt*.3;
-  if(p.ground)for(var i=0;i<pools.length;i++){ var pl=pools[i];
-    if(Math.abs(pl.x-(p.x+PW/2))<pl.r&&Math.abs(pl.y-(p.y+PH))<7){p.wet=1.3;break;} }
+  if(p.ground){
+    var ftx=Math.floor((p.x+PW/2)/T),fty=Math.floor((p.y+PH-1)/T);
+    if((puddle[ftx+","+fty]||0)>1.2)p.wet=1.3;
+  }
   if(p.wet>0){
     if(p.ground&&Math.abs(p.vx)>55){
       p.stepAcc+=Math.abs(p.vx)*dt;
@@ -2568,16 +2731,8 @@ function render(t){
   if(spikeCv)ctx.drawImage(spikeCv,0,0,w,h);
   if(goreSpike.length)drawSpikeGore(t);
 
-  for(i=0;i<pools.length;i++){ p=pools[i];
-    var wet=clamp(1-p.age/16,0,1);
-    ctx.save();ctx.clip(openPath);
-    ctx.globalAlpha=.92;ctx.fillStyle=BLO;
-    ctx.beginPath();ctx.ellipse(p.x,p.y,p.r,p.r*.34,0,0,6.283);ctx.fill();
-    ctx.globalAlpha=.55*wet+.2;ctx.fillStyle=BMID;
-    ctx.beginPath();ctx.ellipse(p.x,p.y-.3,p.r*.74,p.r*.24,0,0,6.283);ctx.fill();
-    ctx.globalAlpha=.3*wet;ctx.fillStyle="#ff4d5e";
-    ctx.beginPath();ctx.ellipse(p.x-p.r*.28,p.y-p.r*.12,p.r*.26,p.r*.07,0,0,6.283);ctx.fill();
-    ctx.restore();ctx.globalAlpha=1; }
+  drawPuddles(t);
+  drawRunners();
   for(i=0;i<prints.length;i++){ var pr=prints[i],fa=Math.max(0,1-pr.t/pr.life)*pr.a;
     ctx.globalAlpha=fa;ctx.fillStyle=BMID;
     ctx.beginPath();ctx.ellipse(pr.x,pr.y,pr.r,pr.r*.4,0,0,6.283);ctx.fill(); }
@@ -2598,18 +2753,20 @@ function render(t){
       drawBoy(ctx,tr[j],tr[j+1],attempts[i].s,0,1,t,idx>=tr.length-2?.1:.26,false); }
   }
   for(i=0;i<chunks.length;i++){ var c=chunks[i];
-    ctx.save();if(c.rest)ctx.clip(openPath);ctx.translate(c.x,c.y);ctx.rotate(c.rot);
+    ctx.save();ctx.clip(openPath);ctx.translate(c.x,c.y);ctx.rotate(c.rot);
     ctx.fillStyle=BMID;rr(ctx,-c.r,-c.r*.8,c.r*2,c.r*1.6,c.r*.5);ctx.fill();
     ctx.globalAlpha=.5;ctx.fillStyle=BHI;
     rr(ctx,-c.r*.5,-c.r*.6,c.r,c.r*.6,c.r*.3);ctx.fill();ctx.globalAlpha=1;ctx.restore(); }
+  ctx.save();ctx.clip(openPath);
   for(i=0;i<drops.length;i++){ var d=drops[i];
-    var sp=Math.sqrt(d.vx*d.vx+d.vy*d.vy),a=Math.atan2(d.vy,d.vx),st=1+Math.min(3.4,sp/150);
+    var sp=Math.sqrt(d.vx*d.vx+d.vy*d.vy),a=Math.atan2(d.vy,d.vx),st=1+Math.min(2.2,sp/200);
     ctx.save();ctx.translate(d.x,d.y);ctx.rotate(a);
     ctx.fillStyle=sp>300?BHI:BMID;
     ctx.beginPath();ctx.ellipse(0,0,d.r*st,d.r,0,0,6.283);ctx.fill();
     ctx.fillStyle="rgba(255,150,160,.35)";
     ctx.beginPath();ctx.ellipse(-d.r*st*.3,-d.r*.25,d.r*st*.3,d.r*.3,0,0,6.283);ctx.fill();
     ctx.restore(); }
+  ctx.restore();
   for(i=0;i<puffs.length;i++){ var q=puffs[i];
     ctx.globalAlpha=Math.max(0,1-q.t/q.life)*.8;ctx.fillStyle="#6a5f92";
     ctx.beginPath();ctx.arc(q.x,q.y,q.r,0,6.283);ctx.fill(); }
