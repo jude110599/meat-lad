@@ -625,9 +625,13 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="3.0.0";
+var VERSION="3.0.1";
 var CHANGELOG=[
-  {v:"3.0.0",d:"latest",items:[
+  {v:"3.0.1",d:"latest",items:[
+    "THE GIRL IS GONE FROM PASS THE BOMB. The arenas still had an exit marker in them, so running into her handed the bomb over and muddled the round. Every bomb arena is now just an arena — there is nothing to reach, only the fuse",
+    "DYING WITH THE BOMB KEEPS IT. It used to jump to the other player the instant you died, which meant blowing up could hand your opponent the problem. Now it stays with whoever went down, and they lose the round"
+  ]},
+  {v:"3.0.0",items:[
     "WORLD 2 IS NOW 20 LEVELS with THE BUTCHER waiting at 20, same shape as World 1. The ten new ones are all different from each other — a crawl under a low ceiling, a drop through holes in the floor, tower-to-tower hops, a laser corridor, crumbling catwalks and a final climb using the lot",
     "Found and fixed an old level while I was at it: STROBE was impossible. Its three laser emitters had nothing to stop their beams, so each one covered its entire row and there was no gap to walk through. Rebuilt with the beams capped short",
     "Every one of the 40 levels is now checked by a simulator that plays them with the saws moving, the lasers blinking on their real timers, and the crumbling floors tested both intact and already fallen. A level only ships if it can be finished in both states",
@@ -869,11 +873,11 @@ var CHAINED_LEVELS=[
 {name:"SHAFT BUDDIES",map:["################","#      G       #","#####   ########","#              #","#####   ########","#              #","#####   ########","#              #","#####   ########","#              #","#####   ########","#              #","#P             #","################"]}
 ];
 var BOMB_LEVELS=[
-{name:"THE PIT",map:["################","#              #","#              #","#     ####     #","#           G  #","#####      #####","#              #","#              #","######    ######","#              #","#              #","# P    ^       #","################","################"]},
-{name:"TOWER BLOCK",map:["################","#        G     #","#   ########   #","#              #","#      ##      #","###### ## ######","#      ##      #","#      ##      #","###### ## ######","#      ##      #","#      ##   -  #","# P    ##      #","################","################"]},
-{name:"CROSSROADS",map:["################","#              #","#              #","#            G #","#####      #####","#              #","#      o       #","#    ######    #","#              #","#####      #####","#              #","# P    ^^      #","################","################"]},
-{name:"THE RINGS",map:["################","#              #","#            G #","######    ######","#              #","#              #","#  ####  ####  #","#              #","#              #","#######  #######","#      |       #","# P            #","################","################"]},
-{name:"HOT POTATO",map:["################","#              #","#              #","#            G #","#####      #####","#              #","#     -        #","# ############ #","#              #","#   #   #   #  #","#   #   #   #  #","#P  #   #   #  #","################","################"]}
+{name:"THE PIT",map:["################","#              #","#              #","#     ####     #","#           #  #","#####      #####","#              #","#              #","######    ######","#              #","#              #","# P    ^       #","################","################"]},
+{name:"TOWER BLOCK",map:["################","#        #     #","#   ########   #","#              #","#      ##      #","###### ## ######","#      ##      #","#      ##      #","###### ## ######","#      ##      #","#      ##   -  #","# P    ##      #","################","################"]},
+{name:"CROSSROADS",map:["################","#              #","#              #","#            # #","#####      #####","#              #","#      o       #","#    ######    #","#              #","#####      #####","#              #","# P    ^^      #","################","################"]},
+{name:"THE RIN#S",map:["################","#              #","#            # #","######    ######","#              #","#              #","#  ####  ####  #","#              #","#              #","#######  #######","#      |       #","# P            #","################","################"]},
+{name:"HOT POTATO",map:["################","#              #","#              #","#            # #","#####      #####","#              #","#     -        #","# ############ #","#              #","#   #   #   #  #","#   #   #   #  #","#P  #   #   #  #","################","################"]}
 ];
 
 /* ═════════════ TUNING ═════════════ */
@@ -1240,6 +1244,7 @@ function loadLevel(i){
   level=i;var L=curLevels()[i],sp=L.sawSpeed||1;
   ROWS=L.map.length;COLS=L.map[0].length;
   grid=[];spikes=[];saws=[];crumbs=[];lasers=[];coins=[];boss=null;
+  goal={x:-9999,y:-9999};   // arenas with no exit (bomb maps) keep it out of reach
   dmgSet={};
   if(L.dmg)for(var di=0;di<L.dmg.length;di++)dmgSet[L.dmg[di]]=1;
   drops.length=0;drips.length=0;chunks.length=0;puffs.length=0;hearts.length=0;prints.length=0;
@@ -2028,8 +2033,6 @@ function bombStep(dt){
       bomb.passes++;sfx.wall();toast("Bomb passed!"); }
   }
   var h=players[bomb.holder];
-  if(h&&h.reachedGoal){ bomb.holder=bomb.holder?0:1;bomb.timer=BOMB_TIME;bomb.pass=.4;
-    bomb.passes++; h=players[bomb.holder]; }
   if(h&&!h.dead&&!h.reachedGoal){
     var was=Math.ceil(bomb.timer);bomb.timer-=dt;
     if(bomb.timer<=3&&Math.ceil(bomb.timer)<was&&bomb.timer>0)sfx.click();
@@ -2118,7 +2121,8 @@ function kill(p,vx,vy,cause){
   explode(p.x+PW/2,p.y+PH/2,vx||rnd(-80,80),vy||0);
   p.dead=true;p.deadT=.6;deaths++;totalDeaths++;save.deaths++;queueSave();
   if(mode==="versus")vdeaths[p.i]++;
-  if(mode==="bomb"&&p.i===bomb.holder){ bomb.holder=p.i?0:1;bomb.timer=BOMB_TIME;bomb.pass=.8; }
+  // in Pass the Bomb the bomb stays with whoever died — it is not passed on
+
   shakeT=.34;freezeT=.06;slowT=.3;flash=.45;
   sfx.die(cause); if(navigator.vibrate){try{navigator.vibrate(30);}catch(e){}}
   if(party.on&&p.i===0&&!p.remote)party.sendDeath(p,cause,vx,vy);
