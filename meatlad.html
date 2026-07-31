@@ -1068,6 +1068,7 @@ function putProfiles(p){ return store.set(PROFKEY,JSON.stringify(p)); }
 var CLOUD_INDEX="019faecd-4ac0-7bae-89fd-132c71f0b2e1";
 var CLOUD="https://jsonblob.com/api/jsonBlob";
 var cloudId=null,cloudPushT=null;
+var acctFriends=[];   // shared with Beetdown on the same account doc
 function cloudGet(id){
   return withTimeout(fetch(CLOUD+"/"+id,{cache:"no-store"}).then(function(r){
     if(!r.ok)throw 0; return r.json(); }).catch(function(){return null;}),9000,null);
@@ -1086,7 +1087,22 @@ function cloudPush(){
   if(!cloudId)return;
   if(cloudPushT)clearTimeout(cloudPushT);
   cloudPushT=setTimeout(function(){ cloudPushT=null;
-    cloudPut(cloudId,{n:curUser,save:save,ts:Date.now()}); },4000);
+    cloudGet(cloudId).then(function(doc){
+      doc=doc||{}; doc.n=curUser; doc.save=save; doc.ts=Date.now();
+      if(!(doc.friends instanceof Array))doc.friends=acctFriends;
+      cloudPut(cloudId,doc);
+    });
+  },4000);
+}
+/* the friends list is shared with Beetdown on the same account doc — write
+   it through immediately (not on the debounce) so add/remove feels instant,
+   same read-modify-write pattern as above so nothing else on the doc is lost */
+function pushFriends(){
+  if(!cloudId)return Promise.resolve(false);
+  return cloudGet(cloudId).then(function(doc){
+    doc=doc||{}; doc.n=curUser; doc.friends=acctFriends; doc.ts=Date.now();
+    return cloudPut(cloudId,doc);
+  });
 }
 var saveT=null;
 function queueSave(){ cloudPush(); if(saveT)return;
@@ -4235,7 +4251,7 @@ function frRow(nm,subText,liveDot){
 function renderFriends(){
   var list=$("frList");if(!list)return;
   list.innerHTML="";
-  var fr=(save.friends||[]);
+  var fr=acctFriends;
   $("frCount").textContent=fr.length?("("+fr.length+")"):"";
   $("frEmpty").style.display=fr.length?"none":"";
   fr.forEach(function(nm){
@@ -4243,8 +4259,8 @@ function renderFriends(){
     var del=document.createElement("button");
     del.className="frbtn del";del.textContent="Remove";
     del.onclick=function(){
-      save.friends=(save.friends||[]).filter(function(x){return x!==nm;});
-      queueSave();sfx.click();renderFriends();renderInviteList(); };
+      acctFriends=acctFriends.filter(function(x){return x!==nm;});
+      pushFriends();sfx.click();renderFriends();renderInviteList(); };
     row.appendChild(del);
     list.appendChild(row);
   });
@@ -4252,7 +4268,7 @@ function renderFriends(){
 /* host-side list with the Invite buttons */
 function renderInviteList(){
   var list=$("invList");if(!list)return;
-  var fr=(save.friends||[]);
+  var fr=acctFriends;
   $("invCount").textContent=fr.length?("("+fr.length+")"):"";
   $("invEmpty").style.display=fr.length?"none":"";
   list.innerHTML="";
@@ -4272,16 +4288,15 @@ $("bAddFr").onclick=function(){
   if(!nm){ $("frErr").textContent="Type a username first.";return; }
   if(!curUser){ $("frErr").textContent="Sign in to add friends.";return; }
   if(nm.toLowerCase()===curUser.toLowerCase()){ $("frErr").textContent="That's you.";return; }
-  save.friends=save.friends||[];
-  if(save.friends.some(function(x){return x.toLowerCase()===nm.toLowerCase();})){
+  if(acctFriends.some(function(x){return x.toLowerCase()===nm.toLowerCase();})){
     $("frErr").textContent="Already on your list.";return; }
   sfx.click();$("frErr").textContent="Looking…";
   loadIndex().then(function(){
     var b=friendBlob(nm);
     if(!b){ $("frErr").textContent="No player called “"+nm+"”.";return; }
-    save.friends.push(nm);queueSave();
+    acctFriends.push(nm);pushFriends();
     $("frName").value="";$("frErr").textContent="";
-    toast(nm+" added");renderFriends();
+    toast(nm+" added");renderFriends();renderInviteList();
   });
 };
 function inviteFriend(nm,btn){
@@ -4738,8 +4753,8 @@ $("bSignUp").onclick=function(){
       if(idx.accounts[key]){ liBusy(false);$("liErr").textContent="That username and password is already taken. Try signing in.";return; }
       if(!idx.names)idx.names={};
       if(idx.names[u.toLowerCase()]){ liBusy(false);$("liErr").textContent="That username is taken. Pick another one.";return; }
-      resetSaveObj();curUser=u;save.name=u;
-      return cloudNew({n:u,save:save,ts:Date.now(),inbox:[]}).then(function(bid){
+      resetSaveObj();curUser=u;save.name=u;acctFriends=[];
+      return cloudNew({n:u,save:save,ts:Date.now(),inbox:[],friends:[]}).then(function(bid){
         if(!bid){ liBusy(false);$("liErr").textContent="Couldn't create the account. Try again.";return; }
         idx.accounts[key]=bid;
         idx.names[u.toLowerCase()]=bid;
@@ -4774,10 +4789,16 @@ $("bSignIn").onclick=function(){
         });
       }
       return cloudGet(bid).then(function(doc){
-        if(!doc||!doc.save){ liBusy(false);$("liErr").textContent="Found the account but couldn't read the save.";return; }
+        if(!doc){ liBusy(false);$("liErr").textContent="Found the account but couldn't read it.";return; }
         curUser=doc.n||u;cloudId=bid;
         resetSaveObj();
-        for(var k in doc.save)if(doc.save.hasOwnProperty(k))save[k]=doc.save[k];
+        // an account made in Beetdown first has no Meat Lad save yet — that's
+        // fine, resetSaveObj() above already left a fresh one in place
+        if(doc.save)for(var k in doc.save)if(doc.save.hasOwnProperty(k))save[k]=doc.save[k];
+        var migrating=false;
+        if(doc.friends instanceof Array)acctFriends=doc.friends.slice();
+        else { acctFriends=(save.friends instanceof Array)?save.friends.slice():[]; migrating=acctFriends.length>0; }
+        if(migrating)pushFriends();
         return store.set(saveKey(),JSON.stringify(save)).then(function(){
           return rememberLocal(curUser,key,bid); }).then(function(){
           return store.set(LASTKEY,curUser); }).then(function(){
@@ -4786,14 +4807,14 @@ $("bSignIn").onclick=function(){
           return enterGame(); }); }); });
   }).then(null,function(){ liBusy(false);$("liErr").textContent="Something went wrong signing in."; });
 };
-$("bGuest").onclick=function(){ sfx.click();curUser=null;cloudId=null;
+$("bGuest").onclick=function(){ sfx.click();curUser=null;cloudId=null;acctFriends=[];
   store.del(LASTKEY);resetSaveObj();
   /* keep whatever this device already had as a guest (progress + level edits) */
   enterGame(); };
 $("bSignOut").onclick=function(){
   sfx.click();
   if(party.on)party.leave();
-  curUser=null;cloudId=null;store.del(LASTKEY);clearSharedSession();resetSaveObj();
+  curUser=null;cloudId=null;acctFriends=[];store.del(LASTKEY);clearSharedSession();resetSaveObj();
   $("liUser").value="";$("liPass").value="";$("liErr").textContent="";
   liBusy(false);show("s-login");
 };
