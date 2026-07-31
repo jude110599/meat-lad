@@ -95,6 +95,14 @@ body{display:flex;align-items:center;justify-content:center;
 #statPanel div{display:flex;justify-content:space-between;font-size:12.5px;
   padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 #statPanel b{color:var(--txt)}
+.diffgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px;margin-bottom:4px}
+.diffchip{background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--bg4);
+  border-radius:4px;padding:10px 11px;text-align:left;cursor:pointer;color:var(--txt);font:inherit}
+.diffchip:hover{background:var(--bg3)}
+.diffchip.sel{border-left-color:var(--gold);outline:1px solid var(--gold);background:var(--bg3)}
+.diffchip.locked{opacity:.42;cursor:default}
+.diffchip .dn{font-weight:800;font-size:13px}
+.diffchip .dd{font-size:11px;color:var(--dim);margin-top:3px}
 .shopbox{max-width:820px;width:100%}
 .shophead{display:flex;align-items:flex-start;justify-content:space-between;
   border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:13px}
@@ -161,8 +169,8 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
 .logv{font-weight:800;color:var(--beet);letter-spacing:.08em;margin:16px 0 7px;font-size:14px}
 .logi{font-size:13px;color:var(--dim);line-height:1.55;margin-bottom:7px;padding-left:14px;position:relative}
 .logi:before{content:"▸";position:absolute;left:0;color:var(--leaf)}
-.mem{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:11px;
-  padding:9px 12px;margin-bottom:7px}
+#pAcctIn .mem, .mem{display:flex;align-items:center;gap:10px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:4px;padding:9px 12px;margin-bottom:7px}
 .mem .mn{font-weight:800;font-size:13.5px}
 .mem .ms{font-size:11.5px;color:var(--dim)}
 </style>
@@ -189,6 +197,9 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
   <div class="screen hide" id="s-char"><div class="page">
     <div class="hdr"><button class="back" id="chBack">&lsaquo;</button><h2 class="disp">Pick your root</h2></div>
     <div class="note" style="margin-bottom:14px">Everyone auto-attacks. You just move, dodge and spend.</div>
+    <div class="sect">Difficulty</div>
+    <div class="diffgrid" id="chDiffGrid" style="margin-bottom:16px"></div>
+    <div class="sect">Root</div>
     <div class="grid" id="charGrid"></div>
     <div class="spacer"></div>
     <button class="btn" id="chStart" style="border-left-color:var(--beet);margin-top:16px">Into the patch</button>
@@ -216,6 +227,34 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
       <span class="dot" id="pDot"></span></div>
     <div id="pOut">
       <div class="note" style="margin-bottom:14px">Make a plot and share the code, or join a friend's. Enemies and waves are run by whoever made it.</div>
+
+      <div class="sect">Account</div>
+      <div id="acctOut">
+        <div class="note" style="margin-bottom:8px;font-size:12px">Sign in to add friends and invite them to your plot. It's the same account as Meat Lad \u2014 use the same username and password there and you're the same person, with one shared friends list.</div>
+        <input class="txt" id="acctUser" maxlength="14" placeholder="USERNAME" style="margin-bottom:8px" autocomplete="off">
+        <input class="txt" id="acctPass" type="password" maxlength="40" placeholder="PASSWORD" style="margin-bottom:8px" autocomplete="off">
+        <div class="row">
+          <button class="btn sub" id="bAcctIn">Sign in</button>
+          <button class="btn sub" id="bAcctUp">Sign up</button>
+        </div>
+        <div class="note" id="acctErr" style="margin-top:8px;color:var(--danger);min-height:14px"></div>
+      </div>
+      <div id="acctIn" style="display:none">
+        <div class="mem" style="margin-bottom:12px">
+          <div style="flex:1;min-width:0"><div class="mn" id="acctName"></div><div class="ms">signed in \u00b7 shared with Meat Lad</div></div>
+          <button class="btn sub" id="bAcctOut" style="width:auto;flex:none;padding:8px 12px;margin-bottom:0">Sign out</button>
+        </div>
+        <div class="sect">Friends <span class="stat" id="frCount"></span></div>
+        <div class="row" style="margin-bottom:8px">
+          <input class="txt" id="frName" maxlength="14" placeholder="USERNAME" autocomplete="off">
+          <button class="btn sub" id="bAddFr" style="flex:0 0 80px">Add</button>
+        </div>
+        <div class="note" id="frErr" style="color:var(--danger);min-height:14px;margin-bottom:4px"></div>
+        <div id="frList"></div>
+        <div class="note" id="frEmpty" style="display:none">No friends yet. Type a username above.</div>
+      </div>
+
+      <div class="sect">Plot</div>
       <input class="txt" id="pName" maxlength="9" placeholder="YOUR NAME" style="margin-bottom:10px">
       <button class="btn" id="bMake">Create plot<small>Get a code to send a friend</small></button>
       <div class="sect">Or join one</div>
@@ -231,6 +270,11 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
       <div class="sect">In the plot <span id="pCnt"></span></div>
       <div id="pList"></div>
       <div id="pHostArea">
+        <div class="sect">Invite friends <span class="stat" id="invCount"></span></div>
+        <div id="invList"></div>
+        <div class="note" id="invEmpty" style="display:none;margin-bottom:8px">Sign in and add friends on the Co-op screen to invite them here.</div>
+        <div class="sect">Difficulty</div>
+        <div class="diffgrid" id="pDiffGrid" style="margin-bottom:4px"></div>
         <div class="sect">Your root</div>
         <div class="grid" id="pCharGrid"></div>
         <button class="btn" id="pStart" style="margin-top:14px;border-left-color:var(--beet)">Start for everyone</button>
@@ -314,11 +358,17 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
 <script>
 (function(){
 "use strict";
-var VERSION="1.2.1";
+var VERSION="1.3.0";
 
 /* ═════════════ CHANGELOG (Beetdown's own — nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.2.1",d:"latest",items:[
+  {v:"1.3.0",d:"latest",items:[
+    "FRIENDS AND INVITES. Sign in on the Co-op screen — it's the same account as Meat Lad, so signing in with the same username and password there makes you the same person here, with one shared friends list. Add a friend by username, and once you've made a plot, invite them straight from the host panel",
+    "DIFFICULTY LADDER. Five tiers from Sprout up to Rotten Harvest, each one noticeably tougher than the last. You start with only Sprout open — clearing all 20 waves on a tier unlocks the next one, and there's no skipping ahead. Pick it on the character-select screen, or as the host before starting a plot",
+    "THE MORE OF YOU THERE ARE, THE HARDER IT GETS. Co-op now scales with how many are actually in the plot — more spawns, tougher pests, harder hits, bigger bosses — so a full plot is a real fight and not four people mowing down a solo-sized wave. Scaling is based on who's in the run, not who's alive this second, so dying never makes it easier",
+    "Run results now show which difficulty you played and how many were in the plot"
+  ]},
+  {v:"1.2.1",items:[
     "FIXED THE LOCK BUTTON. It was a button nested inside another button, which real browsers route taps for unreliably — it now sits in a plain card, not another control, and works every time",
     "Fixed the reroll price display, which was being wiped out on every single market redraw and quietly stopped updating",
     "Found why buttons low on the character-select and party screens sometimes did not respond: the movement joystick sits on top of the whole screen and was capturing taps everywhere, all the time — not just during a run. It now only intercepts touches while you are actually playing",
@@ -357,6 +407,50 @@ var CHANGELOG=[
     "Runs on phones — drag anywhere on the left half of the screen to move"
   ]}
 ];
+
+/* ═════════════ DIFFICULTY ═════════════
+   A ladder of five tiers. Each one is locked until you clear all 20 waves
+   on the tier below it — no skipping ahead. */
+var DIFFS=[
+  {id:"sprout",    n:"Sprout",         mult:1.00, d:"The starting patch."},
+  {id:"overgrown", n:"Overgrown",      mult:1.30, d:"30% tougher."},
+  {id:"blighted",  n:"Blighted",       mult:1.65, d:"65% tougher."},
+  {id:"infested",  n:"Infested",       mult:2.05, d:"About twice as tough."},
+  {id:"rotten",    n:"Rotten Harvest", mult:2.50, d:"The hardest patch there is."}
+];
+var curDiffIdx=0, runDiffIdx=0;
+function diffUnlocked(i){ return i===0||save.diffBeat.indexOf(DIFFS[i-1].id)>=0; }
+function highestUnlockedIdx(){ for(var i=DIFFS.length-1;i>=0;i--)if(diffUnlocked(i))return i; return 0; }
+function runDiffMult(){ return (DIFFS[runDiffIdx]||DIFFS[0]).mult; }
+function renderDiffPicker(gridId){
+  var g=$(gridId); if(!g)return;
+  g.innerHTML="";
+  DIFFS.forEach(function(d,i){
+    var unlocked=diffUnlocked(i);
+    var b=document.createElement("button");
+    b.className="diffchip"+(i===curDiffIdx?" sel":"")+(unlocked?"":" locked");
+    var dn=document.createElement("div"); dn.className="dn"; dn.textContent=d.n;
+    var dd=document.createElement("div"); dd.className="dd";
+    dd.textContent=unlocked?("\u00d7"+d.mult.toFixed(2)+" tougher"):("Beat "+DIFFS[i-1].n+" first");
+    b.appendChild(dn); b.appendChild(dd);
+    b.onclick=function(){
+      sfx.click();
+      if(!unlocked){ toast("Beat "+DIFFS[i-1].n+" to unlock "+d.n); return; }
+      curDiffIdx=i; save.diffIdx=i; queueSave();
+      renderDiffPicker(gridId);
+    };
+    g.appendChild(b);
+  });
+}
+/* the more people in the plot, the harder it gets: more spawns, tougher
+   pests, harder hits — scaled off how many are actually in this run, not
+   how many happen to be alive right now (dying should never make it easier) */
+function coopSize(){ return 1+Object.keys(mates).length; }
+function coopSpawnMult(){ return 1+(coopSize()-1)*.55; }
+function coopHpMult(){ return 1+(coopSize()-1)*.24; }
+function coopDmgMult(){ return 1+(coopSize()-1)*.14; }
+function coopBossHpMult(){ return 1+(coopSize()-1)*.35; }
+function coopBossDmgMult(){ return 1+(coopSize()-1)*.18; }
 
 /* ═════════════ TINY HELPERS ═════════════ */
 function $(id){ return document.getElementById(id); }
@@ -417,15 +511,241 @@ var sfx={
 
 /* ═════════════ SAVE ═════════════ */
 var SKEY="beetdown-save-v1";
-var save={runs:0,best:0,kills:0,mats:0,wins:0,name:""};
+var save={runs:0,best:0,kills:0,mats:0,wins:0,name:"",diffBeat:[],diffIdx:0};
 function loadSave(){
   try{ var r=localStorage.getItem(SKEY); if(r){ var o=JSON.parse(r);
     for(var k in save)if(o[k]!=null)save[k]=o[k]; } }catch(e){}
+  if(!(save.diffBeat instanceof Array))save.diffBeat=[];
 }
 var saveT=null;
 function queueSave(){ clearTimeout(saveT); saveT=setTimeout(function(){
-  try{ localStorage.setItem(SKEY,JSON.stringify(save)); }catch(e){} },400); }
+  try{ localStorage.setItem(SKEY,JSON.stringify(save)); }catch(e){} },400);
+  if(curUser)pushAccount(); }
 loadSave();
+curDiffIdx=clamp(save.diffIdx||0,0,DIFFS.length-1);
+if(!diffUnlocked(curDiffIdx))curDiffIdx=highestUnlockedIdx();
+
+/* ═════════════ ACCOUNT (shared with Meat Lad) ═════════════
+   Same account backend as Meat Lad: sign in with the same username and
+   password in both games and you are the same person there too, with one
+   shared friends list. Each game's own progress and party invites live in
+   their own corner of the account doc, so neither game can clobber the
+   other's data — Meat Lad never reads doc.games.beetdown, doc.bdInbox, and
+   only additively shares doc.friends. */
+var CLOUD_INDEX="019faecd-4ac0-7bae-89fd-132c71f0b2e1";
+var CLOUD="https://jsonblob.com/api/jsonBlob";
+function withTimeout(pr,ms,fallback){
+  return new Promise(function(res){
+    var done=false,t=setTimeout(function(){ if(!done){done=true;res(fallback);} },ms);
+    pr.then(function(v){ if(!done){done=true;clearTimeout(t);res(v);} },
+            function(){ if(!done){done=true;clearTimeout(t);res(fallback);} });
+  });
+}
+function cloudGet(id){
+  return withTimeout(fetch(CLOUD+"/"+id,{cache:"no-store"}).then(function(r){
+    if(!r.ok)throw 0; return r.json(); }).catch(function(){return null;}),9000,null);
+}
+function cloudPut(id,obj){
+  return withTimeout(fetch(CLOUD+"/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(obj)}).then(function(r){return r.ok;}).catch(function(){return false;}),9000,false);
+}
+function cloudNew(obj){
+  return withTimeout(fetch(CLOUD,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(obj||{})}).then(function(r){ if(!r.ok)throw 0;
+      return (r.headers.get("Location")||"").split("/").pop()||null; }).catch(function(){return null;}),9000,null);
+}
+function hashPw(pw,salt){
+  var msg=salt+"|"+pw;
+  if(window.crypto&&crypto.subtle&&window.isSecureContext){
+    return crypto.subtle.digest("SHA-256",new TextEncoder().encode(msg)).then(function(buf){
+      return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+    });
+  }
+  var h=5381;
+  for(var i=0;i<msg.length;i++){ h=((h<<5)+h)^msg.charCodeAt(i); h=h>>>0; }
+  return Promise.resolve("w"+h.toString(16));
+}
+/* the exact same key Meat Lad derives, so the same username+password reaches
+   the same account in both games */
+function acctKey(user,pw){ return hashPw("meatlad-acct|"+String(user).toLowerCase(),pw); }
+function normUser(u){ return String(u||"").trim().slice(0,14); }
+
+var PROFKEY="beetdown:profiles", LASTKEY="beetdown:lastuser";
+function getProfiles(){ try{ var r=localStorage.getItem(PROFKEY); return r?JSON.parse(r):{}; }catch(e){ return {}; } }
+function putProfiles(pr){ try{ localStorage.setItem(PROFKEY,JSON.stringify(pr)); }catch(e){} }
+function rememberLocal(u,key,blobId){ var pr=getProfiles(); pr[u.toLowerCase()]={u:u,k:key,b:blobId}; putProfiles(pr); }
+
+var curUser=null, cloudId=null, acctDoc=null, acctPushT=null;
+function ensureDocShape(doc){
+  doc=doc||{};
+  if(!doc.games)doc.games={};
+  if(!doc.games.beetdown)doc.games.beetdown={};
+  if(!(doc.friends instanceof Array))doc.friends=[];
+  if(!(doc.bdInbox instanceof Array))doc.bdInbox=[];
+  return doc;
+}
+function pushAccount(){
+  if(!cloudId||!acctDoc)return;
+  if(acctPushT)clearTimeout(acctPushT);
+  acctPushT=setTimeout(function(){ acctPushT=null;
+    acctDoc.games.beetdown=save; acctDoc.n=curUser; acctDoc.ts=Date.now();
+    cloudPut(cloudId,acctDoc); },900);
+}
+function pushAccountNow(){
+  if(!cloudId||!acctDoc)return Promise.resolve(false);
+  acctDoc.games.beetdown=save; acctDoc.n=curUser; acctDoc.ts=Date.now();
+  return cloudPut(cloudId,acctDoc);
+}
+function acctSignUp(u,pw){
+  u=normUser(u);
+  if(u.length<2)return Promise.resolve({err:"Pick a username with at least 2 characters."});
+  if((pw||"").length<3)return Promise.resolve({err:"Pick a password with at least 3 characters."});
+  return acctKey(u,pw).then(function(key){
+    return cloudGet(CLOUD_INDEX).then(function(idx){
+      if(!idx||!idx.accounts)return {err:"Can't reach the account server. Check your connection."};
+      if(idx.accounts[key])return {err:"That username and password is already taken. Try signing in."};
+      if(!idx.names)idx.names={};
+      if(idx.names[u.toLowerCase()])return {err:"That username is taken. Pick another one."};
+      var doc=ensureDocShape({n:u,ts:Date.now()});
+      doc.games.beetdown=save;
+      return cloudNew(doc).then(function(bid){
+        if(!bid)return {err:"Couldn't create the account. Try again."};
+        idx.accounts[key]=bid; idx.names[u.toLowerCase()]=bid;
+        return cloudPut(CLOUD_INDEX,idx).then(function(ok){
+          if(!ok)return {err:"Couldn't finish creating the account. Try again."};
+          curUser=u; cloudId=bid; acctDoc=doc;
+          rememberLocal(u,key,bid);
+          try{localStorage.setItem(LASTKEY,u);}catch(e){}
+          return {ok:true};
+        });
+      });
+    });
+  });
+}
+function acctSignIn(u,pw){
+  u=normUser(u);
+  if(!u||!pw)return Promise.resolve({err:"Enter your username and password."});
+  return acctKey(u,pw).then(function(key){
+    return cloudGet(CLOUD_INDEX).then(function(idx){
+      var bid=idx&&idx.accounts&&idx.accounts[key];
+      if(!bid){
+        var pr=getProfiles(), lp=pr[u.toLowerCase()];
+        if(lp&&lp.k===key){
+          curUser=lp.u; cloudId=lp.b||null; acctDoc=ensureDocShape({n:lp.u,ts:Date.now()});
+          try{localStorage.setItem(LASTKEY,lp.u);}catch(e){}
+          return {ok:true,offline:true};
+        }
+        return {err:idx?"Wrong username or password.":"Can't reach the account server."};
+      }
+      return cloudGet(bid).then(function(doc){
+        if(!doc)return {err:"Found the account but couldn't read it."};
+        doc=ensureDocShape(doc);
+        curUser=doc.n||u; cloudId=bid; acctDoc=doc;
+        if(doc.games.beetdown&&Object.keys(doc.games.beetdown).length)
+          for(var k in doc.games.beetdown)if(doc.games.beetdown.hasOwnProperty(k))save[k]=doc.games.beetdown[k];
+        if(!(save.diffBeat instanceof Array))save.diffBeat=[];
+        try{localStorage.setItem(SKEY,JSON.stringify(save));}catch(e){}
+        rememberLocal(curUser,key,bid);
+        try{localStorage.setItem(LASTKEY,curUser);}catch(e){}
+        return {ok:true};
+      });
+    });
+  });
+}
+function acctSignOut(){
+  curUser=null; cloudId=null; acctDoc=null;
+  try{localStorage.removeItem(LASTKEY);}catch(e){}
+}
+function tryAutoSignIn(){
+  var last=null; try{ last=localStorage.getItem(LASTKEY); }catch(e){}
+  if(!last)return Promise.resolve(false);
+  var pr=getProfiles(), lp=pr[last.toLowerCase()];
+  if(!lp||!lp.b)return Promise.resolve(false);
+  return cloudGet(lp.b).then(function(doc){
+    if(!doc)return false;
+    doc=ensureDocShape(doc);
+    curUser=doc.n||lp.u; cloudId=lp.b; acctDoc=doc;
+    if(doc.games.beetdown&&Object.keys(doc.games.beetdown).length)
+      for(var k in doc.games.beetdown)if(doc.games.beetdown.hasOwnProperty(k))save[k]=doc.games.beetdown[k];
+    if(!(save.diffBeat instanceof Array))save.diffBeat=[];
+    try{localStorage.setItem(SKEY,JSON.stringify(save));}catch(e){}
+    return true;
+  });
+}
+
+/* ═════════════ FRIENDS ═════════════ */
+var frIdx=null;
+function loadIndex(){ return cloudGet(CLOUD_INDEX).then(function(idx){ frIdx=idx; return idx; }); }
+function friendBlob(name){ return (frIdx&&frIdx.names)?(frIdx.names[String(name).toLowerCase()]||null):null; }
+function registerName(){
+  if(!curUser||!cloudId)return Promise.resolve(false);
+  return cloudGet(CLOUD_INDEX).then(function(idx){
+    if(!idx)return false;
+    if(!idx.names)idx.names={};
+    var k=curUser.toLowerCase();
+    if(idx.names[k]===cloudId)return true;
+    idx.names[k]=cloudId;
+    return cloudPut(CLOUD_INDEX,idx).then(function(ok){ if(ok)frIdx=idx; return ok; });
+  });
+}
+function addFriend(nm){
+  nm=normUser(nm);
+  if(!nm)return Promise.resolve({err:"Type a username first."});
+  if(!curUser)return Promise.resolve({err:"Sign in to add friends."});
+  if(nm.toLowerCase()===curUser.toLowerCase())return Promise.resolve({err:"That's you."});
+  acctDoc=acctDoc||ensureDocShape({n:curUser});
+  if(acctDoc.friends.some(function(x){return x.toLowerCase()===nm.toLowerCase();}))
+    return Promise.resolve({err:"Already on your list."});
+  return loadIndex().then(function(){
+    var b=friendBlob(nm);
+    if(!b)return {err:"No player called \u201c"+nm+"\u201d."};
+    acctDoc.friends.push(nm);
+    return pushAccountNow().then(function(){ return {ok:true}; });
+  });
+}
+function removeFriend(nm){
+  if(!acctDoc)return Promise.resolve(false);
+  acctDoc.friends=acctDoc.friends.filter(function(x){return x!==nm;});
+  return pushAccountNow();
+}
+function inviteFriend(nm,btn){
+  if(!(party.on&&party.leader)){ toast("Make a plot first"); sfx.click(); return; }
+  sfx.click();
+  if(btn){btn.textContent="\u2026";btn.disabled=true;}
+  function done(msg){ toast(msg); if(btn){btn.textContent="Invite";btn.disabled=false;} }
+  loadIndex().then(function(){
+    var b=friendBlob(nm);
+    if(!b){ done("Couldn't find "+nm); return; }
+    return cloudGet(b).then(function(doc){
+      if(!doc){ done("Couldn't reach "+nm); return; }
+      doc=ensureDocShape(doc);
+      doc.bdInbox=doc.bdInbox.filter(function(m){return Date.now()-m.ts<600000;});
+      doc.bdInbox.push({from:curUser||"a root",code:party.code,ts:Date.now()});
+      if(doc.bdInbox.length>8)doc.bdInbox=doc.bdInbox.slice(-8);
+      return cloudPut(b,doc).then(function(ok){ done(ok?("Invite sent to "+nm):"Invite failed"); });
+    });
+  });
+}
+var inboxTimer=null, seenInvite=0;
+function inboxEligible(){ return !!curUser&&!!cloudId&&(state==="menu"||state==="pause"); }
+function startInbox(){
+  if(inboxTimer)clearInterval(inboxTimer);
+  inboxTimer=setInterval(function(){
+    if(!inboxEligible())return;
+    cloudGet(cloudId).then(function(doc){
+      if(!doc||!doc.bdInbox||!doc.bdInbox.length)return;
+      var latest=null;
+      doc.bdInbox.forEach(function(m){ if(m.ts>seenInvite&&Date.now()-m.ts<600000&&(!latest||m.ts>latest.ts))latest=m; });
+      if(!latest)return;
+      seenInvite=latest.ts;
+      showInvite(latest);
+    });
+  },9000);
+}
+function showInvite(m){
+  toast(m.from+" invited you to their plot \u2014 code "+m.code);
+  var el=$("pCode"); if(el)el.value=m.code;
+}
 
 /* ═════════════ CONTENT ═════════════ */
 var CHARS=[
@@ -626,7 +946,7 @@ function moveAxis(){
 
 /* ═════════════ WAVES ═════════════ */
 function waveLength(w){ return 20+Math.min(24,w*1.6); }
-function waveBudget(w){ return 10+w*3+(w>10?(w-10)*2.4:0); }
+function waveBudget(w){ return (10+w*3+(w>10?(w-10)*2.4:0))*runDiffMult()*coopSpawnMult(); }
 function isBoss(w){ return !!BOSSES[w]; }
 
 function startWave(w){
@@ -662,17 +982,20 @@ function pestMix(w){
 }
 function spawnPest(kind,w){
   var d=PESTS[kind], p=edgeSpawn();
-  var scale=1+(w-1)*.16;
+  var wscale=1+(w-1)*.16, hpM=runDiffMult()*coopHpMult(), dmgM=runDiffMult()*coopDmgMult();
+  var hp=Math.max(1,Math.round(d.hp*wscale*hpM));
   foes.push({id:nextFoeId++, k:kind, n:d.n, x:p.x, y:p.y, vx:0, vy:0,
-    hp:Math.round(d.hp*scale), max:Math.round(d.hp*scale), spd:d.spd*(1+(w-1)*.012),
-    dmg:d.dmg+Math.floor(w*.32), r:d.r, col:d.col, mat:d.mat, xp:d.xp,
+    hp:hp, max:hp, spd:d.spd*(1+(w-1)*.012),
+    dmg:Math.max(1,Math.round((d.dmg+Math.floor(w*.32))*dmgM)), r:d.r, col:d.col, mat:d.mat, xp:d.xp,
     arm:d.arm||0, erratic:d.erratic||0, ranged:d.ranged||0, shotDmg:d.shotDmg||0,
     wob:rnd(0,6.28), cd:rnd(.6,2), hit:0, boss:0});
 }
 function spawnBoss(w){
   var d=BOSSES[w], p=edgeSpawn();
+  var hpM=runDiffMult()*coopBossHpMult(), dmgM=runDiffMult()*coopBossDmgMult();
+  var hp=Math.max(1,Math.round(d.hp*hpM));
   foes.push({id:nextFoeId++, k:"boss", n:d.n, x:p.x, y:p.y, vx:0, vy:0,
-    hp:d.hp, max:d.hp, spd:d.spd, dmg:d.dmg, r:d.r, col:d.col, mat:d.mat, xp:d.xp,
+    hp:hp, max:hp, spd:d.spd, dmg:Math.max(1,Math.round(d.dmg*dmgM)), r:d.r, col:d.col, mat:d.mat, xp:d.xp,
     arm:3, erratic:d.erratic||0, ranged:0, shotDmg:0, wob:0, cd:2, hit:0, boss:1});
   bossAlive=true;
 }
@@ -1017,17 +1340,29 @@ function endRun(won){
   save.runs++; save.kills+=runKills; save.mats+=runMats;
   if(wave>save.best)save.best=wave;
   if(won)save.wins++;
+  var diffName=(DIFFS[runDiffIdx]||DIFFS[0]).n, unlockedNext=null;
+  if(won){
+    var dId=DIFFS[runDiffIdx].id;
+    if(save.diffBeat.indexOf(dId)<0){
+      save.diffBeat.push(dId);
+      if(runDiffIdx+1<DIFFS.length)unlockedNext=DIFFS[runDiffIdx+1];
+    }
+  }
   queueSave();
   $("overTitle").textContent=won?"The patch holds":"Composted";
-  $("overText").textContent=won?"Twenty waves survived. The allotment is yours.":
-    "You went down on wave "+wave+".";
+  $("overText").textContent=won?
+    (unlockedNext?("Twenty waves survived on "+diffName+". "+unlockedNext.n+" is unlocked."):
+      ("Twenty waves survived on "+diffName+". The allotment is yours.")):
+    "You went down on wave "+wave+" ("+diffName+").";
   var st=$("overStats"); st.innerHTML="";
-  [["Wave reached",wave],["Pests killed",runKills],["Materials found",runMats],
+  [["Difficulty",diffName],["Players",coopSize()],
+   ["Wave reached",wave],["Pests killed",runKills],["Materials found",runMats],
    ["Level",me?me.lvl:1],["Best ever",save.best]].forEach(function(r){
     var d=document.createElement("div"); d.className="statline";
     d.innerHTML="<span>"+r[0]+"</span><b>"+r[1]+"</b>"; st.appendChild(d);
   });
   showOvl("o-over");
+  if(unlockedNext)toast("Unlocked \u00b7 "+unlockedNext.n);
 }
 function quitToMenu(){
   state="menu"; me=null; mates={}; foes.length=0; shots.length=0; drops.length=0;
@@ -2374,9 +2709,9 @@ function renderChars(gridId,onPick){
     g.appendChild(b);
   });
 }
-$("bSolo").onclick=function(){ sfx.click(); audioOn(); renderChars("charGrid"); show("s-char"); };
+$("bSolo").onclick=function(){ sfx.click(); audioOn(); renderChars("charGrid"); renderDiffPicker("chDiffGrid"); show("s-char"); };
 $("chBack").onclick=function(){ sfx.click(); show("s-title"); };
-$("chStart").onclick=function(){ sfx.click(); beginRun(chosenChar); };
+$("chStart").onclick=function(){ sfx.click(); runDiffIdx=curDiffIdx; beginRun(chosenChar); };
 $("bLog").onclick=function(){ sfx.click(); renderLog(); show("s-log"); };
 $("lgBack").onclick=function(){ sfx.click(); show("s-title"); };
 $("bStats").onclick=function(){ sfx.click(); renderStats(); show("s-stats"); };
@@ -2489,7 +2824,12 @@ var party={
       g.hp=m.hp; g.maxhp=m.mx; g.dead=!!m.dd;
     }
     else if(m.t==="start"){
-      if(state==="menu"){ chosenChar=self.char; beginRun(self.char); }
+      if(state==="menu"){
+        var di=0;
+        for(var dx=0;dx<DIFFS.length;dx++)if(DIFFS[dx].id===m.diff){di=dx;break;}
+        runDiffIdx=di;
+        chosenChar=self.char; beginRun(self.char);
+      }
     }
     else if(m.t==="wave"){ if(state!=="menu")startWave(m.w); }
     else if(m.t==="spawn"){
@@ -2550,8 +2890,56 @@ var party={
     this._reset(); mates={}; renderParty();
   }
 };
+function frRow(nm,subText){
+  var row=document.createElement("div"); row.className="mem";
+  var wrap=document.createElement("div"); wrap.style.cssText="flex:1;min-width:0";
+  var a=document.createElement("div"); a.className="mn"; a.textContent=nm;
+  var b2=document.createElement("div"); b2.className="ms"; b2.textContent=subText;
+  wrap.appendChild(a); wrap.appendChild(b2); row.appendChild(wrap);
+  return row;
+}
+function renderAcct(){
+  var signedIn=!!curUser;
+  $("acctOut").style.display=signedIn?"none":"";
+  $("acctIn").style.display=signedIn?"":"none";
+  if(signedIn)$("acctName").textContent=curUser;
+  if(signedIn)renderFriends();
+}
+function renderFriends(){
+  var list=$("frList"); if(!list)return;
+  list.innerHTML="";
+  var fr=(acctDoc&&acctDoc.friends)||[];
+  $("frCount").textContent=fr.length?("("+fr.length+")"):"";
+  $("frEmpty").style.display=fr.length?"none":"";
+  fr.forEach(function(nm){
+    var row=frRow(nm,"on your list");
+    var del=document.createElement("button");
+    del.className="btn sub"; del.style.cssText="width:auto;flex:none;padding:6px 10px;margin-bottom:0";
+    del.textContent="Remove";
+    del.onclick=function(){ removeFriend(nm); sfx.click(); renderFriends(); renderInviteList(); };
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+}
+function renderInviteList(){
+  var list=$("invList"); if(!list)return;
+  var fr=(curUser&&acctDoc&&acctDoc.friends)||[];
+  $("invCount").textContent=fr.length?("("+fr.length+")"):"";
+  $("invEmpty").style.display=fr.length?"none":"";
+  list.innerHTML="";
+  fr.forEach(function(nm){
+    var row=frRow(nm,"tap invite");
+    var inv=document.createElement("button");
+    inv.className="btn sub"; inv.style.cssText="width:auto;flex:none;padding:6px 10px;margin-bottom:0";
+    inv.textContent="Invite";
+    inv.onclick=function(){ inviteFriend(nm,inv); };
+    row.appendChild(inv);
+    list.appendChild(row);
+  });
+}
 function renderParty(){
   var on=party.on;
+  renderAcct();
   $("pOut").style.display=on?"none":"";
   $("pIn").style.display=on?"":"none";
   $("pDot").className="dot"+(on?" live":"");
@@ -2569,11 +2957,58 @@ function renderParty(){
   }
   row((save.name||"you")+" (you)",party.leader?"host · runs the waves":"guest");
   ids.forEach(function(k){ var m=party.members[k]; row(m.n||"lad",byId(CHARS,m.ch).n); });
-  if(party.leader&&!$("pCharGrid").childNodes.length)renderChars("pCharGrid",function(id){ party.char=id; });
+  if(party.leader){
+    if(!$("pCharGrid").childNodes.length)renderChars("pCharGrid",function(id){ party.char=id; });
+    renderDiffPicker("pDiffGrid");
+    renderInviteList();
+  }
 }
 $("bParty").onclick=function(){ sfx.click(); audioOn();
   $("pName").value=save.name||""; renderParty(); renderChars("pCharGrid",function(id){party.char=id;});
+  renderDiffPicker("pDiffGrid");
   show("s-party"); };
+function acctBusy(b){ $("bAcctIn").disabled=b; $("bAcctUp").disabled=b; }
+$("bAcctIn").onclick=function(){
+  var u=$("acctUser").value, pw=$("acctPass").value||"";
+  sfx.click(); $("acctErr").textContent="Signing in\u2026"; acctBusy(true);
+  acctSignIn(u,pw).then(function(r){
+    acctBusy(false);
+    if(r.err){ $("acctErr").textContent=r.err; return; }
+    $("acctErr").textContent="";
+    toast(r.offline?"Signed in (offline copy)":"Signed in as "+curUser);
+    save.name=save.name||curUser; $("pName").value=save.name;
+    registerName(); startInbox();
+    renderParty();
+  });
+};
+$("bAcctUp").onclick=function(){
+  var u=$("acctUser").value, pw=$("acctPass").value||"";
+  sfx.click(); $("acctErr").textContent="Creating account\u2026"; acctBusy(true);
+  acctSignUp(u,pw).then(function(r){
+    acctBusy(false);
+    if(r.err){ $("acctErr").textContent=r.err; return; }
+    $("acctErr").textContent="";
+    toast("Account made \u2014 works in Meat Lad too");
+    save.name=save.name||curUser; $("pName").value=save.name; queueSave();
+    registerName(); startInbox();
+    renderParty();
+  });
+};
+$("bAcctOut").onclick=function(){
+  sfx.click(); acctSignOut();
+  $("acctUser").value=""; $("acctPass").value=""; $("acctErr").textContent="";
+  renderParty();
+};
+$("bAddFr").onclick=function(){
+  var nm=normUser($("frName").value);
+  sfx.click(); $("frErr").textContent="Looking\u2026";
+  addFriend(nm).then(function(r){
+    if(r.err){ $("frErr").textContent=r.err; return; }
+    $("frName").value=""; $("frErr").textContent="";
+    toast(nm+" added");
+    renderFriends(); renderInviteList();
+  });
+};
 $("pBack").onclick=function(){ sfx.click(); show("s-title"); };
 $("pName").onchange=function(){ save.name=($("pName").value||"").slice(0,9); queueSave(); };
 $("bMake").onclick=function(){ sfx.click(); save.name=($("pName").value||"lad").slice(0,9); queueSave(); party.host(); };
@@ -2583,7 +3018,8 @@ $("bCopy").onclick=function(){ try{ navigator.clipboard.writeText(party.code); t
 $("pStart").onclick=function(){
   if(!party.leader)return;
   sfx.click();
-  party.send({t:"start"});
+  runDiffIdx=curDiffIdx;
+  party.send({t:"start",diff:DIFFS[curDiffIdx].id});
   chosenChar=party.char; beginRun(party.char);
 };
 
@@ -2620,10 +3056,20 @@ resize();
 renderChars("charGrid");
 show("s-title");
 requestAnimationFrame(frame);
+tryAutoSignIn().then(function(ok){
+  if(ok){ save.name=save.name||curUser; registerName(); startInbox(); renderParty(); }
+});
 
 window.drawRoot=drawRoot; window.drawPest=drawPest; window.iconFor=iconFor;
 window.__bd={
   shot:function(){ render(performance.now()/1000); return true; },
+  acctSignUp:acctSignUp, acctSignIn:acctSignIn, acctSignOut:acctSignOut,
+  acctKey:acctKey, addFriend:addFriend, removeFriend:removeFriend,
+  inviteFriend:inviteFriend, pushAccountNow:pushAccountNow, registerName:registerName,
+  setParty:function(o){ for(var k in o)party[k]=o[k]; },
+  getCurUser:function(){ return curUser; }, getCloudId:function(){ return cloudId; },
+  getAcctDoc:function(){ return acctDoc; }, getSave:function(){ return save; },
+  setSave:function(o){ for(var k in o)save[k]=o[k]; },
   CHARS:CHARS,WEAPONS:WEAPONS,ITEMS:ITEMS,PESTS:PESTS,BOSSES:BOSSES,CHANGELOG:CHANGELOG,
   begin:function(c){ beginRun(c||"seed"); return {wave:wave,hp:me.hp,state:state}; },
   sim:function(frames,noHurt){
@@ -2706,6 +3152,48 @@ window.__bd={
     return o;
   },
   state:function(){ return {state:state,wave:wave,lvl:me?me.lvl:0,weapons:me?me.weapons.length:0}; },
+  diffProbe:function(){
+    var o={};
+    save.diffBeat=[];
+    o.onlyFirstUnlocked=diffUnlocked(0)&&!diffUnlocked(1)&&!diffUnlocked(4);
+    // playing and winning on Sprout should unlock Overgrown, nothing further
+    curDiffIdx=0; runDiffIdx=0;
+    beginRun("seed");
+    endRun(true);
+    o.wonSproutUnlocksOvergrown=diffUnlocked(1)&&!diffUnlocked(2);
+    o.diffBeatHasSprout=save.diffBeat.indexOf("sprout")>=0;
+    // losing should not unlock anything further
+    curDiffIdx=1; runDiffIdx=1;
+    beginRun("seed");
+    endRun(false);
+    o.losingDoesNotUnlock=!diffUnlocked(2);
+    // scaling: harder tiers must produce a bigger budget and tougher pests
+    var lo=(function(){ runDiffIdx=0; return waveBudget(5); })();
+    var hi=(function(){ runDiffIdx=4; return waveBudget(5); })();
+    o.hardTierBiggerBudget=hi>lo*1.5;
+    runDiffIdx=0;
+    return o;
+  },
+  coopProbe:function(){
+    var o={};
+    mates={};
+    runDiffIdx=0;
+    beginRun("seed");
+    spawnPest("aphid",3);
+    var soloHp=foes[foes.length-1].hp, soloDmg=foes[foes.length-1].dmg;
+    var soloBudget=waveBudget(3);
+    mates.fakeA=mkPlayer("beet",false);
+    mates.fakeB=mkPlayer("radish",false);
+    spawnPest("aphid",3);
+    var trioHp=foes[foes.length-1].hp, trioDmg=foes[foes.length-1].dmg;
+    var trioBudget=waveBudget(3);
+    o.coopSizeCounts=coopSize()===3;
+    o.moreHpWithMorePlayers=trioHp>soloHp;
+    o.moreDmgWithMorePlayers=trioDmg>=soloDmg;
+    o.moreSpawnBudgetWithMorePlayers=trioBudget>soloBudget;
+    mates={};
+    return o;
+  },
   walkOverDrop:function(){
     if(!drops.length)return {no:"no drops on the floor"};
     var before=me.mats,d=drops[0];
