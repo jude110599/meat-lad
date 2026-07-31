@@ -48,6 +48,25 @@ a.game .meta{margin-top:13px;font-size:11px;letter-spacing:.14em;text-transform:
   background:linear-gradient(180deg,transparent,#7bd94a 240%)}
 .blob{position:absolute;border-radius:50%}
 footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-spacing:.1em}
+
+/* account bar */
+#acctBar{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.09);
+  border-radius:13px;padding:14px 16px;margin-bottom:22px}
+#acctBar .row{display:flex;gap:8px}
+#acctBar input{flex:1;min-width:0;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:10px 11px;color:#f2ecff;font:inherit;font-size:13px}
+#acctBar input::placeholder{color:#5c5178}
+#acctBar button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  color:#f2ecff;border-radius:8px;padding:10px 14px;font:inherit;font-weight:700;font-size:12.5px;
+  cursor:pointer;white-space:nowrap}
+#acctBar button:hover{background:rgba(255,255,255,.12)}
+#acctBar button.primary{background:#3a2260;border-color:#5a3a90}
+#acctOut .row{margin-top:8px}
+#acctErr{font-size:11.5px;color:#e8324a;margin-top:8px;min-height:14px}
+#acctIn{display:none;align-items:center;justify-content:space-between;gap:10px}
+#acctIn .who{font-weight:800;font-size:14px}
+#acctIn .sub{font-size:11px;color:#8d7fb0;margin-top:2px}
+#acctLabel{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#8d7fb0;margin-bottom:9px}
 </style>
 </head>
 <body>
@@ -56,6 +75,26 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
     <h1 class="disp">Pick a game</h1>
     <div class="sub">Two different games, one place. Your progress in each is kept separately.</div>
   </header>
+
+  <div id="acctBar">
+    <div id="acctLabel">Account</div>
+    <div id="acctOut">
+      <div class="sub" style="color:#8d7fb0;font-size:12px;margin-bottom:9px">Sign in once here and both games recognise you — one account, one friends list, progress kept per game.</div>
+      <div class="row">
+        <input id="lUser" maxlength="14" placeholder="USERNAME" autocomplete="off">
+        <input id="lPass" type="password" maxlength="40" placeholder="PASSWORD" autocomplete="off">
+      </div>
+      <div class="row">
+        <button id="lSignIn">Sign in</button>
+        <button id="lSignUp" class="primary">Sign up</button>
+      </div>
+      <div id="acctErr"></div>
+    </div>
+    <div id="acctIn">
+      <div><div class="who" id="acctWho"></div><div class="sub">signed in · shared with both games</div></div>
+      <button id="lSignOut">Sign out</button>
+    </div>
+  </div>
 
   <div class="games">
     <a class="game ml" href="meatlad.html">
@@ -109,5 +148,128 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 
   <footer>Both games save on this device. Beetdown keeps its own changelog inside its menu.</footer>
 </div>
+<script>
+(function(){
+"use strict";
+/* Same account backend Meat Lad and Beetdown use. Signing in here just
+   writes the session to the keys both games already check on boot — there
+   is no separate "launcher account", it is the same one. */
+var CLOUD_INDEX="019faecd-4ac0-7bae-89fd-132c71f0b2e1";
+var CLOUD="https://jsonblob.com/api/jsonBlob";
+var LASTKEY="gameacct:lastuser", PROFKEY="gameacct:profiles";
+function withTimeout(pr,ms,fb){ return new Promise(function(res){
+  var done=false,t=setTimeout(function(){ if(!done){done=true;res(fb);} },ms);
+  pr.then(function(v){ if(!done){done=true;clearTimeout(t);res(v);} },
+          function(){ if(!done){done=true;clearTimeout(t);res(fb);} }); }); }
+function cloudGet(id){ return withTimeout(fetch(CLOUD+"/"+id,{cache:"no-store"}).then(function(r){
+  if(!r.ok)throw 0; return r.json(); }).catch(function(){return null;}),9000,null); }
+function cloudPut(id,obj){ return withTimeout(fetch(CLOUD+"/"+id,{method:"PUT",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)})
+  .then(function(r){return r.ok;}).catch(function(){return false;}),9000,false); }
+function cloudNew(obj){ return withTimeout(fetch(CLOUD,{method:"POST",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify(obj||{})})
+  .then(function(r){ if(!r.ok)throw 0; return (r.headers.get("Location")||"").split("/").pop()||null; })
+  .catch(function(){return null;}),9000,null); }
+function hashPw(pw,salt){
+  var msg=salt+"|"+pw;
+  if(window.crypto&&crypto.subtle&&window.isSecureContext){
+    return crypto.subtle.digest("SHA-256",new TextEncoder().encode(msg)).then(function(buf){
+      return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join(""); });
+  }
+  var h=5381; for(var i=0;i<msg.length;i++){ h=((h<<5)+h)^msg.charCodeAt(i); h=h>>>0; }
+  return Promise.resolve("w"+h.toString(16));
+}
+function acctKey(user,pw){ return hashPw("meatlad-acct|"+String(user).toLowerCase(),pw); }
+function normUser(u){ return String(u||"").trim().slice(0,14); }
+function getProfiles(){ try{ var r=localStorage.getItem(PROFKEY); return r?JSON.parse(r):{}; }catch(e){ return {}; } }
+function putProfiles(p){ try{ localStorage.setItem(PROFKEY,JSON.stringify(p)); }catch(e){} }
+function rememberLocal(u,key,blobId){ var p=getProfiles(); p[u.toLowerCase()]={u:u,k:key,b:blobId}; putProfiles(p); }
+
+function signUp(u,pw){
+  u=normUser(u);
+  if(u.length<2)return Promise.resolve({err:"Pick a username with at least 2 characters."});
+  if((pw||"").length<3)return Promise.resolve({err:"Pick a password with at least 3 characters."});
+  return acctKey(u,pw).then(function(key){
+    return cloudGet(CLOUD_INDEX).then(function(idx){
+      if(!idx||!idx.accounts)return {err:"Can't reach the account server. Check your connection."};
+      if(idx.accounts[key])return {err:"That username and password is already taken. Try signing in."};
+      if(!idx.names)idx.names={};
+      if(idx.names[u.toLowerCase()])return {err:"That username is taken. Pick another one."};
+      var doc={n:u,games:{},friends:[],bdInbox:[],ts:Date.now()};
+      return cloudNew(doc).then(function(bid){
+        if(!bid)return {err:"Couldn't create the account. Try again."};
+        idx.accounts[key]=bid; idx.names[u.toLowerCase()]=bid;
+        return cloudPut(CLOUD_INDEX,idx).then(function(ok){
+          if(!ok)return {err:"Couldn't finish creating the account. Try again."};
+          rememberLocal(u,key,bid);
+          try{localStorage.setItem(LASTKEY,u);}catch(e){}
+          return {ok:true,u:u};
+        });
+      });
+    });
+  });
+}
+function signIn(u,pw){
+  u=normUser(u);
+  if(!u||!pw)return Promise.resolve({err:"Enter your username and password."});
+  return acctKey(u,pw).then(function(key){
+    return cloudGet(CLOUD_INDEX).then(function(idx){
+      var bid=idx&&idx.accounts&&idx.accounts[key];
+      if(!bid){
+        var p=getProfiles(), lp=p[u.toLowerCase()];
+        if(lp&&lp.k===key){
+          try{localStorage.setItem(LASTKEY,lp.u);}catch(e){}
+          return {ok:true,u:lp.u,offline:true};
+        }
+        return {err:idx?"Wrong username or password.":"Can't reach the account server."};
+      }
+      return cloudGet(bid).then(function(doc){
+        if(!doc)return {err:"Found the account but couldn't read it."};
+        rememberLocal(doc.n||u,key,bid);
+        try{localStorage.setItem(LASTKEY,doc.n||u);}catch(e){}
+        return {ok:true,u:doc.n||u};
+      });
+    });
+  });
+}
+function signOut(){ try{localStorage.removeItem(LASTKEY);}catch(e){} }
+
+function $(id){ return document.getElementById(id); }
+function render(name){
+  var signedIn=!!name;
+  $("acctOut").style.display=signedIn?"none":"";
+  $("acctIn").style.display=signedIn?"flex":"none";
+  if(signedIn)$("acctWho").textContent=name;
+}
+function busy(b){ $("lSignIn").disabled=b; $("lSignUp").disabled=b; }
+$("lSignIn").onclick=function(){
+  $("acctErr").textContent="Signing in…"; busy(true);
+  signIn($("lUser").value,$("lPass").value).then(function(r){
+    busy(false);
+    if(r.err){ $("acctErr").textContent=r.err; return; }
+    $("acctErr").textContent=""; render(r.u);
+  });
+};
+$("lSignUp").onclick=function(){
+  $("acctErr").textContent="Creating account…"; busy(true);
+  signUp($("lUser").value,$("lPass").value).then(function(r){
+    busy(false);
+    if(r.err){ $("acctErr").textContent=r.err; return; }
+    $("acctErr").textContent=""; render(r.u);
+  });
+};
+$("lSignOut").onclick=function(){ signOut(); render(null); };
+
+try{
+  var last=localStorage.getItem(LASTKEY);
+  if(last)render(last);
+}catch(e){}
+
+window.__launcher={
+  signIn:signIn, signUp:signUp, signOut:signOut,
+  getLast:function(){ try{ return localStorage.getItem(LASTKEY); }catch(e){ return null; } }
+};
+})();
+</script>
 </body>
 </html>

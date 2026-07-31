@@ -625,9 +625,12 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
 (function(){
 "use strict";
 
-var VERSION="3.0.1";
+var VERSION="3.0.2";
 var CHANGELOG=[
-  {v:"3.0.1",d:"latest",items:[
+  {v:"3.0.2",d:"latest",items:[
+    "ONE SIGN-IN COVERS BOTH GAMES NOW. Sign in on the game-select screen, or in either game, and the others recognise the same session without asking again — nothing about signing in or out here changed, this only widens what counts as “already signed in”"
+  ]},
+  {v:"3.0.1",items:[
     "THE GIRL IS GONE FROM PASS THE BOMB. The arenas still had an exit marker in them, so running into her handed the bomb over and muddled the round. Every bomb arena is now just an arena — there is nothing to reach, only the fuse",
     "DYING WITH THE BOMB KEEPS IT. It used to jump to the other player the instant you died, which meant blowing up could hand your opponent the problem. Now it stays with whoever went down, and they lose the round"
   ]},
@@ -1019,6 +1022,17 @@ var save={unlocked:START.slice(),skins:[{c:"red",h:"none",s:"sneak",e:"normal",h
    This keeps separate saves apart on a shared device. It is NOT an
    internet account — progress does not follow you to another device. */
 var PROFKEY="meatlad:profiles",LASTKEY="meatlad:lastuser";
+/* shared with Beetdown and the game-select launcher: sign in on any one of
+   the three and the others recognise the same session without asking again */
+var SHARED_PROFKEY="gameacct:profiles",SHARED_LASTKEY="gameacct:lastuser";
+function markSharedSession(u,key,blobId){
+  return store.get(SHARED_PROFKEY).then(function(raw){
+    var p={}; try{ p=raw?JSON.parse(raw):{}; }catch(e){}
+    p[u.toLowerCase()]={u:u,k:key,b:blobId};
+    return store.set(SHARED_PROFKEY,JSON.stringify(p));
+  }).then(function(){ return store.set(SHARED_LASTKEY,u); });
+}
+function clearSharedSession(){ return store.del(SHARED_LASTKEY); }
 var curUser=null;
 function saveKey(){ return curUser?("meatlad:save:"+curUser):"meatlad:save"; }
 function normUser(u){ return String(u||"").trim().slice(0,14); }
@@ -4710,7 +4724,8 @@ function liBusy(b){ $("bSignIn").disabled=b;$("bSignUp").disabled=b;$("bGuest").
 function rememberLocal(u,key,blobId){
   return getProfiles().then(function(p){
     p[u.toLowerCase()]={u:u,k:key,b:blobId};
-    return putProfiles(p); });
+    return putProfiles(p); }).then(function(){
+    return markSharedSession(u,key,blobId); });
 }
 $("bSignUp").onclick=function(){
   var u=normUser($("liUser").value),pw=$("liPass").value||"";
@@ -4778,7 +4793,7 @@ $("bGuest").onclick=function(){ sfx.click();curUser=null;cloudId=null;
 $("bSignOut").onclick=function(){
   sfx.click();
   if(party.on)party.leave();
-  curUser=null;cloudId=null;store.del(LASTKEY);resetSaveObj();
+  curUser=null;cloudId=null;store.del(LASTKEY);clearSharedSession();resetSaveObj();
   $("liUser").value="";$("liPass").value="";$("liErr").textContent="";
   liBusy(false);show("s-login");
 };
@@ -4788,6 +4803,22 @@ resize();
 $("verTag").textContent="v"+VERSION;
 COLS=16;ROWS=18;
 store.get(LASTKEY).then(function(last){
+  if(!last){
+    return store.get(SHARED_LASTKEY).then(function(shared){
+      if(!shared)return null;
+      return store.get(SHARED_PROFKEY).then(function(raw){
+        var sp={}; try{ sp=raw?JSON.parse(raw):{}; }catch(e){}
+        var sess=sp[String(shared).toLowerCase()];
+        if(!sess)return null;
+        return getProfiles().then(function(profs){
+          profs[String(shared).toLowerCase()]=sess;
+          return putProfiles(profs).then(function(){ return store.set(LASTKEY,shared); });
+        });
+      });
+    }).then(function(){ return store.get(LASTKEY); });
+  }
+  return last;
+}).then(function(last){
   if(last){
     return getProfiles().then(function(profs){
       var p=profs[String(last).toLowerCase()];
