@@ -339,16 +339,20 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
         <button class="btn sub" id="bLeave">Leave</button></div>
       <div class="sect">In the plot <span id="pCnt"></span></div>
       <div id="pList"></div>
-      <div style="display:flex;gap:16px;flex-wrap:wrap">
-        <div style="flex:2;min-width:220px">
-          <div class="sect">Your root</div>
-          <div class="grid" id="pCharGrid"></div>
+      <div class="sect">Your root</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="flex:0 0 auto;background:var(--bg2);border:1px solid var(--line);border-radius:4px;
+          padding:14px;text-align:center;width:150px">
+          <canvas id="partyCharPrevCv" width="120" height="120" style="display:block;margin:0 auto 8px"></canvas>
+          <div class="cn" id="partyCharPrevName" style="font-size:13px"></div>
+          <div class="cd" id="partyCharPrevDesc" style="font-size:11px;margin-top:4px"></div>
         </div>
-        <div id="teamPicksWrap" style="flex:1;min-width:160px;display:none">
-          <div class="sect">Teammates picked</div>
-          <div id="teamPicksGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
+        <div id="teamPicksWrap" style="flex:1;min-width:150px;display:none">
+          <div class="sect" style="margin-top:0">Teammates picked</div>
+          <div id="teamPicksGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
         </div>
       </div>
+      <div class="grid" id="pCharGrid"></div>
       <div id="pHostArea">
         <div class="sect">Invite friends <span class="stat" id="invCount"></span></div>
         <div id="invList"></div>
@@ -3631,12 +3635,29 @@ function renderParty(){
   row((save.name||"you")+" (you)",(party.leader?"host · runs the waves":"guest")+
     " · "+seenMine+"/"+seenTotal+" seen");
   ids.forEach(function(k){ var m=party.members[k]; row(m.n||"lad",byId(CHARS,m.ch).n); });
-  renderChars("pCharGrid",function(id){ party.char=id; onCharPicked(); });
+  renderChars("pCharGrid",function(id){ party.char=id; onCharPicked(); drawPartyCharPreview(); });
+  drawPartyCharPreview();
   renderTeamPicks(ids);
   if(party.leader){
     renderDiffPicker("pDiffGrid");
     renderInviteList();
   }
+}
+var partyCharPrevCtx=null;
+function drawPartyCharPreview(){
+  var ch=byId(CHARS,party.char); if(!ch)return;
+  var cv=$("partyCharPrevCv"); if(!cv)return;
+  if(!partyCharPrevCtx)partyCharPrevCtx=cv.getContext("2d");
+  var c=partyCharPrevCtx;
+  c.clearRect(0,0,120,120);
+  c.save();
+  c.translate(60,68);
+  c.scale(3.4,3.4);
+  drawRoot(c,ch.id,performance.now()/1000,1,false);
+  c.restore();
+  $("partyCharPrevName").textContent=ch.n;
+  $("partyCharPrevName").style.color=ch.col;
+  $("partyCharPrevDesc").textContent=ch.d;
 }
 function renderTeamPicks(ids){
   var wrap=$("teamPicksWrap"), grid=$("teamPicksGrid");
@@ -3647,11 +3668,19 @@ function renderTeamPicks(ids){
   ids.slice(0,4).forEach(function(k){
     var m=party.members[k], ch=byId(CHARS,m.ch);
     if(!ch)return;
-    var card=document.createElement("div"); card.className="card compact"; card.style.textAlign="center";
-    card.appendChild(iconFor("c",ch.id));
+    var card=document.createElement("div"); card.className="card"; card.style.textAlign="center";
+    var cv=document.createElement("canvas"); cv.width=70; cv.height=70;
+    cv.style.cssText="display:block;margin:0 auto 6px";
+    var g=cv.getContext("2d");
+    g.save(); g.translate(35,40); g.scale(2,2);
+    drawRoot(g,ch.id,performance.now()/1000,1,false);
+    g.restore();
+    card.appendChild(cv);
     var cn=document.createElement("div"); cn.className="cn"; cn.style.cssText="font-size:11px;color:"+ch.col;
-    cn.textContent=(m.n||"lad")+" · "+ch.n;
-    card.appendChild(cn);
+    cn.textContent=ch.n;
+    var sub=document.createElement("div"); sub.className="cd"; sub.style.fontSize="10px";
+    sub.textContent=m.n||"lad";
+    card.appendChild(cn); card.appendChild(sub);
     grid.appendChild(card);
   });
 }
