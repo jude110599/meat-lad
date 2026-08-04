@@ -647,15 +647,15 @@ try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=fir
 var VERSION="3.0.4";
 var CHANGELOG=[
   {v:"3.0.4",d:"latest",items:[
-    "FIXED SIGN-IN. "Can't reach the account server" was real - the account index had been silently deleted by the free host it lives on (it enforces a strict 24-hour lifetime with no way to renew it, which nobody realised until it actually expired). A fresh index is in place and sign-in works again. Any account made before this fix is gone - sorry, there was no way to recover it. This backend is not durable long-term and needs a proper home",
+    "FIXED SIGN-IN. \"Can't reach the account server\" was real - the account index had been silently deleted by the free host it lives on (it enforces a strict 24-hour lifetime with no way to renew it, which nobody realised until it actually expired). A fresh index is in place and sign-in works again. Any account made before this fix is gone - sorry, there was no way to recover it. This backend is not durable long-term and needs a proper home",
     "COMPACT HOME BUTTON. Back button is now a small styled pill in the top-right corner with a right-pointing arrow, matching Meat Lad's colour scheme with a flip animation on hover. Takes up way less screen space while staying easy to reach"
   ]},
   {v:"3.0.3",items:[
     "Friends are now genuinely one list with Beetdown - add a friend there and they show up here too, and back. Fixed a real risk this uncovered: saving progress here used to overwrite the WHOLE shared account, which could have silently wiped a signed-in player's Beetdown progress. It merges instead of overwriting now",
-    "Signing in now works even if the account was first created in Beetdown - it used to refuse with "couldn't read the save" if Meat Lad had never been played on that account yet"
+    "Signing in now works even if the account was first created in Beetdown - it used to refuse with \"couldn't read the save\" if Meat Lad had never been played on that account yet"
   ]},
   {v:"3.0.2",items:[
-    "ONE SIGN-IN COVERS BOTH GAMES NOW. Sign in on the game-select screen, or in either game, and the others recognise the same session without asking again - nothing about signing in or out here changed, this only widens what counts as "already signed in""
+    "ONE SIGN-IN COVERS BOTH GAMES NOW. Sign in on the game-select screen, or in either game, and the others recognise the same session without asking again - nothing about signing in or out here changed, this only widens what counts as \"already signed in\""
   ]},
   {v:"3.0.1",items:[
     "THE GIRL IS GONE FROM PASS THE BOMB. The arenas still had an exit marker in them, so running into her handed the bomb over and muddled the round. Every bomb arena is now just an arena - there is nothing to reach, only the fuse",
@@ -4321,7 +4321,7 @@ $("bAddFr").onclick=function(){
   sfx.click();$("frErr").textContent="Looking...";
   loadIndex().then(function(){
     var b=friendBlob(nm);
-    if(!b){ $("frErr").textContent="No player called ""+nm+"".";return; }
+    if(!b){ $("frErr").textContent="No player called \""+nm+"\".";return; }
     acctFriends.push(nm);pushFriends();
     $("frName").value="";$("frErr").textContent="";
     toast(nm+" added");renderFriends();renderInviteList();
@@ -4810,35 +4810,7 @@ $("bSignIn").onclick=function(){
     var msg=e.code==="auth/user-not-found"?"No account with that email.":
            e.code==="auth/wrong-password"?"Wrong password.":"Couldn't sign in.";
     $("liErr").textContent=msg;
-        return getProfiles().then(function(p){
-          var lp=p[u.toLowerCase()];
-          if(lp&&lp.k===key){ curUser=lp.u;cloudId=lp.b||null;
-            return store.set(LASTKEY,lp.u).then(function(){
-              liBusy(false);$("liErr").textContent="";
-              toast("Signed in (offline copy)");
-              return enterGame(); }); }
-          liBusy(false);
-          $("liErr").textContent=idx?"Wrong username or password.":"Can't reach the account server.";
-        });
-      }
-      return cloudGet(bid).then(function(doc){
-        if(!doc){ liBusy(false);$("liErr").textContent="Found the account but couldn't read it.";return; }
-        curUser=doc.n||u;cloudId=bid;
-        resetSaveObj();
-        // an account made in Beetdown first has no Meat Lad save yet - that's
-        // fine, resetSaveObj() above already left a fresh one in place
-        if(doc.save)for(var k in doc.save)if(doc.save.hasOwnProperty(k))save[k]=doc.save[k];
-        var migrating=false;
-        if(doc.friends instanceof Array)acctFriends=doc.friends.slice();
-        else { acctFriends=(save.friends instanceof Array)?save.friends.slice():[]; migrating=acctFriends.length>0; }
-        if(migrating)pushFriends();
-        return store.set(saveKey(),JSON.stringify(save)).then(function(){
-          return rememberLocal(curUser,key,bid); }).then(function(){
-          return store.set(LASTKEY,curUser); }).then(function(){
-          liBusy(false);$("liErr").textContent="";
-          toast("Signed in as "+curUser);
-          return enterGame(); }); }); });
-  }).then(null,function(){ liBusy(false);$("liErr").textContent="Something went wrong signing in."; });
+  });
 };
 $("bGuest").onclick=function(){ sfx.click();curUser=null;cloudId=null;acctFriends=[];
   store.del(LASTKEY);resetSaveObj();
@@ -4856,42 +4828,12 @@ $("bSignOut").onclick=function(){
 resize();
 $("verTag").textContent="v"+VERSION;
 COLS=16;ROWS=18;
-console.log("Checking Firebase auth...", fbAuth, fbAuth ? "ready" : "not ready");
 tryAutoSignIn().then(function(loggedIn){
-  console.log("tryAutoSignIn result:", loggedIn, "curUser:", curUser);
-  if(loggedIn){
-    console.log("User logged in, entering game");
-    return enterGame();
-  }
-  console.log("Not logged in, showing login screen");
-  return store.get(LASTKEY).then(function(last){
-  if(!last){
-    return store.get(SHARED_LASTKEY).then(function(shared){
-      if(!shared)return null;
-      return store.get(SHARED_PROFKEY).then(function(raw){
-        var sp={}; try{ sp=raw?JSON.parse(raw):{}; }catch(e){}
-        var sess=sp[String(shared).toLowerCase()];
-        if(!sess)return null;
-        return getProfiles().then(function(profs){
-          profs[String(shared).toLowerCase()]=sess;
-          return putProfiles(profs).then(function(){ return store.set(LASTKEY,shared); });
-        });
-      });
-    }).then(function(){ return store.get(LASTKEY); });
-  }
-  return last;
-}).then(function(last){
-  if(last){
-    return getProfiles().then(function(profs){
-      var p=profs[String(last).toLowerCase()];
-      if(p){ curUser=p.u;cloudId=p.b||null; return enterGame(); }
-      show("s-login");
-    });
-  }
-  show("s-login");
+  return enterGame();
+}, function(){
+  return enterGame();
 }).then(function(){ requestAnimationFrame(frame); },
-        function(){ show("s-login");requestAnimationFrame(frame); });
-});
+        function(){ requestAnimationFrame(frame); });
 })();
 </script>
 </body>
