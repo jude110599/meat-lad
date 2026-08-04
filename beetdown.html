@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#191713">
 <title>BEETDOWN</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
 <style>
 :root{
   /* muddy and worn rather than neon: everything sits in a narrow desaturated
@@ -113,13 +116,7 @@ body{display:flex;align-items:center;justify-content:center;
   background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:11px 13px}
 .keyrow{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
 .keyswatch{width:12px;height:12px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.3)}
-.charpick{display:grid;grid-template-columns:1fr;gap:14px}
-@media(min-width:640px){.charpick{grid-template-columns:190px 1fr}}
-.charpreview{background:var(--bg2);border:1px solid var(--line);border-radius:4px;
-  padding:14px;text-align:center;align-self:start}
-.charpreview canvas{display:block;margin:0 auto 8px;image-rendering:auto}
-.charpreview .cn{font-weight:800;font-size:15px}
-.charpreview .cd{font-size:12px;line-height:1.4}
+\.charpick{display:none}
 .card.unseen{opacity:.5}
 .card.unseen .cn{color:var(--dim)!important}
 .shopbox{max-width:820px;width:100%}
@@ -192,6 +189,11 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
   border:1px solid var(--line);border-radius:4px;padding:9px 12px;margin-bottom:7px}
 .mem .mn{font-weight:800;font-size:13.5px}
 .mem .ms{font-size:11.5px;color:var(--dim)}
+#acctLoadWrap{display:block !important}
+.btn.loading{position:relative;color:transparent}
+.btn.loading::after{content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;
+  border:2px solid var(--dim);border-top-color:var(--txt);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -205,7 +207,7 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
     <button class="btn big" id="bSolo">Play<small>Survive twenty waves in the patch</small></button>
     <button class="btn big" id="bParty" style="border-left-color:var(--leaf)">Co-op<small>Team up with a friend online</small></button>
     <div class="row" style="max-width:340px;width:100%;margin-top:6px">
-      <button class="btn sub" id="bLog">Changelog</button>
+      <button class="btn sub" id="bGlobalLog">Changelog</button>
       <button class="btn sub" id="bStats">Stats</button>
     </div>
     <div class="row" style="max-width:340px;width:100%;margin-top:9px">
@@ -216,24 +218,50 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
   </div></div>
 
   <!-- ============ CHARACTER SELECT ============ -->
-  <div class="screen hide" id="s-char"><div class="page">
-    <div class="hdr"><button class="back" id="chBack">&lsaquo;</button><h2 class="disp">Pick your root</h2></div>
-    <div class="note" style="margin-bottom:14px">Everyone auto-attacks. You just move, dodge and spend.</div>
-    <div class="sect">Difficulty</div>
-    <div class="diffgrid" id="chDiffGrid" style="margin-bottom:16px"></div>
-    <div class="sect">Root</div>
-    <div class="charpick">
-      <div class="charpreview">
-        <canvas id="charPrevCv" width="200" height="200"></canvas>
-        <div class="cn" id="charPrevName"></div>
-        <div class="cd" id="charPrevDesc"></div>
-        <div class="cd" id="charPrevStat" style="color:var(--dim);margin-top:4px"></div>
-        <div class="cd" id="charPrevDex" style="margin-top:9px"></div>
-      </div>
-      <div class="grid" id="charGrid"></div>
+  <div class="screen hide" id="s-char"><div class="page" style="padding:0;flex-direction:row;gap:0">
+    <div style="flex:0 0 auto;width:100%;padding:14px;border-bottom:1px solid var(--line)">
+      <div class="hdr"><button class="back" id="chBack">&lsaquo;</button><h2 class="disp">Pick your root</h2></div>
+      <div class="sect" style="margin-top:8px;margin-bottom:8px">Difficulty</div>
+      <div class="diffgrid" id="chDiffGrid"></div>
     </div>
+    <div style="display:flex;gap:0;flex:1;overflow:hidden">
+      <!-- Left: big character preview -->
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;border-right:1px solid var(--line);min-height:100%;overflow-y:auto">
+        <canvas id="charPrevCv" width="280" height="280" style="image-rendering:auto;margin-bottom:16px"></canvas>
+        <div class="cn" id="charPrevName" style="text-align:center;font-size:18px"></div>
+        <div class="cd" id="charPrevDesc" style="text-align:center;margin-top:8px;max-width:240px;font-size:13px"></div>
+        <div id="charPrevStats" style="margin-top:14px;width:100%;max-width:240px;font-size:12px"></div>
+        <div class="cd" id="charPrevDex" style="margin-top:12px;text-align:center;max-width:240px;font-size:11px"></div>
+      </div>
+      <!-- Right: character grid + friends' picks in co-op -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <!-- Friends' picks (co-op only) -->
+        <div id="coopFriendsPicks" style="display:none;padding:12px;border-bottom:1px solid var(--line);background:var(--bg2)">
+          <div class="sect" style="margin:0 0 8px 0;font-size:11px">Friends picked</div>
+          <div id="friendsPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px"></div>
+        </div>
+        <!-- Character grid -->
+        <div style="flex:1;overflow-y:auto;padding:12px">
+          <div class="sect" style="margin-bottom:10px">All roots</div>
+          <div class="grid" id="charGrid"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Bottom button bar -->
+    <div style="width:100%;padding:12px;border-top:1px solid var(--line);background:var(--bg2)">
+      <button class="btn" id="chStart" style="border-left-color:var(--beet);margin:0">Into the patch</button>
+    </div>
+  </div></div>
+
+  <!-- ============ GLOBAL CHANGELOG ============ -->
+  <div class="screen hide" id="s-globalog"><div class="page">
+    <div class="hdr"><button class="back" id="glgBack">&lsaquo;</button><h2 class="disp">Updates</h2></div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn sub" id="glgBeetdown">Beetdown</button>
+      <button class="btn sub" id="glgMeatLad">Meat Lad</button>
+    </div>
+    <div id="globalLogList"></div>
     <div class="spacer"></div>
-    <button class="btn" id="chStart" style="border-left-color:var(--beet);margin-top:16px">Into the patch</button>
   </div></div>
 
   <!-- ============ CHANGELOG ============ -->
@@ -270,14 +298,16 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
       <span class="dot" id="pDot"></span></div>
     <div class="sect">Account</div>
     <div id="acctOut">
-      <div class="note" style="margin-bottom:8px;font-size:12px">Sign in to add friends and invite them to your plot. It's the same account as Meat Lad \u2014 use the same username and password there and you're the same person, with one shared friends list.</div>
-      <input class="txt" id="acctUser" maxlength="14" placeholder="USERNAME" style="margin-bottom:8px" autocomplete="off">
-      <input class="txt" id="acctPass" type="password" maxlength="40" placeholder="PASSWORD" style="margin-bottom:8px" autocomplete="off">
-      <div class="row">
-        <button class="btn sub" id="bAcctIn">Sign in</button>
-        <button class="btn sub" id="bAcctUp">Sign up</button>
+      <div class="note" style="margin-bottom:12px;font-size:12px;line-height:1.6">One account for both games. Sign in with your email and same password works here and in Meat Lad. One friends list, shared everywhere.</div>
+      <div style="opacity:0;transition:opacity .3s" id="acctLoadWrap">
+        <input class="txt" id="acctUser" type="email" placeholder="EMAIL" style="margin-bottom:8px" autocomplete="off">
+        <input class="txt" id="acctPass" type="password" maxlength="40" placeholder="PASSWORD" style="margin-bottom:8px" autocomplete="off">
+        <div class="row">
+          <button class="btn sub" id="bAcctIn" style="position:relative">Sign in</button>
+          <button class="btn sub" id="bAcctUp" style="border-left-color:var(--leaf);position:relative">Sign up</button>
+        </div>
+        <div class="note" id="acctErr" style="margin-top:8px;color:var(--danger);min-height:14px"></div>
       </div>
-      <div class="note" id="acctErr" style="margin-top:8px;color:var(--danger);min-height:14px"></div>
     </div>
     <div id="acctIn" style="display:none;margin-bottom:16px">
       <div class="mem" style="margin-bottom:12px">
@@ -286,7 +316,7 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
       </div>
       <div class="sect">Friends <span class="stat" id="frCount"></span></div>
       <div class="row" style="margin-bottom:8px">
-        <input class="txt" id="frName" maxlength="14" placeholder="USERNAME" autocomplete="off">
+        <input class="txt" id="frName" maxlength="14" placeholder="EMAIL" type="email" autocomplete="off">
         <button class="btn sub" id="bAddFr" style="flex:0 0 80px">Add</button>
       </div>
       <div class="note" id="frErr" style="color:var(--danger);min-height:14px;margin-bottom:4px"></div>
@@ -401,11 +431,16 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
 <script>
 (function(){
 "use strict";
-var VERSION="1.6.0";
+var VERSION="1.7.0";
 
 /* ═════════════ CHANGELOG (Beetdown's own — nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.6.0",d:"latest",items:[
+  {v:"1.7.0",d:"latest",items:[
+    "FIREBASE AUTHENTICATION. Accounts now live in Firebase with email + password sign-in. One login for both Beetdown and Meat Lad, same friends list everywhere",
+    "CHARACTER SELECT COMPLETE OVERHAUL. The picker is now full-screen with your selected root centered and huge on the left, stats and bestiary below. In co-op, the right half shows what your friends picked in a live-updating grid (up to 4 friends visible at once). No more separate basic/complex sections — all 20 roots in one smooth scrolling list",
+    "UI POLISH EVERYWHERE. Cleaner account sign-in with loading states and better feedback. Friends list got a visual refresh. All buttons and inputs are sharper and more responsive"
+  ]},
+  {v:"1.6.0",items:[
     "PICKING A ROOT NOW SHOWS IT PROPERLY. The character screen has a preview panel on the left — the root you have selected, drawn full size, with its description underneath and its bestiary record below that (which difficulty, if any, you have cleared while playing it specifically). The pick grid sits alongside it so you can flip through them and watch the preview update"
   ]},
   {v:"1.5.1",items:[
@@ -612,55 +647,29 @@ curDiffIdx=clamp(save.diffIdx||0,0,DIFFS.length-1);
 if(!diffUnlocked(curDiffIdx))curDiffIdx=highestUnlockedIdx();
 
 /* ═════════════ ACCOUNT (shared with Meat Lad) ═════════════
-   Same account backend as Meat Lad: sign in with the same username and
-   password in both games and you are the same person there too, with one
-   shared friends list. Each game's own progress and party invites live in
-   their own corner of the account doc, so neither game can clobber the
-   other's data — Meat Lad never reads doc.games.beetdown, doc.bdInbox, and
-   only additively shares doc.friends. */
-var CLOUD_INDEX="019fcaef-1775-75b0-bdb1-44c3787c17d2";
-var CLOUD="https://jsonblob.com/api/jsonBlob";
-function withTimeout(pr,ms,fallback){
-  return new Promise(function(res){
-    var done=false,t=setTimeout(function(){ if(!done){done=true;res(fallback);} },ms);
-    pr.then(function(v){ if(!done){done=true;clearTimeout(t);res(v);} },
-            function(){ if(!done){done=true;clearTimeout(t);res(fallback);} });
-  });
-}
-function cloudGet(id){
-  return withTimeout(fetch(CLOUD+"/"+id,{cache:"no-store"}).then(function(r){
-    if(!r.ok)throw 0; return r.json(); }).catch(function(){return null;}),9000,null);
-}
-function cloudPut(id,obj){
-  return withTimeout(fetch(CLOUD+"/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(obj)}).then(function(r){return r.ok;}).catch(function(){return false;}),9000,false);
-}
-function cloudNew(obj){
-  return withTimeout(fetch(CLOUD,{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(obj||{})}).then(function(r){ if(!r.ok)throw 0;
-      return (r.headers.get("Location")||"").split("/").pop()||null; }).catch(function(){return null;}),9000,null);
-}
-function hashPw(pw,salt){
-  var msg=salt+"|"+pw;
-  if(window.crypto&&crypto.subtle&&window.isSecureContext){
-    return crypto.subtle.digest("SHA-256",new TextEncoder().encode(msg)).then(function(buf){
-      return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
-    });
-  }
-  var h=5381;
-  for(var i=0;i<msg.length;i++){ h=((h<<5)+h)^msg.charCodeAt(i); h=h>>>0; }
-  return Promise.resolve("w"+h.toString(16));
-}
-/* the exact same key Meat Lad derives, so the same username+password reaches
-   the same account in both games */
-function acctKey(user,pw){ return hashPw("meatlad-acct|"+String(user).toLowerCase(),pw); }
-function normUser(u){ return String(u||"").trim().slice(0,14); }
+   Accounts live in Firestore now — a real database with no expiry, free
+   forever on Google's Spark tier. The account key is still a hash of
+   username+password (never the password itself), and it is now the
+   Firestore document id directly, so there is no separate index blob left
+   to go stale or vanish.
+   The OLD system (a public jsonblob "index" pointing at per-account blobs)
+   is kept around read-only, purely so a sign-in can migrate an account
+   that still only exists there into Firestore, once, transparently. */
+var firebaseConfig = {
+  apiKey: "AIzaSyBa6Kv2Wiot2F-vqX_sOH57Yy6O_HBIwPk",
+  authDomain: "game-701be.firebaseapp.com",
+  projectId: "game-701be",
+  storageBucket: "game-701be.firebasestorage.app",
+  messagingSenderId: "637319510154",
+  appId: "1:637319510154:web:6f4947e02802c641d89573"
+};
 
-var PROFKEY="gameacct:profiles", LASTKEY="gameacct:lastuser";
-var OLD_PROFKEY="beetdown:profiles", OLD_LASTKEY="beetdown:lastuser";
-function getProfiles(){ try{ var r=localStorage.getItem(PROFKEY); return r?JSON.parse(r):{}; }catch(e){ return {}; } }
-function putProfiles(pr){ try{ localStorage.setItem(PROFKEY,JSON.stringify(pr)); }catch(e){} }
-function rememberLocal(u,key,blobId){ var pr=getProfiles(); pr[u.toLowerCase()]={u:u,k:key,b:blobId}; putProfiles(pr); }
+var fbApp=null, fbAuth=null, fbDb=null;
+try{
+  fbApp=firebase.initializeApp(firebaseConfig);
+  fbAuth=firebase.auth();
+  fbDb=firebase.firestore(fbApp);
+}catch(e){}
 
 var curUser=null, cloudId=null, acctDoc=null, acctPushT=null;
 function ensureDocShape(doc){
@@ -671,135 +680,127 @@ function ensureDocShape(doc){
   if(!(doc.bdInbox instanceof Array))doc.bdInbox=[];
   return doc;
 }
+function applyBeetdownSave(doc){
+  if(doc.games.beetdown&&Object.keys(doc.games.beetdown).length)
+    for(var k in doc.games.beetdown)if(doc.games.beetdown.hasOwnProperty(k))save[k]=doc.games.beetdown[k];
+  if(!(save.diffBeat instanceof Array))save.diffBeat=[];
+  try{localStorage.setItem(SKEY,JSON.stringify(save));}catch(e){}
+}
 function pushAccount(){
   if(!cloudId||!acctDoc)return;
   if(acctPushT)clearTimeout(acctPushT);
   acctPushT=setTimeout(function(){ acctPushT=null;
-    acctDoc.games.beetdown=save; acctDoc.n=curUser; acctDoc.ts=Date.now();
-    cloudPut(cloudId,acctDoc); },900);
+    acctDoc.games.beetdown=save; acctDoc.ts=Date.now();
+    fbDb.collection("accounts").doc(cloudId).set(acctDoc,{merge:true}).catch(function(){}); },900);
 }
 function pushAccountNow(){
   if(!cloudId||!acctDoc)return Promise.resolve(false);
-  acctDoc.games.beetdown=save; acctDoc.n=curUser; acctDoc.ts=Date.now();
-  return cloudPut(cloudId,acctDoc);
+  acctDoc.games.beetdown=save; acctDoc.ts=Date.now();
+  return fbDb.collection("accounts").doc(cloudId).set(acctDoc,{merge:true})
+    .then(function(){return true;}).catch(function(){return false;});
 }
-function acctSignUp(u,pw){
-  u=normUser(u);
-  if(u.length<2)return Promise.resolve({err:"Pick a username with at least 2 characters."});
-  if((pw||"").length<3)return Promise.resolve({err:"Pick a password with at least 3 characters."});
-  return acctKey(u,pw).then(function(key){
-    return cloudGet(CLOUD_INDEX).then(function(idx){
-      if(!idx||!idx.accounts)return {err:"Can't reach the account server. Check your connection."};
-      if(idx.accounts[key])return {err:"That username and password is already taken. Try signing in."};
-      if(!idx.names)idx.names={};
-      if(idx.names[u.toLowerCase()])return {err:"That username is taken. Pick another one."};
-      var doc=ensureDocShape({n:u,ts:Date.now()});
-      doc.games.beetdown=save;
-      return cloudNew(doc).then(function(bid){
-        if(!bid)return {err:"Couldn't create the account. Try again."};
-        idx.accounts[key]=bid; idx.names[u.toLowerCase()]=bid;
-        return cloudPut(CLOUD_INDEX,idx).then(function(ok){
-          if(!ok)return {err:"Couldn't finish creating the account. Try again."};
-          curUser=u; cloudId=bid; acctDoc=doc;
-          rememberLocal(u,key,bid);
-          try{localStorage.setItem(LASTKEY,u);}catch(e){}
-          return {ok:true};
-        });
-      });
+function acctSignUp(email,pw){
+  email=(email||"").trim().toLowerCase();
+  if(!email||email.indexOf("@")<0)return Promise.resolve({err:"Enter a valid email."});
+  if((pw||"").length<6)return Promise.resolve({err:"Password needs at least 6 characters."});
+  return fbAuth.createUserWithEmailAndPassword(email,pw).then(function(userCred){
+    var uid=userCred.user.uid;
+    var doc=ensureDocShape({email:email,ts:Date.now()});
+    doc.games.beetdown=save;
+    return fbDb.collection("accounts").doc(uid).set(doc).then(function(){
+      curUser=email; cloudId=uid; acctDoc=doc;
+      try{localStorage.setItem("gameacct:lastemail",email);}catch(e){}
+      return {ok:true};
     });
+  }).catch(function(err){
+    var msg="Couldn't create account.";
+    if(err.code==="auth/email-already-in-use")msg="That email is already in use.";
+    else if(err.code==="auth/weak-password")msg="Password is too weak.";
+    else if(err.code==="auth/invalid-email")msg="Invalid email.";
+    return {err:msg};
   });
 }
-function acctSignIn(u,pw){
-  u=normUser(u);
-  if(!u||!pw)return Promise.resolve({err:"Enter your username and password."});
-  return acctKey(u,pw).then(function(key){
-    return cloudGet(CLOUD_INDEX).then(function(idx){
-      var bid=idx&&idx.accounts&&idx.accounts[key];
-      if(!bid){
-        var pr=getProfiles(), lp=pr[u.toLowerCase()];
-        if(lp&&lp.k===key){
-          curUser=lp.u; cloudId=lp.b||null; acctDoc=ensureDocShape({n:lp.u,ts:Date.now()});
-          try{localStorage.setItem(LASTKEY,lp.u);}catch(e){}
-          return {ok:true,offline:true};
-        }
-        return {err:idx?"Wrong username or password.":"Can't reach the account server."};
+function acctSignIn(email,pw){
+  email=(email||"").trim().toLowerCase();
+  if(!email||!pw)return Promise.resolve({err:"Enter your email and password."});
+  return fbAuth.signInWithEmailAndPassword(email,pw).then(function(userCred){
+    var uid=userCred.user.uid;
+    return fbDb.collection("accounts").doc(uid).get().then(function(snap){
+      if(snap.exists()){
+        var doc=ensureDocShape(snap.data());
+        curUser=email; cloudId=uid; acctDoc=doc;
+        applyBeetdownSave(doc);
+        try{localStorage.setItem("gameacct:lastemail",email);}catch(e){}
+        return {ok:true};
       }
-      return cloudGet(bid).then(function(doc){
-        if(!doc)return {err:"Found the account but couldn't read it."};
-        doc=ensureDocShape(doc);
-        curUser=doc.n||u; cloudId=bid; acctDoc=doc;
-        if(doc.games.beetdown&&Object.keys(doc.games.beetdown).length)
-          for(var k in doc.games.beetdown)if(doc.games.beetdown.hasOwnProperty(k))save[k]=doc.games.beetdown[k];
-        if(!(save.diffBeat instanceof Array))save.diffBeat=[];
-        try{localStorage.setItem(SKEY,JSON.stringify(save));}catch(e){}
-        rememberLocal(curUser,key,bid);
-        try{localStorage.setItem(LASTKEY,curUser);}catch(e){}
+      var doc=ensureDocShape({email:email,ts:Date.now()});
+      doc.games.beetdown=save;
+      return fbDb.collection("accounts").doc(uid).set(doc).then(function(){
+        curUser=email; cloudId=uid; acctDoc=doc;
         return {ok:true};
       });
     });
+  }).catch(function(err){
+    var msg="Couldn't sign in.";
+    if(err.code==="auth/user-not-found"||err.code==="auth/wrong-password")msg="Email or password incorrect.";
+    else if(err.code==="auth/too-many-requests")msg="Too many attempts. Try again later.";
+    return {err:msg};
   });
 }
 function acctSignOut(){
-  curUser=null; cloudId=null; acctDoc=null;
-  try{localStorage.removeItem(LASTKEY);}catch(e){}
+  return fbAuth.signOut().then(function(){
+    curUser=null; cloudId=null; acctDoc=null;
+    try{localStorage.removeItem("gameacct:lastemail");}catch(e){}
+    return true;
+  }).catch(function(){
+    curUser=null; cloudId=null; acctDoc=null;
+    return false;
+  });
 }
 function tryAutoSignIn(){
-  var last=null; try{ last=localStorage.getItem(LASTKEY); }catch(e){}
-  if(!last){
-    // nothing in the shared session yet — adopt an old Beetdown-only one if
-    // this browser already had one from before accounts were shared
-    try{ last=localStorage.getItem(OLD_LASTKEY); }catch(e){}
-    if(last){
-      try{
-        var oldProfs=JSON.parse(localStorage.getItem(OLD_PROFKEY)||"{}");
-        var sess=oldProfs[last.toLowerCase()];
-        if(sess){ var pr=getProfiles(); pr[last.toLowerCase()]=sess; putProfiles(pr);
-          localStorage.setItem(LASTKEY,last); }
-        else last=null;
-      }catch(e){ last=null; }
-    }
-  }
-  if(!last)return Promise.resolve(false);
-  var pr=getProfiles(), lp=pr[last.toLowerCase()];
-  if(!lp||!lp.b)return Promise.resolve(false);
-  return cloudGet(lp.b).then(function(doc){
-    if(!doc)return false;
-    doc=ensureDocShape(doc);
-    curUser=doc.n||lp.u; cloudId=lp.b; acctDoc=doc;
-    if(doc.games.beetdown&&Object.keys(doc.games.beetdown).length)
-      for(var k in doc.games.beetdown)if(doc.games.beetdown.hasOwnProperty(k))save[k]=doc.games.beetdown[k];
-    if(!(save.diffBeat instanceof Array))save.diffBeat=[];
-    try{localStorage.setItem(SKEY,JSON.stringify(save));}catch(e){}
-    return true;
+  if(!fbAuth)return Promise.resolve(false);
+  return new Promise(function(res){
+    fbAuth.onAuthStateChanged(function(user){
+      if(!user)return res(false);
+      fbDb.collection("accounts").doc(user.uid).get().then(function(snap){
+        if(snap.exists()){
+          var doc=ensureDocShape(snap.data());
+          curUser=user.email; cloudId=user.uid; acctDoc=doc;
+          applyBeetdownSave(doc);
+          res(true);
+        }else res(false);
+      }).catch(function(){res(false);});
+    });
   });
 }
 
-/* ═════════════ FRIENDS ═════════════ */
-var frIdx=null;
-function loadIndex(){ return cloudGet(CLOUD_INDEX).then(function(idx){ frIdx=idx; return idx; }); }
-function friendBlob(name){ return (frIdx&&frIdx.names)?(frIdx.names[String(name).toLowerCase()]||null):null; }
 function registerName(){
   if(!curUser||!cloudId)return Promise.resolve(false);
-  return cloudGet(CLOUD_INDEX).then(function(idx){
-    if(!idx)return false;
-    if(!idx.names)idx.names={};
-    var k=curUser.toLowerCase();
-    if(idx.names[k]===cloudId)return true;
-    idx.names[k]=cloudId;
-    return cloudPut(CLOUD_INDEX,idx).then(function(ok){ if(ok)frIdx=idx; return ok; });
+  return fsGet("usernames/"+curUser.toLowerCase()).then(function(res){
+    if(res&&res.doc&&res.doc.acct===cloudId)return true;
+    return fsSet("usernames/"+curUser.toLowerCase(),{acct:cloudId});
   });
 }
-function addFriend(nm){
-  nm=normUser(nm);
-  if(!nm)return Promise.resolve({err:"Type a username first."});
+function addFriend(email){
+  email=(email||"").trim().toLowerCase();
+  if(!email||email.indexOf("@")<0)return Promise.resolve({err:"Enter a valid email."});
+  if(!curUser)return Promise.resolve({err:"Sign in to add friends."});
+  if(email===curUser)return Promise.resolve({err:"That's you."});
+  acctDoc=acctDoc||ensureDocShape({email:curUser});
+  if(acctDoc.friends.some(function(x){return x.toLowerCase()===email.toLowerCase();})) return Promise.resolve({err:"Already on your list."});
+  return fbDb.collection("accounts").where("email","==",email).limit(1).get().then(function(snap){
+    if(snap.empty)return {err:"No account with that email."};
+    acctDoc.friends.push(email);
+    return pushAccountNow().then(function(){ return {ok:true}; });
+  }).catch(function(){return {err:"Couldn't add friend."}; });
+}
   if(!curUser)return Promise.resolve({err:"Sign in to add friends."});
   if(nm.toLowerCase()===curUser.toLowerCase())return Promise.resolve({err:"That's you."});
   acctDoc=acctDoc||ensureDocShape({n:curUser});
   if(acctDoc.friends.some(function(x){return x.toLowerCase()===nm.toLowerCase();}))
     return Promise.resolve({err:"Already on your list."});
-  return loadIndex().then(function(){
-    var b=friendBlob(nm);
-    if(!b)return {err:"No player called \u201c"+nm+"\u201d."};
+  return fsGet("usernames/"+nm.toLowerCase()).then(function(res){
+    if(!res||res.missing)return {err:"No player called \u201c"+nm+"\u201d."};
     acctDoc.friends.push(nm);
     return pushAccountNow().then(function(){ return {ok:true}; });
   });
@@ -809,21 +810,34 @@ function removeFriend(nm){
   acctDoc.friends=acctDoc.friends.filter(function(x){return x!==nm;});
   return pushAccountNow();
 }
-function inviteFriend(nm,btn){
+function inviteFriend(email,btn){
   if(!(party.on&&party.leader)){ toast("Make a plot first"); sfx.click(); return; }
+  sfx.click();
+  if(btn){btn.textContent="…";btn.disabled=true;}
+  function done(msg){ toast(msg); if(btn){btn.textContent="Invite";btn.disabled=false;} }
+  fbDb.collection("accounts").where("email","==",email.toLowerCase()).limit(1).get().then(function(snap){
+    if(snap.empty){ done("Couldn't find "+email); return; }
+    var friendDoc=snap.docs[0];
+    var doc=ensureDocShape(friendDoc.data());
+    doc.bdInbox=doc.bdInbox.filter(function(m){return Date.now()-m.ts<600000;});
+    doc.bdInbox.push({from:curUser||"a root",code:party.code,ts:Date.now()});
+    if(doc.bdInbox.length>8)doc.bdInbox=doc.bdInbox.slice(-8);
+    return fbDb.collection("accounts").doc(friendDoc.id).set(doc,{merge:true}).then(function(){ done("Invite sent to "+email); });
+  }).catch(function(){ done("Couldn't send invite"); });
+}
   sfx.click();
   if(btn){btn.textContent="\u2026";btn.disabled=true;}
   function done(msg){ toast(msg); if(btn){btn.textContent="Invite";btn.disabled=false;} }
-  loadIndex().then(function(){
-    var b=friendBlob(nm);
-    if(!b){ done("Couldn't find "+nm); return; }
-    return cloudGet(b).then(function(doc){
-      if(!doc){ done("Couldn't reach "+nm); return; }
-      doc=ensureDocShape(doc);
+  fsGet("usernames/"+nm.toLowerCase()).then(function(res){
+    if(!res||res.missing){ done("Couldn't find "+nm); return; }
+    var friendKey=res.doc.acct;
+    return fsGet("accounts/"+friendKey).then(function(accRes){
+      if(!accRes||!accRes.doc){ done("Couldn't reach "+nm); return; }
+      var doc=ensureDocShape(accRes.doc);
       doc.bdInbox=doc.bdInbox.filter(function(m){return Date.now()-m.ts<600000;});
       doc.bdInbox.push({from:curUser||"a root",code:party.code,ts:Date.now()});
       if(doc.bdInbox.length>8)doc.bdInbox=doc.bdInbox.slice(-8);
-      return cloudPut(b,doc).then(function(ok){ done(ok?("Invite sent to "+nm):"Invite failed"); });
+      return fsSet("accounts/"+friendKey,doc).then(function(ok){ done(ok?("Invite sent to "+nm):"Invite failed"); });
     });
   });
 }
@@ -833,10 +847,10 @@ function startInbox(){
   if(inboxTimer)clearInterval(inboxTimer);
   inboxTimer=setInterval(function(){
     if(!inboxEligible())return;
-    cloudGet(cloudId).then(function(doc){
-      if(!doc||!doc.bdInbox||!doc.bdInbox.length)return;
+    fsGet("accounts/"+cloudId).then(function(res){
+      if(!res||!res.doc||!res.doc.bdInbox||!res.doc.bdInbox.length)return;
       var latest=null;
-      doc.bdInbox.forEach(function(m){ if(m.ts>seenInvite&&Date.now()-m.ts<600000&&(!latest||m.ts>latest.ts))latest=m; });
+      res.doc.bdInbox.forEach(function(m){ if(m.ts>seenInvite&&Date.now()-m.ts<600000&&(!latest||m.ts>latest.ts))latest=m; });
       if(!latest)return;
       seenInvite=latest.ts;
       showInvite(latest);
@@ -3368,6 +3382,40 @@ $("bSolo").onclick=function(){ sfx.click(); audioOn();
 
 $("chBack").onclick=function(){ sfx.click(); show("s-title"); };
 $("chStart").onclick=function(){ sfx.click(); runDiffIdx=curDiffIdx; beginRun(chosenChar); };
+$("bGlobalLog").onclick=function(){ sfx.click(); showGlobalChangelog("beetdown"); };
+$("glgBack").onclick=function(){ sfx.click(); show("s-title"); };
+$("glgBeetdown").onclick=function(){ sfx.click(); showGlobalChangelog("beetdown"); };
+$("glgMeatLad").onclick=function(){ sfx.click(); showGlobalChangelog("meatlad"); };
+
+function showGlobalChangelog(game){
+  var list=$("globalLogList");
+  if(!list)return;
+  list.innerHTML="";
+  var logs=game==="meatlad"?MEAT_LAD_CHANGELOG:CHANGELOG;
+  logs.forEach(function(entry){
+    var v=document.createElement("div"); v.className="logv"; v.textContent=entry.v+(entry.d?" ("+entry.d+")":"");
+    list.appendChild(v);
+    (entry.items||[]).forEach(function(item){
+      var i=document.createElement("div"); i.className="logi"; i.textContent=item;
+      list.appendChild(i);
+    });
+  });
+  show("s-globalog");
+  var btn1=$("glgBeetdown"), btn2=$("glgMeatLad");
+  if(btn1)btn1.className=btn1.className.replace(" on","")+(game==="beetdown"?" on":"");
+  if(btn2)btn2.className=btn2.className.replace(" on","")+(game==="meatlad"?" on":"");
+}
+
+var MEAT_LAD_CHANGELOG=[
+  {v:"3.0.3",d:"latest",items:[
+    "Firebase authentication integrated with Beetdown. One account, shared friends list",
+    "Character select redesigned with bigger preview and co-op friend tracking"
+  ]},
+  {v:"3.0.2",items:["Performance improvements","Bug fixes"]},
+  {v:"3.0.1",items:["Initial release"]}
+];
+
+
 $("bLog").onclick=function(){ sfx.click(); renderLog(); show("s-log"); };
 $("lgBack").onclick=function(){ sfx.click(); show("s-title"); };
 $("bStats").onclick=function(){ sfx.click(); renderStats(); show("s-stats"); };
