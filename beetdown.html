@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#191713">
 <title>BEETDOWN</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 <style>
 :root{
   /* muddy and worn rather than neon: everything sits in a narrow desaturated
@@ -230,14 +233,8 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
         <div id="charPrevStats" style="margin-top:14px;width:100%;max-width:240px;font-size:12px"></div>
         <div class="cd" id="charPrevDex" style="margin-top:12px;text-align:center;max-width:240px;font-size:11px"></div>
       </div>
-      <!-- Right: character grid + friends' picks in co-op -->
+      <!-- Right: character grid -->
       <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-        <!-- Friends' picks (co-op only) -->
-        <div id="coopFriendsPicks" style="display:none;padding:12px;border-bottom:1px solid var(--line);background:var(--bg2)">
-          <div class="sect" style="margin:0 0 8px 0;font-size:11px">Friends picked</div>
-          <div id="friendsPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px"></div>
-        </div>
-        <!-- Character grid -->
         <div style="flex:1;overflow-y:auto;padding:12px">
           <div class="sect" style="margin-bottom:10px">All roots</div>
           <div class="grid" id="charGrid"></div>
@@ -338,8 +335,16 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
         <button class="btn sub" id="bLeave">Leave</button></div>
       <div class="sect">In the plot <span id="pCnt"></span></div>
       <div id="pList"></div>
-      <div class="sect">Your root</div>
-      <div class="grid" id="pCharGrid"></div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:2;min-width:220px">
+          <div class="sect">Your root</div>
+          <div class="grid" id="pCharGrid"></div>
+        </div>
+        <div id="teamPicksWrap" style="flex:1;min-width:160px;display:none">
+          <div class="sect">Teammates picked</div>
+          <div id="teamPicksGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
+        </div>
+      </div>
       <div id="pHostArea">
         <div class="sect">Invite friends <span class="stat" id="invCount"></span></div>
         <div id="invList"></div>
@@ -652,8 +657,20 @@ if(!diffUnlocked(curDiffIdx))curDiffIdx=highestUnlockedIdx();
    The OLD system (a public jsonblob "index" pointing at per-account blobs)
    is kept around read-only, purely so a sign-in can migrate an account
    that still only exists there into Firestore, once, transparently. */
-/* Firebase config — SDK will load when ready */
+var firebaseConfig={
+  apiKey:"AIzaSyBa6Kv2Wiot2F-vqX_sOH57Yy6O_HBIwPk",
+  authDomain:"game-701be.firebaseapp.com",
+  projectId:"game-701be",
+  storageBucket:"game-701be.firebasestorage.app",
+  messagingSenderId:"637319510154",
+  appId:"1:637319510154:web:6f4947e02802c641d89573"
+};
 var fbApp=null, fbAuth=null, fbDb=null;
+try{
+  fbApp=firebase.initializeApp(firebaseConfig);
+  fbAuth=firebase.auth();
+  fbDb=firebase.firestore(fbApp);
+}catch(e){ console.error("Firebase init failed:",e); }
 
 var curUser=null, cloudId=null, acctDoc=null, acctPushT=null;
 function ensureDocShape(doc){
@@ -758,46 +775,30 @@ function tryAutoSignIn(){
   });
 }
 
-function registerName(){
-  if(!curUser||!cloudId)return Promise.resolve(false);
-  return fsGet("usernames/"+curUser.toLowerCase()).then(function(res){
-    if(res&&res.doc&&res.doc.acct===cloudId)return true;
-    return fsSet("usernames/"+curUser.toLowerCase(),{acct:cloudId});
-  });
-}
+function registerName(){ return Promise.resolve(true); }
 function addFriend(email){
   email=(email||"").trim().toLowerCase();
   if(!email||email.indexOf("@")<0)return Promise.resolve({err:"Enter a valid email."});
   if(!curUser)return Promise.resolve({err:"Sign in to add friends."});
   if(email===curUser)return Promise.resolve({err:"That's you."});
   acctDoc=acctDoc||ensureDocShape({email:curUser});
-  if(acctDoc.friends.some(function(x){return x.toLowerCase()===email.toLowerCase();})) return Promise.resolve({err:"Already on your list."});
+  if(acctDoc.friends.some(function(x){return x.toLowerCase()===email.toLowerCase();}))
+    return Promise.resolve({err:"Already on your list."});
   return fbDb.collection("accounts").where("email","==",email).limit(1).get().then(function(snap){
     if(snap.empty)return {err:"No account with that email."};
     acctDoc.friends.push(email);
     return pushAccountNow().then(function(){ return {ok:true}; });
   }).catch(function(){return {err:"Couldn't add friend."}; });
 }
-  if(!curUser)return Promise.resolve({err:"Sign in to add friends."});
-  if(nm.toLowerCase()===curUser.toLowerCase())return Promise.resolve({err:"That's you."});
-  acctDoc=acctDoc||ensureDocShape({n:curUser});
-  if(acctDoc.friends.some(function(x){return x.toLowerCase()===nm.toLowerCase();}))
-    return Promise.resolve({err:"Already on your list."});
-  return fsGet("usernames/"+nm.toLowerCase()).then(function(res){
-    if(!res||res.missing)return {err:"No player called \u201c"+nm+"\u201d."};
-    acctDoc.friends.push(nm);
-    return pushAccountNow().then(function(){ return {ok:true}; });
-  });
-}
-function removeFriend(nm){
+function removeFriend(email){
   if(!acctDoc)return Promise.resolve(false);
-  acctDoc.friends=acctDoc.friends.filter(function(x){return x!==nm;});
+  acctDoc.friends=acctDoc.friends.filter(function(x){return x!==email;});
   return pushAccountNow();
 }
 function inviteFriend(email,btn){
   if(!(party.on&&party.leader)){ toast("Make a plot first"); sfx.click(); return; }
   sfx.click();
-  if(btn){btn.textContent="…";btn.disabled=true;}
+  if(btn){btn.textContent="...";btn.disabled=true;}
   function done(msg){ toast(msg); if(btn){btn.textContent="Invite";btn.disabled=false;} }
   fbDb.collection("accounts").where("email","==",email.toLowerCase()).limit(1).get().then(function(snap){
     if(snap.empty){ done("Couldn't find "+email); return; }
@@ -809,36 +810,22 @@ function inviteFriend(email,btn){
     return fbDb.collection("accounts").doc(friendDoc.id).set(doc,{merge:true}).then(function(){ done("Invite sent to "+email); });
   }).catch(function(){ done("Couldn't send invite"); });
 }
-  sfx.click();
-  if(btn){btn.textContent="\u2026";btn.disabled=true;}
-  function done(msg){ toast(msg); if(btn){btn.textContent="Invite";btn.disabled=false;} }
-  fsGet("usernames/"+nm.toLowerCase()).then(function(res){
-    if(!res||res.missing){ done("Couldn't find "+nm); return; }
-    var friendKey=res.doc.acct;
-    return fsGet("accounts/"+friendKey).then(function(accRes){
-      if(!accRes||!accRes.doc){ done("Couldn't reach "+nm); return; }
-      var doc=ensureDocShape(accRes.doc);
-      doc.bdInbox=doc.bdInbox.filter(function(m){return Date.now()-m.ts<600000;});
-      doc.bdInbox.push({from:curUser||"a root",code:party.code,ts:Date.now()});
-      if(doc.bdInbox.length>8)doc.bdInbox=doc.bdInbox.slice(-8);
-      return fsSet("accounts/"+friendKey,doc).then(function(ok){ done(ok?("Invite sent to "+nm):"Invite failed"); });
-    });
-  });
-}
 var inboxTimer=null, seenInvite=0;
 function inboxEligible(){ return !!curUser&&!!cloudId&&(state==="menu"||state==="pause"); }
 function startInbox(){
   if(inboxTimer)clearInterval(inboxTimer);
   inboxTimer=setInterval(function(){
     if(!inboxEligible())return;
-    fsGet("accounts/"+cloudId).then(function(res){
-      if(!res||!res.doc||!res.doc.bdInbox||!res.doc.bdInbox.length)return;
+    fbDb.collection("accounts").doc(cloudId).get().then(function(snap){
+      if(!snap.exists())return;
+      var doc=snap.data();
+      if(!doc||!doc.bdInbox||!doc.bdInbox.length)return;
       var latest=null;
-      res.doc.bdInbox.forEach(function(m){ if(m.ts>seenInvite&&Date.now()-m.ts<600000&&(!latest||m.ts>latest.ts))latest=m; });
+      doc.bdInbox.forEach(function(m){ if(m.ts>seenInvite&&Date.now()-m.ts<600000&&(!latest||m.ts>latest.ts))latest=m; });
       if(!latest)return;
       seenInvite=latest.ts;
       showInvite(latest);
-    });
+    }).catch(function(){});
   },9000);
 }
 function showInvite(m){
@@ -3254,17 +3241,7 @@ function charCard(c,onPick,gridId){
 function renderChars(gridId,onPick){
   var g=$(gridId); if(!g)return;
   g.innerHTML="";
-  var basics=CHARS.filter(function(c){ return c.cls!=="complex"; });
-  var complexes=CHARS.filter(function(c){ return c.cls==="complex"; });
-  var hd1=document.createElement("div"); hd1.className="gridhd"; hd1.textContent="Basic";
-  g.appendChild(hd1);
-  basics.forEach(function(c){ g.appendChild(charCard(c,onPick,gridId)); });
-  if(complexes.length){
-    var hd2=document.createElement("div"); hd2.className="gridhd";
-    hd2.textContent="Complex \u2014 several stats pulling at once, worth leaning into";
-    g.appendChild(hd2);
-    complexes.forEach(function(c){ g.appendChild(charCard(c,onPick,gridId)); });
-  }
+  CHARS.forEach(function(c){ g.appendChild(charCard(c,onPick,gridId)); });
 }
 function renderDexRoots(){
   var g=$("dexRoots"); if(!g)return;
@@ -3343,7 +3320,8 @@ function updateCharPreview(id){
   $("charPrevName").textContent=c.n;
   $("charPrevName").style.color=c.col;
   $("charPrevDesc").textContent=c.d;
-  $("charPrevStat").textContent=c.hp+" hp \u00b7 "+byId(WEAPONS,c.weap).n;
+  var statEl=$("charPrevStats");
+  if(statEl)statEl.textContent=c.hp+" hp \u00b7 "+byId(WEAPONS,c.weap).n;
   var bi=bestDiffIdxFor(id);
   $("charPrevDex").textContent=bi>=0?("Best \u00b7 "+DIFFS[bi].n+" cleared"):"Not cleared on this root yet";
   $("charPrevDex").style.color=bi>=0?DIFFS[bi].col:"var(--dim)";
@@ -3352,10 +3330,10 @@ function drawCharPreview(t){
   var cv=$("charPrevCv"); if(!cv)return;
   if(!charPrevCtx)charPrevCtx=cv.getContext("2d");
   var c=charPrevCtx;
-  c.clearRect(0,0,200,200);
+  c.clearRect(0,0,280,280);
   c.save();
-  c.translate(100,116);
-  c.scale(6,6);
+  c.translate(140,156);
+  c.scale(8,8);
   drawRoot(c,previewRootId,t,1,false);
   c.restore();
 }
@@ -3662,10 +3640,28 @@ function renderParty(){
     " · "+seenMine+"/"+seenTotal+" seen");
   ids.forEach(function(k){ var m=party.members[k]; row(m.n||"lad",byId(CHARS,m.ch).n); });
   renderChars("pCharGrid",function(id){ party.char=id; onCharPicked(); });
+  renderTeamPicks(ids);
   if(party.leader){
     renderDiffPicker("pDiffGrid");
     renderInviteList();
   }
+}
+function renderTeamPicks(ids){
+  var wrap=$("teamPicksWrap"), grid=$("teamPicksGrid");
+  if(!wrap||!grid)return;
+  if(!ids||!ids.length){ wrap.style.display="none"; return; }
+  wrap.style.display="block";
+  grid.innerHTML="";
+  ids.slice(0,4).forEach(function(k){
+    var m=party.members[k], ch=byId(CHARS,m.ch);
+    if(!ch)return;
+    var card=document.createElement("div"); card.className="card compact"; card.style.textAlign="center";
+    card.appendChild(iconFor("c",ch.id));
+    var cn=document.createElement("div"); cn.className="cn"; cn.style.cssText="font-size:11px;color:"+ch.col;
+    cn.textContent=(m.n||"lad")+" · "+ch.n;
+    card.appendChild(cn);
+    grid.appendChild(card);
+  });
 }
 $("bParty").onclick=function(){ sfx.click(); audioOn();
   $("pName").value=save.name||""; renderParty();
@@ -3707,7 +3703,7 @@ $("bAcctOut").onclick=function(){
   renderParty();
 };
 $("bAddFr").onclick=function(){
-  var nm=normUser($("frName").value);
+  var nm=($("frName").value||"").trim().toLowerCase();
   sfx.click(); $("frErr").textContent="Looking\u2026";
   addFriend(nm).then(function(r){
     if(r.err){ $("frErr").textContent=r.err; return; }
@@ -3811,7 +3807,7 @@ window.__bd={
   addMate:function(id,ch){ mates[id]=mkPlayer(ch,false); recalc(mates[id]); return mates[id]; },
   setMateDead:function(id,d){ if(mates[id])mates[id].dead=!!d; },
   acctSignUp:acctSignUp, acctSignIn:acctSignIn, acctSignOut:acctSignOut,
-  acctKey:acctKey, addFriend:addFriend, removeFriend:removeFriend,
+  addFriend:addFriend, removeFriend:removeFriend,
   inviteFriend:inviteFriend, pushAccountNow:pushAccountNow, registerName:registerName,
   setParty:function(o){ for(var k in o)party[k]=o[k]; },
   getCurUser:function(){ return curUser; }, getCloudId:function(){ return cloudId; },
