@@ -92,8 +92,10 @@ input,textarea{-webkit-user-select:text;user-select:text}
 
 /* ---------- cards ---------- */
 .card{background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:11px;
-  border-left:4px solid var(--bg4);cursor:pointer;transition:background .1s;text-align:left}
-.card:hover{background:var(--bg3)}
+  border-left:4px solid var(--bg4);cursor:pointer;
+  transition:background .15s,transform .15s cubic-bezier(.34,1.56,.64,1),box-shadow .15s;text-align:left}
+.card:hover{background:var(--bg3);transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.card:active{transform:translateY(0) scale(.97)}
 .card .cn{font-weight:800;font-size:14px;letter-spacing:.03em}
 .card .cd{font-size:12px;color:var(--dim);margin-top:5px;line-height:1.45}
 .card .cp{font-size:13px;color:var(--gold);font-weight:800;margin-top:7px}
@@ -149,7 +151,14 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .gearchip.t2{border-left-color:#5d7a52}
 .gearchip.t3{border-left-color:#4d6d86}
 .gearchip.t4{border-left-color:#a8803a}
-.card.sel{border-left-color:var(--leaf);background:var(--bg3)}
+.card.sel{border-left-color:var(--leaf);background:var(--bg3);
+  animation:selPop .28s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 0 0 1px var(--leaf2),0 4px 14px rgba(125,138,74,.25)}
+@keyframes selPop{0%{transform:scale(.92)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
+#charPrevCv{transition:opacity .15s,transform .2s cubic-bezier(.34,1.56,.64,1)}
+#charPrevCv.swap{animation:prevSwap .32s cubic-bezier(.34,1.56,.64,1)}
+@keyframes prevSwap{0%{opacity:.3;transform:scale(.9) translateY(6px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+.cn{transition:color .2s}
 canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-rendering:auto}
 
 /* ---------- hud ---------- */
@@ -241,7 +250,7 @@ body.pc-mode #stick{display:none}
     </div>
     <div style="display:flex;gap:0;flex:1;overflow:hidden">
       <!-- Left: big character preview -->
-      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;border-right:1px solid var(--line);min-height:100%;overflow-y:auto">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px;border-right:1px solid var(--line);min-height:100%;overflow-y:auto">
         <canvas id="charPrevCv" width="280" height="280" style="image-rendering:auto;margin-bottom:16px"></canvas>
         <div class="cn" id="charPrevName" style="text-align:center;font-size:18px"></div>
         <div class="cd" id="charPrevDesc" style="text-align:center;margin-top:8px;max-width:240px;font-size:13px"></div>
@@ -3375,7 +3384,12 @@ $("dexBack").onclick=function(){ sfx.click(); show("s-title"); };
 var charPrevCtx=null, previewRootId="seed";
 function updateCharPreview(id){
   var c=byId(CHARS,id); if(!c)return;
+  var changed=previewRootId!==id;
   previewRootId=id;
+  if(changed&&$("charPrevCv")){
+    var cv=$("charPrevCv"); cv.classList.remove("swap");
+    void cv.offsetWidth; cv.classList.add("swap");
+  }
   $("charPrevName").textContent=c.n;
   $("charPrevName").style.color=c.col;
   $("charPrevDesc").textContent=c.d;
@@ -3397,7 +3411,7 @@ function drawCharPreview(t){
   c.restore();
 }
 $("bSolo").onclick=function(){ sfx.click(); audioOn();
-  renderChars("charGrid");
+  renderChars("charGrid",updateCharPreview);
   updateCharPreview(chosenChar);
   renderDiffPicker("chDiffGrid"); show("s-char"); };
 
@@ -3833,7 +3847,7 @@ function frameBody(now){
 })();
 $("verTag").textContent="v"+VERSION;
 resize();
-renderChars("charGrid");
+renderChars("charGrid",updateCharPreview);
 show("s-title");
 requestAnimationFrame(frame);
 tryAutoSignIn().then(function(ok){
