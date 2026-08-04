@@ -103,11 +103,13 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 .cli{font-size:12.5px;color:#b6acd4;line-height:1.55;margin-bottom:7px;padding-left:14px;position:relative}
 .cli:before{content:"\25B8";position:absolute;left:0;color:#7bd94a}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="update-badge">Updated Aug 04 at 4:39 PM</div>
+    <div class="update-badge">Updated Aug 04 at 4:48 PM</div>
     <h1 class="disp">Pick a game</h1>
     <div class="sub">Two different games, one place. Your progress in each is kept separately.</div>
   </header>
@@ -117,7 +119,7 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
     <div id="acctOut">
       <div class="sub" style="color:#8d7fb0;font-size:12px;margin-bottom:9px">Sign in once here and both games recognise you â€” one account, one friends list, progress kept per game.</div>
       <div class="row">
-        <input id="lUser" maxlength="14" placeholder="USERNAME" autocomplete="off">
+        <input id="lUser" type="email" placeholder="EMAIL" autocomplete="off">
         <input id="lPass" type="password" maxlength="40" placeholder="PASSWORD" autocomplete="off">
       </div>
       <div class="row">
@@ -206,124 +208,52 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 <script>
 (function(){
 "use strict";
-/* Same account backend Meat Lad and Beetdown use. Signing in here just
-   writes the session to the keys both games already check on boot â€” there
-   is no separate "launcher account", it is the same one. */
-var CLOUD_INDEX="019fcaef-1775-75b0-bdb1-44c3787c17d2";
-var CLOUD="https://jsonblob.com/api/jsonBlob";
-var LASTKEY="gameacct:lastuser", PROFKEY="gameacct:profiles";
-function withTimeout(pr,ms,fb){ return new Promise(function(res){
-  var done=false,t=setTimeout(function(){ if(!done){done=true;res(fb);} },ms);
-  pr.then(function(v){ if(!done){done=true;clearTimeout(t);res(v);} },
-          function(){ if(!done){done=true;clearTimeout(t);res(fb);} }); }); }
-function cloudGet(id){ return withTimeout(fetch(CLOUD+"/"+id,{cache:"no-store"}).then(function(r){
-  if(!r.ok)throw 0; return r.json(); }).catch(function(){return null;}),9000,null); }
-function cloudPut(id,obj){ return withTimeout(fetch(CLOUD+"/"+id,{method:"PUT",
-  headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)})
-  .then(function(r){return r.ok;}).catch(function(){return false;}),9000,false); }
-function cloudNew(obj){ return withTimeout(fetch(CLOUD,{method:"POST",
-  headers:{"Content-Type":"application/json"},body:JSON.stringify(obj||{})})
-  .then(function(r){ if(!r.ok)throw 0; return (r.headers.get("Location")||"").split("/").pop()||null; })
-  .catch(function(){return null;}),9000,null); }
-function hashPw(pw,salt){
-  var msg=salt+"|"+pw;
-  if(window.crypto&&crypto.subtle&&window.isSecureContext){
-    return crypto.subtle.digest("SHA-256",new TextEncoder().encode(msg)).then(function(buf){
-      return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join(""); });
-  }
-  var h=5381; for(var i=0;i<msg.length;i++){ h=((h<<5)+h)^msg.charCodeAt(i); h=h>>>0; }
-  return Promise.resolve("w"+h.toString(16));
-}
-function acctKey(user,pw){ return hashPw("meatlad-acct|"+String(user).toLowerCase(),pw); }
-function normUser(u){ return String(u||"").trim().slice(0,14); }
-function getProfiles(){ try{ var r=localStorage.getItem(PROFKEY); return r?JSON.parse(r):{}; }catch(e){ return {}; } }
-function putProfiles(p){ try{ localStorage.setItem(PROFKEY,JSON.stringify(p)); }catch(e){} }
-function rememberLocal(u,key,blobId){ var p=getProfiles(); p[u.toLowerCase()]={u:u,k:key,b:blobId}; putProfiles(p); }
-
-function signUp(u,pw){
-  u=normUser(u);
-  if(u.length<2)return Promise.resolve({err:"Pick a username with at least 2 characters."});
-  if((pw||"").length<3)return Promise.resolve({err:"Pick a password with at least 3 characters."});
-  return acctKey(u,pw).then(function(key){
-    return cloudGet(CLOUD_INDEX).then(function(idx){
-      if(!idx||!idx.accounts)return {err:"Can't reach the account server. Check your connection."};
-      if(idx.accounts[key])return {err:"That username and password is already taken. Try signing in."};
-      if(!idx.names)idx.names={};
-      if(idx.names[u.toLowerCase()])return {err:"That username is taken. Pick another one."};
-      var doc={n:u,games:{},friends:[],bdInbox:[],ts:Date.now()};
-      return cloudNew(doc).then(function(bid){
-        if(!bid)return {err:"Couldn't create the account. Try again."};
-        idx.accounts[key]=bid; idx.names[u.toLowerCase()]=bid;
-        return cloudPut(CLOUD_INDEX,idx).then(function(ok){
-          if(!ok)return {err:"Couldn't finish creating the account. Try again."};
-          rememberLocal(u,key,bid);
-          try{localStorage.setItem(LASTKEY,u);}catch(e){}
-          return {ok:true,u:u};
-        });
-      });
-    });
-  });
-}
-function signIn(u,pw){
-  u=normUser(u);
-  if(!u||!pw)return Promise.resolve({err:"Enter your username and password."});
-  return acctKey(u,pw).then(function(key){
-    return cloudGet(CLOUD_INDEX).then(function(idx){
-      var bid=idx&&idx.accounts&&idx.accounts[key];
-      if(!bid){
-        var p=getProfiles(), lp=p[u.toLowerCase()];
-        if(lp&&lp.k===key){
-          try{localStorage.setItem(LASTKEY,lp.u);}catch(e){}
-          return {ok:true,u:lp.u,offline:true};
-        }
-        return {err:idx?"Wrong username or password.":"Can't reach the account server."};
-      }
-      return cloudGet(bid).then(function(doc){
-        if(!doc)return {err:"Found the account but couldn't read it."};
-        rememberLocal(doc.n||u,key,bid);
-        try{localStorage.setItem(LASTKEY,doc.n||u);}catch(e){}
-        return {ok:true,u:doc.n||u};
-      });
-    });
-  });
-}
-function signOut(){ try{localStorage.removeItem(LASTKEY);}catch(e){} }
+/* Same Firebase account Meat Lad and Beetdown sign into. One email+password
+   account, recognised automatically on all three pages via Firebase Auth's
+   own persisted session - nothing to hand off manually between pages. */
+var firebaseConfig={apiKey:"AIzaSyBa6Kv2Wiot2F-vqX_sOH57Yy6O_HBIwPk",authDomain:"game-701be.firebaseapp.com",projectId:"game-701be",storageBucket:"game-701be.firebasestorage.app",messagingSenderId:"637319510154",appId:"1:637319510154:web:6f4947e02802c641d89573"};
+var fbApp=null,fbAuth=null;
+try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();}catch(e){console.error("Firebase:",e);}
 
 function $(id){ return document.getElementById(id); }
-function render(name){
-  var signedIn=!!name;
+function render(email){
+  var signedIn=!!email;
   $("acctOut").style.display=signedIn?"none":"";
   $("acctIn").style.display=signedIn?"flex":"none";
-  if(signedIn)$("acctWho").textContent=name;
+  if(signedIn)$("acctWho").textContent=email;
 }
 function busy(b){ $("lSignIn").disabled=b; $("lSignUp").disabled=b; }
 $("lSignIn").onclick=function(){
-  $("acctErr").textContent="Signing inâ€¦"; busy(true);
-  signIn($("lUser").value,$("lPass").value).then(function(r){
+  var email=($("lUser").value||"").trim().toLowerCase(),pw=$("lPass").value||"";
+  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email.";return;}
+  if(!pw){$("acctErr").textContent="Enter your password.";return;}
+  $("acctErr").textContent="Signing in..."; busy(true);
+  fbAuth.signInWithEmailAndPassword(email,pw).then(function(cred){
+    busy(false);$("acctErr").textContent="";render(cred.user.email);
+  }).catch(function(e){
     busy(false);
-    if(r.err){ $("acctErr").textContent=r.err; return; }
-    $("acctErr").textContent=""; render(r.u);
+    var msg=e.code==="auth/user-not-found"?"No account with that email.":
+           e.code==="auth/wrong-password"?"Wrong password.":"Couldn't sign in.";
+    $("acctErr").textContent=msg;
   });
 };
 $("lSignUp").onclick=function(){
-  $("acctErr").textContent="Creating accountâ€¦"; busy(true);
-  signUp($("lUser").value,$("lPass").value).then(function(r){
+  var email=($("lUser").value||"").trim().toLowerCase(),pw=$("lPass").value||"";
+  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email.";return;}
+  if(pw.length<6){$("acctErr").textContent="Password must be at least 6 characters.";return;}
+  $("acctErr").textContent="Creating account..."; busy(true);
+  fbAuth.createUserWithEmailAndPassword(email,pw).then(function(cred){
+    busy(false);$("acctErr").textContent="";render(cred.user.email);
+  }).catch(function(e){
     busy(false);
-    if(r.err){ $("acctErr").textContent=r.err; return; }
-    $("acctErr").textContent=""; render(r.u);
+    var msg=e.code==="auth/email-already-in-use"?"Email already in use. Try signing in.":
+           e.code==="auth/weak-password"?"Password too weak. Use at least 6 characters.":"Couldn't create account.";
+    $("acctErr").textContent=msg;
   });
 };
-$("lSignOut").onclick=function(){ signOut(); render(null); };
+$("lSignOut").onclick=function(){ fbAuth.signOut().then(function(){ render(null); }); };
 
-try{
-  var last=localStorage.getItem(LASTKEY);
-  if(last)render(last);
-}catch(e){}
-
-window.__launcher={
-  signIn:signIn, signUp:signUp, signOut:signOut,
-  getLast:function(){ try{ return localStorage.getItem(LASTKEY); }catch(e){ return null; } }
-};
+if(fbAuth)fbAuth.onAuthStateChanged(function(user){ render(user?user.email:null); });
 
 /* ═════════════ CHANGELOG MODAL ═════════════ */
 var BD_LOG=[
