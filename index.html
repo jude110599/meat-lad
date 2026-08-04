@@ -105,11 +105,12 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="update-badge">Updated Aug 04 at 4:48 PM</div>
+    <div class="update-badge">Updated Aug 04 at 4:58 PM</div>
     <h1 class="disp">Pick a game</h1>
     <div class="sub">Two different games, one place. Your progress in each is kept separately.</div>
   </header>
@@ -119,7 +120,7 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
     <div id="acctOut">
       <div class="sub" style="color:#8d7fb0;font-size:12px;margin-bottom:9px">Sign in once here and both games recognise you â€” one account, one friends list, progress kept per game.</div>
       <div class="row">
-        <input id="lUser" type="email" placeholder="EMAIL" autocomplete="off">
+        <input id="lUser" type="text" placeholder="EMAIL OR USERNAME" autocomplete="off">
         <input id="lPass" type="password" maxlength="40" placeholder="PASSWORD" autocomplete="off">
       </div>
       <div class="row">
@@ -212,8 +213,8 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
    account, recognised automatically on all three pages via Firebase Auth's
    own persisted session - nothing to hand off manually between pages. */
 var firebaseConfig={apiKey:"AIzaSyBa6Kv2Wiot2F-vqX_sOH57Yy6O_HBIwPk",authDomain:"game-701be.firebaseapp.com",projectId:"game-701be",storageBucket:"game-701be.firebasestorage.app",messagingSenderId:"637319510154",appId:"1:637319510154:web:6f4947e02802c641d89573"};
-var fbApp=null,fbAuth=null;
-try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();}catch(e){console.error("Firebase:",e);}
+var fbApp=null,fbAuth=null,fbDb=null;
+try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=firebase.firestore(fbApp);}catch(e){console.error("Firebase:",e);}
 
 function $(id){ return document.getElementById(id); }
 function render(email){
@@ -223,13 +224,27 @@ function render(email){
   if(signedIn)$("acctWho").textContent=email;
 }
 function busy(b){ $("lSignIn").disabled=b; $("lSignUp").disabled=b; }
+/* Firebase only signs in with an email. A typed username is resolved to its
+   email first via a small public lookup doc (usernames/{username} -> email),
+   written once at sign-up time, before we ever call Firebase auth. */
+function resolveToEmail(input){
+  input=(input||"").trim().toLowerCase();
+  if(input.indexOf("@")>=0)return Promise.resolve(input);
+  if(!fbDb)return Promise.resolve(null);
+  return fbDb.collection("usernames").doc(input).get().then(function(snap){
+    return snap.exists?snap.data().email:null;
+  }).catch(function(){return null;});
+}
 $("lSignIn").onclick=function(){
-  var email=($("lUser").value||"").trim().toLowerCase(),pw=$("lPass").value||"";
-  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email.";return;}
+  var input=($("lUser").value||"").trim(),pw=$("lPass").value||"";
+  if(!input){$("acctErr").textContent="Enter your email or username.";return;}
   if(!pw){$("acctErr").textContent="Enter your password.";return;}
   $("acctErr").textContent="Signing in..."; busy(true);
-  fbAuth.signInWithEmailAndPassword(email,pw).then(function(cred){
-    busy(false);$("acctErr").textContent="";render(cred.user.email);
+  resolveToEmail(input).then(function(email){
+    if(!email){ busy(false);$("acctErr").textContent="No account with that username.";return; }
+    return fbAuth.signInWithEmailAndPassword(email,pw).then(function(cred){
+      busy(false);$("acctErr").textContent="";render(cred.user.email);
+    });
   }).catch(function(e){
     busy(false);
     var msg=e.code==="auth/user-not-found"?"No account with that email.":
@@ -239,10 +254,14 @@ $("lSignIn").onclick=function(){
 };
 $("lSignUp").onclick=function(){
   var email=($("lUser").value||"").trim().toLowerCase(),pw=$("lPass").value||"";
-  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email.";return;}
+  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email to create an account (you'll be able to sign in with just your username afterward).";return;}
   if(pw.length<6){$("acctErr").textContent="Password must be at least 6 characters.";return;}
   $("acctErr").textContent="Creating account..."; busy(true);
+  var username=email.split("@")[0].replace(/[^a-z0-9_.-]/g,"");
   fbAuth.createUserWithEmailAndPassword(email,pw).then(function(cred){
+    return fbDb.collection("usernames").doc(username).set({email:email,uid:cred.user.uid})
+      .catch(function(){}).then(function(){ return cred; });
+  }).then(function(cred){
     busy(false);$("acctErr").textContent="";render(cred.user.email);
   }).catch(function(e){
     busy(false);
