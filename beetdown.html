@@ -19,11 +19,12 @@
   --danger:#a8453a;
   --pad:14px;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
-  font-family:"Trebuchet MS",Verdana,system-ui,sans-serif;font-size:15px}
-body{display:flex;align-items:center;justify-content:center;
+  font-family:"Trebuchet MS",Verdana,system-ui,sans-serif;font-size:15px;overscroll-behavior:none}
+body{display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+input,textarea{-webkit-user-select:text;user-select:text}
 .disp{font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 #wrap{position:relative;width:100%;height:100%;max-width:1200px;overflow:hidden}
 
@@ -178,6 +179,7 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
 
 /* touch stick */
 #stick{position:absolute;left:0;bottom:0;width:50%;height:52%;z-index:4;touch-action:none}
+body.pc-mode #stick{display:none}
 #stickArt{position:absolute;width:112px;height:112px;border-radius:50%;
   background:rgba(255,255,255,.05);border:2px solid rgba(255,255,255,.13);display:none}
 #stickArt i{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
@@ -186,7 +188,7 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
   background:rgba(12,8,24,.7);border:0;color:var(--txt);font-size:16px;z-index:5;cursor:pointer}
 #pauseBtn.hide{display:none}
 
-#cv{position:absolute;inset:0;width:100%;height:100%;display:block;background:#14120e}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;background:#14120e;touch-action:none}
 .toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);background:rgba(15,14,11,.94);
   padding:8px 15px;border:1px solid var(--line);border-radius:3px;font-weight:700;font-size:13px;
   z-index:9;border-left:3px solid var(--gold);pointer-events:none;transition:opacity .3s}
@@ -442,11 +444,18 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
 <script>
 (function(){
 "use strict";
-var VERSION="1.7.2";
+var VERSION="1.8.0";
 
 /* ═════════════ CHANGELOG (Beetdown's own - nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.7.2",d:"latest",items:[
+  {v:"1.8.0",d:"latest",items:[
+    "NEW UI, MORE MOBILE FRIENDLY. Fixed double-tap accidentally zooming or selecting text, and dragging on menus no longer triggers the browser's pinch-zoom - both were mobile browser default behaviours that had never been switched off",
+    "PC OR MOBILE - pick on the main game-select page (or change it anytime from the button there). Mobile keeps the on-screen joystick, PC hides it since keyboard controls already work",
+    "SPAWN WARNING MARKS. Pests now show a shrinking ring where they're about to appear a beat before they do, so incoming waves feel readable instead of things just popping in on top of you",
+    "PETS ARE BIGGER AND GLOW. Each one now has a soft coloured glow matching its type and is noticeably larger both on your character and in the shop",
+    "ITEM ICONS ARE CLEARER. Every weapon and item icon now sits on a tier-coloured ring with a dark backing circle so they're easier to tell apart at a glance, and render at higher resolution so the detail doesn't blur"
+  ]},
+  {v:"1.7.2",items:[
     "THE MAIN GAME-SELECT PAGE NOW RUNS ON THE SAME FIREBASE ACCOUNT AS BOTH GAMES. It was quietly running its own separate, older login system this whole time - signing in there did nothing for Beetdown or Meat Lad. Sign in once on the main page now and both games recognise you immediately, no second sign-in anywhere"
   ]},
   {v:"1.7.1",items:[
@@ -1133,7 +1142,7 @@ function isBoss(w){ return !!BOSSES[w]; }
 
 function startWave(w){
   wave=w; waveLen=waveLength(w); waveT=waveLen;
-  foes.length=0; shots.length=0; efoes.length=0; drops.length=0; fx.length=0;
+  foes.length=0; shots.length=0; efoes.length=0; drops.length=0; fx.length=0; spawnQueue.length=0;
   spawnAcc=0; bossAlive=false;
   spawnRate=waveBudget(w)/waveLen;
   state="play"; shopOpen=false;
@@ -1169,8 +1178,9 @@ function pestMix(w){
   if(w>=16)pool.push("grub","beetle","hornet");
   return pool;
 }
-function spawnPest(kind,w){
-  var d=PESTS[kind], p=edgeSpawn();
+var spawnQueue=[];
+function spawnPest(kind,w,pos){
+  var d=PESTS[kind], p=pos||edgeSpawn();
   var wscale=1+(w-1)*.16, hpM=runDiffMult()*coopHpMult(), dmgM=runDiffMult()*coopDmgMult();
   var hp=Math.max(1,Math.round(d.hp*wscale*hpM));
   foes.push({id:nextFoeId++, k:kind, n:d.n, x:p.x, y:p.y, vx:0, vy:0,
@@ -1637,7 +1647,7 @@ function endRun(won){
   if(unlockedNext)toast("Unlocked \u00b7 "+unlockedNext.n);
 }
 function quitToMenu(){
-  state="menu"; me=null; mates={}; foes.length=0; shots.length=0; drops.length=0;
+  state="menu"; me=null; mates={}; foes.length=0; shots.length=0; drops.length=0; spawnQueue.length=0;
   hideOvl(); $("hud").classList.add("hide"); $("pauseBtn").classList.add("hide");
   if(party.on)party.leave();
   show("s-title");
@@ -1767,10 +1777,17 @@ function step(dt){
   // ---- spawning + wave clock ----
   if(drive&&!isBoss(wave)){
     spawnAcc+=spawnRate*dt;
-    while(spawnAcc>=1&&foes.length<130){
+    while(spawnAcc>=1&&foes.length+spawnQueue.length<130){
       spawnAcc-=1;
-      var kind=pick(pestMix(wave));
-      spawnPest(kind,wave);
+      spawnQueue.push({kind:pick(pestMix(wave)),wave:wave,pos:edgeSpawn(),t:.55});
+    }
+  }
+  // ---- spawn telegraph: pests appear a moment after their warning mark shows ----
+  for(i=spawnQueue.length-1;i>=0;i--){
+    var sq=spawnQueue[i]; sq.t-=dt;
+    if(sq.t<=0){
+      spawnQueue.splice(i,1);
+      spawnPest(sq.kind,sq.wave,sq.pos);
       if(party.on&&party.leader){
         var nf=foes[foes.length-1];
         party.send({t:"spawn",f:{id:nf.id,k:nf.k,x:nf.x,y:nf.y,hp:nf.hp,max:nf.max,r:nf.r,col:nf.col,n:nf.n,dmg:nf.dmg,boss:0}});
@@ -1799,7 +1816,7 @@ function finishWave(){
   if(state!=="play")return;
   // sweep what is left on the floor into your pocket
   for(var i=0;i<drops.length;i++){ me.mats+=drops[i].v; runMats+=drops[i].v; gainXp(me,drops[i].xp); }
-  drops.length=0; foes.length=0; efoes.length=0; shots.length=0;
+  drops.length=0; foes.length=0; efoes.length=0; shots.length=0; spawnQueue.length=0;
   if(me.st.harvest>0){ me.mats+=me.st.harvest; runMats+=me.st.harvest;
     toast("Harvest ◆ "+me.st.harvest); }
   if(lvlQueue>0){ openLevelUp(); return; }
@@ -1843,6 +1860,16 @@ function render(t){
   ctx.shadowBlur=0;
   for(i=0;i<efoes.length;i++){ var es=efoes[i];
     ctx.fillStyle="#5fd8c0"; ctx.beginPath(); ctx.arc(es.x,es.y,es.r,0,6.283); ctx.fill(); }
+  // spawn telegraph marks - warn where a pest is about to appear
+  for(i=0;i<spawnQueue.length;i++){
+    var sq=spawnQueue[i], sp=Math.max(0,sq.t/.55);
+    ctx.save(); ctx.translate(sq.pos.x,sq.pos.y);
+    ctx.globalAlpha=.75; ctx.strokeStyle="#c8362a"; ctx.lineWidth=2.4;
+    ctx.beginPath(); ctx.arc(0,0,6+sp*14,0,6.283); ctx.stroke();
+    ctx.globalAlpha=.5; ctx.fillStyle="#c8362a";
+    ctx.beginPath(); ctx.arc(0,0,3,0,6.283); ctx.fill();
+    ctx.restore();
+  }
   // foes
   for(i=0;i<foes.length;i++)drawFoe(foes[i],t);
   // players
@@ -1885,7 +1912,9 @@ function drawLad(p,t){
       if(pet.flash>0)pet.flash-=1/60;
       ctx.save(); ctx.translate(px,py);
       ctx.fillStyle="rgba(0,0,0,.3)";
-      ctx.beginPath(); ctx.ellipse(0,4,3.4,1.3,0,0,6.283); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0,4,4.2,1.6,0,0,6.283); ctx.fill();
+      ctx.shadowColor=PET_GLOW[pet.id]||"#ffe58a"; ctx.shadowBlur=pet.flash>0?14:8;
+      ctx.scale(1.4,1.4);
       drawPetBody(ctx,pet.id,t,pet.flash>0);
       ctx.restore();
     }
@@ -3117,6 +3146,7 @@ function drawPerkIcon(c,key){
 
 /* build a 34x34 icon canvas for any content id */
 /* companion creatures - small, friendly, visually distinct from hostile pests */
+var PET_GLOW={firefly:"#ffe58a",ladybug:"#ff5a4a",mouse:"#e8c8a8",sparrow:"#e0a030",hedgehog:"#a89068"};
 function drawPetBody(c,id,t,flash){
   if(id==="firefly"){
     var wf=Math.sin(t*20)*2.4;
@@ -3178,15 +3208,26 @@ function drawPetBody(c,id,t,flash){
   }
 }
 function drawPetIcon(c,id){
-  c.save(); c.translate(17,18); c.scale(1.7,1.7);
+  c.save(); c.translate(17,18); c.scale(2,2);
+  c.shadowColor=PET_GLOW[id]||"#ffe58a"; c.shadowBlur=6;
   drawPetBody(c,id,0,false);
   c.restore();
 }
 
+var ICON_TIER_COL={1:"#5a5540",2:"#7a6a3a",3:"#a8503a"};
 function iconFor(kind,id){
   var c=document.createElement("canvas");
-  c.width=34; c.height=34; c.className="icon";
+  c.width=68; c.height=68; c.className="icon";
   var g=c.getContext("2d");
+  g.scale(2,2);
+  if(kind==="w"||kind==="i"){
+    var tier=(kind==="w"?byId(WEAPONS,id):byId(ITEMS,id));
+    tier=tier&&tier.tier?tier.tier:1;
+    g.fillStyle="rgba(0,0,0,.22)";
+    g.beginPath(); g.arc(17,17,15.5,0,6.283); g.fill();
+    g.strokeStyle=ICON_TIER_COL[tier]||"#5a5540"; g.lineWidth=1.6;
+    g.beginPath(); g.arc(17,17,15,0,6.283); g.stroke();
+  }
   if(kind==="w")drawWeaponIcon(g,id);
   else if(kind==="i")drawItemIcon(g,id);
   else if(kind==="p")drawPerkIcon(g,id);
@@ -3786,6 +3827,10 @@ function frameBody(now){
 }
 
 /* ═════════════ BOOT ═════════════ */
+(function(){
+  var mode=null; try{mode=localStorage.getItem("gameDeviceMode");}catch(e){}
+  if(mode==="pc")document.body.classList.add("pc-mode");
+})();
 $("verTag").textContent="v"+VERSION;
 resize();
 renderChars("charGrid");

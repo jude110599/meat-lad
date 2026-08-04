@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#0b0910">
 <title>Pick a game</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{height:100%;overscroll-behavior:none}
+input,textarea{touch-action:manipulation;-webkit-user-select:text;user-select:text}
+button,a,.game{-webkit-user-select:none;user-select:none}
 body{background:#0b0910;color:#f2ecff;overflow-x:hidden;
   font-family:"Trebuchet MS",Verdana,system-ui,sans-serif;
   display:flex;align-items:center;justify-content:center;padding:24px 16px;
@@ -102,6 +104,25 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 .clv:first-child{margin-top:0}
 .cli{font-size:12.5px;color:#b6acd4;line-height:1.55;margin-bottom:7px;padding-left:14px;position:relative}
 .cli:before{content:"\25B8";position:absolute;left:0;color:#7bd94a}
+#devOverlay{position:fixed;inset:0;background:rgba(6,4,12,.85);backdrop-filter:blur(3px);
+  display:none;align-items:center;justify-content:center;padding:20px;z-index:60}
+#devOverlay.show{display:flex}
+#devModal{width:100%;max-width:420px;background:linear-gradient(160deg,#1b1330 0%,#100a1e 100%);
+  border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:26px 22px;
+  box-shadow:0 24px 60px rgba(0,0,0,.5);text-align:center}
+#devModal h2{font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:#f2ecff;margin-bottom:6px}
+#devModal .sub{color:#8d7fb0;font-size:12.5px;margin-bottom:20px}
+.devrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.devbtn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);
+  color:#f2ecff;border-radius:12px;padding:20px 14px;font:inherit;cursor:pointer;
+  transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:8px}
+.devbtn:hover{background:rgba(255,255,255,.1);border-color:#7bd94a;transform:translateY(-2px)}
+.devbtn svg{display:block}
+.devbtn span{font-weight:800;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase}
+#devToggleBtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+  color:#8d7fb0;border-radius:8px;padding:6px 12px;font:inherit;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;cursor:pointer;margin:0 auto 14px;display:block}
+#devToggleBtn:hover{color:#c9bfe8;border-color:rgba(255,255,255,.25)}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
@@ -110,10 +131,12 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 <body>
 <div class="wrap">
   <header>
-    <div class="update-badge">Updated Aug 04 at 4:58 PM</div>
+    <div class="update-badge">Updated Aug 04 at 5:32 PM</div>
     <h1 class="disp">Pick a game</h1>
     <div class="sub">Two different games, one place. Your progress in each is kept separately.</div>
   </header>
+
+  <button id="devToggleBtn">Device: <span id="devToggleLabel">Mobile</span></button>
 
   <div id="acctBar">
     <div id="acctLabel">Account</div>
@@ -190,6 +213,23 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
   </div>
 
   <footer>Both games save on this device.</footer>
+</div>
+
+<div id="devOverlay">
+  <div id="devModal">
+    <h2 class="disp">Choose your device</h2>
+    <div class="sub">This adjusts controls and layout for a better fit. You can change it anytime.</div>
+    <div class="devrow">
+      <button class="devbtn" id="devPickPc">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="13" rx="1.5" stroke="#7bd94a" stroke-width="1.8"/><path d="M8 20h8M12 17v3" stroke="#7bd94a" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>PC</span>
+      </button>
+      <button class="devbtn" id="devPickMobile">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><rect x="6" y="2" width="12" height="20" rx="2" stroke="#e0247a" stroke-width="1.8"/><circle cx="12" cy="18.5" r="1" fill="#e0247a"/></svg>
+        <span>Mobile</span>
+      </button>
+    </div>
+  </div>
 </div>
 
 <div id="clOverlay">
@@ -273,6 +313,25 @@ $("lSignUp").onclick=function(){
 $("lSignOut").onclick=function(){ fbAuth.signOut().then(function(){ render(null); }); };
 
 if(fbAuth)fbAuth.onAuthStateChanged(function(user){ render(user?user.email:null); });
+
+/* ═════════════ DEVICE MODE ═════════════ */
+var DEVKEY="gameDeviceMode";
+function detectDefault(){
+  return (window.matchMedia&&matchMedia("(pointer: coarse)").matches)?"mobile":"pc";
+}
+function setDeviceMode(mode){
+  try{localStorage.setItem(DEVKEY,mode);}catch(e){}
+  $("devToggleLabel").textContent=mode==="pc"?"PC":"Mobile";
+  $("devOverlay").classList.remove("show");
+}
+$("devPickPc").onclick=function(){ setDeviceMode("pc"); };
+$("devPickMobile").onclick=function(){ setDeviceMode("mobile"); };
+$("devToggleBtn").onclick=function(){ $("devOverlay").classList.add("show"); };
+(function(){
+  var saved=null; try{saved=localStorage.getItem(DEVKEY);}catch(e){}
+  if(!saved){ saved=detectDefault(); $("devOverlay").classList.add("show"); }
+  $("devToggleLabel").textContent=saved==="pc"?"PC":"Mobile";
+})();
 
 /* ═════════════ CHANGELOG MODAL ═════════════ */
 var BD_LOG=[
