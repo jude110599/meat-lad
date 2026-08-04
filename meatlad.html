@@ -358,8 +358,8 @@ h1.logo{animation:logoPop .5s cubic-bezier(.2,1.6,.4,1)}
       </div>
       <div class="tag" style="margin-top:14px;font-size:8px" id="tHint"></div>
     </div>
-    <button class="homebtn" id="bHome" title="Back to game select">
-      Games
+    <button class="homebtn" id="bHome" title="Back to main menu">
+      Back to Main Menu
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#d98a3c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </div>
@@ -644,9 +644,15 @@ try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=fir
 (function(){
 "use strict";
 
-var VERSION="3.0.4";
+var VERSION="3.0.5";
 var CHANGELOG=[
-  {v:"3.0.4",d:"latest",items:[
+  {v:"3.0.5",d:"latest",items:[
+    "SIGN-IN MOVED TO FIREBASE, and the login screen is gone entirely. Sign in once on the main game-select page and Meat Lad now recognises that same account automatically the moment you open it - no separate sign-in step, no login screen blocking the way in",
+    "SAVES AND FRIENDS NOW GENUINELY SHARE ONE ACCOUNT DOCUMENT WITH BEETDOWN instead of a separate, unrelated backend. Progress made here shows up under the same account there, and the friends list is one list, not two",
+    "FIXED A BROKEN SCRIPT. A batch of curly/smart quotes had snuck into the changelog and error text and were breaking the page's JavaScript outright - that's why buttons and sign-in looked completely dead. All fixed",
+    "The home button now reads \"Back to Main Menu\" and points right, since Meat Lad has nothing after it to go \"forward\" to"
+  ]},
+  {v:"3.0.4",items:[
     "FIXED SIGN-IN. \"Can't reach the account server\" was real - the account index had been silently deleted by the free host it lives on (it enforces a strict 24-hour lifetime with no way to renew it, which nobody realised until it actually expired). A fresh index is in place and sign-in works again. Any account made before this fix is gone - sorry, there was no way to recover it. This backend is not durable long-term and needs a proper home",
     "COMPACT HOME BUTTON. Back button is now a small styled pill in the top-right corner with a right-pointing arrow, matching Meat Lad's colour scheme with a flip animation on hover. Takes up way less screen space while staying easy to reach"
   ]},
@@ -920,7 +926,29 @@ var TETHER=104,TETMAX=152,TETK=9,TETD=1.6;
 function rnd(a,b){return a+Math.random()*(b-a);}
 function clamp(v,a,b){return v<a?a:(v>b?b:v);}
 function $(id){return document.getElementById(id);}
-function tryAutoSignIn(){if(!fbAuth)return Promise.resolve(false);return new Promise(function(res){fbAuth.onAuthStateChanged(function(user){if(!user)return res(false);curUser=user.email;cloudId=user.uid;res(true);});});}
+function ensureAcctDocShape(doc){
+  doc=doc||{};
+  if(!doc.games)doc.games={};
+  if(!doc.games.meatlad)doc.games.meatlad={};
+  if(!(doc.friends instanceof Array))doc.friends=[];
+  return doc;
+}
+function tryAutoSignIn(){
+  if(!fbAuth)return Promise.resolve(false);
+  return new Promise(function(res){
+    fbAuth.onAuthStateChanged(function(user){
+      if(!user)return res(false);
+      curUser=user.email;cloudId=user.uid;
+      fbDb.collection("accounts").doc(cloudId).get().then(function(snap){
+        var doc=ensureAcctDocShape(snap.exists()?snap.data():{email:curUser});
+        if(doc.games.meatlad&&Object.keys(doc.games.meatlad).length)
+          for(var k in doc.games.meatlad)if(doc.games.meatlad.hasOwnProperty(k))save[k]=doc.games.meatlad[k];
+        acctFriends=doc.friends.slice();
+        res(true);
+      }).catch(function(){ res(true); });
+    });
+  });
+}
 
 /* ═════════════ COSMETICS ═════════════ */
 var COLORS=[
@@ -1112,25 +1140,18 @@ function cloudNew(obj){
 }
 function acctKey(user,pw){ return hashPw("meatlad-acct|"+String(user).toLowerCase(),pw); }
 function cloudPush(){
-  if(!cloudId)return;
+  if(!cloudId||!fbDb)return;
   if(cloudPushT)clearTimeout(cloudPushT);
   cloudPushT=setTimeout(function(){ cloudPushT=null;
-    cloudGet(cloudId).then(function(doc){
-      doc=doc||{}; doc.n=curUser; doc.save=save; doc.ts=Date.now();
-      if(!(doc.friends instanceof Array))doc.friends=acctFriends;
-      cloudPut(cloudId,doc);
-    });
+    fbDb.collection("accounts").doc(cloudId).set({games:{meatlad:save},ts:Date.now()},{merge:true}).catch(function(){});
   },4000);
 }
 /* the friends list is shared with Beetdown on the same account doc - write
-   it through immediately (not on the debounce) so add/remove feels instant,
-   same read-modify-write pattern as above so nothing else on the doc is lost */
+   it through immediately (not on the debounce) so add/remove feels instant */
 function pushFriends(){
-  if(!cloudId)return Promise.resolve(false);
-  return cloudGet(cloudId).then(function(doc){
-    doc=doc||{}; doc.n=curUser; doc.friends=acctFriends; doc.ts=Date.now();
-    return cloudPut(cloudId,doc);
-  });
+  if(!cloudId||!fbDb)return Promise.resolve(false);
+  return fbDb.collection("accounts").doc(cloudId).set({friends:acctFriends,ts:Date.now()},{merge:true})
+    .then(function(){return true;}).catch(function(){return false;});
 }
 var saveT=null;
 function queueSave(){ cloudPush(); if(saveT)return;
@@ -4778,7 +4799,7 @@ $("bSignUp").onclick=function(){
   if(!fbAuth){liBusy(false);$("liErr").textContent="Firebase not ready. Refresh the page.";return;}
   fbAuth.createUserWithEmailAndPassword(email,pw).then(function(cred){
     curUser=email;cloudId=cred.user.uid;
-    return fbDb.collection("accounts").doc(cloudId).set({email:email,friends:[],mlInbox:[],friends:[]},{merge:true});
+    return fbDb.collection("accounts").doc(cloudId).set({email:email,games:{meatlad:save},friends:acctFriends},{merge:true});
   }).then(function(){
     liBusy(false);$("liErr").textContent="";
     toast("Account created");
@@ -4799,10 +4820,10 @@ $("bSignIn").onclick=function(){
     curUser=email;cloudId=cred.user.uid;
     return fbDb.collection("accounts").doc(cloudId).get();
   }).then(function(snap){
-    if(snap.exists()){
-      var doc=snap.data();
-      if(doc.mlSave){save=doc.mlSave;}
-    }
+    var doc=ensureAcctDocShape(snap.exists()?snap.data():{email:curUser});
+    if(doc.games.meatlad&&Object.keys(doc.games.meatlad).length)
+      for(var k in doc.games.meatlad)if(doc.games.meatlad.hasOwnProperty(k))save[k]=doc.games.meatlad[k];
+    acctFriends=doc.friends.slice();
     liBusy(false);$("liErr").textContent="";
     return enterGame();
   }).catch(function(e){
