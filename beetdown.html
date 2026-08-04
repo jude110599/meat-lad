@@ -113,6 +113,13 @@ body{display:flex;align-items:center;justify-content:center;
   background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:11px 13px}
 .keyrow{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
 .keyswatch{width:12px;height:12px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.3)}
+.charpick{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:640px){.charpick{grid-template-columns:190px 1fr}}
+.charpreview{background:var(--bg2);border:1px solid var(--line);border-radius:4px;
+  padding:14px;text-align:center;align-self:start}
+.charpreview canvas{display:block;margin:0 auto 8px;image-rendering:auto}
+.charpreview .cn{font-weight:800;font-size:15px}
+.charpreview .cd{font-size:12px;line-height:1.4}
 .card.unseen{opacity:.5}
 .card.unseen .cn{color:var(--dim)!important}
 .shopbox{max-width:820px;width:100%}
@@ -215,7 +222,16 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
     <div class="sect">Difficulty</div>
     <div class="diffgrid" id="chDiffGrid" style="margin-bottom:16px"></div>
     <div class="sect">Root</div>
-    <div class="grid" id="charGrid"></div>
+    <div class="charpick">
+      <div class="charpreview">
+        <canvas id="charPrevCv" width="200" height="200"></canvas>
+        <div class="cn" id="charPrevName"></div>
+        <div class="cd" id="charPrevDesc"></div>
+        <div class="cd" id="charPrevStat" style="color:var(--dim);margin-top:4px"></div>
+        <div class="cd" id="charPrevDex" style="margin-top:9px"></div>
+      </div>
+      <div class="grid" id="charGrid"></div>
+    </div>
     <div class="spacer"></div>
     <button class="btn" id="chStart" style="border-left-color:var(--beet);margin-top:16px">Into the patch</button>
   </div></div>
@@ -385,11 +401,14 @@ canvas.icon{display:block;width:34px;height:34px;margin-bottom:7px;image-renderi
 <script>
 (function(){
 "use strict";
-var VERSION="1.5.1";
+var VERSION="1.6.0";
 
 /* ═════════════ CHANGELOG (Beetdown's own — nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.5.1",d:"latest",items:[
+  {v:"1.6.0",d:"latest",items:[
+    "PICKING A ROOT NOW SHOWS IT PROPERLY. The character screen has a preview panel on the left — the root you have selected, drawn full size, with its description underneath and its bestiary record below that (which difficulty, if any, you have cleared while playing it specifically). The pick grid sits alongside it so you can flip through them and watch the preview update"
+  ]},
+  {v:"1.5.1",items:[
     "FIXED SIGN-IN. “Can't reach the account server” was real — the account index had been silently deleted by the free host it lives on (it enforces a strict 24-hour lifetime with no way to renew it, which nobody realised until it actually expired). A fresh index is in place and sign-in works again. Any account made before this fix is gone — sorry, there was no way to recover it. This backend is not durable long-term and needs a proper home"
   ]},
   {v:"1.5.0",items:[
@@ -3319,7 +3338,34 @@ $("bDex").onclick=function(){ sfx.click();
   renderDiffKey("dexKey"); renderDexRoots(); renderDexPests();
   show("s-dex"); };
 $("dexBack").onclick=function(){ sfx.click(); show("s-title"); };
-$("bSolo").onclick=function(){ sfx.click(); audioOn(); renderChars("charGrid"); renderDiffPicker("chDiffGrid"); show("s-char"); };
+var charPrevCtx=null, previewRootId="seed";
+function updateCharPreview(id){
+  var c=byId(CHARS,id); if(!c)return;
+  previewRootId=id;
+  $("charPrevName").textContent=c.n;
+  $("charPrevName").style.color=c.col;
+  $("charPrevDesc").textContent=c.d;
+  $("charPrevStat").textContent=c.hp+" hp \u00b7 "+byId(WEAPONS,c.weap).n;
+  var bi=bestDiffIdxFor(id);
+  $("charPrevDex").textContent=bi>=0?("Best \u00b7 "+DIFFS[bi].n+" cleared"):"Not cleared on this root yet";
+  $("charPrevDex").style.color=bi>=0?DIFFS[bi].col:"var(--dim)";
+}
+function drawCharPreview(t){
+  var cv=$("charPrevCv"); if(!cv)return;
+  if(!charPrevCtx)charPrevCtx=cv.getContext("2d");
+  var c=charPrevCtx;
+  c.clearRect(0,0,200,200);
+  c.save();
+  c.translate(100,116);
+  c.scale(6,6);
+  drawRoot(c,previewRootId,t,1,false);
+  c.restore();
+}
+$("bSolo").onclick=function(){ sfx.click(); audioOn();
+  renderChars("charGrid",function(id){ updateCharPreview(id); });
+  updateCharPreview(chosenChar);
+  renderDiffPicker("chDiffGrid"); show("s-char"); };
+
 $("chBack").onclick=function(){ sfx.click(); show("s-title"); };
 $("chStart").onclick=function(){ sfx.click(); runDiffIdx=curDiffIdx; beginRun(chosenChar); };
 $("bLog").onclick=function(){ sfx.click(); renderLog(); show("s-log"); };
@@ -3669,6 +3715,7 @@ function frameBody(now){
   var isPlay=(state==="play");
   if(isPlay!==stickWasPlay){ stickWasPlay=isPlay;
     $("stick").style.pointerEvents=isPlay?"auto":"none"; }
+  if($("s-char")&&$("s-char").className.indexOf("hide")<0)drawCharPreview(now/1000);
   if(!(dt>0))dt=0;                 // a backwards or NaN clock must never stall the loop
   if(dt>.25)dt=.25;
   acc+=dt;
@@ -3699,6 +3746,12 @@ window.__bd={
   getParty:function(){ return party; },
   getState:function(){ return state; },
   getShopOffer:function(){ return shopOffer; },
+  openCharSelect:function(){ $("bSolo").onclick(); },
+  pickPreview:function(id){ updateCharPreview(id); },
+  drawPreviewOnce:function(t){ drawCharPreview(t||0); },
+  previewInfo:function(){ return {rootId:previewRootId,
+    name:$("charPrevName").textContent, desc:$("charPrevDesc").textContent,
+    stat:$("charPrevStat").textContent, dex:$("charPrevDex").textContent}; },
   killByKind:function(kind){ var d=PESTS[kind];
     var f={id:9990+Math.random(),k:kind,n:d.n,x:0,y:0,hp:1,max:1,r:d.r,col:d.col,mat:d.mat,xp:d.xp,dead:false,boss:0};
     foes.push(f); killFoe(f,me); },
