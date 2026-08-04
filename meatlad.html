@@ -4771,40 +4771,45 @@ function rememberLocal(u,key,blobId){
     return markSharedSession(u,key,blobId); });
 }
 $("bSignUp").onclick=function(){
-  var u=normUser($("liUser").value),pw=$("liPass").value||"";
-  if(u.length<2){$("liErr").textContent="Pick a username with at least 2 characters.";return;}
-  if(pw.length<3){$("liErr").textContent="Pick a password with at least 3 characters.";return;}
+  var email=($("liUser").value||"").trim().toLowerCase(),pw=$("liPass").value||"";
+  if(!email||email.indexOf("@")<0){$("liErr").textContent="Enter a valid email.";return;}
+  if(pw.length<6){$("liErr").textContent="Password must be at least 6 characters.";return;}
   sfx.click();$("liErr").textContent="Creating account…";liBusy(true);
-  acctKey(u,pw).then(function(key){
-    return cloudGet(CLOUD_INDEX).then(function(idx){
-      if(!idx||!idx.accounts){ liBusy(false);$("liErr").textContent="Can't reach the account server. Check your connection.";return; }
-      if(idx.accounts[key]){ liBusy(false);$("liErr").textContent="That username and password is already taken. Try signing in.";return; }
-      if(!idx.names)idx.names={};
-      if(idx.names[u.toLowerCase()]){ liBusy(false);$("liErr").textContent="That username is taken. Pick another one.";return; }
-      resetSaveObj();curUser=u;save.name=u;acctFriends=[];
-      return cloudNew({n:u,save:save,ts:Date.now(),inbox:[],friends:[]}).then(function(bid){
-        if(!bid){ liBusy(false);$("liErr").textContent="Couldn't create the account. Try again.";return; }
-        idx.accounts[key]=bid;
-        idx.names[u.toLowerCase()]=bid;
-        return cloudPut(CLOUD_INDEX,idx).then(function(ok){
-          if(!ok){ liBusy(false);$("liErr").textContent="Couldn't finish creating the account. Try again.";return; }
-          cloudId=bid;
-          return rememberLocal(u,key,bid).then(function(){
-            return store.set(LASTKEY,u); }).then(function(){
-            liBusy(false);$("liErr").textContent="";
-            toast("Account made — works on any device");
-            return enterGame(); }); }); }); });
-  }).then(null,function(){ liBusy(false);$("liErr").textContent="Something went wrong creating the account."; });
+  if(!fbAuth){liBusy(false);$("liErr").textContent="Firebase not ready. Refresh the page.";return;}
+  fbAuth.createUserWithEmailAndPassword(email,pw).then(function(cred){
+    curUser=email;cloudId=cred.user.uid;
+    return fbDb.collection("accounts").doc(cloudId).set({email:email,friends:[],mlInbox:[],friends:[]},{merge:true});
+  }).then(function(){
+    liBusy(false);$("liErr").textContent="";
+    toast("Account created");
+    return enterGame();
+  }).catch(function(e){
+    liBusy(false);
+    var msg=e.code==="auth/email-already-in-use"?"Email already in use. Try signing in.":
+           e.code==="auth/weak-password"?"Password too weak. Use at least 6 characters.":"Couldn't create account.";
+    $("liErr").textContent=msg;
+  });
 };
 $("bSignIn").onclick=function(){
-  var u=normUser($("liUser").value),pw=$("liPass").value||"";
-  if(!u||!pw){$("liErr").textContent="Enter your username and password.";return;}
+  var email=($("liUser").value||"").trim().toLowerCase(),pw=$("liPass").value||"";
+  if(!email||!pw){$("liErr").textContent="Enter your email and password.";return;}
   sfx.click();$("liErr").textContent="Signing in…";liBusy(true);
-  acctKey(u,pw).then(function(key){
-    return cloudGet(CLOUD_INDEX).then(function(idx){
-      var bid=idx&&idx.accounts&&idx.accounts[key];
-      if(!bid){
-        // offline / server down: fall back to a local profile if we have one
+  if(!fbAuth){liBusy(false);$("liErr").textContent="Firebase not ready. Refresh the page.";return;}
+  fbAuth.signInWithEmailAndPassword(email,pw).then(function(cred){
+    curUser=email;cloudId=cred.user.uid;
+    return fbDb.collection("accounts").doc(cloudId).get();
+  }).then(function(snap){
+    if(snap.exists()){
+      var doc=snap.data();
+      if(doc.mlSave){save=doc.mlSave;}
+    }
+    liBusy(false);$("liErr").textContent="";
+    return enterGame();
+  }).catch(function(e){
+    liBusy(false);
+    var msg=e.code==="auth/user-not-found"?"No account with that email.":
+           e.code==="auth/wrong-password"?"Wrong password.":"Couldn't sign in.";
+    $("liErr").textContent=msg;
         return getProfiles().then(function(p){
           var lp=p[u.toLowerCase()];
           if(lp&&lp.k===key){ curUser=lp.u;cloudId=lp.b||null;
