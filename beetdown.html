@@ -443,11 +443,14 @@ body.pc-mode #stick{display:none}
 <script>
 (function(){
 "use strict";
-var VERSION="1.8.0";
+var VERSION="1.9.0";
 
 /* ═════════════ CHANGELOG (Beetdown's own - nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.8.0",d:"latest",items:[
+  {v:"1.9.0",d:"latest",items:[
+    "ORIGINAL MUSIC. A relaxed garden theme plays on the menus, and a combat theme kicks in during a run that gets more intense the harder the difficulty - more layers, faster tempo, busier drums the deeper into Rotten Harvest territory you go. All written from scratch with the Web Audio API, no samples"
+  ]},
+  {v:"1.8.0",items:[
     "NEW UI, MORE MOBILE FRIENDLY. Fixed double-tap accidentally zooming or selecting text, and dragging on menus no longer triggers the browser's pinch-zoom - both were mobile browser default behaviours that had never been switched off",
     "PC OR MOBILE - pick on the main game-select page (or change it anytime from the button there). Mobile keeps the on-screen joystick, PC hides it since keyboard controls already work",
     "SPAWN WARNING MARKS. Pests now show a shrinking ring where they're about to appear a beat before they do, so incoming waves feel readable instead of things just popping in on top of you",
@@ -654,6 +657,96 @@ var sfx={
   dead:function(){ tone(300,50,.7,"sawtooth",.1); },
   click:function(){ tone(560,700,.03,"square",.028); }
 };
+
+/* ═════════════ MUSIC ═════════════
+   Original procedural score (Web Audio, no samples). A relaxed garden
+   theme on the menus, and a combat theme whose tempo and layer count
+   scale up with the chosen difficulty tier. */
+var mMaster=null,mPlaying=false,mSchedT=null,mNextT=0,mBeat16=0,mMode="menu",mIntensity=0;
+var M_NOTE={C3:130.81,D3:146.83,E3:164.81,F3:174.61,G3:196,A3:220,Bb3:233.08,
+  C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392,A4:440,Bb4:466.16,
+  C5:523.25,D5:587.33,E5:659.25,F5:698.46,G5:783.99,A2:110,D2:73.42,F2:87.31,G2:98,Bb2:116.54};
+var M_MENU=[
+  {bass:"C3",pad:["C4","E4","G4"]},{bass:"F2",pad:["F3","A3","C4"]},
+  {bass:"A2",pad:["A3","C4","E4"]},{bass:"G2",pad:["G3","B4","D4"]}
+];
+var M_COMBAT=[
+  {bass:"D2",pad:["D3","F3","A3"],arp:["D4","F4","A4","D5"]},
+  {bass:"Bb2",pad:["Bb3","D4","F4"],arp:["Bb3","D4","F4","Bb4"]},
+  {bass:"F2",pad:["F3","A3","C4"],arp:["F3","A3","C4","F4"]},
+  {bass:"A2",pad:["A3","C4","E4"],arp:["A3","C4","E4","A4"]}
+];
+function mEnsure(){ audioOn(); if(!mMaster&&actx){ mMaster=actx.createGain(); mMaster.gain.value=.16; mMaster.connect(actx.destination); } }
+function mNote(type,freq,t,dur,peak,attack,fType,fFreq){
+  if(!actx)return;
+  var o=actx.createOscillator(); o.type=type; o.frequency.value=freq;
+  var g=actx.createGain(); g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(peak,t+(attack||.01));
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  var last=o;
+  if(fType){ var f=actx.createBiquadFilter(); f.type=fType; f.frequency.value=fFreq||1200; o.connect(f); last=f; }
+  last.connect(g); g.connect(mMaster); o.start(t); o.stop(t+dur+.05);
+}
+function mDrum(t,peak){
+  if(!actx)return;
+  var o=actx.createOscillator(), g=actx.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+.1);
+  g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.001,t+.24);
+  o.connect(g); g.connect(mMaster); o.start(t); o.stop(t+.26);
+}
+function mHat(t,peak){
+  if(!actx)return;
+  var bufSize=actx.sampleRate*.04, buf=actx.createBuffer(1,bufSize,actx.sampleRate);
+  var d=buf.getChannelData(0); for(var i=0;i<bufSize;i++)d[i]=Math.random()*2-1;
+  var src=actx.createBufferSource(); src.buffer=buf;
+  var f=actx.createBiquadFilter(); f.type="highpass"; f.frequency.value=8500;
+  var g=actx.createGain(); g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.0001,t+.04);
+  src.connect(f); f.connect(g); g.connect(mMaster); src.start(t); src.stop(t+.05);
+}
+function mBPMFor(){ return mMode==="menu"?96:(118+mIntensity*8); }
+function mStep(){
+  var bpm=mBPMFor(), sec16=(60/bpm)/4, beatIn16=mBeat16%16, bar=Math.floor(mBeat16/16);
+  if(mMode==="menu"){
+    var chord=M_MENU[bar%4];
+    if(beatIn16===0)mNote("sine",M_NOTE[chord.bass],mNextT,1.8,.14,.05,"lowpass",500);
+    if(beatIn16===0)chord.pad.forEach(function(n){ mNote("triangle",M_NOTE[n],mNextT,2.4,.045,.6,"lowpass",1200); });
+    if(beatIn16%4===2)mNote("triangle",M_NOTE[chord.pad[bar%chord.pad.length]],mNextT,.4,.05,.01,"lowpass",1800);
+  } else {
+    var cc=M_COMBAT[bar%4];
+    // kick every beat, busier at higher intensity
+    if(beatIn16%4===0)mDrum(mNextT,.85);
+    if(mIntensity>=3&&beatIn16%4===2)mDrum(mNextT,.4);
+    // hats scale in with intensity
+    if(mIntensity>=1&&beatIn16%2===0)mHat(mNextT,.18);
+    if(mIntensity>=4&&beatIn16%1===0)mHat(mNextT,.08);
+    // bass every half bar
+    if(beatIn16===0||beatIn16===8)mNote("sawtooth",M_NOTE[cc.bass],mNextT,.45,.24,.01,"lowpass",340);
+    // pad swell
+    if(beatIn16===0)cc.pad.forEach(function(n){ mNote("sawtooth",M_NOTE[n],mNextT,1.7,.035,.3,"lowpass",900); });
+    // arp unlocks at intensity>=2
+    if(mIntensity>=2){
+      var ai=Math.floor(beatIn16/2)%cc.arp.length;
+      if(beatIn16%2===0)mNote("square",M_NOTE[cc.arp[ai]],mNextT,.2,.055,.005,"lowpass",2200);
+    }
+  }
+  mBeat16++; mNextT+=sec16;
+}
+function mScheduler(){
+  while(actx&&mNextT<actx.currentTime+.15)mStep();
+  mSchedT=setTimeout(mScheduler,25);
+}
+function mPlay(mode,intensity){
+  mEnsure(); if(!actx)return;
+  mMode=mode; mIntensity=intensity||0;
+  if(mPlaying)return;
+  mPlaying=true; mBeat16=0; mNextT=actx.currentTime+.08;
+  mScheduler();
+}
+function mSetMode(mode,intensity){
+  mMode=mode; mIntensity=intensity||0;
+  if(!mPlaying)mPlay(mode,intensity);
+}
+function mStop(){ mPlaying=false; if(mSchedT)clearTimeout(mSchedT); }
 
 /* ═════════════ SAVE ═════════════ */
 var SKEY="beetdown-save-v1";
@@ -1608,11 +1701,13 @@ function beginRun(charId){
   mates={};
   show(null); $("hud").classList.remove("hide"); $("pauseBtn").classList.remove("hide");
   audioOn(); resize();
+  mSetMode("combat",runDiffIdx);
   bakeArena(((Math.random()*1e9)|0)||7);   // a freshly dug plot every run
   startWave(1);
 }
 function endRun(won){
   state="over"; overT=0;
+  mSetMode("menu",0);
   save.runs++; save.kills+=runKills; save.mats+=runMats;
   if(wave>save.best)save.best=wave;
   if(won)save.wins++;
@@ -1649,6 +1744,7 @@ function quitToMenu(){
   state="menu"; me=null; mates={}; foes.length=0; shots.length=0; drops.length=0; spawnQueue.length=0;
   hideOvl(); $("hud").classList.add("hide"); $("pauseBtn").classList.add("hide");
   if(party.on)party.leave();
+  mSetMode("menu",0);
   show("s-title");
 }
 
@@ -3815,6 +3911,10 @@ requestAnimationFrame(frame);
 tryAutoSignIn().then(function(ok){
   if(ok){ save.name=save.name||curUser; registerName(); startInbox(); renderParty(); }
 });
+(function(){
+  var startMusic=function(){ mPlay("menu",0); document.removeEventListener("pointerdown",startMusic); };
+  document.addEventListener("pointerdown",startMusic);
+})();
 
 window.drawRoot=drawRoot; window.drawPest=drawPest; window.iconFor=iconFor; window.drawWeaponIcon=drawWeaponIcon;
 window.__bd={

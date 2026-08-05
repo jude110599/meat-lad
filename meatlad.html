@@ -645,9 +645,12 @@ try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=fir
 (function(){
 "use strict";
 
-var VERSION="3.1.0";
+var VERSION="3.2.0";
 var CHANGELOG=[
-  {v:"3.1.0",d:"latest",items:[
+  {v:"3.2.0",d:"latest",items:[
+    "ORIGINAL MUSIC. Separate menu, World 1 and World 2 themes now play automatically as you move between them - a lighter menu theme, driving industrial percussion in the Meat Works, and darker, more dissonant tones in the Rot. All written from scratch with the Web Audio API, no samples"
+  ]},
+  {v:"3.1.0",items:[
     "NEW UI, MORE MOBILE FRIENDLY. Fixed double-tap accidentally zooming or selecting text, and dragging on menus no longer triggers the browser's pinch-zoom - both were mobile browser default behaviours that had never been switched off",
     "PC OR MOBILE - pick on the main game-select page (or change it anytime from the button there). This overrides the automatic touch-vs-mouse detection for anyone it was guessing wrong for, like touchscreen laptops"
   ]},
@@ -1259,6 +1262,99 @@ var sfx={
   snap:function(){tone(120,70,.09,"sawtooth",.04);}
 };
 
+/* ═════════════ MUSIC ═════════════
+   Original procedural score (Web Audio, no samples). Separate menu,
+   World 1 (The Meat Works - driving industrial) and World 2 (The Rot -
+   darker, dissonant) themes, switched automatically as you play. */
+var mMaster=null,mPlaying=false,mSchedT=null,mNextT=0,mBeat16=0,mMode="menu";
+var M_NOTE={C2:65.41,D2:73.42,Eb2:77.78,F2:87.31,G2:98,Ab2:103.83,Bb2:116.54,
+  C3:130.81,D3:146.83,Eb3:155.56,F3:174.61,G3:196,Ab3:207.65,Bb3:233.08,
+  C4:261.63,D4:293.66,Eb4:311.13,F4:349.23,G4:392,Ab4:415.3,Bb4:466.16,
+  C5:523.25,Eb5:622.25,F5:698.46,G5:783.99};
+var M_MENU=[
+  {bass:"C3",pad:["C4","Eb4","G4"]},{bass:"Ab2",pad:["Ab3","C4","Eb4"]},
+  {bass:"F2",pad:["F3","Ab3","C4"]},{bass:"G2",pad:["G3","Bb3","D3"]}
+];
+var M_W1=[
+  {bass:"C2",pad:["C3","Eb3","G3"],arp:["C4","Eb4","G4","C5"]},
+  {bass:"F2",pad:["F3","Ab3","C4"],arp:["F3","Ab3","C4","F4"]},
+  {bass:"Ab2",pad:["Ab3","C4","Eb4"],arp:["Ab3","C4","Eb4","Ab4"]},
+  {bass:"Bb2",pad:["Bb3","D3","F3"],arp:["Bb3","D3","F3","Bb4"]}
+];
+var M_W2=[
+  {bass:"D2",pad:["D3","F2","Ab3"],arp:["D3","F2","Ab3","D4"]},
+  {bass:"Eb2",pad:["Eb3","G3","Bb3"],arp:["Eb3","G3","Bb3","Eb4"]},
+  {bass:"C2",pad:["C3","Eb3","G3"],arp:["C3","Eb3","G3","C4"]},
+  {bass:"G2",pad:["G3","Bb3","D3"],arp:["G3","Bb3","D3","G4"]}
+];
+function mEnsure(){ audioOn(); if(!mMaster&&AC){ mMaster=AC.createGain(); mMaster.gain.value=.15; mMaster.connect(AC.destination); } }
+function mNote(type,freq,t,dur,peak,attack,fType,fFreq){
+  if(!AC)return;
+  var o=AC.createOscillator(); o.type=type; o.frequency.value=freq;
+  var g=AC.createGain(); g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(peak,t+(attack||.01));
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  var last=o;
+  if(fType){ var f=AC.createBiquadFilter(); f.type=fType; f.frequency.value=fFreq||1200; o.connect(f); last=f; }
+  last.connect(g); g.connect(mMaster); o.start(t); o.stop(t+dur+.05);
+}
+function mThump(t,peak,freq){
+  if(!AC)return;
+  var o=AC.createOscillator(), g=AC.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(freq||140,t); o.frequency.exponentialRampToValueAtTime(40,t+.1);
+  g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.001,t+.24);
+  o.connect(g); g.connect(mMaster); o.start(t); o.stop(t+.26);
+}
+function mMHat(t,peak,fFreq){
+  if(!AC)return;
+  var bufSize=AC.sampleRate*.04, buf=AC.createBuffer(1,bufSize,AC.sampleRate);
+  var d=buf.getChannelData(0); for(var i=0;i<bufSize;i++)d[i]=Math.random()*2-1;
+  var src=AC.createBufferSource(); src.buffer=buf;
+  var f=AC.createBiquadFilter(); f.type="highpass"; f.frequency.value=fFreq||8000;
+  var g=AC.createGain(); g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.0001,t+.04);
+  src.connect(f); f.connect(g); g.connect(mMaster); src.start(t); src.stop(t+.05);
+}
+function mBPMFor(){ return mMode==="menu"?100:(mMode==="world2"?128:120); }
+function mStep(){
+  var bpm=mBPMFor(), sec16=(60/bpm)/4, beatIn16=mBeat16%16, bar=Math.floor(mBeat16/16);
+  if(mMode==="menu"){
+    var chord=M_MENU[bar%4];
+    if(beatIn16===0)mNote("sine",M_NOTE[chord.bass],mNextT,1.8,.13,.05,"lowpass",480);
+    if(beatIn16===0)chord.pad.forEach(function(n){ mNote("triangle",M_NOTE[n],mNextT,2.3,.04,.6,"lowpass",1100); });
+    if(beatIn16%4===2)mNote("triangle",M_NOTE[chord.pad[bar%chord.pad.length]],mNextT,.4,.045,.01,"lowpass",1700);
+  } else {
+    var isW2=mMode==="world2", prog=isW2?M_W2:M_W1, cc=prog[bar%4];
+    // industrial thump every beat; world2 adds an offbeat ghost note for unease
+    if(beatIn16%4===0)mThump(mNextT,.8,isW2?110:150);
+    if(isW2&&beatIn16%8===6)mThump(mNextT,.3,80);
+    // hats: steady 8ths in world1, sparser/irregular in world2
+    if(!isW2&&beatIn16%2===0)mMHat(mNextT,.16,8500);
+    if(isW2&&(beatIn16===3||beatIn16===11||beatIn16===14))mMHat(mNextT,.2,6000);
+    // bass
+    if(beatIn16===0||beatIn16===8)
+      mNote(isW2?"sawtooth":"square",M_NOTE[cc.bass],mNextT,.45,isW2?.22:.2,.01,"lowpass",isW2?260:360);
+    // pad
+    if(beatIn16===0)cc.pad.forEach(function(n){ mNote("sawtooth",M_NOTE[n],mNextT,1.7,isW2?.04:.032,.3,"lowpass",isW2?650:900); });
+    // arp: driving in world1, sparse dissonant plucks in world2
+    var ai=Math.floor(beatIn16/2)%cc.arp.length;
+    if(!isW2&&beatIn16%2===0)mNote("square",M_NOTE[cc.arp[ai]],mNextT,.2,.05,.005,"lowpass",2000);
+    if(isW2&&beatIn16%4===2)mNote("triangle",M_NOTE[cc.arp[ai]],mNextT,.6,.045,.02,"lowpass",1400);
+  }
+  mBeat16++; mNextT+=sec16;
+}
+function mScheduler(){
+  while(AC&&mNextT<AC.currentTime+.15)mStep();
+  mSchedT=setTimeout(mScheduler,25);
+}
+function mPlay(mode){
+  mEnsure(); if(!AC)return;
+  mMode=mode;
+  if(mPlaying)return;
+  mPlaying=true; mBeat16=0; mNextT=AC.currentTime+.08;
+  mScheduler();
+}
+function mSetMode(mode){ mMode=mode; if(!mPlaying)mPlay(mode); }
+
 /* ═════════════ CANVAS ═════════════ */
 var cvs=$("game"),ctx=cvs.getContext("2d");
 var W=0,H=0,DPR=1,SAT=0,SAB=0,hudH=46,scale=1,ox=0,oy=0,ctrlH=0;
@@ -1332,6 +1428,7 @@ function remoteP(){ return online&&(mode==="coop"||mode==="casual"||mode==="bomb
 function remotePeerId(){ for(var id in party.ghosts)return id; return null; }
 function loadLevel(i){
   level=i;var L=curLevels()[i],sp=L.sawSpeed||1;
+  mSetMode(worldOf(i)===1?"world2":"world1");
   ROWS=L.map.length;COLS=L.map[0].length;
   grid=[];spikes=[];saws=[];crumbs=[];lasers=[];coins=[];boss=null;
   goal={x:-9999,y:-9999};   // arenas with no exit (bomb maps) keep it out of reach
@@ -3458,6 +3555,7 @@ function quitToMenu(){
   if(edTesting){ edTesting=false;applyLevelEdits(); }
   if(party.on){ party.leave();toast("Left the party"); }
   online=false;
+  mSetMode("menu");
   state="menu";$("hud").classList.add("hide");show("s-title");renderChips(); }
 function togglePause(){
   if(state==="play"||state==="dead"){ state="pause";show("s-pause");
@@ -4867,6 +4965,10 @@ tryAutoSignIn().then(function(loggedIn){
   return enterGame();
 }).then(function(){ requestAnimationFrame(frame); },
         function(){ requestAnimationFrame(frame); });
+(function(){
+  var startMusic=function(){ mPlay("menu"); document.removeEventListener("pointerdown",startMusic); };
+  document.addEventListener("pointerdown",startMusic);
+})();
 })();
 </script>
 </body>
