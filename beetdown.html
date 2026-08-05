@@ -621,7 +621,8 @@ function toast(msg){
 /* ═════════════ SOUND ═════════════ */
 var actx=null,muted=false;
 function audioOn(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
-  if(actx&&actx.state==="suspended")actx.resume(); }
+  if(actx&&actx.state==="suspended")actx.resume();
+  if(!mPlaying)mPlay("menu",0); }
 function tone(f,f2,dur,type,vol){
   if(!actx||muted)return;
   try{
@@ -713,21 +714,19 @@ function mStep(){
     if(beatIn16%4===2)mNote("triangle",M_NOTE[chord.pad[bar%chord.pad.length]],mNextT,.4,.05,.01,"lowpass",1800);
   } else {
     var cc=M_COMBAT[bar%4];
-    // kick every beat, busier at higher intensity
-    if(beatIn16%4===0)mDrum(mNextT,.85);
-    if(mIntensity>=3&&beatIn16%4===2)mDrum(mNextT,.4);
-    // hats scale in with intensity
-    if(mIntensity>=1&&beatIn16%2===0)mHat(mNextT,.18);
-    if(mIntensity>=4&&beatIn16%1===0)mHat(mNextT,.08);
-    // bass every half bar
-    if(beatIn16===0||beatIn16===8)mNote("sawtooth",M_NOTE[cc.bass],mNextT,.45,.24,.01,"lowpass",340);
+    // kick every beat, always present, extra hit at higher intensity
+    if(beatIn16%4===0)mDrum(mNextT,1);
+    if(mIntensity>=3&&beatIn16%4===2)mDrum(mNextT,.5);
+    // hats always present, get louder/busier with intensity
+    if(beatIn16%2===0)mHat(mNextT,.14+mIntensity*.05);
+    if(mIntensity>=3&&beatIn16%1===0)mHat(mNextT,.08);
+    // bass every half bar, always present
+    if(beatIn16===0||beatIn16===8)mNote("sawtooth",M_NOTE[cc.bass],mNextT,.45,.32,.01,"lowpass",380);
     // pad swell
-    if(beatIn16===0)cc.pad.forEach(function(n){ mNote("sawtooth",M_NOTE[n],mNextT,1.7,.035,.3,"lowpass",900); });
-    // arp unlocks at intensity>=2
-    if(mIntensity>=2){
-      var ai=Math.floor(beatIn16/2)%cc.arp.length;
-      if(beatIn16%2===0)mNote("square",M_NOTE[cc.arp[ai]],mNextT,.2,.055,.005,"lowpass",2200);
-    }
+    if(beatIn16===0)cc.pad.forEach(function(n){ mNote("sawtooth",M_NOTE[n],mNextT,1.7,.045,.3,"lowpass",950); });
+    // arp always present, gets denser at higher intensity
+    var ai=Math.floor(beatIn16/2)%cc.arp.length;
+    if(beatIn16%2===0)mNote("square",M_NOTE[cc.arp[ai]],mNextT,.2,.07+mIntensity*.012,.005,"lowpass",2200);
   }
   mBeat16++; mNextT+=sec16;
 }
@@ -744,6 +743,7 @@ function mPlay(mode,intensity){
 }
 function mSetMode(mode,intensity){
   mMode=mode; mIntensity=intensity||0;
+  if(mMaster&&actx)mMaster.gain.setTargetAtTime(mode==="menu"?.16:.26,actx.currentTime,.6);
   if(!mPlaying)mPlay(mode,intensity);
 }
 function mStop(){ mPlaying=false; if(mSchedT)clearTimeout(mSchedT); }
