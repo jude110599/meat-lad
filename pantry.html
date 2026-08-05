@@ -142,13 +142,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   background:rgba(20,15,10,.93);border-left:1px solid var(--line);
   padding:calc(56px + env(safe-area-inset-top,0px)) 8px 10px;overflow-y:auto}
 #shop.hide{display:none}
-#shopTabs{display:flex;gap:3px;margin-bottom:8px}
 .stab{flex:1;background:var(--bg2);border:1px solid var(--line);color:var(--dim);
   border-radius:6px;padding:9px 2px;font:inherit;font-size:9.5px;font-weight:800;
   letter-spacing:.04em;text-transform:uppercase;cursor:pointer;min-height:44px}
 .stab.sel{background:var(--bg4);color:var(--txt);border-color:var(--honey)}
-.tcard{display:flex;gap:8px;align-items:center;background:var(--bg2);
-  border:1px solid var(--line);border-left:3px solid var(--bg4);border-radius:5px;
+.tcard{display:flex;gap:8px;align-items:center;background:var(--tc-bg,var(--bg2));
+  border:1px solid var(--line);border-left:3px solid var(--tc-col,var(--bg4));border-radius:5px;
   padding:7px;margin-bottom:6px;cursor:pointer;transition:background .12s,transform .12s}
 .tcard:hover{background:var(--bg3);transform:translateX(-2px)}
 .tcard.poor{opacity:.42;cursor:default;transform:none}
@@ -156,6 +155,9 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .tcard canvas{width:36px;height:36px;flex:none}
 .tcard .tn{font-size:11.5px;font-weight:800;line-height:1.2}
 .tcard .tp{font-size:11px;color:var(--gold);font-weight:800;margin-top:2px}
+.shopgrp{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  margin:10px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--line)}
+.shopgrp:first-child{margin-top:0}
 
 /* shop hub (title screen) - cosmetics bought with Crumbs */
 #shopTabs2{display:flex;gap:5px;margin-top:12px}
@@ -353,12 +355,6 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   </div>
 
   <div id="shop" class="hide">
-    <div id="shopTabs">
-      <button class="stab sel" data-cat="primary">Prim</button>
-      <button class="stab" data-cat="military">Mil</button>
-      <button class="stab" data-cat="magic">Magic</button>
-      <button class="stab" data-cat="support">Supp</button>
-    </div>
     <div id="shopList"></div>
   </div>
 
@@ -605,9 +601,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.12.0";
+var VERSION="1.13.0";
 var CHANGELOG=[
-  {v:"1.12.0",d:"latest",items:[
+  {v:"1.13.0",d:"latest",items:[
+    "THE SHOP IS ONE LIST NOW instead of four separate category tabs - every tower's right there as you scroll, grouped and headed by category, each card tinted with its group's colour so you can still tell Everyday Tools from Cooking Magic at a glance without having to click between tabs first"
+  ]},
+  {v:"1.12.0",items:[
     "THE ALMANAC IS SORTED BY GROUP NOW, with a header between each one, instead of towers appearing in a random-looking order that didn't match their category colours",
     "AUTO-START NEXT WAVE. A toggle in the pause menu - turn it on and the next round begins the moment the last one clears, no need to tap GO every time"
   ]},
@@ -2665,21 +2664,25 @@ $("heroBoxBuy").onclick=function(){
     if(def.skills[i].l===hero.lvl)toast(def.skills[i].n+" unlocked");
   renderHeroPanel(); updateHud();
 };
-var shopCat="primary";
 function renderShop(){
   var list=$("shopList"); list.innerHTML="";
-  TOWERS.forEach(function(T){
-    if(T.cat!==shopCat)return;
+  var sortedTowers=TOWERS.slice().sort(function(a,b){ return CATS.indexOf(a.cat)-CATS.indexOf(b.cat); });
+  var lastCat=null;
+  sortedTowers.forEach(function(T){
+    var tc=TOWER_CATS[T.cat];
+    if(T.cat!==lastCat){
+      lastCat=T.cat;
+      var head=document.createElement("div"); head.className="shopgrp";
+      head.style.color=tc.col; head.textContent=tc.n; list.appendChild(head);
+    }
     var cost=towerCost(T);
     var d=document.createElement("div");
     d.className="tcard"+(cash<cost?" poor":"")+(buyId===T.id?" sel":"");
     d.setAttribute("data-tid",T.id);
+    d.style.setProperty("--tc-bg",tc.bg); d.style.setProperty("--tc-col",tc.col);
     d.appendChild(iconFor("t",T.id,36));
     var wrap=document.createElement("div"); wrap.className="tcinfo";
-    var tc=TOWER_CATS[T.cat];
-    wrap.innerHTML='<div class="tn"><span style="display:inline-block;width:7px;height:7px;'+
-      'border-radius:50%;background:'+tc.col+';margin-right:5px;vertical-align:middle"></span>'+
-      T.n+'</div><div class="tp">$'+cost+'</div>';
+    wrap.innerHTML='<div class="tn">'+T.n+'</div><div class="tp">$'+cost+'</div>';
     d.appendChild(wrap);
     d.onclick=function(){
       if(cash<towerCost(T)){ toast("Not enough"); return; }
@@ -2914,17 +2917,6 @@ $("bResume").onclick=function(){ sfx.click(); state="play"; hideOvl(); };
 $("bQuit").onclick=function(){ sfx.click(); quitToTitle(); };
 $("bAgain").onclick=function(){ sfx.click(); startRun(curMap,curDiff,chosenHero); };
 $("bMenu").onclick=function(){ sfx.click(); quitToTitle(); };
-
-var stabs=document.querySelectorAll(".stab");
-for(var si=0;si<stabs.length;si++)(function(tb){
-  tb.onclick=function(){
-    sfx.click();
-    for(var q=0;q<stabs.length;q++)stabs[q].classList.remove("sel");
-    tb.classList.add("sel");
-    shopCat=tb.getAttribute("data-cat");
-    renderShop();
-  };
-})(stabs[si]);
 
 /* ═════════════ MENUS ═════════════ */
 function renderDiffGrid(gridId,onPick){
