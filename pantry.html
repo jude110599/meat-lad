@@ -531,9 +531,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.6.0";
+var VERSION="1.7.0";
 var CHANGELOG=[
-  {v:"1.6.0",d:"latest",items:[
+  {v:"1.7.0",d:"latest",items:[
+    "TOWERS AND BUGS ARE COLOUR-CODED BY GROUP NOW. The Almanac gives every tower and bug its own themed card background (Everyday Tools, Heavy Kitchenware, Cooking Magic, Pantry Support for towers - each bug gets one built from its own colour) instead of a flat grey box, and the in-run shop marks each tower's category with a coloured dot next to its name",
+    "FIXED THE ALMANAC'S ICONS BEING COMPLETELY BLANK. They were being wiped by a DOM re-render right after being drawn - a real, previously-invisible bug, not just a visual polish item"
+  ]},
+  {v:"1.6.0",items:[
     "A REAL HERO MENU. Tap your hero's level pill in the top HUD any time mid-run to open a full panel - portrait on a colour-coded background for their group, XP bar to the next level, and every ability listed with the level it unlocks at",
     "SPEND CASH TO INSTANTLY LEVEL UP YOUR HERO. Right from that same panel - costs scale up with level so it's a real choice against buying towers, not a free ride, but early levels are cheap enough to be worth grabbing"
   ]},
@@ -544,6 +548,10 @@ var CHANGELOG=[
   {v:"1.4.0",items:[
     "EVERY LARDER NOW HAS ITS OWN LOOK. Map thumbnails and the in-run board itself pull a real colour theme per map (dark pantry, red spice rack, blue-white freezer, green garden, gold grand hall...) instead of every map reusing the same flat brown background - each one also gets little scattered deco icons (loaves, chillies, snowflakes, jars...) and a tier badge so the select screen actually shows what map you're looking at",
     "BUGS ARE DISTINGUISHABLE BY SHAPE NOW, not just colour. Ants are slim, roaches are wide and flat with long antennae, beetles and weevils have a shell seam and shine, weevils get a pointed snout, hornets get banded stripes, moths get bigger patterned wings - so you can tell what's coming at a glance instead of squinting at colour"
+  ]},
+  {v:"1.3.0",items:[
+    "THREE UPGRADE PATHS ON EVERY TOWER, all fifteen of them, matching the real BTD6 rule: you can only put points into two of the three, and once one path passes tier 2 the others are capped there. Forces a real build decision instead of just maxing both paths",
+    "FIXED A REAL UI SYNC BUG. The shop and the open upgrade panel only refreshed on specific clicks, so if your cash grew from kills while you were browsing, the affordability and prices you saw went stale until you closed and reopened - now they refresh live, several times a second, without you touching anything"
   ]},
   {v:"1.2.1",items:[
     "FIXED CRUMBS ONLY PAYING OUT ON A WIN. They're supposed to be earned just for finishing a round, whether you win or lose - a loss was quietly paying zero"
@@ -1117,6 +1125,13 @@ var TOWERS=[
      {n:"Definitive Edition",c:7200,d:"+2 damage, 8% faster everywhere",f:function(s){s.buffDmg+=2;s.buffCd*=.92;}}]}},
 ];
 var CATS=["primary","military","magic","support"];
+var TOWER_CATS={
+  primary:  {n:"Everyday Tools",    col:"#d8b46a", bg:"linear-gradient(160deg,#3a2c14,#1c1508)"},
+  military: {n:"Heavy Kitchenware", col:"#9aa4ad", bg:"linear-gradient(160deg,#242a30,#12161a)"},
+  magic:    {n:"Cooking Magic",     col:"#e8703a", bg:"linear-gradient(160deg,#3a1f10,#1e0f08)"},
+  support:  {n:"Pantry Support",    col:"#7a9c5e", bg:"linear-gradient(160deg,#1e2a18,#0f150c)"}
+};
+function bugCardBg(col){ return "linear-gradient(160deg,"+shade(col,-135)+","+shade(col,-168)+")"; }
 
 /* ═════════════ DATA: HEROES ═════════════ */
 var HERO_GROUPS={
@@ -2508,7 +2523,10 @@ function renderShop(){
     d.setAttribute("data-tid",T.id);
     d.appendChild(iconFor("t",T.id,36));
     var wrap=document.createElement("div"); wrap.className="tcinfo";
-    wrap.innerHTML='<div class="tn">'+T.n+'</div><div class="tp">$'+cost+'</div>';
+    var tc=TOWER_CATS[T.cat];
+    wrap.innerHTML='<div class="tn"><span style="display:inline-block;width:7px;height:7px;'+
+      'border-radius:50%;background:'+tc.col+';margin-right:5px;vertical-align:middle"></span>'+
+      T.n+'</div><div class="tp">$'+cost+'</div>';
     d.appendChild(wrap);
     d.onclick=function(){
       if(cash<towerCost(T)){ toast("Not enough"); return; }
@@ -2879,20 +2897,28 @@ function renderShop2(){
 function renderDex(){
   var tg=$("dexTowers"); tg.innerHTML="";
   TOWERS.forEach(function(T){
-    var d=document.createElement("div"); d.className="card"; d.style.cursor="default";
+    var tc=TOWER_CATS[T.cat];
+    var d=document.createElement("div"); d.className="card themed"; d.style.cursor="default";
+    d.style.background=tc.bg; d.style.borderLeftColor=tc.col;
     d.appendChild(iconFor("t",T.id,42));
-    d.innerHTML+='<div class="cn">'+T.n+'</div><div class="cd">'+T.d+'</div>'+
+    var info=document.createElement("div");
+    info.innerHTML='<div class="cn">'+T.n+'</div><div class="cd">'+T.d+'</div>'+
+      '<div class="cd" style="color:'+tc.col+';font-weight:800;margin-top:2px">'+tc.n+'</div>'+
       '<div class="cp">$'+towerCost(T)+'</div>';
+    d.appendChild(info);
     tg.appendChild(d);
   });
   var bg2=$("dexBugs"); bg2.innerHTML="";
   BUG_ORDER.forEach(function(k){
     var B=BUGS[k];
-    var d=document.createElement("div"); d.className="card"; d.style.cursor="default";
+    var d=document.createElement("div"); d.className="card themed"; d.style.cursor="default";
+    d.style.background=bugCardBg(B.col); d.style.borderLeftColor=B.col;
     d.appendChild(iconFor("b",k,42));
-    d.innerHTML+='<div class="cn">'+B.n+'</div>'+
+    var info=document.createElement("div");
+    info.innerHTML='<div class="cn">'+B.n+'</div>'+
       '<div class="cd">'+B.hp+' hp · '+(B.fly?"flies":"walks")+(B.arm?" · armoured":"")+'</div>'+
       '<div class="cd" style="margin-top:4px">'+(B.child?("bursts into "+(B.count||2)+" "+BUGS[B.child].n):"pops clean")+'</div>';
+    d.appendChild(info);
     bg2.appendChild(d);
   });
 }
