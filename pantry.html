@@ -495,9 +495,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.4.0";
+var VERSION="1.5.0";
 var CHANGELOG=[
-  {v:"1.4.0",d:"latest",items:[
+  {v:"1.5.0",d:"latest",items:[
+    "ECONOMY REBALANCED. Early kills used to pay almost nothing next to the automatic round bonus (a wave-1 ant was worth $1) so fighting barely mattered until wave 10+ - every bug's cash reward is up so popping things actually feels worth it from the first wave",
+    "HARD MODE NOW ACTUALLY PAYS MORE. Difficulty had a reward multiplier that only applied to Preserve Jars between runs - Hard enemies have 2.3x the health but you earned the exact same cash as Easy the whole run. Hard and Medium now earn real in-run cash bonuses (+35% and +15%) to compensate for the tougher fight"
+  ]},
+  {v:"1.4.0",items:[
     "EVERY LARDER NOW HAS ITS OWN LOOK. Map thumbnails and the in-run board itself pull a real colour theme per map (dark pantry, red spice rack, blue-white freezer, green garden, gold grand hall...) instead of every map reusing the same flat brown background - each one also gets little scattered deco icons (loaves, chillies, snowflakes, jars...) and a tier badge so the select screen actually shows what map you're looking at",
     "BUGS ARE DISTINGUISHABLE BY SHAPE NOW, not just colour. Ants are slim, roaches are wide and flat with long antennae, beetles and weevils have a shell seam and shine, weevils get a pointed snout, hornets get banded stripes, moths get bigger patterned wings - so you can tell what's coming at a glance instead of squinting at colour"
   ]},
@@ -763,9 +767,9 @@ function queueSave(){
 
 /* ═════════════ DATA: DIFFICULTIES ═════════════ */
 var DIFFS=[
-  {id:"easy",  n:"Easy",   hp:1.0, spd:1.0,  cash:900, lives:150, rew:1.0, d:"A gentle raid."},
-  {id:"med",   n:"Medium", hp:1.5, spd:1.12, cash:700, lives:100, rew:1.4, d:"They mean it."},
-  {id:"hard",  n:"Hard",   hp:2.3, spd:1.28, cash:550, lives:60,  rew:2.0, d:"Bring everything."}
+  {id:"easy",  n:"Easy",   hp:1.0, spd:1.0,  cash:900, lives:150, rew:1.0, cashMult:1.0,  d:"A gentle raid."},
+  {id:"med",   n:"Medium", hp:1.5, spd:1.12, cash:700, lives:100, rew:1.4, cashMult:1.15, d:"They mean it."},
+  {id:"hard",  n:"Hard",   hp:2.3, spd:1.28, cash:550, lives:60,  rew:2.0, cashMult:1.35, d:"Bring everything."}
 ];
 var curDiff=0;
 
@@ -802,14 +806,14 @@ var curMap=0;
 /* ═════════════ DATA: BUGS ═════════════
    child: what it bursts into when popped. Same idea as balloon layers. */
 var BUGS={
-  ant:    {n:"Ant",       hp:1,   spd:52,  r:9,  col:"#8a5a2e", cash:1, fly:false, child:null},
-  fly:    {n:"Fly",       hp:1,   spd:96,  r:8,  col:"#5f6f7a", cash:2, fly:true,  child:null},
-  beetle: {n:"Beetle",    hp:4,   spd:44,  r:11, col:"#43506b", cash:3, fly:false, child:"ant",  count:2},
-  moth:   {n:"Moth",      hp:3,   spd:74,  r:11, col:"#b0a389", cash:3, fly:true,  child:"fly",  count:2},
-  roach:  {n:"Roach",     hp:8,   spd:58,  r:13, col:"#6b3f22", cash:5, fly:false, child:"beetle",count:2},
-  weevil: {n:"Weevil",    hp:18,  spd:38,  r:15, col:"#4d4030", cash:9, fly:false, child:"roach",count:2, arm:1},
-  hornet: {n:"Hornet",    hp:14,  spd:110, r:12, col:"#d8a11e", cash:8, fly:true,  child:"moth", count:2},
-  king:   {n:"Grub King", hp:420, spd:26,  r:26, col:"#c96a2e", cash:120,fly:false, child:"weevil",count:3, arm:3, boss:true}
+  ant:    {n:"Ant",       hp:1,   spd:52,  r:9,  col:"#8a5a2e", cash:3, fly:false, child:null},
+  fly:    {n:"Fly",       hp:1,   spd:96,  r:8,  col:"#5f6f7a", cash:4, fly:true,  child:null},
+  beetle: {n:"Beetle",    hp:4,   spd:44,  r:11, col:"#43506b", cash:5, fly:false, child:"ant",  count:2},
+  moth:   {n:"Moth",      hp:3,   spd:74,  r:11, col:"#b0a389", cash:5, fly:true,  child:"fly",  count:2},
+  roach:  {n:"Roach",     hp:8,   spd:58,  r:13, col:"#6b3f22", cash:8, fly:false, child:"beetle",count:2},
+  weevil: {n:"Weevil",    hp:18,  spd:38,  r:15, col:"#4d4030", cash:13,fly:false, child:"roach",count:2, arm:1},
+  hornet: {n:"Hornet",    hp:14,  spd:110, r:12, col:"#d8a11e", cash:12,fly:true,  child:"moth", count:2},
+  king:   {n:"Grub King", hp:420, spd:26,  r:26, col:"#c96a2e", cash:160,fly:false, child:"weevil",count:3, arm:3, boss:true}
 };
 var BUG_ORDER=["ant","fly","beetle","moth","roach","weevil","hornet","king"];
 
@@ -829,7 +833,8 @@ function waveMix(w){
 }
 
 /* ═════════════ DATA: TOWERS ═════════════
-   Two upgrade paths each, three tiers per path, max five tiers total across both. */
+   Three upgrade paths each, three tiers per path. Only 2 of the 3 paths may
+   be invested in, and once any path passes tier 2 the others cap there. */
 var TOWERS=[
   {id:"flicker", n:"Crumb Flicker", cat:"primary", cost:200, col:"#d8b46a",
    d:"Flicks a hard crumb at the nearest bug.",
@@ -1975,7 +1980,7 @@ function spawnBug(kind,d){
 }
 function popBug(b,byHero){
   var B=BUGS[b.k];
-  cash+=Math.round(B.cash*(1+wave*.012));
+  cash+=Math.round(B.cash*(1+wave*.012)*DIFFS[curDiff].cashMult);
   totalPops++;
   giveHeroXp(B.boss?60:(B.hp>4?4:1));
   sfx.pop();
@@ -2219,7 +2224,7 @@ function update(dt){
     var income=0;
     for(var p=0;p<towers.length;p++)if(towers[p].s.income)income+=towers[p].s.income;
     if(hero&&hero.s.income)income+=hero.s.income;
-    var bonus=Math.round(80+wave*12);
+    var bonus=Math.round((80+wave*12)*DIFFS[curDiff].cashMult);
     cash+=income+bonus;
     if(income)toast("Round bonus "+bonus+" + income "+income);
     sfx.cash();
