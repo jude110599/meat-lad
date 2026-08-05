@@ -645,9 +645,12 @@ try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=fir
 (function(){
 "use strict";
 
-var VERSION="3.2.1";
+var VERSION="3.2.2";
 var CHANGELOG=[
-  {v:"3.2.1",d:"latest",items:[
+  {v:"3.2.2",d:"latest",items:[
+    "MENU MUSIC REWORKED. It was just floaty sustained chords with barely any rhythm - added a soft heartbeat-like pulse, a plucked bass instead of one long drone, a light shaker texture, and an actual melodic hook so the theme has real identity instead of drifting"
+  ]},
+  {v:"3.2.1",items:[
     "IN-GAME MUSIC IS MORE INTENSE. Faster tempo in both worlds, a pounding double-hit kick pattern, an added snare/clap, denser hats and a relentless arpeggio - matches the game a lot better than the earlier, calmer pass"
   ]},
   {v:"3.2.0",items:[
@@ -1276,8 +1279,10 @@ var M_NOTE={C2:65.41,D2:73.42,Eb2:77.78,F2:87.31,G2:98,Ab2:103.83,Bb2:116.54,
   C4:261.63,D4:293.66,Eb4:311.13,F4:349.23,G4:392,Ab4:415.3,Bb4:466.16,
   C5:523.25,Eb5:622.25,F5:698.46,G5:783.99};
 var M_MENU=[
-  {bass:"C3",pad:["C4","Eb4","G4"]},{bass:"Ab2",pad:["Ab3","C4","Eb4"]},
-  {bass:"F2",pad:["F3","Ab3","C4"]},{bass:"G2",pad:["G3","Bb3","D3"]}
+  {bass:"C3",pad:["C4","Eb4","G4"],hook:["G4","Eb4","C4",null]},
+  {bass:"Ab2",pad:["Ab3","C4","Eb4"],hook:["Eb4","C4","Ab3",null]},
+  {bass:"F2",pad:["F3","Ab3","C4"],hook:["C4","Ab3","F3","G4"]},
+  {bass:"G2",pad:["D3","G3","Bb3"],hook:["Bb3","G3","D3",null]}
 ];
 var M_W1=[
   {bass:"C2",pad:["C3","Eb3","G3"],arp:["C4","Eb4","G4","C5"]},
@@ -1323,9 +1328,17 @@ function mStep(){
   var bpm=mBPMFor(), sec16=(60/bpm)/4, beatIn16=mBeat16%16, bar=Math.floor(mBeat16/16);
   if(mMode==="menu"){
     var chord=M_MENU[bar%4];
-    if(beatIn16===0)mNote("sine",M_NOTE[chord.bass],mNextT,1.8,.13,.05,"lowpass",480);
-    if(beatIn16===0)chord.pad.forEach(function(n){ mNote("triangle",M_NOTE[n],mNextT,2.3,.04,.6,"lowpass",1100); });
-    if(beatIn16%4===2)mNote("triangle",M_NOTE[chord.pad[bar%chord.pad.length]],mNextT,.4,.045,.01,"lowpass",1700);
+    // soft heartbeat-like pulse instead of one static drone - gives it motion
+    if(beatIn16===0||beatIn16===6)mThump(mNextT,beatIn16===0?.5:.28,90);
+    // rhythmic plucked bass instead of a long sustained note
+    if(beatIn16===0||beatIn16===8)mNote("triangle",M_NOTE[chord.bass],mNextT,.55,.16,.01,"lowpass",520);
+    // held pad underneath for atmosphere, quieter now that the pulse carries the groove
+    if(beatIn16===0)chord.pad.forEach(function(n){ mNote("triangle",M_NOTE[n],mNextT,2.1,.028,.5,"lowpass",1000); });
+    // light shaker texture on the offbeats
+    if(beatIn16%4===2)mMHat(mNextT,.05,7000);
+    // a real melodic hook, one note per beat, gives the theme an identity
+    var hookNote=chord.hook[Math.floor(beatIn16/4)];
+    if(beatIn16%4===0&&hookNote)mNote("sine",M_NOTE[hookNote],mNextT,.9,.07,.02,"lowpass",1900);
   } else {
     var isW2=mMode==="world2", prog=isW2?M_W2:M_W1, cc=prog[bar%4];
     // pounding kick every beat, plus a driving offbeat second hit - much harder-hitting
