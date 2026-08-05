@@ -188,6 +188,11 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .ubtn i{font-style:normal;color:var(--gold);font-weight:800}
 .ubtn.max{border-left-color:var(--gold);opacity:.75}
 .ubtn.sell{border-left-color:var(--jam);text-align:center;font-weight:800}
+.tgtrow{display:flex;gap:4px;margin:2px 0 10px}
+.tgtbtn{flex:1;background:var(--bg2);border:1px solid var(--line);color:var(--dim);
+  border-radius:5px;padding:6px 2px;font:inherit;font-size:9.5px;font-weight:800;
+  text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
+.tgtbtn.sel{background:var(--honey);color:#241708;border-color:var(--honey)}
 
 /* narrow phones: the shop tray and the tower upgrade panel are both fixed-
    width and can be open at once - at the old 186px+238px they overlapped by
@@ -588,6 +593,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
         <div class="xpbar"><div class="xpfill" id="towerUpXpFill"></div></div>
         <div id="towerUpXpTxt" style="font-size:10.5px;color:var(--dim);margin-top:3px"></div>
         <div id="towerUpStats" style="font-size:11.5px;color:var(--dim);margin-top:6px"></div>
+        <div id="towerUpTgt" style="margin-top:8px;max-width:260px"></div>
       </div>
     </div>
     <div id="towerUpPaths"></div>
@@ -601,9 +607,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.13.0";
+var VERSION="1.14.0";
 var CHANGELOG=[
-  {v:"1.13.0",d:"latest",items:[
+  {v:"1.14.0",d:"latest",items:[
+    "TARGETING MODES, LIKE BTD6. Every tower that fires at one bug at a time now has First/Last/Close/Strong buttons in its upgrade panel (both the sidebar and the full-screen view) - pick off the toughest bug in range, focus whichever's nearest, or stick with the default of hitting whoever's furthest along the path first"
+  ]},
+  {v:"1.13.0",items:[
     "THE SHOP IS ONE LIST NOW instead of four separate category tabs - every tower's right there as you scroll, grouped and headed by category, each card tinted with its group's colour so you can still tell Everyday Tools from Cooking Magic at a glance without having to click between tabs first"
   ]},
   {v:"1.12.0",items:[
@@ -2032,7 +2041,7 @@ function placeTower(id,gx,gy){
   if(cash<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   cash-=cost;
-  var tw={id:id,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1};
+  var tw={id:id,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   sfx.place(); updateHud(); renderShop();
@@ -2111,6 +2120,22 @@ function sellTower(tw){
   selTower=null; $("panel").classList.add("hide");
   toast("Sold for "+back); updateHud(); renderShop();
 }
+function setTowerTarget(tw,mode){
+  if(party.on&&!party.leader)party.send({t:"reqTarget",gx:tw.gx,gy:tw.gy,mode:mode});
+  else tw.tgt=mode;
+}
+var TGT_LABELS={first:"First",last:"Last",close:"Close",strong:"Strong"};
+function buildTgtRow(tw,onSet){
+  var row=document.createElement("div"); row.className="tgtrow";
+  TGT_MODES.forEach(function(m){
+    var b=document.createElement("button");
+    b.className="tgtbtn"+((tw.tgt||"first")===m?" sel":"");
+    b.textContent=TGT_LABELS[m];
+    b.onclick=function(){ sfx.click(); setTowerTarget(tw,m); onSet(); };
+    row.appendChild(b);
+  });
+  return row;
+}
 /* BTD6-style crosspathing: at most two of the three paths may ever get a
    point spent in them, and once any one path passes tier 2, every other
    path is capped there - you commit to a "main" path early. */
@@ -2175,17 +2200,25 @@ function damageBug(b,dmg,pierceArm,tw){
 }
 
 /* ═════════════ SHOOTING ═════════════ */
+var TGT_MODES=["first","last","close","strong"];
 function towerTargets(tw,s,rngMult){
   var rng=(s.rng||0)*(rngMult||1);
-  var best=null,bestD=-1;
+  var mode=tw.tgt||"first";
+  var best=null,bestScore=-Infinity;
   for(var i=0;i<bugs.length;i++){
     var b=bugs[i];
     if(b.fly&&!s.air)continue;
+    var p=null;
     if(!s.snipe){
-      var p=posAt(b.d);
+      p=posAt(b.d);
       if(dist2(p.x,p.y,tw.x,tw.y)>rng*rng)continue;
     }
-    if(b.d>bestD){ bestD=b.d; best=b; }
+    var score;
+    if(mode==="last")score=-b.d;
+    else if(mode==="close"){ if(!p)p=posAt(b.d); score=-dist2(p.x,p.y,tw.x,tw.y); }
+    else if(mode==="strong")score=b.hp;
+    else score=b.d;
+    if(score>bestScore){ bestScore=score; best=b; }
   }
   return best;
 }
@@ -2296,7 +2329,7 @@ var coopSyncT=0;
 function broadcastSnap(){
   party.send({t:"snap",
     towers:towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
-      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,xp:t.xp,lvl:t.lvl,s:t.s}; }),
+      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,xp:t.xp,lvl:t.lvl,tgt:t.tgt,s:t.s}; }),
     bugs:bugs.map(function(b){ return {id:b.id,k:b.k,d:b.d,hp:b.hp,max:b.max,spd:b.spd,r:b.r,
       fly:b.fly,arm:b.arm,slow:b.slow,slowT:b.slowT,weak:b.weak,weakT:b.weakT,
       burn:b.burn,burnT:b.burnT,wob:b.wob}; }),
@@ -2721,6 +2754,7 @@ function renderPanel(){
   var lvlLine=document.createElement("div"); lvlLine.className="sub"; lvlLine.style.marginTop="-6px";
   lvlLine.innerHTML="Level "+(tw.lvl||1)+(tw.lvl<10?" · "+(tw.xp||0)+"/"+towerXpNeeded(tw.lvl)+" xp":" (max)");
   p.appendChild(lvlLine);
+  if(!s.income&&!s.support)p.appendChild(buildTgtRow(tw,renderPanel));
 
   var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
   var activePaths=allTiers.filter(function(t){ return t>0; }).length;
@@ -2791,6 +2825,8 @@ function renderTowerUp(){
   if(s.income)$("towerUpStats").textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped";
   else if(s.support)$("towerUpStats").textContent="+"+(s.buffDmg||0)+" damage nearby · "+(tw.pops||0)+" popped";
   else $("towerUpStats").textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+(tw.pops||0)+" popped";
+  var tgtWrap=$("towerUpTgt"); tgtWrap.innerHTML="";
+  if(!s.income&&!s.support)tgtWrap.appendChild(buildTgtRow(tw,renderTowerUp));
 
   var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
   var activePaths=allTiers.filter(function(x){ return x>0; }).length;
@@ -3424,6 +3460,11 @@ var party={
       if(self.leader&&state==="play"){
         var stw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
         if(stw)sellTower(stw);
+      }
+    } else if(m.t==="reqTarget"){
+      if(self.leader&&state==="play"){
+        var ttw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
+        if(ttw)ttw.tgt=m.mode;
       }
     } else if(m.t==="over"){
       if(!self.leader&&state==="play")endRun(m.won);
