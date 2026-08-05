@@ -551,6 +551,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   <div class="ovl hide" id="o-pause"><div class="ovlbox">
     <h2 class="disp">Paused</h2>
     <div class="note" style="margin-bottom:14px">The bugs are waiting patiently.</div>
+    <button class="btn sub" id="bAutostart" style="margin-bottom:10px"></button>
     <button class="btn" id="bResume">Resume</button>
     <button class="btn sub" id="bQuit">Give up the pantry</button>
   </div></div>
@@ -604,9 +605,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.11.0";
+var VERSION="1.12.0";
 var CHANGELOG=[
-  {v:"1.11.0",d:"latest",items:[
+  {v:"1.12.0",d:"latest",items:[
+    "THE ALMANAC IS SORTED BY GROUP NOW, with a header between each one, instead of towers appearing in a random-looking order that didn't match their category colours",
+    "AUTO-START NEXT WAVE. A toggle in the pause menu - turn it on and the next round begins the moment the last one clears, no need to tap GO every time"
+  ]},
+  {v:"1.11.0",items:[
     "TOWERS NOW EARN MASTERY THROUGH USE. Every tower has its own level, gained from XP its kills bring in, and each upgrade tier needs a minimum level on top of its cash cost - the deeper tiers have to be earned by actually fighting, not just bought the moment you can afford them",
     "DOUBLE-CLICK A PLACED TOWER for a full-screen view: all three upgrade paths side by side with a proper icon and description on every single tier, the tower's level and XP bar, and one click to buy the next upgrade right from the card - instead of a tiny sidebar list one path at a time",
     "EVERY UPGRADE HAS A REAL ICON NOW, picked to match what it actually does - a burst for damage, a bolt for speed, a target for range, rings for splash, a shield for armour-piercing, and so on",
@@ -884,7 +889,7 @@ function mSetMode(mode){
 /* ═════════════ SAVE ═════════════ */
 var SKEY="pantrypanic-save-v1";
 var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,
-  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{}};
+  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},autostart:false};
 function loadSave(){
   try{ var r=localStorage.getItem(SKEY);
     if(r){ var o=JSON.parse(r); for(var k in save)if(o[k]!=null)save[k]=o[k]; }
@@ -2423,6 +2428,7 @@ function update(dt){
     sfx.cash();
     if(wave>=waveMax){ endRun(true); return; }
     updateHud();
+    if(save.autostart)startWave();
   }
   updateHud();
 }
@@ -2896,10 +2902,14 @@ $("bGo").onclick=function(){
   else fastFwd=!fastFwd;
   updateHud();
 };
+function syncAutostartBtn(){
+  $("bAutostart").textContent="Auto-start next wave: "+(save.autostart?"On":"Off");
+}
 $("bPause").onclick=function(){
   sfx.click();
-  if(state==="play"){ state="pause"; showOvl("o-pause"); }
+  if(state==="play"){ state="pause"; syncAutostartBtn(); showOvl("o-pause"); }
 };
+$("bAutostart").onclick=function(){ sfx.click(); save.autostart=!save.autostart; queueSave(); syncAutostartBtn(); };
 $("bResume").onclick=function(){ sfx.click(); state="play"; hideOvl(); };
 $("bQuit").onclick=function(){ sfx.click(); quitToTitle(); };
 $("bAgain").onclick=function(){ sfx.click(); startRun(curMap,curDiff,chosenHero); };
@@ -3218,14 +3228,20 @@ function renderShop2(){
 }
 function renderDex(){
   var tg=$("dexTowers"); tg.innerHTML="";
-  TOWERS.forEach(function(T){
+  var sortedTowers=TOWERS.slice().sort(function(a,b){ return CATS.indexOf(a.cat)-CATS.indexOf(b.cat); });
+  var lastCat=null;
+  sortedTowers.forEach(function(T){
     var tc=TOWER_CATS[T.cat];
+    if(T.cat!==lastCat){
+      lastCat=T.cat;
+      var head=document.createElement("div"); head.className="sect"; head.style.margin="10px 0 6px";
+      head.style.gridColumn="1/-1"; head.style.color=tc.col; head.textContent=tc.n; tg.appendChild(head);
+    }
     var d=document.createElement("div"); d.className="card themed"; d.style.cursor="default";
     d.style.background=tc.bg; d.style.borderLeftColor=tc.col;
     d.appendChild(iconFor("t",T.id,42));
     var info=document.createElement("div");
     info.innerHTML='<div class="cn">'+T.n+'</div><div class="cd">'+T.d+'</div>'+
-      '<div class="cd" style="color:'+tc.col+';font-weight:800;margin-top:2px">'+tc.n+'</div>'+
       '<div class="cp">$'+towerCost(T)+'</div>';
     d.appendChild(info);
     tg.appendChild(d);
