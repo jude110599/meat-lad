@@ -16,7 +16,8 @@ body{background:#0b0910;color:#f2ecff;overflow-x:hidden;
   background-image:radial-gradient(80% 60% at 20% 0%,#2a0d1a 0%,transparent 60%),
                    radial-gradient(80% 60% at 80% 100%,#1c1140 0%,transparent 60%)}
 .disp{font-weight:900;letter-spacing:.06em;text-transform:uppercase}
-.wrap{width:100%;max-width:760px}
+#bgScene{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.55}
+.wrap{width:100%;max-width:760px;position:relative;z-index:1}
 header{text-align:center;margin-bottom:30px;position:relative}
 .update-badge{position:absolute;top:0;right:0;background:linear-gradient(135deg,#e0247a,#7bd94a);
   color:#0b0910;padding:6px 12px;border-radius:12px;font-size:10px;font-weight:900;
@@ -143,9 +144,10 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
+<canvas id="bgScene"></canvas>
 <div class="wrap">
   <header>
-    <div class="update-badge">Updated Aug 04 at 9:17 PM</div>
+    <div class="update-badge">Updated Aug 04 at 9:29 PM</div>
     <h1 class="disp">Pick a game</h1>
     <div class="sub">Two different games, one place. Your progress in each is kept separately.</div>
   </header>
@@ -349,6 +351,156 @@ $("devToggleBtn").onclick=function(){ $("devOverlay").classList.add("show"); };
   $("devToggleLabel").textContent=saved==="pc"?"PC":"Mobile";
 })();
 
+/* ═════════════ BACKGROUND SCENE ═════════════
+   A light ambient animation behind the menu - original simplified
+   characters (not the real in-game art) wandering, being chased, and
+   "dying" in little bursts, purely decorative and non-interactive. */
+(function(){
+  var cv=$("bgScene"); if(!cv)return;
+  var g=cv.getContext("2d"), W=0,H=0,DPR=Math.min(2,window.devicePixelRatio||1);
+  function resize(){
+    W=innerWidth; H=innerHeight;
+    cv.width=W*DPR; cv.height=H*DPR; cv.style.width=W+"px"; cv.style.height=H+"px";
+    g.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener("resize",resize); resize();
+  var ROOT_COL=["#e0247a","#7bd94a","#c8a24a","#8a5fd0","#ff7ea8"];
+  var actors=[], particles=[];
+  function edgeBand(){
+    // spawn/wander mostly along the screen edges so the card content stays clear
+    var side=Math.floor(Math.random()*4);
+    if(side===0)return {x:rnd(0,W),y:rnd(0,H*.14)};
+    if(side===1)return {x:rnd(0,W),y:rnd(H*.86,H)};
+    if(side===2)return {x:rnd(0,W*.1),y:rnd(0,H)};
+    return {x:rnd(W*.9,W),y:rnd(0,H)};
+  }
+  function rnd(a,b){return a+Math.random()*(b-a);}
+  function mkChar(kind){
+    var p=edgeBand();
+    return {kind:kind,x:p.x,y:p.y,vx:rnd(-22,22),vy:rnd(-22,22),
+      col:ROOT_COL[Math.floor(Math.random()*ROOT_COL.length)],
+      alive:true,respawn:0,wob:Math.random()*6.28,turnT:rnd(.5,2)};
+  }
+  function mkEnemy(kind){
+    var p=edgeBand();
+    return {kind:kind,x:p.x,y:p.y,a:Math.random()*6.28,spd:rnd(18,34),targetIdx:-1};
+  }
+  for(var i=0;i<3;i++)actors.push(mkChar("root"));
+  for(var i=0;i<2;i++)actors.push(mkChar("meat"));
+  var enemies=[mkEnemy("pest"),mkEnemy("pest"),mkEnemy("saw")];
+  function burst(x,y,col){
+    for(var i=0;i<10;i++){
+      var a=Math.random()*6.283,sp=rnd(30,90);
+      particles.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0,max:rnd(.4,.7),col:col});
+    }
+  }
+  function drawRootChar(x,y,col,t,dying){
+    g.save(); g.translate(x,y);
+    var sway=Math.sin(t*3+x)*.15;
+    g.save(); g.rotate(sway);
+    g.strokeStyle=col; g.lineWidth=2.4; g.lineCap="round";
+    g.beginPath(); g.moveTo(0,-6); g.lineTo(-5,-12); g.moveTo(0,-6); g.lineTo(5,-12); g.stroke();
+    g.restore();
+    g.fillStyle=dying?"#3a3020":col;
+    g.beginPath(); g.arc(0,3,10,0,6.283); g.fill();
+    if(!dying){
+      g.fillStyle="#170c20";
+      g.beginPath(); g.arc(-3,1,1.4,0,6.283); g.fill();
+      g.beginPath(); g.arc(3,1,1.4,0,6.283); g.fill();
+    }
+    g.restore();
+  }
+  function drawMeatChar(x,y,t,dying){
+    g.save(); g.translate(x,y);
+    var bob=Math.sin(t*4+x)*1.4;
+    g.translate(0,bob);
+    g.fillStyle=dying?"#3a1010":"#a3101c";
+    g.beginPath();
+    g.moveTo(-9,-8); g.quadraticCurveTo(-11,-11,-6,-11); g.lineTo(6,-11);
+    g.quadraticCurveTo(11,-11,9,-8); g.lineTo(9,7);
+    g.quadraticCurveTo(9,11,5,11); g.lineTo(-5,11);
+    g.quadraticCurveTo(-9,11,-9,7); g.closePath(); g.fill();
+    if(!dying){
+      g.fillStyle="#e4d8c4";
+      g.beginPath(); g.arc(-3.4,-1,1.6,0,6.283); g.fill();
+      g.beginPath(); g.arc(3.4,-1,1.6,0,6.283); g.fill();
+    }
+    g.restore();
+  }
+  function drawPest(x,y,t){
+    g.save(); g.translate(x,y);
+    g.fillStyle="#8a5fd0";
+    for(var i=0;i<6;i++){
+      var a=i/6*6.283+t*.6;
+      g.save(); g.rotate(a);
+      g.beginPath(); g.moveTo(-1.6,-5.5); g.lineTo(0,-10); g.lineTo(1.6,-5.5); g.closePath(); g.fill();
+      g.restore();
+    }
+    g.fillStyle="#b083f0"; g.beginPath(); g.arc(0,0,6,0,6.283); g.fill();
+    g.restore();
+  }
+  function drawSaw(x,y,t){
+    g.save(); g.translate(x,y); g.rotate(t*4);
+    g.fillStyle="#8c8471";
+    for(var i=0;i<8;i++){
+      g.save(); g.rotate(i/8*6.283);
+      g.beginPath(); g.moveTo(-1.6,-6); g.lineTo(0,-9.5); g.lineTo(1.6,-6); g.closePath(); g.fill();
+      g.restore();
+    }
+    g.fillStyle="#5a5540"; g.beginPath(); g.arc(0,0,5.4,0,6.283); g.fill();
+    g.restore();
+  }
+  var lastT=performance.now();
+  function step(now){
+    var dt=Math.min(.05,(now-lastT)/1000); lastT=now; var t=now/1000;
+    // actors wander
+    actors.forEach(function(a){
+      if(!a.alive){
+        a.respawn-=dt;
+        if(a.respawn<=0){ var p=edgeBand(); a.x=p.x;a.y=p.y;a.vx=rnd(-22,22);a.vy=rnd(-22,22);a.alive=true; }
+        return;
+      }
+      a.turnT-=dt;
+      if(a.turnT<=0){ a.vx=rnd(-24,24); a.vy=rnd(-24,24); a.turnT=rnd(.6,2.2); }
+      a.x+=a.vx*dt; a.y+=a.vy*dt;
+      if(a.x<10){a.x=10;a.vx=Math.abs(a.vx);} if(a.x>W-10){a.x=W-10;a.vx=-Math.abs(a.vx);}
+      if(a.y<10){a.y=10;a.vy=Math.abs(a.vy);} if(a.y>H-10){a.y=H-10;a.vy=-Math.abs(a.vy);}
+    });
+    // enemies chase nearest living actor
+    enemies.forEach(function(e){
+      var best=-1,bd=1e9;
+      actors.forEach(function(a,i){ if(!a.alive)return;
+        var d=(a.x-e.x)*(a.x-e.x)+(a.y-e.y)*(a.y-e.y); if(d<bd){bd=d;best=i;} });
+      e.targetIdx=best;
+      if(best>=0){
+        var tg=actors[best], ang=Math.atan2(tg.y-e.y,tg.x-e.x);
+        e.x+=Math.cos(ang)*e.spd*dt; e.y+=Math.sin(ang)*e.spd*dt;
+        if(bd<15*15&&tg.alive){ tg.alive=false; tg.respawn=rnd(1.5,3); burst(tg.x,tg.y,tg.col||"#a3101c"); }
+      }
+    });
+    // particles
+    for(var i=particles.length-1;i>=0;i--){ var p=particles[i]; p.life+=dt;
+      p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=(1-2*dt); p.vy*=(1-2*dt);
+      if(p.life>p.max)particles.splice(i,1); }
+    // draw
+    g.clearRect(0,0,W,H);
+    actors.forEach(function(a){
+      if(!a.alive)return;
+      if(a.kind==="root")drawRootChar(a.x,a.y,a.col,t,false);
+      else drawMeatChar(a.x,a.y,t,false);
+    });
+    enemies.forEach(function(e){
+      if(e.kind==="pest")drawPest(e.x,e.y,t); else drawSaw(e.x,e.y,t);
+    });
+    particles.forEach(function(p){
+      g.globalAlpha=Math.max(0,1-p.life/p.max); g.fillStyle=p.col;
+      g.beginPath(); g.arc(p.x,p.y,2.2,0,6.283); g.fill(); g.globalAlpha=1;
+    });
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+})();
+
 /* ═════════════ MENU MUSIC ═════════════
    An original synth track for the menu - driving four-on-the-floor
    battle-royale-lobby energy, but written from scratch (no sampled or
@@ -398,6 +550,22 @@ function mKick(t){
   g.gain.setValueAtTime(.9,t); g.gain.exponentialRampToValueAtTime(.001,t+.28);
   o.connect(g); g.connect(mMaster); o.start(t); o.stop(t+.3);
 }
+/* 808-style sub bass with a slight downward pitch slide - the trap staple */
+function m808(t,freq,dur){
+  var o=mAC.createOscillator(), g=mAC.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(freq*1.15,t);
+  o.frequency.exponentialRampToValueAtTime(freq,t+.09);
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(.42,t+.015);
+  g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  o.connect(g); g.connect(mMaster); o.start(t); o.stop(t+dur+.05);
+}
+/* rapid closed-hat roll leading into a new bar - classic trap fill */
+function mHatRoll(t,steps,secPer16th){
+  for(var i=0;i<steps;i++){
+    var tt=t+(secPer16th/3)*i, peak=.08+((i/steps)*.14);
+    mNoise(tt,.03,peak,9000,"highpass");
+  }
+}
 function mNoise(t,dur,gainPeak,fFreq,fType){
   var bufSize=mAC.sampleRate*dur, buf=mAC.createBuffer(1,bufSize,mAC.sampleRate);
   var d=buf.getChannelData(0); for(var i=0;i<bufSize;i++)d[i]=Math.random()*2-1;
@@ -414,22 +582,24 @@ function mScheduleStep(){
   if(beatIn16%4===0)mKick(mNextNoteTime);
   // clap/snare on 2 and 4 (16th positions 4 and 12)
   if(beatIn16===4||beatIn16===12)mNoise(mNextNoteTime,.16,.5,1800,"highpass");
-  // closed hats on every 8th, accented off-beats
-  if(beatIn16%2===0)mNoise(mNextNoteTime,.045,beatIn16%4===2?.22:.12,8000,"highpass");
-  // bass on beats 1 and 3 (walking pulse)
+  // trap hat roll into every 4th bar, otherwise normal 8th-note hats
+  if(beatIn16>=12&&mBar%4===3)
+    { if(beatIn16===12)mHatRoll(mNextNoteTime,6,secPer16th); }
+  else if(beatIn16%2===0)mNoise(mNextNoteTime,.045,beatIn16%4===2?.22:.12,8000,"highpass");
+  // 808 sub bass with slide, on beats 1 and 3
   if(beatIn16===0||beatIn16===8)
-    mOsc("sawtooth",NOTE[chord.bass],mNextNoteTime,.5,.28,mMaster,.01,"lowpass",320);
+    m808(mNextNoteTime,NOTE[chord.bass],.5);
   // pad chord swell, once per bar
   if(beatIn16===0)
-    chord.pad.forEach(function(n){ mOsc("sawtooth",NOTE[n],mNextNoteTime,1.9,.045,mMaster,.4,"lowpass",900); });
+    chord.pad.forEach(function(n){ mOsc("sawtooth",NOTE[n],mNextNoteTime,1.9,.04,mMaster,.4,"lowpass",800); });
   // arpeggio, 16th notes stepping through chord tones
   var arpIdx=Math.floor(beatIn16/2)%chord.arp.length;
   if(beatIn16%2===0)
-    mOsc("triangle",NOTE[chord.arp[arpIdx]],mNextNoteTime,.22,.09,mMaster,.005,"lowpass",2600);
+    mOsc("triangle",NOTE[chord.arp[arpIdx]],mNextNoteTime,.22,.08,mMaster,.005,"lowpass",2400);
   // hook lead, every other 8-bar loop, one note per bar on beat 1
   if(hookOn&&beatIn16===0){
     var hookNote=mHook[mBar%8]; if(hookNote&&hookNote.n)
-      mOsc("square",NOTE[hookNote.n],mNextNoteTime,.5,.1,mMaster,.01,"lowpass",3400);
+      mOsc("square",NOTE[hookNote.n],mNextNoteTime,.5,.09,mMaster,.01,"lowpass",3200);
   }
   mBeat16++;
   mNextNoteTime+=secPer16th;
