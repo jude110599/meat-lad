@@ -122,8 +122,21 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 .devbtn span{font-weight:800;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase}
 #devToggleBtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
   color:#8d7fb0;border-radius:8px;padding:6px 12px;font:inherit;font-size:11px;
-  letter-spacing:.08em;text-transform:uppercase;cursor:pointer;margin:0 auto 14px;display:block}
+  letter-spacing:.08em;text-transform:uppercase;cursor:pointer;margin:0 auto 10px;display:block}
 #devToggleBtn:hover{color:#c9bfe8;border-color:rgba(255,255,255,.25)}
+#musicBtn{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+  color:#8d7fb0;border-radius:8px;padding:6px 12px;font:inherit;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;cursor:pointer;margin:0 auto 14px;
+  display:flex;align-items:center;gap:6px;justify-content:center}
+#musicBtn:hover{color:#c9bfe8;border-color:rgba(255,255,255,.25)}
+#musicBtn .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+#musicBtn .bars i{display:block;width:2.5px;background:currentColor;border-radius:1px;
+  animation:barbeat .9s ease-in-out infinite}
+#musicBtn.off .bars i{animation-play-state:paused;height:3px!important}
+#musicBtn .bars i:nth-child(1){animation-delay:-.6s}
+#musicBtn .bars i:nth-child(2){animation-delay:-.3s}
+#musicBtn .bars i:nth-child(3){animation-delay:0s}
+@keyframes barbeat{0%,100%{height:3px}50%{height:11px}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
@@ -132,12 +145,13 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
 <body>
 <div class="wrap">
   <header>
-    <div class="update-badge">Updated Aug 04 at 7:57 PM</div>
+    <div class="update-badge">Updated Aug 04 at 9:17 PM</div>
     <h1 class="disp">Pick a game</h1>
     <div class="sub">Two different games, one place. Your progress in each is kept separately.</div>
   </header>
 
   <button id="devToggleBtn">Device: <span id="devToggleLabel">Mobile</span></button>
+  <button id="musicBtn" class="off"><span class="bars"><i></i><i></i><i></i></span><span id="musicLabel">Music: off</span></button>
 
   <div id="acctBar">
     <div id="acctLabel">Account</div>
@@ -333,6 +347,118 @@ $("devToggleBtn").onclick=function(){ $("devOverlay").classList.add("show"); };
   var saved=null; try{saved=localStorage.getItem(DEVKEY);}catch(e){}
   if(!saved){ saved=detectDefault(); $("devOverlay").classList.add("show"); }
   $("devToggleLabel").textContent=saved==="pc"?"PC":"Mobile";
+})();
+
+/* ═════════════ MENU MUSIC ═════════════
+   An original synth track for the menu - driving four-on-the-floor
+   battle-royale-lobby energy, but written from scratch (no sampled or
+   copied material from any existing game's soundtrack). A minor,
+   132bpm, 8-bar loop: pad + walking bass + arpeggio + pluck lead + kit. */
+var mAC=null, mMaster=null, mPlaying=false, mSchedT=null, mNextNoteTime=0, mBar=0, mBeat16=0;
+var mBPM=132, mLookahead=25, mScheduleAhead=0.15;
+var NOTE={A1:55,C2:65.41,D2:73.42,E2:82.41,F2:87.31,G2:98,A2:110,
+  A3:220,C3:130.81,D3:146.83,E3:164.81,F3:174.61,G3:196,
+  A4:220,B4:246.94,C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392,
+  A5:440,C5:523.25,E5:659.25,B5:493.88,G5:783.99};
+// chords: [bass, pad tones...]
+var mProg=[
+  {bass:"A1",pad:["A2","C3","E3"],arp:["A3","C4","E4","A4"]},
+  {bass:"F2",pad:["F2","A2","C3"],arp:["F3","A3","C4","F4"]},
+  {bass:"C2",pad:["C3","E3","G3"],arp:["C4","E4","G4","C5"]},
+  {bass:"G2",pad:["G2","B4","D3"],arp:["G3","B4","D4","G4"]}
+];
+// simple 8-bar plucky hook, plays every other loop for variety
+var mHook=[
+  {b:0,n:"E5"},{b:1,n:"C5"},{b:2,n:"D5"},{b:3,n:null},
+  {b:4,n:"E5"},{b:5,n:null},{b:6,n:"A5"},{b:7,n:"G5"}
+];
+function mEnsure(){
+  if(mAC)return;
+  try{
+    mAC=new (window.AudioContext||window.webkitAudioContext)();
+    mMaster=mAC.createGain(); mMaster.gain.value=.22; mMaster.connect(mAC.destination);
+  }catch(e){}
+}
+function mOsc(type,freq,t,dur,gainPeak,dest,attack,fType,fFreq){
+  var o=mAC.createOscillator(); o.type=type; o.frequency.value=freq;
+  var g=mAC.createGain(); g.gain.setValueAtTime(0,t);
+  var a=attack||.01;
+  g.gain.linearRampToValueAtTime(gainPeak,t+a);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  var last=o;
+  if(fType){ var f=mAC.createBiquadFilter(); f.type=fType; f.frequency.value=fFreq||1200;
+    o.connect(f); last=f; }
+  last.connect(g); g.connect(dest||mMaster);
+  o.start(t); o.stop(t+dur+.05);
+}
+function mKick(t){
+  var o=mAC.createOscillator(), g=mAC.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(150,t);
+  o.frequency.exponentialRampToValueAtTime(42,t+.11);
+  g.gain.setValueAtTime(.9,t); g.gain.exponentialRampToValueAtTime(.001,t+.28);
+  o.connect(g); g.connect(mMaster); o.start(t); o.stop(t+.3);
+}
+function mNoise(t,dur,gainPeak,fFreq,fType){
+  var bufSize=mAC.sampleRate*dur, buf=mAC.createBuffer(1,bufSize,mAC.sampleRate);
+  var d=buf.getChannelData(0); for(var i=0;i<bufSize;i++)d[i]=Math.random()*2-1;
+  var src=mAC.createBufferSource(); src.buffer=buf;
+  var f=mAC.createBiquadFilter(); f.type=fType||"highpass"; f.frequency.value=fFreq||4000;
+  var g=mAC.createGain(); g.gain.setValueAtTime(gainPeak,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  src.connect(f); f.connect(g); g.connect(mMaster); src.start(t); src.stop(t+dur+.02);
+}
+function mScheduleStep(){
+  var secPer16th=(60/mBPM)/4;
+  var chord=mProg[mBar%4], hookOn=(Math.floor(mBar/4)%2)===1;
+  var beatIn16=mBeat16%16;
+  // kick: four on the floor
+  if(beatIn16%4===0)mKick(mNextNoteTime);
+  // clap/snare on 2 and 4 (16th positions 4 and 12)
+  if(beatIn16===4||beatIn16===12)mNoise(mNextNoteTime,.16,.5,1800,"highpass");
+  // closed hats on every 8th, accented off-beats
+  if(beatIn16%2===0)mNoise(mNextNoteTime,.045,beatIn16%4===2?.22:.12,8000,"highpass");
+  // bass on beats 1 and 3 (walking pulse)
+  if(beatIn16===0||beatIn16===8)
+    mOsc("sawtooth",NOTE[chord.bass],mNextNoteTime,.5,.28,mMaster,.01,"lowpass",320);
+  // pad chord swell, once per bar
+  if(beatIn16===0)
+    chord.pad.forEach(function(n){ mOsc("sawtooth",NOTE[n],mNextNoteTime,1.9,.045,mMaster,.4,"lowpass",900); });
+  // arpeggio, 16th notes stepping through chord tones
+  var arpIdx=Math.floor(beatIn16/2)%chord.arp.length;
+  if(beatIn16%2===0)
+    mOsc("triangle",NOTE[chord.arp[arpIdx]],mNextNoteTime,.22,.09,mMaster,.005,"lowpass",2600);
+  // hook lead, every other 8-bar loop, one note per bar on beat 1
+  if(hookOn&&beatIn16===0){
+    var hookNote=mHook[mBar%8]; if(hookNote&&hookNote.n)
+      mOsc("square",NOTE[hookNote.n],mNextNoteTime,.5,.1,mMaster,.01,"lowpass",3400);
+  }
+  mBeat16++;
+  mNextNoteTime+=secPer16th;
+  if(mBeat16%16===0)mBar++;
+}
+function mScheduler(){
+  while(mNextNoteTime<mAC.currentTime+mScheduleAhead)mScheduleStep();
+  mSchedT=setTimeout(mScheduler,mLookahead);
+}
+function mStart(){
+  mEnsure(); if(!mAC)return;
+  if(mAC.state==="suspended")mAC.resume();
+  if(mPlaying)return;
+  mPlaying=true; mBar=0; mBeat16=0; mNextNoteTime=mAC.currentTime+.1;
+  mScheduler();
+  $("musicBtn").classList.remove("off"); $("musicLabel").textContent="Music: on";
+  try{localStorage.setItem("menuMusic","on");}catch(e){}
+}
+function mStop(){
+  mPlaying=false; if(mSchedT)clearTimeout(mSchedT);
+  $("musicBtn").classList.add("off"); $("musicLabel").textContent="Music: off";
+  try{localStorage.setItem("menuMusic","off");}catch(e){}
+}
+$("musicBtn").onclick=function(){ mPlaying?mStop():mStart(); };
+(function(){ var pref=null; try{pref=localStorage.getItem("menuMusic");}catch(e){}
+  if(pref==="on"){
+    var startOnce=function(){ mStart(); document.removeEventListener("pointerdown",startOnce); };
+    document.addEventListener("pointerdown",startOnce);
+  }
 })();
 
 /* ═════════════ CHANGELOG MODAL ═════════════ */
@@ -621,7 +747,7 @@ var ML_LOG=[
     "First release - 10 solo levels, wardrobe cosmetics, blood physics"
   ]}
 ];
-var OVERALL_LOG=[{v:"shared",d:"cross-game",items:["ONE ACCOUNT FOR EVERYTHING. The main page, Beetdown and Meat Lad all run on the same Firebase account now - sign in once here and both games recognise you immediately, no second sign-in anywhere. You can sign in with either your email or a username (auto-generated from your email at sign-up)","PC OR MOBILE. Pick your device on this page (or change it anytime with the button above) - it decides whether the on-screen joystick shows in Beetdown and overrides the automatic touch-detection in Meat Lad for anyone it was guessing wrong for","MOBILE UI FIXES ACROSS ALL THREE PAGES. Double-tap no longer accidentally zooms or selects text, and dragging on menus no longer triggers the browser pinch-zoom","A REAL CHANGELOG HERE. This page used to show a shortened, out-of-sync summary of each game's changes - it now pulls the exact same changelog each game shows internally, plus this Overall tab for changes that affect both","BUG: fixed a batch of curly/smart quotes that had snuck into changelog and error text and were silently breaking the page's JavaScript outright in both games"]}];
+var OVERALL_LOG=[{v:"shared",d:"cross-game",items:["MENU MUSIC. An original synth track now plays on this page - driving four-on-the-floor energy in the spirit of a battle-royale lobby, written from scratch (not a copy of any existing game's soundtrack). Toggle it with the Music button above","ONE ACCOUNT FOR EVERYTHING. The main page, Beetdown and Meat Lad all run on the same Firebase account now - sign in once here and both games recognise you immediately, no second sign-in anywhere. You can sign in with either your email or a username (auto-generated from your email at sign-up)","PC OR MOBILE. Pick your device on this page (or change it anytime with the button above) - it decides whether the on-screen joystick shows in Beetdown and overrides the automatic touch-detection in Meat Lad for anyone it was guessing wrong for","MOBILE UI FIXES ACROSS ALL THREE PAGES. Double-tap no longer accidentally zooms or selects text, and dragging on menus no longer triggers the browser pinch-zoom","A REAL CHANGELOG HERE. This page used to show a shortened, out-of-sync summary of each game's changes - it now pulls the exact same changelog each game shows internally, plus this Overall tab for changes that affect both","BUG: fixed a batch of curly/smart quotes that had snuck into changelog and error text and were silently breaking the page's JavaScript outright in both games"]}];
 function renderCl(log){
   var body=$("clBody"); body.innerHTML="";
   log.forEach(function(e){
