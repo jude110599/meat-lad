@@ -229,6 +229,26 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .heroskill b{display:block;font-size:12px;margin-bottom:2px}
 .heroskill .lockl{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
 
+#towerUpBox{max-width:900px;width:96%}
+#towerUpTop{display:flex;gap:14px;align-items:flex-start}
+#towerUpTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
+  border:1px solid var(--line);border-radius:10px}
+#towerUpPaths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+@media (max-width:700px){ #towerUpPaths{grid-template-columns:1fr} }
+.tuphead{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.tuptier{background:var(--bg2);border:1px solid var(--line);border-left:3px solid var(--dim);
+  border-radius:6px;padding:8px;margin-bottom:8px;display:flex;gap:8px;align-items:flex-start;
+  cursor:pointer;transition:background .12s}
+.tuptier:hover{background:var(--bg3)}
+.tuptier.done{border-left-color:var(--mint);opacity:.85;cursor:default}
+.tuptier.locked{opacity:.5;cursor:default}
+.tuptier canvas{flex:none;width:30px;height:30px;background:var(--bg1);border-radius:6px}
+.tuptier .tun{font-weight:800;font-size:12px}
+.tuptier .tud{font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.tuptier .tuc{font-size:10.5px;color:var(--gold);font-weight:800;margin-top:3px}
+.tuptier .tul{font-size:9.5px;color:var(--jam2);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+
 .toast{position:absolute;left:50%;top:62px;transform:translateX(-50%);z-index:9;
   background:rgba(20,15,10,.95);border:1px solid var(--line);border-left:3px solid var(--honey);
   border-radius:6px;padding:9px 15px;font-size:13px;font-weight:700;pointer-events:none;
@@ -560,6 +580,23 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <button class="btn" id="heroBoxBuy" style="margin-top:12px"></button>
   </div></div>
 
+  <div class="ovl hide" id="o-towerup"><div class="ovlbox" id="towerUpBox">
+    <button class="back" id="towerUpClose" style="float:right">&times;</button>
+    <div id="towerUpTop">
+      <canvas id="towerUpIcon" width="128" height="128"></canvas>
+      <div>
+        <div class="disp" id="towerUpName" style="font-size:19px"></div>
+        <div class="cd" id="towerUpDesc" style="font-size:12px;margin-top:3px"></div>
+        <div id="towerUpLvl" style="margin-top:8px;font-weight:800;font-size:13px"></div>
+        <div class="xpbar"><div class="xpfill" id="towerUpXpFill"></div></div>
+        <div id="towerUpXpTxt" style="font-size:10.5px;color:var(--dim);margin-top:3px"></div>
+        <div id="towerUpStats" style="font-size:11.5px;color:var(--dim);margin-top:6px"></div>
+      </div>
+    </div>
+    <div id="towerUpPaths"></div>
+    <button class="btn sub" id="towerUpSell" style="margin-top:14px"></button>
+  </div></div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -567,9 +604,15 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.10.0";
+var VERSION="1.11.0";
 var CHANGELOG=[
-  {v:"1.10.0",d:"latest",items:[
+  {v:"1.11.0",d:"latest",items:[
+    "TOWERS NOW EARN MASTERY THROUGH USE. Every tower has its own level, gained from XP its kills bring in, and each upgrade tier needs a minimum level on top of its cash cost - the deeper tiers have to be earned by actually fighting, not just bought the moment you can afford them",
+    "DOUBLE-CLICK A PLACED TOWER for a full-screen view: all three upgrade paths side by side with a proper icon and description on every single tier, the tower's level and XP bar, and one click to buy the next upgrade right from the card - instead of a tiny sidebar list one path at a time",
+    "EVERY UPGRADE HAS A REAL ICON NOW, picked to match what it actually does - a burst for damage, a bolt for speed, a target for range, rings for splash, a shield for armour-piercing, and so on",
+    "CLICK YOUR HERO ON THE BOARD to open their panel too, not just the HUD button"
+  ]},
+  {v:"1.10.0",items:[
     "CO-OP ACTUALLY SYNCS NOW. It used to only share the wave number and a vague hint that a bug spawned - everyone's towers, bugs, and cash were really just separate, disconnected simulations running side by side. The host now runs the real shared game and streams the board to everyone else in real time, and placing, upgrading or selling a tower goes through the shared game so your teammates actually see it. Heroes aren't part of the shared board yet - that's still local-only per player, a follow-up for later",
     "FIXED THE HOST BEING ASKED FOR THEIR HERO TWICE when starting a co-op run - once in the lobby, then again on a whole separate screen right after clicking Start. It only asks once now, matching what guests already saw",
     "FIXED A TOWER'S \"POPPED\" COUNT NEVER MOVING in the upgrade panel. Kills were never actually credited back to the tower that landed them, so the stat sat at zero forever no matter how much a tower fought - every kill, including burn damage over time, now correctly credits the tower that caused it"
@@ -1985,7 +2028,7 @@ function placeTower(id,gx,gy){
   if(cash<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   cash-=cost;
-  var tw={id:id,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0};
+  var tw={id:id,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1};
   recalcTower(tw);
   towers.push(tw);
   sfx.place(); updateHud(); renderShop();
@@ -2045,6 +2088,17 @@ function giveHeroXp(n){
   }
 }
 
+/* towers earn mastery through use, same idea as hero XP - each upgrade tier
+   needs a minimum tower level (TOWER_TIER_LVL, indexed by tier) on top of
+   its cash cost, so upgrades have to be earned by fighting, not just bought. */
+var TOWER_TIER_LVL=[2,4,7];
+function towerXpNeeded(l){ return Math.round(6*Math.pow(1.35,l-1)); }
+function giveTowerXp(tw,n){
+  tw.xp=(tw.xp||0)+n;
+  while(tw.xp>=towerXpNeeded(tw.lvl)&&tw.lvl<10){
+    tw.xp-=towerXpNeeded(tw.lvl); tw.lvl++;
+  }
+}
 function sellTower(tw){
   var back=Math.round(tw.spent*.7);
   cash+=back;
@@ -2066,6 +2120,8 @@ function upgradeTower(tw,pathN){
   if(tier===0&&activePaths>=2){ toast("Only two paths can be upgraded at once"); return; }
   var anyOtherPast2=tiers.some(function(t,i){ return i!==idx&&t>2; });
   if(anyOtherPast2&&tier>=2){ toast("Another path already went past tier 2"); return; }
+  var needLvl=TOWER_TIER_LVL[tier];
+  if((tw.lvl||1)<needLvl){ toast("Needs to reach level "+needLvl+" first - "+(tw.pops||0)+" pops so far"); return; }
   var up=p.u[tier];
   if(cash<up.c){ toast("Not enough"); return; }
   cash-=up.c; tw.spent+=up.c;
@@ -2110,7 +2166,7 @@ function damageBug(b,dmg,pierceArm,tw){
   if(b.arm>0&&!pierceArm)dmg=Math.max(1,dmg-b.arm);
   if(b.weakT>0)dmg=Math.round(dmg*(1+b.weak));
   b.hp-=dmg;
-  if(b.hp<=0){ if(tw)tw.pops=(tw.pops||0)+1; popBug(b); }
+  if(b.hp<=0){ if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,1); } popBug(b); }
   return b.hp<=0;
 }
 
@@ -2236,7 +2292,7 @@ var coopSyncT=0;
 function broadcastSnap(){
   party.send({t:"snap",
     towers:towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
-      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,s:t.s}; }),
+      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,xp:t.xp,lvl:t.lvl,s:t.s}; }),
     bugs:bugs.map(function(b){ return {id:b.id,k:b.k,d:b.d,hp:b.hp,max:b.max,spd:b.spd,r:b.r,
       fly:b.fly,arm:b.arm,slow:b.slow,slowT:b.slowT,weak:b.weak,weakT:b.weakT,
       burn:b.burn,burnT:b.burnT,wob:b.wob}; }),
@@ -2277,7 +2333,7 @@ function update(dt){
     if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0)b.slow=1; }
     if(b.weakT>0)b.weakT-=dt;
     if(b.burnT>0){ b.burnT-=dt; b.hp-=b.burn*dt;
-      if(b.hp<=0){ if(b.burnSrc)b.burnSrc.pops=(b.burnSrc.pops||0)+1; popBug(b); continue; } }
+      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,1); } popBug(b); continue; } }
     b.d+=b.spd*b.slow*dt;
     if(b.d>=pathLen){
       lives-=BUGS[b.k].boss?20:Math.max(1,Math.round(BUGS[b.k].hp/2));
@@ -2653,6 +2709,9 @@ function renderPanel(){
   else if(s.support)sub.textContent="+"+(s.buffDmg||0)+" damage nearby";
   else sub.textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+tw.pops+" popped";
   p.appendChild(sub);
+  var lvlLine=document.createElement("div"); lvlLine.className="sub"; lvlLine.style.marginTop="-6px";
+  lvlLine.innerHTML="Level "+(tw.lvl||1)+(tw.lvl<10?" · "+(tw.xp||0)+"/"+towerXpNeeded(tw.lvl)+" xp":" (max)");
+  p.appendChild(lvlLine);
 
   var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
   var activePaths=allTiers.filter(function(t){ return t>0; }).length;
@@ -2668,11 +2727,14 @@ function renderPanel(){
     var up=pathDef.u[tier];
     var lockedNew=(tier===0&&activePaths>=2);
     var lockedDeep=(pastTwoIdx>=0&&pastTwoIdx!==idx&&tier>=2);
-    var locked=lockedNew||lockedDeep;
+    var needLvl=TOWER_TIER_LVL[tier];
+    var lockedLvl=(tw.lvl||1)<needLvl;
+    var locked=lockedNew||lockedDeep||lockedLvl;
     var b=document.createElement("button");
     b.className="ubtn"; b.disabled=cash<up.c||locked;
     b.innerHTML="<b>"+up.n+"</b>"+up.d+" <i>$"+up.c+"</i>"+
-      (lockedNew?" &mdash; only two paths at once":lockedDeep?" &mdash; another path went past tier 2":"");
+      (lockedNew?" &mdash; only two paths at once":lockedDeep?" &mdash; another path went past tier 2":
+       lockedLvl?" &mdash; needs level "+needLvl:"");
     b.onclick=function(){
       sfx.click();
       if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
@@ -2691,6 +2753,91 @@ function renderPanel(){
   };
   p.appendChild(sell);
 }
+
+/* double-click a placed tower for the full picture: all 3 paths side by
+   side with icons and descriptions, current mastery level/xp, and one-click
+   upgrading right from the card instead of a tiny sidebar list. */
+function openTowerUp(tw){
+  selTower=tw; sfx.click();
+  if(state==="play")state="pause";
+  renderTowerUp();
+  showOvl("o-towerup");
+}
+function renderTowerUp(){
+  if(!selTower)return;
+  var tw=selTower,def=byId(TOWERS,tw.id),s=tw.s,bf=buffsFor(tw),tc=TOWER_CATS[def.cat];
+  $("towerUpBox").style.background=tc.bg;
+  var oldIc=$("towerUpIcon"),newIc=iconFor("t",def.id,84);
+  newIc.id="towerUpIcon";
+  oldIc.parentNode.replaceChild(newIc,oldIc);
+  $("towerUpName").textContent=def.n;
+  $("towerUpName").style.color=tc.col;
+  $("towerUpDesc").textContent=def.d;
+  var atMax=(tw.lvl||1)>=10;
+  $("towerUpLvl").textContent="Level "+(tw.lvl||1)+(atMax?" (max mastery)":"");
+  var need=atMax?1:towerXpNeeded(tw.lvl||1);
+  var pct=atMax?100:Math.min(100,Math.round((tw.xp||0)/need*100));
+  $("towerUpXpFill").style.width=pct+"%";
+  $("towerUpXpTxt").textContent=atMax?"Fully mastered":(Math.floor(tw.xp||0)+" / "+need+" xp to next level");
+  if(s.income)$("towerUpStats").textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped";
+  else if(s.support)$("towerUpStats").textContent="+"+(s.buffDmg||0)+" damage nearby · "+(tw.pops||0)+" popped";
+  else $("towerUpStats").textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+(tw.pops||0)+" popped";
+
+  var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
+  var activePaths=allTiers.filter(function(x){ return x>0; }).length;
+  var pastTwoIdx=-1; allTiers.forEach(function(x,i){ if(x>2)pastTwoIdx=i; });
+
+  var wrap=$("towerUpPaths"); wrap.innerHTML="";
+  [1,2,3].forEach(function(n){
+    var idx=n-1, pathDef=allPaths[idx], curTier=allTiers[idx];
+    var col=document.createElement("div");
+    var head=document.createElement("div"); head.className="tuphead";
+    head.textContent=pathDef.n+" · "+curTier+"/3"; col.appendChild(head);
+    pathDef.u.forEach(function(up,ti){
+      var done=ti<curTier, isNext=ti===curTier, futureLocked=ti>curTier;
+      var lockedNew=isNext&&curTier===0&&activePaths>=2;
+      var lockedDeep=isNext&&pastTwoIdx>=0&&pastTwoIdx!==idx&&curTier>=2;
+      var needLvl=TOWER_TIER_LVL[ti];
+      var lockedLvl=isNext&&(tw.lvl||1)<needLvl;
+      var lockedCash=isNext&&cash<up.c;
+      var locked=isNext&&(lockedNew||lockedDeep||lockedLvl);
+      var card=document.createElement("div");
+      card.className="tuptier"+(done?" done":"")+((locked||futureLocked)?" locked":"");
+      var cv2=document.createElement("canvas"); cv2.width=60; cv2.height=60;
+      var gctx=cv2.getContext("2d"); gctx.scale(2,2); gctx.translate(15,15);
+      drawUpgradeIcon(gctx,upgradeIconKind(up),12,done?"#6fbf8f":(locked||futureLocked)?"#5a4f3e":tc.col);
+      card.appendChild(cv2);
+      var lockReason=lockedNew?"Only two paths at once":lockedDeep?"Another path passed tier 2":
+        lockedLvl?"Needs level "+needLvl:futureLocked?"Unlock the tier above first":
+        lockedCash?"Not enough cash":"";
+      var info=document.createElement("div");
+      info.innerHTML='<div class="tun">'+up.n+(done?" &#10003;":"")+'</div><div class="tud">'+up.d+'</div>'+
+        (done?"":'<div class="tuc">$'+up.c+'</div>')+
+        (lockReason?'<div class="tul">'+lockReason+'</div>':'');
+      card.appendChild(info);
+      if(isNext&&!locked&&!lockedCash){
+        card.onclick=function(){
+          sfx.click();
+          if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
+          else upgradeTower(tw,n);
+          renderTowerUp();
+        };
+      }
+      col.appendChild(card);
+    });
+    wrap.appendChild(col);
+  });
+
+  var sellBtn=$("towerUpSell");
+  sellBtn.textContent="Sell for $"+Math.round(tw.spent*.7);
+  sellBtn.onclick=function(){
+    sfx.click();
+    if(party.on&&!party.leader)party.send({t:"reqSell",gx:tw.gx,gy:tw.gy});
+    else sellTower(tw);
+    $("towerUpClose").onclick();
+  };
+}
+$("towerUpClose").onclick=function(){ sfx.click(); if(state==="pause")state="play"; hideOvl(); };
 
 /* ═════════════ INPUT ═════════════ */
 cv.addEventListener("pointermove",function(e){
@@ -2724,8 +2871,17 @@ cv.addEventListener("pointerdown",function(e){
       selTower=towers[i]; sfx.click(); renderPanel(); return;
     }
   }
+  if(hero&&hero.gx===gx&&hero.gy===gy){ openHeroPanel(); return; }
   selTower=null; $("panel").classList.add("hide");
 },{passive:false});
+cv.addEventListener("dblclick",function(e){
+  if(state!=="play"||placing)return;
+  var w=toWorld(e.clientX,e.clientY);
+  var gx=Math.floor(w.x/CELL),gy=Math.floor(w.y/CELL);
+  for(var i=0;i<towers.length;i++){
+    if(towers[i].gx===gx&&towers[i].gy===gy){ openTowerUp(towers[i]); return; }
+  }
+});
 
 window.addEventListener("keydown",function(e){
   if(state!=="play")return;
@@ -2811,6 +2967,67 @@ function decoIcon(g,kind,x,y,r,col){
   } else if(kind==="crown"){
     g.beginPath(); g.moveTo(-r,r*.6); g.lineTo(-r,-r*.2); g.lineTo(-r*.4,r*.2);
     g.lineTo(0,-r*.7); g.lineTo(r*.4,r*.2); g.lineTo(r,-r*.2); g.lineTo(r,r*.6); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+/* every upgrade gets an icon matching what it actually does, picked from its
+   own description text rather than hand-authoring 135+ bespoke icons - the
+   phrasing across every upgrade is consistent enough that keyword matching
+   nails the right category almost every time. */
+function upgradeIconKind(up){
+  var d=(up.d||"").toLowerCase();
+  if(d.indexOf("armour")>=0)return "armor";
+  if(d.indexOf("splash")>=0||d.indexOf("blast")>=0)return "splash";
+  if(d.indexOf("pierce")>=0||d.indexOf("more bug")>=0||d.indexOf("more at once")>=0)return "pierce";
+  if(d.indexOf("faster")>=0)return "speed";
+  if(d.indexOf("range")>=0)return "range";
+  if(d.indexOf("slow")>=0||d.indexOf("weak")>=0||d.indexOf("burn")>=0||d.indexOf("chill")>=0||d.indexOf("frost")>=0)return "cc";
+  if(d.indexOf("round")>=0||d.indexOf("nearby")>=0||d.indexOf("everywhere")>=0)return "econ";
+  return "dmg";
+}
+function drawUpgradeIcon(g,kind,r,col){
+  g.save(); g.strokeStyle=col; g.fillStyle=col; g.lineCap="round"; g.lineJoin="round";
+  if(kind==="dmg"){
+    g.lineWidth=Math.max(1,r*.16);
+    g.beginPath();
+    for(var i=0;i<6;i++){ var a=i/6*6.283, rr=i%2?r*.5:r;
+      g[i?"lineTo":"moveTo"](Math.cos(a)*rr,Math.sin(a)*rr); }
+    g.closePath(); g.fill();
+  } else if(kind==="speed"){
+    g.beginPath(); g.moveTo(r*.15,-r); g.lineTo(-r*.5,r*.15); g.lineTo(-r*.05,r*.15);
+    g.lineTo(-r*.3,r); g.lineTo(r*.5,-r*.1); g.lineTo(r*.05,-r*.1); g.closePath(); g.fill();
+  } else if(kind==="range"){
+    g.lineWidth=Math.max(1,r*.14);
+    g.beginPath(); g.arc(0,0,r*.85,0,6.283); g.stroke();
+    g.beginPath(); g.arc(0,0,r*.42,0,6.283); g.stroke();
+    g.beginPath(); g.moveTo(0,-r); g.lineTo(0,-r*.55); g.moveTo(0,r*.55); g.lineTo(0,r);
+    g.moveTo(-r,0); g.lineTo(-r*.55,0); g.moveTo(r*.55,0); g.lineTo(r,0); g.stroke();
+    g.beginPath(); g.arc(0,0,r*.12,0,6.283); g.fill();
+  } else if(kind==="pierce"){
+    g.lineWidth=Math.max(1,r*.16);
+    g.beginPath(); g.moveTo(-r*.9,0); g.lineTo(r*.6,0); g.stroke();
+    g.beginPath(); g.moveTo(r*.15,-r*.5); g.lineTo(r*.85,0); g.lineTo(r*.15,r*.5); g.stroke();
+  } else if(kind==="splash"){
+    g.lineWidth=Math.max(1,r*.13);
+    [.35,.62,.9].forEach(function(rf,i){ g.globalAlpha=1-i*.28;
+      g.beginPath(); g.arc(0,0,r*rf,0,6.283); g.stroke(); });
+    g.globalAlpha=1;
+  } else if(kind==="cc"){
+    g.lineWidth=Math.max(1,r*.15);
+    for(var j=0;j<3;j++){ g.save(); g.rotate(j*1.047);
+      g.beginPath(); g.moveTo(0,-r); g.lineTo(0,r); g.moveTo(-r*.3,-r*.7); g.lineTo(r*.3,-r*.4);
+      g.moveTo(-r*.3,r*.4); g.lineTo(r*.3,r*.7); g.stroke(); g.restore(); }
+  } else if(kind==="econ"){
+    g.lineWidth=Math.max(1,r*.12);
+    g.beginPath(); g.arc(0,0,r*.85,0,6.283); g.stroke();
+    g.font="bold "+Math.round(r*.9)+"px sans-serif"; g.textAlign="center"; g.textBaseline="middle";
+    g.fillText("$",0,r*.06); g.textAlign="left"; g.textBaseline="alphabetic";
+  } else if(kind==="armor"){
+    g.lineWidth=Math.max(1,r*.13);
+    g.beginPath(); g.moveTo(0,-r); g.lineTo(r*.8,-r*.55); g.lineTo(r*.8,r*.15);
+    g.quadraticCurveTo(r*.8,r*.75,0,r); g.quadraticCurveTo(-r*.8,r*.75,-r*.8,r*.15);
+    g.lineTo(-r*.8,-r*.55); g.closePath(); g.stroke();
+    g.beginPath(); g.moveTo(-r*.15,-r*.4); g.lineTo(r*.15,-r*.05); g.lineTo(-r*.1,r*.15); g.lineTo(r*.2,r*.55); g.stroke();
   }
   g.restore();
 }
@@ -3178,7 +3395,13 @@ var party={
         wave=m.wave; waveMax=m.waveMax; inWave=m.inWave; fastFwd=m.fastFwd; totalPops=m.pops;
         if(wasSel){
           selTower=towers.filter(function(t){ return t.gx===wasSel.gx&&t.gy===wasSel.gy; })[0]||null;
-          if(selTower)renderPanel(); else $("panel").classList.add("hide");
+          if(selTower){
+            renderPanel();
+            if($("o-towerup").className.indexOf("hide")<0)renderTowerUp();
+          } else {
+            $("panel").classList.add("hide");
+            if($("o-towerup").className.indexOf("hide")<0)$("towerUpClose").onclick();
+          }
         }
         updateHud();
       }
