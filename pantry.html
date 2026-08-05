@@ -495,9 +495,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.2.0";
+var VERSION="1.2.1";
 var CHANGELOG=[
-  {v:"1.2.0",d:"latest",items:[
+  {v:"1.2.1",d:"latest",items:[
+    "FIXED CRUMBS ONLY PAYING OUT ON A WIN. They're supposed to be earned just for finishing a round, whether you win or lose - a loss was quietly paying zero"
+  ]},
+  {v:"1.2.0",items:[
     "TITLE SCREEN REBUILT. Three big buttons across the bottom - Play, Co-op and Heroes - with a row of smaller icon buttons above for Towers, Achievements, Shop, Skills, Almanac and Changelog",
     "A HEROES HUB. The new Heroes button lets you browse and equip your default hero without starting a run. In co-op, everyone gets their own \"Change hero\" button in the lobby while waiting for the host to start",
     "TEN ACHIEVEMENTS to track down, from your first win to clearing every larder with every hero",
@@ -1687,6 +1690,8 @@ function startRun(mapIdx,diffIdx,heroId){
 
 function endRun(won){
   state="over";
+  var roundsSurvived=won?waveMax:Math.max(0,wave-1);
+  save.crumbs=(save.crumbs||0)+Math.round(roundsSurvived*(6+curDiff*3));
   if(won){
     save.wins++;
     var jars=Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier));
@@ -1695,7 +1700,6 @@ function endRun(won){
     if(save.mapsBeat.indexOf(key)<0)save.mapsBeat.push(key);
     if(curDiff===2)save.hardWins=(save.hardWins||0)+1;
     if(lives>=runStartLives)save.perfectWins=(save.perfectWins||0)+1;
-    save.crumbs=(save.crumbs||0)+Math.round(30*DIFFS[curDiff].rew*MAPS[curMap].tier);
     sfx.win();
   } else sfx.lose();
   if(wave>save.best)save.best=wave;
@@ -1711,6 +1715,7 @@ function endRun(won){
   var rows=[["Larder",MAPS[curMap].n],["Difficulty",DIFFS[curDiff].n],
     ["Round reached",wave+"/"+waveMax],["Bugs popped",totalPops],
     ["Hero",byId(HEROES,chosenHero).n+" (lv "+(hero?hero.lvl:1)+")"]];
+  rows.push(["Crumbs earned","+"+Math.round(roundsSurvived*(6+curDiff*3))]);
   if(won)rows.push(["Preserve Jars earned","+"+Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier))]);
   rows.forEach(function(r){
     var d=document.createElement("div"); d.className="statline";
