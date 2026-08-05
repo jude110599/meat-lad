@@ -180,6 +180,44 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:11px;
   margin-bottom:9px}
 
+/* map select - BTD6-style paged picker with a mini path preview per card */
+#mapPager,#pMapPager{display:flex;align-items:center;gap:6px}
+.pagerBtn{flex:none;width:34px;height:80px;background:var(--bg2);border:1px solid var(--line);
+  color:var(--txt);border-radius:8px;font-size:20px;cursor:pointer}
+.pagerBtn:hover{background:var(--bg3)}
+.pagerBtn:disabled{opacity:.25;cursor:default}
+.mapPageGrid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:8px;min-width:0}
+.mapcard{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px;
+  cursor:pointer;text-align:left;transition:background .15s,transform .15s cubic-bezier(.34,1.56,.64,1),box-shadow .15s}
+.mapcard:hover{background:var(--bg3);transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.mapcard:active{transform:translateY(0) scale(.97)}
+.mapcard.sel{border-color:var(--honey);box-shadow:0 0 0 1px var(--honey2),0 4px 14px rgba(232,168,56,.25);
+  animation:pop .28s cubic-bezier(.34,1.56,.64,1)}
+.mapcard.locked{opacity:.4;cursor:default}
+.mapcard canvas{display:block;width:100%;height:auto;border-radius:5px;margin-bottom:6px;background:#191309}
+.mapcard .mn{font-weight:800;font-size:12.5px}
+.mapcard .md{font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.mapcard .mt{font-size:9.5px;color:var(--gold);margin-top:4px;letter-spacing:.06em;text-transform:uppercase}
+#mapDots{display:flex;justify-content:center;gap:6px;margin-top:8px}
+#mapDots span{width:7px;height:7px;border-radius:50%;background:var(--line)}
+#mapDots span.on{background:var(--honey)}
+
+/* hero select - BTD6-style grouped picker, colour-coded per group */
+.herogroup{margin-bottom:4px}
+.herogroup .ghdr{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  font-weight:800;margin:12px 0 6px;padding-left:2px}
+.herorow{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.herocard{border:1px solid var(--line);border-radius:8px;padding:9px;cursor:pointer;
+  text-align:left;display:flex;align-items:center;gap:8px;
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1),box-shadow .15s,border-color .15s}
+.herocard:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.herocard:active{transform:translateY(0) scale(.97)}
+.herocard.sel{box-shadow:0 0 0 2px var(--honey2),0 4px 14px rgba(232,168,56,.3);
+  animation:pop .28s cubic-bezier(.34,1.56,.64,1)}
+.herocard canvas{flex:none;width:40px;height:40px;border-radius:6px;background:rgba(0,0,0,.22)}
+.herocard .hn{font-weight:800;font-size:12px;color:#fff}
+.herocard .hl{font-size:10px;color:rgba(255,255,255,.6);margin-top:1px}
+
 /* skill tree */
 .skgrid{display:grid;grid-template-columns:1fr;gap:7px}
 .sknode{background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--bg4);
@@ -246,8 +284,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <div class="note">Each larder is longer and more tangled than the last.</div>
     <div class="sect">Difficulty</div>
     <div class="grid" id="diffGrid" style="grid-template-columns:repeat(3,1fr)"></div>
-    <div class="sect">Larder</div>
-    <div class="grid" id="mapGrid"></div>
+    <div class="sect" style="display:flex;align-items:center;gap:8px">Larder
+      <span class="chip" id="mapPageLbl" style="margin-left:auto">1/2</span></div>
+    <div id="mapPager">
+      <button class="pagerBtn" id="mapPgPrev">&lsaquo;</button>
+      <div class="mapPageGrid" id="mapGrid"></div>
+      <button class="pagerBtn" id="mapPgNext">&rsaquo;</button>
+    </div>
+    <div id="mapDots"></div>
     <button class="btn" id="mapNext" style="margin-top:16px;border-left-color:var(--mint)">Pick a hero</button>
     <div class="spacer"></div>
   </div></div>
@@ -264,9 +308,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
         <div class="cd" id="heroPrevDesc" style="font-size:12px;margin-top:6px"></div>
         <div class="cd" id="heroPrevSkill" style="font-size:11px;margin-top:8px;color:var(--mint)"></div>
       </div>
-      <div style="flex:1;min-width:200px">
-        <div class="grid" id="heroGrid" style="grid-template-columns:repeat(2,1fr)"></div>
-      </div>
+      <div style="flex:1;min-width:200px;max-height:420px;overflow-y:auto" id="heroGrid"></div>
     </div>
     <button class="btn" id="heroStart" style="margin-top:16px;border-left-color:var(--mint)">Into the pantry</button>
     <div class="spacer"></div>
@@ -332,8 +374,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
       <div id="pHostArea">
         <div class="sect">Difficulty</div>
         <div class="grid" id="pDiffGrid" style="grid-template-columns:repeat(3,1fr)"></div>
-        <div class="sect">Larder</div>
-        <div class="grid" id="pMapGrid"></div>
+        <div class="sect" style="display:flex;align-items:center;gap:8px">Larder
+          <span class="chip" id="pMapPageLbl" style="margin-left:auto">1/2</span></div>
+        <div id="pMapPager">
+          <button class="pagerBtn" id="pMapPgPrev">&lsaquo;</button>
+          <div class="mapPageGrid" id="pMapGrid"></div>
+          <button class="pagerBtn" id="pMapPgNext">&rsaquo;</button>
+        </div>
+        <div id="pMapDots"></div>
         <button class="btn" id="pStart" style="margin-top:14px;border-left-color:var(--mint)">Start for everyone</button>
       </div>
       <div class="note" id="pWait" style="display:none;margin-top:12px">Waiting for the host to start...</div>
@@ -364,9 +412,17 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.0.0";
+var VERSION="1.1.0";
 var CHANGELOG=[
-  {v:"1.0.0",d:"latest",items:[
+  {v:"1.1.0",d:"latest",items:[
+    "FIXED THE GO/FAST-FORWARD BUTTON BEING UNCLICKABLE. The HUD bar spanned the full screen width while the shop panel painted over the same top-right corner, physically hiding the button underneath it the whole time",
+    "SIX MORE TOWERS, fifteen in total - Toaster and three military/magic pieces (Meat Cleaver, Mixer Bot, Freezer Ray, Oven Blast) plus Recipe Book, a support tower that speeds up every tower on the board, not just nearby ones",
+    "FOUR MORE HEROES, ten in total - Baker Jo, Granny Spice, Butcher Rex and a crossover guest, The Lad, on loan from next door's platformer",
+    "SEVEN MORE LARDERS, twelve in total, up to tier 12's Grand Larder",
+    "MAP SELECT REBUILT. Larders now show an actual little picture of their path and page through six at a time instead of a wall of text cards",
+    "HERO SELECT REBUILT. All ten heroes are visible at once in a scrolling list, grouped and colour-coded by type - Kitchen Staff, Cutlery & Tools, Magic & Mystic, Money & Support, Garden Guests and Special Guests"
+  ]},
+  {v:"1.0.0",items:[
     "PANTRY PANIC IS HERE. A tower defence about bugs raiding the larder - nine towers across four categories, six heroes, five larders, three difficulties, a permanent skill tree and online co-op",
     "NINE TOWERS IN FOUR CATEGORIES. Primary (Crumb Flicker, Pepper Grinder, Rolling Pin), Military (Salt Shaker, Corkscrew), Magic (Tea Kettle, Honey Pot) and Support (Spice Rack, Piggy Bank). Every one has two upgrade paths, five tiers deep between them",
     "SIX HEROES, each with their own attack and two abilities that unlock as they level. Chef Gordo speeds up as he cooks, Nana Crust lobs splash pies, Sir Fork hits like a truck up close, Madame Whisk weakens what she touches, Old Tin prints money, and Sprout is on loan from Beetdown",
@@ -625,7 +681,21 @@ var MAPS=[
   {id:"maze", n:"Cupboard Maze", d:"Long and winding. Range matters.", waves:40, tier:4,
    path:[[-1,1],[3,1],[3,6],[7,6],[7,1],[11,1],[11,7],[15,7],[15,2],[19,2],[19,9],[8,9],[8,13],[25,13]]},
   {id:"deep", n:"The Deep Larder", d:"The worst of it. Good luck.", waves:40, tier:5,
-   path:[[-1,7],[3,7],[3,2],[6,2],[6,12],[10,12],[10,5],[13,5],[13,13],[16,13],[16,1],[20,1],[20,8],[23,8],[23,13],[25,13]]}
+   path:[[-1,7],[3,7],[3,2],[6,2],[6,12],[10,12],[10,5],[13,5],[13,13],[16,13],[16,1],[20,1],[20,8],[23,8],[23,13],[25,13]]},
+  {id:"bread", n:"Breadbox Alley", d:"A steady zigzag down the shelf.", waves:40, tier:6,
+   path:[[-1,3],[4,3],[4,10],[9,10],[9,3],[14,3],[14,10],[19,10],[19,3],[25,3]]},
+  {id:"cans", n:"Canned Goods Row", d:"Stacked tight, turns come fast.", waves:40, tier:7,
+   path:[[-1,13],[3,13],[3,6],[7,6],[7,13],[11,13],[11,2],[15,2],[15,9],[19,9],[19,4],[25,4]]},
+  {id:"fridge", n:"Fridge Freeze", d:"Big swings top to bottom.", waves:40, tier:8,
+   path:[[-1,7],[5,7],[5,1],[10,1],[10,13],[15,13],[15,5],[20,5],[20,10],[25,10]]},
+  {id:"fruit", n:"Fruit Bowl Loop", d:"Doubles back through the middle.", waves:40, tier:9,
+   path:[[-1,2],[6,2],[6,7],[2,7],[2,12],[10,12],[10,4],[16,4],[16,12],[22,12],[22,6],[25,6]]},
+  {id:"basement", n:"Basement Stores", d:"A tight comb of short corridors.", waves:40, tier:10,
+   path:[[-1,1],[2,1],[2,6],[6,6],[6,1],[9,1],[9,6],[13,6],[13,1],[16,1],[16,6],[20,6],[20,1],[25,1]]},
+  {id:"spiral", n:"Spice Spiral", d:"Winds inward before it breaks free.", waves:40, tier:11,
+   path:[[-1,1],[22,1],[22,13],[2,13],[2,3],[18,3],[18,10],[6,10],[6,6],[14,6],[14,8],[25,8]]},
+  {id:"grand", n:"The Grand Larder", d:"Every trick in the pantry at once.", waves:40, tier:12,
+   path:[[-1,1],[3,1],[3,13],[7,13],[7,1],[11,1],[11,13],[15,13],[15,1],[19,1],[19,13],[23,13],[23,7],[25,7]]}
 ];
 var curMap=0;
 
@@ -767,48 +837,152 @@ var TOWERS=[
    p2:{n:"Interest",u:[
      {n:"Savings",c:560,d:"+70 a round",f:function(s){s.income+=70;}},
      {n:"Compound",c:1600,d:"+180 a round",f:function(s){s.income+=180;}},
-     {n:"Investment",c:5500,d:"+560 a round",f:function(s){s.income+=560;}}]}}
+     {n:"Investment",c:5500,d:"+560 a round",f:function(s){s.income+=560;}}]}},
+
+  {id:"toaster", n:"Toaster", cat:"primary", cost:260, col:"#b8825a",
+   d:"Pops bread out in a straight line. Punches through a row of bugs.",
+   base:{dmg:2,rng:130,cd:.62,pierce:3,air:false},
+   p1:{n:"Darker Setting",u:[
+     {n:"Medium Brown",c:150,d:"+2 damage",f:function(s){s.dmg+=2;}},
+     {n:"Well Done",c:440,d:"+3 damage, +2 pierce",f:function(s){s.dmg+=3;s.pierce+=2;}},
+     {n:"Carbonised",c:1800,d:"+7 damage, pops armour",f:function(s){s.dmg+=7;s.pierceArm=true;}}]},
+   p2:{n:"Extra Slots",u:[
+     {n:"Four Slice",c:140,d:"25% faster",f:function(s){s.cd*=.75;}},
+     {n:"Six Slice",c:400,d:"40% faster, +30 range",f:function(s){s.cd*=.6;s.rng+=30;}},
+     {n:"Industrial",c:1700,d:"Twice as fast, +3 pierce",f:function(s){s.cd*=.5;s.pierce+=3;}}]}},
+
+  {id:"cleaver", n:"Meat Cleaver", cat:"military", cost:520, col:"#c8ccd4",
+   d:"Swings in a wide arc right in front of it. Brutal up close.",
+   base:{dmg:6,rng:76,cd:.9,pierce:8,air:false,cone:true},
+   p1:{n:"Heavier Blade",u:[
+     {n:"Whetstone",c:280,d:"+5 damage",f:function(s){s.dmg+=5;}},
+     {n:"Cleaver Two-Hand",c:820,d:"+9 damage, pops armour",f:function(s){s.dmg+=9;s.pierceArm=true;}},
+     {n:"The Big One",c:3200,d:"+20 damage, +6 pierce",f:function(s){s.dmg+=20;s.pierce+=6;}}]},
+   p2:{n:"Faster Swings",u:[
+     {n:"Loose Wrist",c:260,d:"30% faster",f:function(s){s.cd*=.7;}},
+     {n:"Butcher's Rhythm",c:760,d:"45% faster, +20 range",f:function(s){s.cd*=.55;s.rng+=20;}},
+     {n:"Blur of Blades",c:2900,d:"Twice as fast again",f:function(s){s.cd*=.5;}}]}},
+
+  {id:"mixer", n:"Mixer Bot", cat:"military", cost:900, col:"#8a94a0",
+   d:"Spinning beaters that never stop. Constant close-range damage, hits everyone in range at once.",
+   base:{dmg:1,rng:70,cd:.28,pierce:20,air:true,cone:true,coneWide:true},
+   p1:{n:"Sharper Beaters",u:[
+     {n:"Steel Whisks",c:480,d:"+1 damage",f:function(s){s.dmg+=1;}},
+     {n:"Serrated Edge",c:1400,d:"+2 damage, pops armour",f:function(s){s.dmg+=2;s.pierceArm=true;}},
+     {n:"Blade Storm",c:5000,d:"+4 damage, +2 pierce",f:function(s){s.dmg+=4;}}]},
+   p2:{n:"Wider Bowl",u:[
+     {n:"Big Bowl",c:440,d:"+25 range",f:function(s){s.rng+=25;}},
+     {n:"Stand Mixer",c:1300,d:"+40 range, 25% faster",f:function(s){s.rng+=40;s.cd*=.75;}},
+     {n:"Commercial Grade",c:4600,d:"+60 range, twice as fast",f:function(s){s.rng+=60;s.cd*=.5;}}]}},
+
+  {id:"oven", n:"Oven Blast", cat:"magic", cost:860, col:"#d8622e",
+   d:"A slow, heavy blast of oven heat that scorches everything in front of it.",
+   base:{dmg:8,rng:100,cd:2.4,pierce:14,air:false,cone:true,burn:3},
+   p1:{n:"Higher Heat",u:[
+     {n:"Fan Assisted",c:440,d:"+6 damage",f:function(s){s.dmg+=6;}},
+     {n:"Pizza Stone",c:1300,d:"+12 damage, longer burn",f:function(s){s.dmg+=12;s.burn=6;}},
+     {n:"Wood Fired",c:4800,d:"+26 damage, pops armour",f:function(s){s.dmg+=26;s.pierceArm=true;}}]},
+   p2:{n:"Bigger Batches",u:[
+     {n:"Second Rack",c:400,d:"+30 range",f:function(s){s.rng+=30;}},
+     {n:"Double Oven",c:1200,d:"+50 range, 30% faster",f:function(s){s.rng+=50;s.cd*=.7;}},
+     {n:"Restaurant Range",c:4400,d:"+80 range, twice as fast",f:function(s){s.rng+=80;s.cd*=.5;}}]}},
+
+  {id:"freezer", n:"Freezer Ray", cat:"magic", cost:700, col:"#8fd0e8",
+   d:"A steady beam that freezes anything it touches solid. Barely hurts them.",
+   base:{dmg:0,rng:150,cd:1.3,pierce:1,air:true,snipe:true,slow:.18,slowT:2.6},
+   p1:{n:"Deeper Freeze",u:[
+     {n:"Colder Coils",c:380,d:"Slows harder and longer",f:function(s){s.slow=.1;s.slowT=3.4;}},
+     {n:"Flash Freeze",c:1100,d:"Near-stops them, +2 damage",f:function(s){s.slow=.05;s.slowT=4;s.dmg+=2;}},
+     {n:"Absolute Zero",c:4200,d:"Fully freezes for a moment, +5 damage",f:function(s){s.slow=.01;s.slowT=5;s.dmg+=5;}}]},
+   p2:{n:"Wider Beam",u:[
+     {n:"Focused Lens",c:340,d:"+40 range",f:function(s){s.rng+=40;}},
+     {n:"Dual Nozzle",c:1000,d:"+60 range, hits two",f:function(s){s.rng+=60;s.pierce=2;}},
+     {n:"Blizzard Array",c:3800,d:"+90 range, hits four",f:function(s){s.rng+=90;s.pierce=4;}}]}},
+
+  {id:"recipe", n:"Recipe Book", cat:"support", cost:1300, col:"#7a9c5e",
+   d:"Sits open on the counter. Every tower on the whole board reads a little faster.",
+   base:{dmg:0,rng:9999,cd:99,buffDmg:0,buffRng:1,buffCd:.94,support:true,global:true},
+   p1:{n:"More Recipes",u:[
+     {n:"Dog-Eared Pages",c:700,d:"Towers everywhere +6% faster",f:function(s){s.buffCd*=.94;}},
+     {n:"Family Recipes",c:2000,d:"Another 6% faster everywhere",f:function(s){s.buffCd*=.94;}},
+     {n:"Grandma's Secrets",c:7000,d:"Another 8% faster, +1 damage everywhere",f:function(s){s.buffCd*=.92;s.buffDmg+=1;}}]},
+   p2:{n:"Annotations",u:[
+     {n:"Sticky Notes",c:650,d:"Towers everywhere +1 damage",f:function(s){s.buffDmg+=1;}},
+     {n:"Chef's Notes",c:1900,d:"Another +1 damage everywhere",f:function(s){s.buffDmg+=1;}},
+     {n:"Master Chef Edition",c:6500,d:"Another +2 damage everywhere",f:function(s){s.buffDmg+=2;}}]}}
 ];
 var CATS=["primary","military","magic","support"];
 
 /* ═════════════ DATA: HEROES ═════════════ */
+var HERO_GROUPS={
+  kitchen:  {n:"Kitchen Staff",    col:"#d84a3a", bg:"linear-gradient(160deg,#3a1712,#200c09)"},
+  cutlery:  {n:"Cutlery & Tools",  col:"#8d9aa6", bg:"linear-gradient(160deg,#232a30,#12161a)"},
+  mystic:   {n:"Magic & Mystic",   col:"#a880d0", bg:"linear-gradient(160deg,#2a1c3a,#150c20)"},
+  support:  {n:"Money & Support",  col:"#7a9c5e", bg:"linear-gradient(160deg,#1e2a18,#0f150c)"},
+  garden:   {n:"Garden Guests",    col:"#7bd94a", bg:"linear-gradient(160deg,#1a3010,#0c1808)"},
+  guest:    {n:"Special Guests",   col:"#e8a838", bg:"linear-gradient(160deg,#3a2a10,#201608)"}
+};
 var HEROES=[
-  {id:"gordo", n:"Chef Gordo", col:"#d84a3a",
+  {id:"gordo", n:"Chef Gordo", col:"#d84a3a", grp:"kitchen",
    d:"Starts slow, ends up a blur. Gets faster with every level.",
    base:{dmg:2,rng:130,cd:.9,pierce:1,air:true},
    lvlup:function(s,l){ s.dmg=2+Math.floor(l/2); s.cd=Math.max(.14,.9*Math.pow(.9,l-1)); s.rng=130+l*4; },
    skills:[{l:4,n:"Fired Up",d:"Attacks 20% faster for good"},
            {l:10,n:"Service!",d:"Damage jumps by four"}]},
-  {id:"nana", n:"Nana Crust", col:"#c98a4b",
+  {id:"nana", n:"Nana Crust", col:"#c98a4b", grp:"kitchen",
    d:"Lobs pies that burst. Everything caught in the splash takes it.",
    base:{dmg:3,rng:160,cd:1.6,pierce:1,air:true,splash:44},
    lvlup:function(s,l){ s.dmg=3+l; s.splash=44+l*4; s.cd=Math.max(.5,1.6-l*.06); },
    skills:[{l:5,n:"Bigger Tins",d:"Splash grows by half again"},
            {l:12,n:"Family Recipe",d:"Pies pop armour"}]},
-  {id:"fork", n:"Sir Fork", col:"#b8c0c8",
+  {id:"bakerjo", n:"Baker Jo", col:"#e8b45a", grp:"kitchen",
+   d:"Rolls heavy dough balls that flatten a bug's speed for a moment.",
+   base:{dmg:2,rng:120,cd:1.1,pierce:2,air:false,slow:.08,slowT:.5},
+   lvlup:function(s,l){ s.dmg=2+l; s.slowT=.5+l*.05; s.pierce=2+Math.floor(l/4); },
+   skills:[{l:5,n:"Second Batch",d:"Hits two more bugs at once"},
+           {l:11,n:"Burnt Crust",d:"+8 damage, pops armour"}]},
+  {id:"granny", n:"Granny Spice", col:"#c4442e", grp:"kitchen",
+   d:"A cloud of pepper that lingers, weakening everything inside it.",
+   base:{dmg:1,rng:100,cd:1,pierce:8,air:true,cone:true,coneWide:true,weaken:.15,weakenT:3},
+   lvlup:function(s,l){ s.dmg=1+Math.floor(l/2); s.weaken=Math.min(.5,.15+l*.02); s.pierce=8+Math.floor(l/2); },
+   skills:[{l:5,n:"Extra Spicy",d:"Weakening lasts twice as long"},
+           {l:11,n:"Nuclear Pepper",d:"+6 damage, pops armour"}]},
+  {id:"fork", n:"Sir Fork", col:"#b8c0c8", grp:"cutlery",
    d:"Short reach, enormous damage. Put him right on the path.",
    base:{dmg:9,rng:78,cd:.7,pierce:3,air:false,pierceArm:true},
    lvlup:function(s,l){ s.dmg=9+l*3; s.pierce=3+Math.floor(l/3); s.rng=78+l*2; },
    skills:[{l:6,n:"Three Prongs",d:"Hits three more bugs at once"},
            {l:13,n:"Skewer",d:"Damage jumps by twenty"}]},
-  {id:"whisk", n:"Madame Whisk", col:"#a880d0",
+  {id:"butcher", n:"Butcher Rex", col:"#a83a3a", grp:"cutlery",
+   d:"A wide cleaving swing that catches everything nearby, not just one target.",
+   base:{dmg:4,rng:74,cd:.8,pierce:10,air:false,cone:true,pierceArm:true},
+   lvlup:function(s,l){ s.dmg=4+Math.floor(l*1.3); s.pierce=10+Math.floor(l/2); },
+   skills:[{l:6,n:"Twin Cleavers",d:"Swing becomes a full circle"},
+           {l:13,n:"Butcher's Fury",d:"Damage jumps by fifteen"}]},
+  {id:"whisk", n:"Madame Whisk", col:"#a880d0", grp:"mystic",
    d:"Weakens what she hits so every other tower does more to it.",
    base:{dmg:1,rng:145,cd:1,pierce:4,air:true,weaken:.25,weakenT:4},
    lvlup:function(s,l){ s.dmg=1+Math.floor(l/2); s.weaken=Math.min(.7,.25+l*.035); s.pierce=4+Math.floor(l/2); },
    skills:[{l:5,n:"Sharp Tongue",d:"Weakening lasts twice as long"},
            {l:11,n:"Whipped",d:"Also slows what she hits"}]},
-  {id:"tin", n:"Old Tin", col:"#8d9aa6",
+  {id:"tin", n:"Old Tin", col:"#8d9aa6", grp:"support",
    d:"Barely fights. Hands you money every round instead.",
    base:{dmg:1,rng:100,cd:1.6,pierce:1,air:true,income:70},
    lvlup:function(s,l){ s.income=70+l*45; s.dmg=1+Math.floor(l/4); },
    skills:[{l:4,n:"Loose Change",d:"Another 150 a round"},
            {l:10,n:"Rainy Day",d:"Another 500 a round"}]},
-  {id:"sprout", n:"Sprout", col:"#7bd94a",
+  {id:"sprout", n:"Sprout", col:"#7bd94a", grp:"garden",
    d:"On loan from the allotment next door. Vines lash out in all directions.",
    base:{dmg:2,rng:115,cd:1.2,pierce:6,air:true,burst:6},
    lvlup:function(s,l){ s.dmg=2+Math.floor(l*.8); s.burst=6+Math.floor(l/2); s.rng=115+l*3; },
    skills:[{l:5,n:"Deep Roots",d:"Range grows by a third"},
-           {l:12,n:"Overgrowth",d:"Twice as many vines"}]}
+           {l:12,n:"Overgrowth",d:"Twice as many vines"}]},
+  {id:"meatlad", n:"The Lad", col:"#d3132b", grp:"guest",
+   d:"On loan from next door's platformer. Fast, frantic, up close and sticky.",
+   base:{dmg:3,rng:66,cd:.4,pierce:2,air:false,burn:1},
+   lvlup:function(s,l){ s.dmg=3+Math.floor(l*1.1); s.cd=Math.max(.15,.4*Math.pow(.92,l-1)); s.burn=1+Math.floor(l/5); },
+   skills:[{l:5,n:"Stick Around",d:"Bleed damage doubles"},
+           {l:12,n:"Meat Grinder",d:"+10 damage, +3 pierce"}]}
 ];
 var chosenHero="gordo";
 
@@ -1020,6 +1194,76 @@ function drawTowerArt(c,id,t,ang){
     var cb=Math.sin(t*1.6);
     if(cb>.6){ c.fillStyle="#f0c14b";
       c.beginPath(); c.arc(0,-24-(cb-.6)*22,4,0,6.283); c.fill(); }
+  } else if(id==="toaster"){
+    c.fillStyle="rgba(0,0,0,.3)";
+    c.beginPath(); c.ellipse(0,13,19,5,0,0,6.283); c.fill();
+    var tg=c.createLinearGradient(-16,0,16,0);
+    tg.addColorStop(0,shade(T.col,-40)); tg.addColorStop(.45,shade(T.col,30)); tg.addColorStop(1,shade(T.col,-50));
+    c.fillStyle=tg;
+    c.beginPath(); c.moveTo(-16,12); c.lineTo(-14,-8); c.quadraticCurveTo(-14,-14,-6,-14);
+    c.lineTo(6,-14); c.quadraticCurveTo(14,-14,14,-8); c.lineTo(16,12); c.closePath(); c.fill();
+    c.fillStyle="#2a2018";
+    c.beginPath(); c.ellipse(-5,-11,3.4,1.6,0,0,6.283); c.fill();
+    c.beginPath(); c.ellipse(5,-11,3.4,1.6,0,0,6.283); c.fill();
+    var pop=Math.max(0,Math.sin(t*3));
+    c.save(); c.rotate(ang*0);
+    c.fillStyle="#c8a26a";
+    c.fillRect(-8,-11-pop*10,6,9);
+    c.fillRect(2,-11-pop*10,6,9);
+    c.restore();
+  } else if(id==="cleaver"){
+    cyl(c,0,12,15,10,"#6b543a");
+    c.save(); c.translate(0,-8); c.rotate(ang);
+    var cg=c.createLinearGradient(0,-4,22,4);
+    cg.addColorStop(0,shade(T.col,-30)); cg.addColorStop(1,shade(T.col,40));
+    c.fillStyle=cg;
+    c.beginPath(); c.moveTo(-2,-3); c.lineTo(20,-7); c.lineTo(22,0); c.lineTo(20,7); c.lineTo(-2,3); c.closePath(); c.fill();
+    c.fillStyle="#5a4632"; c.fillRect(-8,-2.6,7,5.2);
+    c.restore();
+    orb(c,0,-8,8,shade(T.col,-10),.85);
+  } else if(id==="mixer"){
+    cyl(c,0,13,22,18,"#7a5c3a");
+    orb(c,0,-3,11,T.col,.85);
+    var sp=t*10;
+    c.save(); c.rotate(sp);
+    c.strokeStyle=shade(T.col,-50); c.lineWidth=2.2; c.lineCap="round";
+    for(var bi=0;bi<3;bi++){ c.save(); c.rotate(bi/3*6.283);
+      c.beginPath(); c.moveTo(0,0); c.quadraticCurveTo(6,4,10,-2); c.stroke(); c.restore(); }
+    c.restore();
+    c.fillStyle="rgba(255,255,255,.12)";
+    c.beginPath(); c.arc(0,-3,10,0,6.283); c.fill();
+  } else if(id==="oven"){
+    c.fillStyle="rgba(0,0,0,.3)";
+    c.beginPath(); c.ellipse(0,15,21,5.4,0,0,6.283); c.fill();
+    var og=c.createLinearGradient(-18,0,18,0);
+    og.addColorStop(0,shade(T.col,-50)); og.addColorStop(.4,shade(T.col,20)); og.addColorStop(1,shade(T.col,-55));
+    c.fillStyle=og; c.fillRect(-18,-16,36,30);
+    c.fillStyle="#2a1c12"; c.fillRect(-13,-10,26,18);
+    var glow=.4+Math.abs(Math.sin(t*3))*.35;
+    c.fillStyle="rgba(255,150,60,"+glow+")";
+    c.beginPath(); c.ellipse(0,0,9,7,0,0,6.283); c.fill();
+    c.fillStyle="#1a120c"; c.fillRect(-16,-16,32,4);
+  } else if(id==="freezer"){
+    cyl(c,0,13,16,17,"#7a8a94");
+    c.save(); c.rotate(ang);
+    var fg=c.createLinearGradient(0,-4,20,4);
+    fg.addColorStop(0,shade(T.col,-20)); fg.addColorStop(1,shade(T.col,30));
+    c.fillStyle=fg; c.fillRect(4,-4,20,8);
+    c.restore();
+    orb(c,0,-6,10,T.col,.85);
+    c.strokeStyle="rgba(255,255,255,.5)"; c.lineWidth=1.2;
+    for(var fi=0;fi<6;fi++){ var fa=fi/6*6.283+t;
+      c.beginPath(); c.moveTo(Math.cos(fa)*4,-6+Math.sin(fa)*4); c.lineTo(Math.cos(fa)*9,-6+Math.sin(fa)*9); c.stroke(); }
+  } else if(id==="recipe"){
+    c.fillStyle="rgba(0,0,0,.3)";
+    c.beginPath(); c.ellipse(0,10,17,5,0,0,6.283); c.fill();
+    c.save(); c.translate(0,4); c.rotate(-.06);
+    c.fillStyle="#e8dcc4"; c.beginPath(); c.moveTo(-14,-10); c.lineTo(0,-13); c.lineTo(0,10); c.lineTo(-14,7); c.closePath(); c.fill();
+    c.fillStyle="#d4c6a8"; c.beginPath(); c.moveTo(14,-10); c.lineTo(0,-13); c.lineTo(0,10); c.lineTo(14,7); c.closePath(); c.fill();
+    c.strokeStyle="#a89878"; c.lineWidth=1;
+    for(var li=0;li<3;li++){ c.beginPath(); c.moveTo(-11,-6+li*4); c.lineTo(-3,-8+li*4); c.stroke(); }
+    c.restore();
+    orb(c,0,-16,4.6,T.col);
   }
 }
 
@@ -1097,6 +1341,54 @@ function drawHeroArt(c,id,t,ang){
       c.strokeStyle="rgba(125,217,74,.5)"; c.lineWidth=2;
       c.beginPath(); c.moveTo(Math.cos(va)*13,Math.sin(va)*13+2);
       c.lineTo(Math.cos(va)*19,Math.sin(va)*19+2); c.stroke(); }
+  } else if(id==="bakerjo"){
+    cyl(c,0,12,17,15,"#e8e2d6");
+    orb(c,0,-6,11,"#d8a878");
+    eyes(c,0,-7,11,ang);
+    c.fillStyle="#f2ece0";
+    c.beginPath(); c.ellipse(0,-19,10,7,0,0,6.283); c.fill();
+    c.fillStyle=H.col; c.fillRect(-4,-3,8,10);
+    c.save(); c.rotate(ang);
+    orb(c,15,-3,6,"#e8c896");
+    c.restore();
+  } else if(id==="granny"){
+    cyl(c,0,13,19,15,"#8a6a86");
+    orb(c,0,-6,10,"#e8c4a8");
+    eyes(c,0,-7,10,ang);
+    c.fillStyle="#c8c0d0";
+    c.beginPath(); c.ellipse(0,-11,10,5,0,Math.PI,0); c.fill();
+    c.fillStyle="#e8dce8";
+    c.beginPath(); c.ellipse(-8,-10,3,4,0,0,6.283); c.fill();
+    c.beginPath(); c.ellipse(8,-10,3,4,0,0,6.283); c.fill();
+    c.save(); c.rotate(ang);
+    c.fillStyle=H.col;
+    c.beginPath(); c.ellipse(13,-2,4,6,0,0,6.283); c.fill();
+    for(var gi=0;gi<3;gi++){ c.globalAlpha=.4;
+      c.beginPath(); c.arc(18+gi*3,-2-gi,1.6,0,6.283); c.fill(); }
+    c.globalAlpha=1;
+    c.restore();
+  } else if(id==="butcher"){
+    cyl(c,0,12,20,18,"#8a5c3a");
+    orb(c,0,-8,12,"#c88860");
+    eyes(c,0,-9,12,ang);
+    c.fillStyle="#5a3c26"; c.fillRect(-13,-13,26,4);
+    c.save(); c.rotate(ang);
+    var bg=c.createLinearGradient(4,-6,26,6);
+    bg.addColorStop(0,shade(H.col,-30)); bg.addColorStop(1,shade(H.col,40));
+    c.fillStyle=bg;
+    c.beginPath(); c.moveTo(4,-6); c.lineTo(26,-9); c.lineTo(28,0); c.lineTo(26,9); c.lineTo(4,6); c.closePath(); c.fill();
+    c.restore();
+  } else if(id==="meatlad"){
+    orb(c,0,4,12,H.col);
+    eyes(c,0,2,12,ang);
+    c.strokeStyle="rgba(211,19,43,.5)"; c.lineWidth=2;
+    for(var mi=0;mi<3;mi++){ var ma=t*8+mi*2.1;
+      c.beginPath(); c.moveTo(Math.cos(ma)*13,4+Math.sin(ma)*13);
+      c.lineTo(Math.cos(ma)*18,4+Math.sin(ma)*18); c.stroke(); }
+    c.fillStyle="#8f8fa8";
+    c.save(); c.rotate(ang);
+    c.beginPath(); c.moveTo(10,3); c.lineTo(16,-2); c.lineTo(18,1); c.lineTo(12,7); c.closePath(); c.fill();
+    c.restore();
   }
   c.restore();
 }
@@ -1354,6 +1646,14 @@ function recalcHero(){
   if(hero.id==="tin"&&hero.lvl>=10)s.income+=500;
   if(hero.id==="sprout"&&hero.lvl>=5)s.rng*=1.33;
   if(hero.id==="sprout"&&hero.lvl>=12)s.burst*=2;
+  if(hero.id==="bakerjo"&&hero.lvl>=5)s.pierce+=2;
+  if(hero.id==="bakerjo"&&hero.lvl>=11){ s.dmg+=8; s.pierceArm=true; }
+  if(hero.id==="granny"&&hero.lvl>=5)s.weakenT*=2;
+  if(hero.id==="granny"&&hero.lvl>=11){ s.dmg+=6; s.pierceArm=true; }
+  if(hero.id==="butcher"&&hero.lvl>=6)s.coneWide=true;
+  if(hero.id==="butcher"&&hero.lvl>=13)s.dmg+=15;
+  if(hero.id==="meatlad"&&hero.lvl>=5)s.burn*=2;
+  if(hero.id==="meatlad"&&hero.lvl>=12){ s.dmg+=10; s.pierce+=3; }
   s.dmg=(s.dmg||0)+skillDmgBonus();
   s.rng=(s.rng||0)*skillRngMult();
   hero.s=s;
@@ -1475,12 +1775,14 @@ function fireTower(tw,s,buf){
       if(b.fly&&!s.air)continue;
       var bp=posAt(b.d);
       if(dist2(bp.x,bp.y,tw.x,tw.y)>rng*rng)continue;
-      var a=Math.atan2(bp.y-tw.y,bp.x-tw.x),da=Math.abs(((a-tw.ang+Math.PI*3)%(Math.PI*2))-Math.PI);
-      if(da>.85)continue;
+      if(!s.coneWide){
+        var a=Math.atan2(bp.y-tw.y,bp.x-tw.x),da=Math.abs(((a-tw.ang+Math.PI*3)%(Math.PI*2))-Math.PI);
+        if(da>.85)continue;
+      }
       if(s.burn){ b.burn=Math.max(b.burn,dmg*.3); b.burnT=Math.max(b.burnT,s.burn); }
       damageBug(b,dmg,s.pierceArm); hits++; j--;
     }
-    fx.push({cone:true,x:tw.x,y:tw.y,a:tw.ang,r:rng,t:0,life:.22});
+    fx.push({cone:!s.coneWide,ring:s.coneWide,x:tw.x,y:tw.y,a:tw.ang,r:rng,t:0,life:.22});
     return hits>0;
   }
   if(s.burst){
@@ -1509,6 +1811,24 @@ function fireHero(){
   if(!tgt)return false;
   var tp=posAt(tgt.d);
   hero.ang=Math.atan2(tp.y-hero.y,tp.x-hero.x);
+  if(s.cone){
+    var hits=0;
+    for(var ci=0;ci<bugs.length&&hits<(s.pierce||99);ci++){
+      var cb=bugs[ci];
+      if(cb.fly&&!s.air)continue;
+      var cp=posAt(cb.d);
+      if(dist2(cp.x,cp.y,hero.x,hero.y)>s.rng*s.rng)continue;
+      if(!s.coneWide){
+        var ca=Math.atan2(cp.y-hero.y,cp.x-hero.x),cda=Math.abs(((ca-hero.ang+Math.PI*3)%(Math.PI*2))-Math.PI);
+        if(cda>.85)continue;
+      }
+      if(s.weaken){ cb.weak=Math.max(cb.weak,s.weaken); cb.weakT=Math.max(cb.weakT,s.weakenT||4); }
+      if(s.burn){ cb.burn=Math.max(cb.burn,s.dmg*.3); cb.burnT=Math.max(cb.burnT,s.burn); }
+      damageBug(cb,s.dmg,s.pierceArm); hits++; ci--;
+    }
+    fx.push({cone:!s.coneWide,ring:s.coneWide,x:hero.x,y:hero.y,a:hero.ang,r:s.rng,t:0,life:.2});
+    return hits>0;
+  }
   if(s.burst){
     for(var k=0;k<s.burst;k++){
       var a2=k/s.burst*6.283;
@@ -1521,7 +1841,8 @@ function fireHero(){
   shots.push({x:hero.x,y:hero.y,vx:Math.cos(hero.ang)*420,vy:Math.sin(hero.ang)*420,
     dmg:s.dmg,pierce:s.pierce||1,hit:{},life:s.rng/420,air:s.air,
     pierceArm:s.pierceArm,col:byId(HEROES,hero.id).col,r:6,splash:s.splash,
-    weaken:s.weaken,weakenT:s.weakenT,slow:s.slow,slowT:s.slowT,hero:true});
+    weaken:s.weaken,weakenT:s.weakenT,slow:s.slow,slowT:s.slowT,
+    burn:s.burn?s.dmg*.3:0,burnT:s.burn,hero:true});
   return true;
 }
 
@@ -1607,6 +1928,7 @@ function update(dt){
       sh.hit[bb.id]=1;
       if(sh.slow){ bb.slow=Math.min(bb.slow,sh.slow); bb.slowT=Math.max(bb.slowT,sh.slowT||3); }
       if(sh.weaken){ bb.weak=Math.max(bb.weak,sh.weaken); bb.weakT=Math.max(bb.weakT,sh.weakenT||4); }
+      if(sh.burn){ bb.burn=Math.max(bb.burn,sh.burn); bb.burnT=Math.max(bb.burnT,sh.burnT||2); }
       if(sh.splash){
         for(var n=bugs.length-1;n>=0;n--){
           var ob=bugs[n];
@@ -1785,6 +2107,9 @@ function render(t){
       ctx.beginPath(); ctx.moveTo(x2.x,x2.y);
       ctx.arc(x2.x,x2.y,x2.r*(.4+k2*.6),x2.a-.85,x2.a+.85);
       ctx.closePath(); ctx.fill();
+    } else if(x2.ring){
+      ctx.strokeStyle="rgba(200,204,212,.5)"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r*(.5+k2*.5),0,6.283); ctx.stroke();
     } else {
       ctx.fillStyle=x2.col||"#e8a838";
       ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r*(.5+k2*.9),0,6.283); ctx.fill();
@@ -1936,30 +2261,92 @@ function renderDiffGrid(gridId,onPick){
     g.appendChild(d);
   });
 }
+function drawMapThumb(cv,M){
+  var g=cv.getContext("2d"),cw=cv.width,ch=cv.height;
+  g.clearRect(0,0,cw,ch);
+  g.fillStyle="#191309"; g.fillRect(0,0,cw,ch);
+  var s=Math.min(cw/24,ch/15),ox=(cw-24*s)/2,oy=(ch-15*s)/2;
+  function px(p){ return [ox+(p[0]+.5)*s,oy+(p[1]+.5)*s]; }
+  g.lineCap="round"; g.lineJoin="round";
+  g.strokeStyle="#3a2c1c"; g.lineWidth=Math.max(2,s*.78);
+  g.beginPath();
+  M.path.forEach(function(p,i){ var xy=px(p); if(i===0)g.moveTo(xy[0],xy[1]); else g.lineTo(xy[0],xy[1]); });
+  g.stroke();
+  g.strokeStyle="rgba(232,168,56,.55)"; g.lineWidth=Math.max(1,s*.3);
+  g.beginPath();
+  M.path.forEach(function(p,i){ var xy=px(p); if(i===0)g.moveTo(xy[0],xy[1]); else g.lineTo(xy[0],xy[1]); });
+  g.stroke();
+  var a=px(M.path[0]),b=px(M.path[M.path.length-1]);
+  g.fillStyle="#6fbf8f"; g.beginPath(); g.arc(a[0],a[1],Math.max(2,s*.5),0,6.283); g.fill();
+  g.fillStyle="#c4442e"; g.beginPath(); g.arc(b[0],b[1],Math.max(2,s*.55),0,6.283); g.fill();
+}
+var mapPages={};
 function renderMapGrid(gridId,onPick){
   var g=$(gridId); if(!g)return;
+  var per=6,pages=Math.ceil(MAPS.length/per);
+  var page=clamp(mapPages[gridId]||0,0,pages-1); mapPages[gridId]=page;
   g.innerHTML="";
-  MAPS.forEach(function(M,i){
+  var start=page*per;
+  MAPS.slice(start,start+per).forEach(function(M,idx){
+    var i=start+idx;
     var beat=save.mapsBeat.filter(function(k){ return k.indexOf(M.id+":")===0; });
     var d=document.createElement("div");
-    d.className="card"+(i===curMap?" sel":"");
-    d.innerHTML='<div class="cn">'+M.n+'</div><div class="cd">'+M.d+'</div>'+
-      '<div class="cd" style="margin-top:5px;color:'+(beat.length?"var(--mint)":"var(--dim)")+'">'+
-      (beat.length?("cleared on "+beat.length+" difficult"+(beat.length>1?"ies":"y")):"not cleared yet")+'</div>';
+    d.className="mapcard"+(i===curMap?" sel":"");
+    var cv=document.createElement("canvas"); cv.width=220; cv.height=138;
+    d.appendChild(cv);
+    var meta=document.createElement("div");
+    meta.innerHTML='<div class="mn">'+M.n+'</div><div class="md">'+M.d+'</div>'+
+      '<div class="mt" style="color:'+(beat.length?"var(--mint)":"var(--gold)")+'">'+
+      (beat.length?("cleared · "+beat.length+"x"):("tier "+M.tier))+'</div>';
+    d.appendChild(meta);
     d.onclick=function(){ sfx.click(); curMap=i; renderMapGrid(gridId,onPick); if(onPick)onPick(i); };
     g.appendChild(d);
+    requestAnimationFrame(function(){ drawMapThumb(cv,M); });
   });
+  var pfx=gridId==="mapGrid"?"map":"pMap";
+  var prevBtn=$(pfx+"PgPrev"),nextBtn=$(pfx+"PgNext"),lbl=$(pfx+"PageLbl"),dotsEl=$(pfx+"Dots");
+  if(lbl)lbl.textContent=(page+1)+"/"+pages;
+  if(prevBtn){ prevBtn.disabled=page<=0;
+    prevBtn.onclick=function(){ sfx.click(); mapPages[gridId]=page-1; renderMapGrid(gridId,onPick); }; }
+  if(nextBtn){ nextBtn.disabled=page>=pages-1;
+    nextBtn.onclick=function(){ sfx.click(); mapPages[gridId]=page+1; renderMapGrid(gridId,onPick); }; }
+  if(dotsEl){
+    dotsEl.innerHTML="";
+    for(var pi=0;pi<pages;pi++){ (function(pp){
+      var sp=document.createElement("span"); if(pp===page)sp.className="on";
+      sp.onclick=function(){ sfx.click(); mapPages[gridId]=pp; renderMapGrid(gridId,onPick); };
+      dotsEl.appendChild(sp);
+    })(pi); }
+  }
 }
-function renderHeroGrid(){
-  var g=$("heroGrid"); g.innerHTML="";
-  HEROES.forEach(function(H){
-    var d=document.createElement("div");
-    d.className="card"+(H.id===chosenHero?" sel":"");
-    d.appendChild(iconFor("h",H.id,40));
-    var cn=document.createElement("div"); cn.className="cn"; cn.style.color=H.col; cn.textContent=H.n;
-    d.appendChild(cn);
-    d.onclick=function(){ sfx.click(); chosenHero=H.id; renderHeroGrid(); updateHeroPreview(); };
-    g.appendChild(d);
+function renderHeroGrid(onPick){
+  var g=$("heroGrid"); if(!g)return;
+  g.innerHTML="";
+  var byGrp={};
+  HEROES.forEach(function(H){ (byGrp[H.grp]=byGrp[H.grp]||[]).push(H); });
+  Object.keys(HERO_GROUPS).forEach(function(gk){
+    var list=byGrp[gk]; if(!list||!list.length)return;
+    var grp=HERO_GROUPS[gk];
+    var sec=document.createElement("div"); sec.className="herogroup";
+    var h=document.createElement("div"); h.className="ghdr"; h.style.color=grp.col; h.textContent=grp.n;
+    sec.appendChild(h);
+    var row=document.createElement("div"); row.className="herorow";
+    list.forEach(function(H){
+      var d=document.createElement("div");
+      d.className="herocard"+(H.id===chosenHero?" sel":"");
+      d.style.background=grp.bg;
+      d.style.borderColor=H.id===chosenHero?"":grp.col+"55";
+      d.appendChild(iconFor("h",H.id,40));
+      var meta=document.createElement("div");
+      meta.innerHTML='<div class="hn">'+H.n+'</div><div class="hl">Lv'+
+        (save.heroUsed.indexOf(H.id)>=0?"used":"new")+'</div>';
+      d.appendChild(meta);
+      d.onclick=function(){ sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
+        if(onPick)onPick(H.id); };
+      row.appendChild(d);
+    });
+    sec.appendChild(row);
+    g.appendChild(sec);
   });
 }
 var heroPrevCtx=null;
