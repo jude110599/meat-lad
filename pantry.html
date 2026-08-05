@@ -607,9 +607,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.19.0";
+var VERSION="1.20.0";
 var CHANGELOG=[
-  {v:"1.19.0",d:"latest",items:[
+  {v:"1.20.0",d:"latest",items:[
+    "CO-OP HEROES, FOR REAL THIS TIME. Every player - host and guests alike - can now place their own hero on the shared board, and everyone sees everyone else's hero fighting right alongside the towers, not just the host's",
+    "WHEN SOMEONE LEAVES A CO-OP RUN, everyone still in the pantry gets a toast about it now, not just the host",
+    "Trimmed some redundant data out of the co-op sync packets and eased the sync rate back slightly to help both host and guest framerates in bigger multiplayer games"
+  ]},
+  {v:"1.19.0",items:[
     "EVERY TOWER GOES FIVE TIERS DEEP NOW, up from three, matching BTD6's real depth - that's 126 brand new upgrades across all 21 towers, each with its own name, description and icon. Mastery level requirements now stretch across the full 1-10 range (level 2/4/6/8/10 per tier) so the deepest upgrades are a genuine end-game reward, and the same crosspathing rule still applies: two paths at once, and going past tier 3 in one locks the others there"
   ]},
   {v:"1.18.0",items:[
@@ -2274,13 +2279,18 @@ function cellFree(gx,gy){
   if(gx<0||gy<0||gx>=GW||gy>=GH)return false;
   if(blockedCells[gx+","+gy])return false;
   for(var i=0;i<towers.length;i++)if(towers[i].gx===gx&&towers[i].gy===gy)return false;
-  if(hero&&hero.gx===gx&&hero.gy===gy)return false;
+  for(var j=0;j<heroes.length;j++)if(heroes[j].gx===gx&&heroes[j].gy===gy)return false;
   return true;
 }
 
 /* ═════════════ GAME STATE ═════════════ */
 var state="menu";
-var towers=[],bugs=[],shots=[],fx=[],hero=null;
+var towers=[],bugs=[],shots=[],fx=[],heroes=[];
+/* co-op: each player gets their own hero on the shared board, tagged by
+   owner ("solo" outside co-op, "host" for the host's own, or the guest's
+   own PeerJS id). myOwner()/myHero() find "my" hero among everyone's. */
+function myOwner(){ return party.on?(party.leader?"host":(party.peer&&party.peer.id?party.peer.id:"guest")):"solo"; }
+function myHero(){ var o=myOwner(); for(var i=0;i<heroes.length;i++)if(heroes[i].owner===o)return heroes[i]; return null; }
 var cash=0,lives=0,wave=0,waveMax=40,inWave=false,waveQueue=[],spawnT=0,runStartLives=0;
 var totalPops=0,fastFwd=false,selTower=null,buyId=null,placing=false;
 var mouse={x:0,y:0,on:false};
@@ -2292,7 +2302,7 @@ function startRun(mapIdx,diffIdx,heroId){
   curMap=mapIdx; curDiff=diffIdx; chosenHero=heroId||chosenHero;
   var D=DIFFS[curDiff];
   buildPath(curMap); bakeBlocked();
-  towers=[]; bugs=[]; shots=[]; fx=[]; hero=null;
+  towers=[]; bugs=[]; shots=[]; fx=[]; heroes=[];
   cash=D.cash+skillCashBonus();
   lives=D.lives+skillLifeBonus();
   runStartLives=lives;
@@ -2308,12 +2318,8 @@ function startRun(mapIdx,diffIdx,heroId){
   $("panel").classList.add("hide");
   mSetMode("play");
   renderShop(); updateHud(); resize();
-  if(party.on&&!party.leader){
-    toast("Heroes aren't shared in co-op yet - build towers with the group");
-  } else {
-    toast("Place your hero for free");
-    placing=true; buyId="__hero";
-  }
+  toast("Place your hero for free");
+  placing=true; buyId="__hero";
 }
 
 function endRun(won){
@@ -2343,7 +2349,7 @@ function endRun(won){
   var st=$("overStats"); st.innerHTML="";
   var rows=[["Larder",MAPS[curMap].n],["Difficulty",DIFFS[curDiff].n],
     ["Round reached",wave+"/"+waveMax],["Bugs popped",totalPops],
-    ["Hero",byId(HEROES,chosenHero).n+" (lv "+(hero?hero.lvl:1)+")"]];
+    ["Hero",byId(HEROES,chosenHero).n+" (lv "+(myHero()?myHero().lvl:1)+")"]];
   rows.push(["Crumbs earned","+"+Math.round(roundsSurvived*(6+curDiff*3))]);
   if(won)rows.push(["Preserve Jars earned","+"+Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier))]);
   rows.forEach(function(r){
@@ -2354,7 +2360,7 @@ function endRun(won){
 }
 
 function quitToTitle(){
-  state="menu"; towers=[]; bugs=[]; shots=[]; fx=[]; hero=null;
+  state="menu"; towers=[]; bugs=[]; shots=[]; fx=[]; heroes=[];
   hideOvl();
   $("hud").classList.add("hide"); $("shop").classList.add("hide"); $("panel").classList.add("hide");
   if(party.on)party.leave();
@@ -2405,61 +2411,62 @@ function placeTower(id,gx,gy){
   sfx.place(); updateHud(); renderShop();
   return true;
 }
-function placeHero(gx,gy){
+function placeHero(owner,heroId,gx,gy){
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
-  var def=byId(HEROES,chosenHero);
-  hero={id:chosenHero,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,
+  heroes=heroes.filter(function(h){ return h.owner!==owner; });
+  var h={owner:owner,id:heroId,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,
     lvl:skillHeroStart(),xp:0,cd:0,ang:0,pops:0,s:{}};
-  recalcHero();
+  heroes.push(h);
+  recalcHero(h);
   sfx.place();
-  if(save.heroUsed.indexOf(chosenHero)<0){ save.heroUsed.push(chosenHero); queueSave(); }
+  if(owner===myOwner()&&save.heroUsed.indexOf(heroId)<0){ save.heroUsed.push(heroId); queueSave(); }
   return true;
 }
-function recalcHero(){
-  if(!hero)return;
-  var def=byId(HEROES,hero.id);
+function recalcHero(h){
+  if(!h)return;
+  var def=byId(HEROES,h.id);
   var s={};
   for(var k in def.base)if(def.base.hasOwnProperty(k))s[k]=def.base[k];
-  def.lvlup(s,hero.lvl);
+  def.lvlup(s,h.lvl);
   // hero skills
-  if(hero.id==="gordo"&&hero.lvl>=4)s.cd*=.8;
-  if(hero.id==="gordo"&&hero.lvl>=10)s.dmg+=4;
-  if(hero.id==="nana"&&hero.lvl>=5)s.splash=Math.round(s.splash*1.5);
-  if(hero.id==="nana"&&hero.lvl>=12)s.pierceArm=true;
-  if(hero.id==="fork"&&hero.lvl>=6)s.pierce+=3;
-  if(hero.id==="fork"&&hero.lvl>=13)s.dmg+=20;
-  if(hero.id==="whisk"&&hero.lvl>=5)s.weakenT=8;
-  if(hero.id==="whisk"&&hero.lvl>=11){ s.slow=.6; s.slowT=2; }
-  if(hero.id==="tin"&&hero.lvl>=4)s.income+=150;
-  if(hero.id==="tin"&&hero.lvl>=10)s.income+=500;
-  if(hero.id==="sprout"&&hero.lvl>=5)s.rng*=1.33;
-  if(hero.id==="sprout"&&hero.lvl>=12)s.burst*=2;
-  if(hero.id==="bakerjo"&&hero.lvl>=5)s.pierce+=2;
-  if(hero.id==="bakerjo"&&hero.lvl>=11){ s.dmg+=8; s.pierceArm=true; }
-  if(hero.id==="granny"&&hero.lvl>=5)s.weakenT*=2;
-  if(hero.id==="granny"&&hero.lvl>=11){ s.dmg+=6; s.pierceArm=true; }
-  if(hero.id==="butcher"&&hero.lvl>=6)s.coneWide=true;
-  if(hero.id==="butcher"&&hero.lvl>=13)s.dmg+=15;
-  if(hero.id==="meatlad"&&hero.lvl>=5)s.burn*=2;
-  if(hero.id==="meatlad"&&hero.lvl>=12){ s.dmg+=10; s.pierce+=3; }
-  if(hero.id==="clara"&&hero.lvl>=5)s.pierce+=2;
-  if(hero.id==="clara"&&hero.lvl>=12){ s.income+=150; s.dmg+=3; }
-  if(hero.id==="morty"&&hero.lvl>=5)s.income+=300;
-  if(hero.id==="morty"&&hero.lvl>=12)s.income+=900;
+  if(h.id==="gordo"&&h.lvl>=4)s.cd*=.8;
+  if(h.id==="gordo"&&h.lvl>=10)s.dmg+=4;
+  if(h.id==="nana"&&h.lvl>=5)s.splash=Math.round(s.splash*1.5);
+  if(h.id==="nana"&&h.lvl>=12)s.pierceArm=true;
+  if(h.id==="fork"&&h.lvl>=6)s.pierce+=3;
+  if(h.id==="fork"&&h.lvl>=13)s.dmg+=20;
+  if(h.id==="whisk"&&h.lvl>=5)s.weakenT=8;
+  if(h.id==="whisk"&&h.lvl>=11){ s.slow=.6; s.slowT=2; }
+  if(h.id==="tin"&&h.lvl>=4)s.income+=150;
+  if(h.id==="tin"&&h.lvl>=10)s.income+=500;
+  if(h.id==="sprout"&&h.lvl>=5)s.rng*=1.33;
+  if(h.id==="sprout"&&h.lvl>=12)s.burst*=2;
+  if(h.id==="bakerjo"&&h.lvl>=5)s.pierce+=2;
+  if(h.id==="bakerjo"&&h.lvl>=11){ s.dmg+=8; s.pierceArm=true; }
+  if(h.id==="granny"&&h.lvl>=5)s.weakenT*=2;
+  if(h.id==="granny"&&h.lvl>=11){ s.dmg+=6; s.pierceArm=true; }
+  if(h.id==="butcher"&&h.lvl>=6)s.coneWide=true;
+  if(h.id==="butcher"&&h.lvl>=13)s.dmg+=15;
+  if(h.id==="meatlad"&&h.lvl>=5)s.burn*=2;
+  if(h.id==="meatlad"&&h.lvl>=12){ s.dmg+=10; s.pierce+=3; }
+  if(h.id==="clara"&&h.lvl>=5)s.pierce+=2;
+  if(h.id==="clara"&&h.lvl>=12){ s.income+=150; s.dmg+=3; }
+  if(h.id==="morty"&&h.lvl>=5)s.income+=300;
+  if(h.id==="morty"&&h.lvl>=12)s.income+=900;
   s.dmg=(s.dmg||0)+skillDmgBonus();
   s.rng=(s.rng||0)*skillRngMult();
-  hero.s=s;
+  h.s=s;
 }
 function heroXpNeeded(l){ return Math.round(28*Math.pow(1.28,l-1)); }
-function giveHeroXp(n){
-  if(!hero)return;
-  hero.xp+=n*skillHeroXp();
-  while(hero.xp>=heroXpNeeded(hero.lvl)&&hero.lvl<20){
-    hero.xp-=heroXpNeeded(hero.lvl); hero.lvl++;
-    recalcHero(); sfx.up();
-    var def=byId(HEROES,hero.id);
+function giveHeroXp(h,n){
+  if(!h)return;
+  h.xp+=n*skillHeroXp();
+  while(h.xp>=heroXpNeeded(h.lvl)&&h.lvl<20){
+    h.xp-=heroXpNeeded(h.lvl); h.lvl++;
+    recalcHero(h); sfx.up();
+    var def=byId(HEROES,h.id);
     for(var i=0;i<def.skills.length;i++)
-      if(def.skills[i].l===hero.lvl)toast(def.skills[i].n+" unlocked");
+      if(def.skills[i].l===h.lvl&&h.owner===myOwner())toast(def.skills[i].n+" unlocked");
   }
 }
 
@@ -2543,7 +2550,7 @@ function popBug(b,byHero){
   var B=BUGS[b.k];
   cash+=Math.round(B.cash*(1+wave*.012)*DIFFS[curDiff].cashMult);
   totalPops++;
-  giveHeroXp(B.boss?60:(B.hp>4?4:1));
+  for(var hx=0;hx<heroes.length;hx++)giveHeroXp(heroes[hx],B.boss?60:(B.hp>4?4:1));
   sfx.pop();
   fx.push({x:posAt(b.d).x,y:posAt(b.d).y,t:0,life:.3,col:B.col,r:b.r});
   if(B.child){
@@ -2640,42 +2647,42 @@ function fireTower(tw,s,buf){
   }
   return true;
 }
-function fireHero(){
-  var s=hero.s;
-  var tgt=towerTargets(hero,s,1);
+function fireHero(h){
+  var s=h.s;
+  var tgt=towerTargets(h,s,1);
   if(!tgt)return false;
   var tp=posAt(tgt.d);
-  hero.ang=Math.atan2(tp.y-hero.y,tp.x-hero.x);
+  h.ang=Math.atan2(tp.y-h.y,tp.x-h.x);
   if(s.cone){
     var hits=0;
     for(var ci=0;ci<bugs.length&&hits<(s.pierce||99);ci++){
       var cb=bugs[ci];
       if(cb.fly&&!s.air)continue;
       var cp=posAt(cb.d);
-      if(dist2(cp.x,cp.y,hero.x,hero.y)>s.rng*s.rng)continue;
+      if(dist2(cp.x,cp.y,h.x,h.y)>s.rng*s.rng)continue;
       if(!s.coneWide){
-        var ca=Math.atan2(cp.y-hero.y,cp.x-hero.x),cda=Math.abs(((ca-hero.ang+Math.PI*3)%(Math.PI*2))-Math.PI);
+        var ca=Math.atan2(cp.y-h.y,cp.x-h.x),cda=Math.abs(((ca-h.ang+Math.PI*3)%(Math.PI*2))-Math.PI);
         if(cda>.85)continue;
       }
       if(s.weaken){ cb.weak=Math.max(cb.weak,s.weaken); cb.weakT=Math.max(cb.weakT,s.weakenT||4); }
       if(s.burn){ cb.burn=Math.max(cb.burn,s.dmg*.3); cb.burnT=Math.max(cb.burnT,s.burn); }
       damageBug(cb,s.dmg,s.pierceArm); hits++; ci--;
     }
-    fx.push({cone:!s.coneWide,ring:s.coneWide,x:hero.x,y:hero.y,a:hero.ang,r:s.rng,t:0,life:.2});
+    fx.push({cone:!s.coneWide,ring:s.coneWide,x:h.x,y:h.y,a:h.ang,r:s.rng,t:0,life:.2});
     return hits>0;
   }
   if(s.burst){
     for(var k=0;k<s.burst;k++){
       var a2=k/s.burst*6.283;
-      shots.push({x:hero.x,y:hero.y,vx:Math.cos(a2)*280,vy:Math.sin(a2)*280,
+      shots.push({x:h.x,y:h.y,vx:Math.cos(a2)*280,vy:Math.sin(a2)*280,
         dmg:s.dmg,pierce:2,hit:{},life:s.rng/280,air:s.air,
-        pierceArm:s.pierceArm,col:byId(HEROES,hero.id).col,r:4,hero:true});
+        pierceArm:s.pierceArm,col:byId(HEROES,h.id).col,r:4,hero:true});
     }
     return true;
   }
-  shots.push({x:hero.x,y:hero.y,vx:Math.cos(hero.ang)*420,vy:Math.sin(hero.ang)*420,
+  shots.push({x:h.x,y:h.y,vx:Math.cos(h.ang)*420,vy:Math.sin(h.ang)*420,
     dmg:s.dmg,pierce:s.pierce||1,hit:{},life:s.rng/420,air:s.air,
-    pierceArm:s.pierceArm,col:byId(HEROES,hero.id).col,r:6,splash:s.splash,
+    pierceArm:s.pierceArm,col:byId(HEROES,h.id).col,r:6,splash:s.splash,
     weaken:s.weaken,weakenT:s.weakenT,slow:s.slow,slowT:s.slowT,
     burn:s.burn?s.dmg*.3:0,burnT:s.burn,hero:true});
   return true;
@@ -2692,9 +2699,15 @@ function broadcastSnap(){
   party.send({t:"snap",
     towers:towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
       t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,xp:t.xp,lvl:t.lvl,tgt:t.tgt,s:t.s}; }),
-    bugs:bugs.map(function(b){ return {id:b.id,k:b.k,d:b.d,hp:b.hp,max:b.max,spd:b.spd,r:b.r,
-      fly:b.fly,arm:b.arm,slow:b.slow,slowT:b.slowT,weak:b.weak,weakT:b.weakT,
+    /* r/fly/arm dropped - they never change per bug instance and are always
+       exactly BUGS[b.k].r/.fly/.arm, so the guest reconstructs them locally
+       instead of paying to resend the same 3 values for every bug, every
+       snapshot, several times a second. */
+    bugs:bugs.map(function(b){ return {id:b.id,k:b.k,d:b.d,hp:b.hp,max:b.max,spd:b.spd,
+      slow:b.slow,slowT:b.slowT,weak:b.weak,weakT:b.weakT,
       burn:b.burn,burnT:b.burnT,wob:b.wob}; }),
+    heroes:heroes.map(function(h){ return {owner:h.owner,id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,
+      lvl:h.lvl,xp:h.xp,cd:h.cd,ang:h.ang,pops:h.pops,s:h.s}; }),
     cash:cash,lives:lives,wave:wave,waveMax:waveMax,inWave:inWave,fastFwd:fastFwd,pops:totalPops});
 }
 function updateGuestSim(dt){
@@ -2713,7 +2726,7 @@ function update(dt){
 
   if(party.on&&party.leader){
     coopSyncT-=dt;
-    if(coopSyncT<=0){ coopSyncT=.18; broadcastSnap(); }
+    if(coopSyncT<=0){ coopSyncT=.22; broadcastSnap(); }
   }
 
   // spawn
@@ -2753,12 +2766,13 @@ function update(dt){
       else tw.cd=.1;
     }
   }
-  // hero
-  if(hero){
-    hero.cd-=dt;
-    if(hero.cd<=0){
-      if(fireHero())hero.cd=hero.s.cd;
-      else hero.cd=.1;
+  // heroes
+  for(var hi=0;hi<heroes.length;hi++){
+    var h=heroes[hi];
+    h.cd-=dt;
+    if(h.cd<=0){
+      if(fireHero(h))h.cd=h.s.cd;
+      else h.cd=.1;
     }
   }
 
@@ -2815,7 +2829,7 @@ function update(dt){
     inWave=false;
     var income=0;
     for(var p=0;p<towers.length;p++)if(towers[p].s.income)income+=towers[p].s.income;
-    if(hero&&hero.s.income)income+=hero.s.income;
+    for(var hInc=0;hInc<heroes.length;hInc++)if(heroes[hInc].s.income)income+=heroes[hInc].s.income;
     var bonus=Math.round((80+wave*12)*DIFFS[curDiff].cashMult);
     cash+=income+bonus;
     if(income)toast("Round bonus "+bonus+" + income "+income);
@@ -2894,7 +2908,7 @@ function render(t){
   // draw order: things further down draw later so they overlap correctly
   var ents=[];
   for(var a=0;a<towers.length;a++)ents.push({y:towers[a].y,k:"t",o:towers[a]});
-  if(hero)ents.push({y:hero.y,k:"h",o:hero});
+  for(var hE=0;hE<heroes.length;hE++)ents.push({y:heroes[hE].y,k:"h",o:heroes[hE]});
   for(var c2=0;c2<bugs.length;c2++){ var bp2=posAt(bugs[c2].d); ents.push({y:bp2.y,k:"b",o:bugs[c2],p:bp2}); }
   ents.sort(function(p,q){ return p.y-q.y; });
 
@@ -3011,19 +3025,20 @@ function updateHud(){
   hudLastCash=cashV; hudLastLife=lifeV;
   $("bGo").textContent=inWave?(fastFwd?"▶▶":"▶"):"GO";
   $("bGo").className="hbtn go"+(fastFwd?" fast":"");
-  var hb=$("pHeroBtn");
-  if(hero){ hb.classList.remove("hide"); $("pHeroV").textContent="Lv"+hero.lvl; }
+  var hb=$("pHeroBtn"),myH=myHero();
+  if(myH){ hb.classList.remove("hide"); $("pHeroV").textContent="Lv"+myH.lvl; }
   else hb.classList.add("hide");
 }
 function heroLevelCost(nextLvl){ return Math.round(60*Math.pow(1.3,nextLvl-2)); }
 function openHeroPanel(){
-  if(!hero)return;
+  if(!myHero())return;
   sfx.click();
   if(state==="play")state="pause";
   renderHeroPanel();
   showOvl("o-hero");
 }
 function renderHeroPanel(){
+  var hero=myHero();
   if(!hero)return;
   var def=byId(HEROES,hero.id),grp=HERO_GROUPS[def.grp];
   var box=$("heroBox");
@@ -3060,14 +3075,21 @@ function renderHeroPanel(){
 }
 $("pHeroBtn").onclick=openHeroPanel;
 $("heroPanelClose").onclick=function(){ sfx.click(); if(state==="pause")state="play"; hideOvl(); };
-$("heroBoxBuy").onclick=function(){
+function levelUpHero(hero){
   if(!hero||hero.lvl>=20)return;
   var cost=heroLevelCost(hero.lvl+1);
   if(cash<cost){ toast("Not enough"); return; }
-  cash-=cost; hero.lvl++; hero.xp=0; recalcHero(); sfx.up();
+  cash-=cost; hero.lvl++; hero.xp=0; recalcHero(hero); sfx.up();
   var def=byId(HEROES,hero.id);
   for(var i=0;i<def.skills.length;i++)
     if(def.skills[i].l===hero.lvl)toast(def.skills[i].n+" unlocked");
+}
+$("heroBoxBuy").onclick=function(){
+  var hero=myHero();
+  if(!hero||hero.lvl>=20)return;
+  sfx.click();
+  if(party.on&&!party.leader)party.send({t:"reqHeroLevel"});
+  else levelUpHero(hero);
   renderHeroPanel(); updateHud();
 };
 function renderShop(){
@@ -3272,8 +3294,13 @@ cv.addEventListener("pointerdown",function(e){
   var isGuest=party.on&&!party.leader;
   if(placing){
     if(buyId==="__hero"){
-      if(isGuest){ placing=false; buyId=null; }
-      else if(placeHero(gx,gy)){ placing=false; buyId=null; toast(byId(HEROES,chosenHero).n+" is in"); }
+      if(!cellFree(gx,gy)){ toast("No room there"); return; }
+      if(isGuest){
+        party.send({t:"reqPlaceHero",heroId:chosenHero,gx:gx,gy:gy});
+        placing=false; buyId=null; toast(byId(HEROES,chosenHero).n+" is in");
+      } else if(placeHero(myOwner(),chosenHero,gx,gy)){
+        placing=false; buyId=null; toast(byId(HEROES,chosenHero).n+" is in");
+      }
     } else if(buyId){
       if(isGuest){
         if(!cellFree(gx,gy)){ toast("No room there"); return; }
@@ -3289,7 +3316,12 @@ cv.addEventListener("pointerdown",function(e){
       selTower=towers[i]; sfx.click(); renderPanel(); return;
     }
   }
-  if(hero&&hero.gx===gx&&hero.gy===gy){ openHeroPanel(); return; }
+  for(var hSel=0;hSel<heroes.length;hSel++){
+    if(heroes[hSel].gx===gx&&heroes[hSel].gy===gy){
+      if(heroes[hSel].owner===myOwner())openHeroPanel();
+      return;
+    }
+  }
   selTower=null; $("panel").classList.add("hide");
 },{passive:false});
 cv.addEventListener("dblclick",function(e){
@@ -3786,8 +3818,13 @@ var party={
     c.on("open",function(){ self._send(c,{t:"hi",n:save.name||"cook"}); });
     if(c.open)self._send(c,{t:"hi",n:save.name||"cook"});
     c.on("close",function(){
+      var leftName=(self.members[c.peer]&&self.members[c.peer].n)||"A friend";
       delete self.conns[c.peer]; delete self.members[c.peer];
-      renderParty(); toast("A friend left");
+      renderParty(); toast(leftName+" left the pantry");
+      /* star topology - guests only connect to the host, so only the host's
+         own connection notices a disconnect directly. Relay it to everyone
+         else still connected so they find out too, not just the host. */
+      if(self.leader)self.send({t:"peerLeft",n:leftName});
     });
   },
   _send:function(c,m){ try{ if(c&&c.open)c.send(m); }catch(e){} },
@@ -3808,8 +3845,14 @@ var party={
     } else if(m.t==="snap"){
       if(state==="play"&&!self.leader){
         var wasSel=selTower?{gx:selTower.gx,gy:selTower.gy}:null;
-        towers=m.towers; bugs=m.bugs; cash=m.cash; lives=m.lives;
+        towers=m.towers;
+        bugs=m.bugs.map(function(b){
+          var B=BUGS[b.k]; b.r=B.r; b.fly=B.fly; b.arm=B.arm||0; return b;
+        });
+        heroes=m.heroes||[];
+        cash=m.cash; lives=m.lives;
         wave=m.wave; waveMax=m.waveMax; inWave=m.inWave; fastFwd=m.fastFwd; totalPops=m.pops;
+        if($("o-hero").className.indexOf("hide")<0)renderHeroPanel();
         if(wasSel){
           selTower=towers.filter(function(t){ return t.gx===wasSel.gx&&t.gy===wasSel.gy; })[0]||null;
           if(selTower){
@@ -3839,8 +3882,17 @@ var party={
         var ttw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
         if(ttw)ttw.tgt=m.mode;
       }
+    } else if(m.t==="reqPlaceHero"){
+      if(self.leader&&state==="play")placeHero(from,m.heroId,m.gx,m.gy);
+    } else if(m.t==="reqHeroLevel"){
+      if(self.leader&&state==="play"){
+        var lh=heroes.filter(function(h){ return h.owner===from; })[0];
+        if(lh)levelUpHero(lh);
+      }
     } else if(m.t==="over"){
       if(!self.leader&&state==="play")endRun(m.won);
+    } else if(m.t==="peerLeft"){
+      if(!self.leader)toast((m.n||"A friend")+" left the pantry");
     }
   },
   leave:function(){
@@ -4042,12 +4094,12 @@ window.__pp={
   jars:function(n){ save.jars+=n; queueSave(); },
   go:function(){ startWave(); },
   tick:function(n){ for(var i=0;i<(n||1);i++)update(1/60); },
-  place:function(id,gx,gy){ return id==="__hero"?placeHero(gx,gy):placeTower(id,gx,gy); },
+  place:function(id,gx,gy){ return id==="__hero"?placeHero(myOwner(),chosenHero,gx,gy):placeTower(id,gx,gy); },
   peek:function(){
     return {state:state,wave:wave,inWave:inWave,queued:waveQueue.length,
       bugs:bugs.length,shots:shots.length,towers:towers.length,
       cash:Math.floor(cash),lives:Math.floor(lives),pops:totalPops,
-      hero:hero?{lvl:hero.lvl,dmg:hero.s.dmg}:null};
+      hero:myHero()?{lvl:myHero().lvl,dmg:myHero().s.dmg}:null,heroCount:heroes.length};
   },
   MAPS:MAPS, BUGS:BUGS, TOWERS:TOWERS,
   drawMapThumb:drawMapThumb, drawBugArt:drawBugArt, decoIcon:decoIcon,
@@ -4055,7 +4107,8 @@ window.__pp={
   view:view, CELL:CELL, cv:cv,
   getTowers:function(){ return towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,t1:t.t1,t2:t.t2,t3:t.t3,spent:t.spent,pops:t.pops,cd:t.cd,ang:t.ang,xp:t.xp,lvl:t.lvl,s:t.s}; }); },
   getShots:function(){ return shots.map(function(sh){ return {x:sh.x,y:sh.y,dmg:sh.dmg,hit:Object.keys(sh.hit||{}).length}; }); },
-  getHero:function(){ return hero?{id:hero.id,gx:hero.gx,gy:hero.gy,x:hero.x,y:hero.y,cd:hero.cd,lvl:hero.lvl,xp:hero.xp,s:hero.s}:null; },
+  getHero:function(){ var h=myHero(); return h?{id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}:null; },
+  getHeroes:function(){ return heroes.map(function(h){ return {owner:h.owner,id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}; }); },
   killBug:function(id){ var b=bugs.filter(function(x){return x.id===id;})[0]; if(b){ damageBug(b,99999,true); } },
   party:party,
   screenFor:function(gx,gy){
