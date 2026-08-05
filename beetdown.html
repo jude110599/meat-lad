@@ -74,6 +74,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
 
 /* ---------- title ---------- */
 #s-title .page{justify-content:center;align-items:center;text-align:center}
+#titleRoot{width:200px;height:120px;margin-bottom:6px}
 .logo{font-size:clamp(40px,12vw,72px);font-weight:900;letter-spacing:.02em;line-height:.92;
   color:#b5613f;text-shadow:0 3px 0 #5c2a18;margin-bottom:4px}
 .logo span{color:#8a9550;text-shadow:0 3px 0 #3d4423}
@@ -222,6 +223,7 @@ body.pc-mode #stick{display:none}
 
   <!-- ============ TITLE ============ -->
   <div class="screen" id="s-title"><div class="page">
+    <canvas id="titleRoot" width="200" height="120"></canvas>
     <div class="logo">BEET<span>DOWN</span></div>
     <div class="tag">The pests came for the allotment. Dig in.</div>
     <button class="btn big" id="bSolo">Play<small>Survive twenty waves in the patch</small></button>
@@ -443,11 +445,14 @@ body.pc-mode #stick{display:none}
 <script>
 (function(){
 "use strict";
-var VERSION="1.9.0";
+var VERSION="1.10.0";
 
 /* ═════════════ CHANGELOG (Beetdown's own - nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.9.0",d:"latest",items:[
+  {v:"1.10.0",d:"latest",items:[
+    "A LITTLE SEEDLING NOW HOPS BACK AND FORTH BETWEEN TWO SOIL BEDS ON THE TITLE SCREEN, with an aphid crawling along the gap underneath - a small animated mascot for the menu, matching the one Meat Lad has always had"
+  ]},
+  {v:"1.9.0",items:[
     "ORIGINAL MUSIC. A relaxed garden theme plays on the menus, and a combat theme kicks in during a run that gets more intense the harder the difficulty - more layers, faster tempo, busier drums the deeper into Rotten Harvest territory you go. All written from scratch with the Web Audio API, no samples"
   ]},
   {v:"1.8.0",items:[
@@ -3497,6 +3502,32 @@ function drawCharPreview(t){
   drawRoot(c,previewRootId,t,1,false);
   c.restore();
 }
+var titleRootCtx=null;
+function drawTitleRoot(t){
+  var cv=$("titleRoot"); if(!cv)return;
+  if(!titleRootCtx)titleRootCtx=cv.getContext("2d");
+  var c=titleRootCtx, S=cv.width/50;
+  c.setTransform(S,0,0,S,0,0); c.clearRect(0,0,50,30);
+  // soil beds either side of the gap
+  c.fillStyle="#2e2a21"; c.fillRect(4,23,15,7); c.fillRect(31,23,15,7);
+  c.fillStyle="#1c1712"; c.fillRect(4,23,15,1.6); c.fillRect(31,23,15,1.6);
+  c.fillStyle="rgba(125,138,74,.3)"; c.fillRect(4,23,15,.6); c.fillRect(31,23,15,.6);
+  // hop cycle - the root bounds between the two beds
+  var per=2.6, ph=(t%per)/per, dir=(Math.floor(t/per)%2)?-1:1;
+  var ax=11.5, bx=38.5, x0=dir>0?ax:bx, x1=dir>0?bx:ax, px,py;
+  if(ph<.62){ var k=ph/.62; px=x0+(x1-x0)*k; py=17-(-4*Math.pow(k-.5,2)+1)*8; }
+  else { px=x1; py=17; }
+  c.fillStyle="rgba(0,0,0,.35)";
+  c.beginPath(); c.ellipse(px,23.4,3.6,1,0,0,6.283); c.fill();
+  c.save(); c.translate(px,py); c.scale(.32,.32);
+  drawRoot(c,"seed",t*2,1,false);
+  c.restore();
+  // an aphid crawling along the gap below
+  var pxg=((t*10)%25)+11.5;
+  c.save(); c.translate(pxg,26); c.scale(.26,.26);
+  drawPest(c,"aphid",{r:11,col:"#8fd94a",wob:0},t*2,false);
+  c.restore();
+}
 $("bSolo").onclick=function(){ sfx.click(); audioOn();
   renderChars("charGrid",updateCharPreview);
   updateCharPreview(chosenChar);
@@ -3889,6 +3920,7 @@ function frameBody(now){
   if(isPlay!==stickWasPlay){ stickWasPlay=isPlay;
     $("stick").style.pointerEvents=isPlay?"auto":"none"; }
   if($("s-char")&&$("s-char").className.indexOf("hide")<0)drawCharPreview(now/1000);
+  if($("s-title")&&$("s-title").className.indexOf("hide")<0)drawTitleRoot(now/1000);
   if(!(dt>0))dt=0;                 // a backwards or NaN clock must never stall the loop
   if(dt>.25)dt=.25;
   acc+=dt;
