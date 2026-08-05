@@ -645,9 +645,12 @@ try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=fir
 (function(){
 "use strict";
 
-var VERSION="3.2.0";
+var VERSION="3.2.1";
 var CHANGELOG=[
-  {v:"3.2.0",d:"latest",items:[
+  {v:"3.2.1",d:"latest",items:[
+    "IN-GAME MUSIC IS MORE INTENSE. Faster tempo in both worlds, a pounding double-hit kick pattern, an added snare/clap, denser hats and a relentless arpeggio - matches the game a lot better than the earlier, calmer pass"
+  ]},
+  {v:"3.2.0",items:[
     "ORIGINAL MUSIC. Separate menu, World 1 and World 2 themes now play automatically as you move between them - a lighter menu theme, driving industrial percussion in the Meat Works, and darker, more dissonant tones in the Rot. All written from scratch with the Web Audio API, no samples"
   ]},
   {v:"3.1.0",items:[
@@ -1315,7 +1318,7 @@ function mMHat(t,peak,fFreq){
   var g=AC.createGain(); g.gain.setValueAtTime(peak,t); g.gain.exponentialRampToValueAtTime(.0001,t+.04);
   src.connect(f); f.connect(g); g.connect(mMaster); src.start(t); src.stop(t+.05);
 }
-function mBPMFor(){ return mMode==="menu"?100:(mMode==="world2"?128:120); }
+function mBPMFor(){ return mMode==="menu"?100:(mMode==="world2"?150:140); }
 function mStep(){
   var bpm=mBPMFor(), sec16=(60/bpm)/4, beatIn16=mBeat16%16, bar=Math.floor(mBeat16/16);
   if(mMode==="menu"){
@@ -1325,21 +1328,23 @@ function mStep(){
     if(beatIn16%4===2)mNote("triangle",M_NOTE[chord.pad[bar%chord.pad.length]],mNextT,.4,.045,.01,"lowpass",1700);
   } else {
     var isW2=mMode==="world2", prog=isW2?M_W2:M_W1, cc=prog[bar%4];
-    // industrial thump every beat; world2 adds an offbeat ghost note for unease
-    if(beatIn16%4===0)mThump(mNextT,.8,isW2?110:150);
-    if(isW2&&beatIn16%8===6)mThump(mNextT,.3,80);
-    // hats: steady 8ths in world1, sparser/irregular in world2
-    if(!isW2&&beatIn16%2===0)mMHat(mNextT,.16,8500);
-    if(isW2&&(beatIn16===3||beatIn16===11||beatIn16===14))mMHat(mNextT,.2,6000);
-    // bass
+    // pounding kick every beat, plus a driving offbeat second hit - much harder-hitting
+    if(beatIn16%4===0)mThump(mNextT,1,isW2?105:145);
+    if(beatIn16%4===2)mThump(mNextT,.55,isW2?85:110);
+    if(isW2&&beatIn16%8===6)mThump(mNextT,.35,70);
+    // aggressive snare/clap on 2 and 4
+    if(beatIn16===4||beatIn16===12)mMHat(mNextT,.34,isW2?3200:2400);
+    // dense 16th-note hats, harder-edged than before
+    if(beatIn16%1===0)mMHat(mNextT,beatIn16%4===2?.24:.15,isW2?7000:8500);
+    // distorted, louder bass with a harder filter cut
     if(beatIn16===0||beatIn16===8)
-      mNote(isW2?"sawtooth":"square",M_NOTE[cc.bass],mNextT,.45,isW2?.22:.2,.01,"lowpass",isW2?260:360);
-    // pad
-    if(beatIn16===0)cc.pad.forEach(function(n){ mNote("sawtooth",M_NOTE[n],mNextT,1.7,isW2?.04:.032,.3,"lowpass",isW2?650:900); });
-    // arp: driving in world1, sparse dissonant plucks in world2
+      mNote(isW2?"sawtooth":"square",M_NOTE[cc.bass],mNextT,.4,isW2?.32:.3,.005,"lowpass",isW2?300:420);
+    // pad, still present but leaner so the drums cut through
+    if(beatIn16===0)cc.pad.forEach(function(n){ mNote("sawtooth",M_NOTE[n],mNextT,1.5,isW2?.045:.038,.25,"lowpass",isW2?700:950); });
+    // relentless arp in both worlds now, driving in world1, jagged/dissonant in world2
     var ai=Math.floor(beatIn16/2)%cc.arp.length;
-    if(!isW2&&beatIn16%2===0)mNote("square",M_NOTE[cc.arp[ai]],mNextT,.2,.05,.005,"lowpass",2000);
-    if(isW2&&beatIn16%4===2)mNote("triangle",M_NOTE[cc.arp[ai]],mNextT,.6,.045,.02,"lowpass",1400);
+    if(!isW2&&beatIn16%2===0)mNote("sawtooth",M_NOTE[cc.arp[ai]],mNextT,.18,.075,.004,"lowpass",2600);
+    if(isW2&&beatIn16%2===0)mNote("square",M_NOTE[cc.arp[ai]],mNextT,.3,.065,.01,"lowpass",1900);
   }
   mBeat16++; mNextT+=sec16;
 }
@@ -1355,7 +1360,11 @@ function mPlay(mode){
   mBeat16=0; mNextT=AC.currentTime+.08;
   mScheduler();
 }
-function mSetMode(mode){ mMode=mode; if(!mPlaying)mPlay(mode); }
+function mSetMode(mode){
+  mMode=mode;
+  if(mMaster&&AC)mMaster.gain.setTargetAtTime(mode==="menu"?.15:.24,AC.currentTime,.6);
+  if(!mPlaying)mPlay(mode);
+}
 
 /* ═════════════ CANVAS ═════════════ */
 var cvs=$("game"),ctx=cvs.getContext("2d");
