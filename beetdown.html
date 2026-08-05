@@ -445,11 +445,14 @@ body.pc-mode #stick{display:none}
 <script>
 (function(){
 "use strict";
-var VERSION="1.10.0";
+var VERSION="1.10.1";
 
 /* ═════════════ CHANGELOG (Beetdown's own - nothing to do with Meat Lad) ═════════════ */
 var CHANGELOG=[
-  {v:"1.10.0",d:"latest",items:[
+  {v:"1.10.1",d:"latest",items:[
+    "FIXED CLOUD SAVES SILENTLY NEVER LOADING. The code asked Firestore whether a document existed by calling exists() as a function, but in this version of the SDK it is a plain property - so the call threw, got swallowed by the error handler, and your online save was quietly ignored every single time. Progress made on another device will come back now"
+  ]},
+  {v:"1.10.0",items:[
     "A LITTLE SEEDLING NOW HOPS BACK AND FORTH BETWEEN TWO SOIL BEDS ON THE TITLE SCREEN, with an aphid crawling along the gap underneath - a small animated mascot for the menu, matching the one Meat Lad has always had"
   ]},
   {v:"1.9.0",items:[
@@ -852,7 +855,7 @@ function acctSignIn(email,pw){
   return fbAuth.signInWithEmailAndPassword(email,pw).then(function(userCred){
     var uid=userCred.user.uid;
     return fbDb.collection("accounts").doc(uid).get().then(function(snap){
-      if(snap.exists()){
+      if(snap.exists){
         var doc=ensureDocShape(snap.data());
         curUser=email; cloudId=uid; acctDoc=doc;
         applyBeetdownSave(doc);
@@ -889,7 +892,7 @@ function tryAutoSignIn(){
     fbAuth.onAuthStateChanged(function(user){
       if(!user)return res(false);
       fbDb.collection("accounts").doc(user.uid).get().then(function(snap){
-        if(snap.exists()){
+        if(snap.exists){
           var doc=ensureDocShape(snap.data());
           curUser=user.email; cloudId=user.uid; acctDoc=doc;
           applyBeetdownSave(doc);
@@ -942,7 +945,7 @@ function startInbox(){
   inboxTimer=setInterval(function(){
     if(!inboxEligible())return;
     fbDb.collection("accounts").doc(cloudId).get().then(function(snap){
-      if(!snap.exists())return;
+      if(!snap.exists)return;
       var doc=snap.data();
       if(!doc||!doc.bdInbox||!doc.bdInbox.length)return;
       var latest=null;
