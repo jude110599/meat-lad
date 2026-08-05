@@ -567,9 +567,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.9.0";
+var VERSION="1.10.0";
 var CHANGELOG=[
-  {v:"1.9.0",d:"latest",items:[
+  {v:"1.10.0",d:"latest",items:[
+    "CO-OP ACTUALLY SYNCS NOW. It used to only share the wave number and a vague hint that a bug spawned - everyone's towers, bugs, and cash were really just separate, disconnected simulations running side by side. The host now runs the real shared game and streams the board to everyone else in real time, and placing, upgrading or selling a tower goes through the shared game so your teammates actually see it. Heroes aren't part of the shared board yet - that's still local-only per player, a follow-up for later",
+    "FIXED THE HOST BEING ASKED FOR THEIR HERO TWICE when starting a co-op run - once in the lobby, then again on a whole separate screen right after clicking Start. It only asks once now, matching what guests already saw",
+    "FIXED A TOWER'S \"POPPED\" COUNT NEVER MOVING in the upgrade panel. Kills were never actually credited back to the tower that landed them, so the stat sat at zero forever no matter how much a tower fought - every kill, including burn damage over time, now correctly credits the tower that caused it"
+  ]},
+  {v:"1.9.0",items:[
     "A REAL BACKGROUND ON THE TITLE SCREEN. Layered shelf silhouettes with scattered jars, cans and produce receding into the dark, a warm glow behind the logo, and slow-drifting crumb dust - instead of a flat brown wall behind the menu buttons",
     "THE IN-RUN HUD GOT A REAL LOOK. Cash, lives, wave and hero level pills now have icons and a richer card-style background instead of plain text on a flat box, and the cash/life pills give a little pulse whenever they change so gains and losses actually register"
   ]},
@@ -1889,12 +1894,17 @@ function startRun(mapIdx,diffIdx,heroId){
   $("panel").classList.add("hide");
   mSetMode("play");
   renderShop(); updateHud(); resize();
-  toast("Place your hero for free");
-  placing=true; buyId="__hero";
+  if(party.on&&!party.leader){
+    toast("Heroes aren't shared in co-op yet - build towers with the group");
+  } else {
+    toast("Place your hero for free");
+    placing=true; buyId="__hero";
+  }
 }
 
 function endRun(won){
   state="over";
+  if(party.on&&party.leader)party.send({t:"over",won:won});
   var roundsSurvived=won?waveMax:Math.max(0,wave-1);
   save.crumbs=(save.crumbs||0)+Math.round(roundsSurvived*(6+curDiff*3));
   if(won){
@@ -2073,7 +2083,6 @@ function startWave(){
   for(var i=mix.length-1;i>0;i--){ var j=ri(0,i); var tmp=mix[i]; mix[i]=mix[j]; mix[j]=tmp; }
   waveQueue=mix; spawnT=0; inWave=true;
   sfx.wave(); updateHud();
-  if(party.on&&party.leader)party.send({t:"wave",w:wave});
 }
 function spawnBug(kind,d){
   var B=BUGS[kind],D=DIFFS[curDiff];
@@ -2097,11 +2106,11 @@ function popBug(b,byHero){
   var idx=bugs.indexOf(b);
   if(idx>=0)bugs.splice(idx,1);
 }
-function damageBug(b,dmg,pierceArm){
+function damageBug(b,dmg,pierceArm,tw){
   if(b.arm>0&&!pierceArm)dmg=Math.max(1,dmg-b.arm);
   if(b.weakT>0)dmg=Math.round(dmg*(1+b.weak));
   b.hp-=dmg;
-  if(b.hp<=0)popBug(b);
+  if(b.hp<=0){ if(tw)tw.pops=(tw.pops||0)+1; popBug(b); }
   return b.hp<=0;
 }
 
@@ -2128,12 +2137,12 @@ function fireTower(tw,s,buf){
   var tp=posAt(tgt.d);
   tw.ang=Math.atan2(tp.y-tw.y,tp.x-tw.x);
   if(s.snipe){
-    damageBug(tgt,dmg,s.pierceArm);
+    damageBug(tgt,dmg,s.pierceArm,tw);
     var extra=(s.pierce||1)-1;
     for(var i=0;i<bugs.length&&extra>0;i++){
       if(bugs[i]===tgt)continue;
       if(bugs[i].fly&&!s.air)continue;
-      damageBug(bugs[i],dmg,s.pierceArm); extra--;
+      damageBug(bugs[i],dmg,s.pierceArm,tw); extra--;
     }
     fx.push({beam:true,x1:tw.x,y1:tw.y,x2:tp.x,y2:tp.y,t:0,life:.14});
     sfx.splat();
@@ -2150,8 +2159,8 @@ function fireTower(tw,s,buf){
         var a=Math.atan2(bp.y-tw.y,bp.x-tw.x),da=Math.abs(((a-tw.ang+Math.PI*3)%(Math.PI*2))-Math.PI);
         if(da>.85)continue;
       }
-      if(s.burn){ b.burn=Math.max(b.burn,dmg*.3); b.burnT=Math.max(b.burnT,s.burn); }
-      damageBug(b,dmg,s.pierceArm); hits++; j--;
+      if(s.burn){ b.burn=Math.max(b.burn,dmg*.3); b.burnT=Math.max(b.burnT,s.burn); b.burnSrc=tw; }
+      damageBug(b,dmg,s.pierceArm,tw); hits++; j--;
     }
     fx.push({cone:!s.coneWide,ring:s.coneWide,x:tw.x,y:tw.y,a:tw.ang,r:rng,t:0,life:.22});
     return hits>0;
@@ -2161,7 +2170,7 @@ function fireTower(tw,s,buf){
       var a2=k/s.burst*6.283+tw.ang*.2;
       shots.push({x:tw.x,y:tw.y,vx:Math.cos(a2)*300,vy:Math.sin(a2)*300,
         dmg:dmg,pierce:s.pierce||1,hit:{},life:(s.rng*rngMult)/300,air:s.air,
-        pierceArm:s.pierceArm,col:byId(TOWERS,tw.id).col,r:4,slow:s.slow,slowT:s.slowT});
+        pierceArm:s.pierceArm,col:byId(TOWERS,tw.id).col,r:4,slow:s.slow,slowT:s.slowT,tw:tw});
     }
     return true;
   }
@@ -2172,7 +2181,7 @@ function fireTower(tw,s,buf){
       dmg:dmg,pierce:s.pierce||1,hit:{},life:(s.rng*rngMult)/(s.boomer?260:420),
       air:s.air,pierceArm:s.pierceArm,col:byId(TOWERS,tw.id).col,r:s.boomer?7:5,
       boomer:s.boomer,ox:tw.x,oy:tw.y,slow:s.slow,slowT:s.slowT,splash:s.splash,
-      spin:s.boomer?1:0});
+      spin:s.boomer?1:0,tw:tw});
   }
   return true;
 }
@@ -2219,13 +2228,38 @@ function fireHero(){
 
 /* ═════════════ UPDATE ═════════════ */
 var uiRefreshT=0;
+/* co-op: the host runs the real simulation below and periodically broadcasts
+   a full snapshot; guests never simulate towers/bugs locally (their copies
+   would silently drift from everyone else's) - they just render whatever
+   the last snapshot said and send place/upgrade/sell as requests. */
+var coopSyncT=0;
+function broadcastSnap(){
+  party.send({t:"snap",
+    towers:towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
+      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,s:t.s}; }),
+    bugs:bugs.map(function(b){ return {id:b.id,k:b.k,d:b.d,hp:b.hp,max:b.max,spd:b.spd,r:b.r,
+      fly:b.fly,arm:b.arm,slow:b.slow,slowT:b.slowT,weak:b.weak,weakT:b.weakT,
+      burn:b.burn,burnT:b.burnT,wob:b.wob}; }),
+    cash:cash,lives:lives,wave:wave,waveMax:waveMax,inWave:inWave,fastFwd:fastFwd,pops:totalPops});
+}
+function updateGuestSim(dt){
+  uiRefreshT-=dt;
+  if(uiRefreshT<=0){ uiRefreshT=.15; refreshLiveUI(); }
+  for(var f=fx.length-1;f>=0;f--){ fx[f].t+=dt; if(fx[f].t>fx[f].life)fx.splice(f,1); }
+}
 function update(dt){
   if(state!=="play")return;
+  if(party.on&&!party.leader){ updateGuestSim(dt); return; }
   var speed=fastFwd?3:1;
   dt*=speed;
 
   uiRefreshT-=dt;
   if(uiRefreshT<=0){ uiRefreshT=.15; refreshLiveUI(); }
+
+  if(party.on&&party.leader){
+    coopSyncT-=dt;
+    if(coopSyncT<=0){ coopSyncT=.18; broadcastSnap(); }
+  }
 
   // spawn
   if(inWave&&waveQueue.length){
@@ -2234,8 +2268,6 @@ function update(dt){
       var kind=waveQueue.shift();
       spawnBug(kind,0);
       spawnT=Math.max(.11,.5-wave*.008);
-      if(party.on&&party.leader)
-        party.send({t:"spawn",k:kind});
     }
   }
 
@@ -2245,7 +2277,7 @@ function update(dt){
     if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0)b.slow=1; }
     if(b.weakT>0)b.weakT-=dt;
     if(b.burnT>0){ b.burnT-=dt; b.hp-=b.burn*dt;
-      if(b.hp<=0){ popBug(b); continue; } }
+      if(b.hp<=0){ if(b.burnSrc)b.burnSrc.pops=(b.burnSrc.pops||0)+1; popBug(b); continue; } }
     b.d+=b.spd*b.slow*dt;
     if(b.d>=pathLen){
       lives-=BUGS[b.k].boss?20:Math.max(1,Math.round(BUGS[b.k].hp/2));
@@ -2303,18 +2335,18 @@ function update(dt){
       sh.hit[bb.id]=1;
       if(sh.slow){ bb.slow=Math.min(bb.slow,sh.slow); bb.slowT=Math.max(bb.slowT,sh.slowT||3); }
       if(sh.weaken){ bb.weak=Math.max(bb.weak,sh.weaken); bb.weakT=Math.max(bb.weakT,sh.weakenT||4); }
-      if(sh.burn){ bb.burn=Math.max(bb.burn,sh.burn); bb.burnT=Math.max(bb.burnT,sh.burnT||2); }
+      if(sh.burn){ bb.burn=Math.max(bb.burn,sh.burn); bb.burnT=Math.max(bb.burnT,sh.burnT||2); bb.burnSrc=sh.tw; }
       if(sh.splash){
         for(var n=bugs.length-1;n>=0;n--){
           var ob=bugs[n];
           if(ob.fly&&!sh.air)continue;
           var op=posAt(ob.d);
-          if(dist2(op.x,op.y,sh.x,sh.y)<=sh.splash*sh.splash)damageBug(ob,sh.dmg,sh.pierceArm);
+          if(dist2(op.x,op.y,sh.x,sh.y)<=sh.splash*sh.splash)damageBug(ob,sh.dmg,sh.pierceArm,sh.tw);
         }
         fx.push({x:sh.x,y:sh.y,t:0,life:.24,col:sh.col,r:sh.splash});
         shots.splice(k,1); break;
       }
-      damageBug(bb,sh.dmg,sh.pierceArm);
+      damageBug(bb,sh.dmg,sh.pierceArm,sh.tw);
       sh.pierce--;
       if(sh.pierce<=0){ shots.splice(k,1); break; }
     }
@@ -2641,14 +2673,22 @@ function renderPanel(){
     b.className="ubtn"; b.disabled=cash<up.c||locked;
     b.innerHTML="<b>"+up.n+"</b>"+up.d+" <i>$"+up.c+"</i>"+
       (lockedNew?" &mdash; only two paths at once":lockedDeep?" &mdash; another path went past tier 2":"");
-    b.onclick=function(){ sfx.click(); upgradeTower(tw,n); };
+    b.onclick=function(){
+      sfx.click();
+      if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
+      else upgradeTower(tw,n);
+    };
     p.appendChild(b);
   });
 
   var sell=document.createElement("button");
   sell.className="ubtn sell";
   sell.textContent="Sell for $"+Math.round(tw.spent*.7);
-  sell.onclick=function(){ sfx.click(); sellTower(tw); };
+  sell.onclick=function(){
+    sfx.click();
+    if(party.on&&!party.leader)party.send({t:"reqSell",gx:tw.gx,gy:tw.gy});
+    else sellTower(tw);
+  };
   p.appendChild(sell);
 }
 
@@ -2664,11 +2704,17 @@ cv.addEventListener("pointerdown",function(e){
   var w=toWorld(e.clientX,e.clientY);
   mouse.x=w.x; mouse.y=w.y; mouse.on=true;
   var gx=Math.floor(w.x/CELL),gy=Math.floor(w.y/CELL);
+  var isGuest=party.on&&!party.leader;
   if(placing){
     if(buyId==="__hero"){
-      if(placeHero(gx,gy)){ placing=false; buyId=null; toast(byId(HEROES,chosenHero).n+" is in"); }
+      if(isGuest){ placing=false; buyId=null; }
+      else if(placeHero(gx,gy)){ placing=false; buyId=null; toast(byId(HEROES,chosenHero).n+" is in"); }
     } else if(buyId){
-      if(placeTower(buyId,gx,gy)){ placing=false; buyId=null; renderShop(); }
+      if(isGuest){
+        if(!cellFree(gx,gy)){ toast("No room there"); return; }
+        party.send({t:"reqPlace",id:buyId,gx:gx,gy:gy});
+        placing=false; buyId=null; renderShop();
+      } else if(placeTower(buyId,gx,gy)){ placing=false; buyId=null; renderShop(); }
     }
     return;
   }
@@ -3125,12 +3171,31 @@ var party={
         for(var b=0;b<DIFFS.length;b++)if(DIFFS[b].id===m.diff)di=b;
         startRun(mi,di,chosenHero);
       }
-    } else if(m.t==="wave"){
-      if(state==="play"&&!self.leader){ wave=m.w; inWave=true; waveQueue=[]; updateHud(); }
-    } else if(m.t==="spawn"){
-      if(state==="play"&&!self.leader)spawnBug(m.k,0);
-    } else if(m.t==="cash"){
-      if(state==="play"&&!self.leader)cash=m.c;
+    } else if(m.t==="snap"){
+      if(state==="play"&&!self.leader){
+        var wasSel=selTower?{gx:selTower.gx,gy:selTower.gy}:null;
+        towers=m.towers; bugs=m.bugs; cash=m.cash; lives=m.lives;
+        wave=m.wave; waveMax=m.waveMax; inWave=m.inWave; fastFwd=m.fastFwd; totalPops=m.pops;
+        if(wasSel){
+          selTower=towers.filter(function(t){ return t.gx===wasSel.gx&&t.gy===wasSel.gy; })[0]||null;
+          if(selTower)renderPanel(); else $("panel").classList.add("hide");
+        }
+        updateHud();
+      }
+    } else if(m.t==="reqPlace"){
+      if(self.leader&&state==="play")placeTower(m.id,m.gx,m.gy);
+    } else if(m.t==="reqUpgrade"){
+      if(self.leader&&state==="play"){
+        var utw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
+        if(utw)upgradeTower(utw,m.path);
+      }
+    } else if(m.t==="reqSell"){
+      if(self.leader&&state==="play"){
+        var stw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
+        if(stw)sellTower(stw);
+      }
+    } else if(m.t==="over"){
+      if(!self.leader&&state==="play")endRun(m.won);
     }
   },
   leave:function(){
@@ -3185,7 +3250,7 @@ $("bCopy").onclick=function(){
 $("pStart").onclick=function(){
   sfx.click();
   party.send({t:"start",map:MAPS[curMap].id,diff:DIFFS[curDiff].id});
-  renderHeroGrid(); updateHeroPreview(); show("s-hero"); resize();
+  startRun(curMap,curDiff,chosenHero);
 };
 
 /* ═════════════ TITLE ANIMATION ═════════════ */
