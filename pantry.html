@@ -607,9 +607,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.16.0";
+var VERSION="1.17.0";
 var CHANGELOG=[
-  {v:"1.16.0",d:"latest",items:[
+  {v:"1.17.0",d:"latest",items:[
+    "TWO NEW BUGS. Silverfish are small, quick and show up from wave 7 - blink and they're past you. Spiders show up from wave 15, tougher and eight-legged, and burst into a trio of ants when they finally go down",
+    "A COUPLE OF THE MUTED BUG COLOURS GOT BRIGHTER - Weevil was a flat brown that blended into everything, now a proper olive green; Moth was a washed-out tan, now a dustier lavender that actually reads as its own colour next to the rest of the swarm"
+  ]},
+  {v:"1.16.0",items:[
     "TWO NEW SUPPORT HEROES. Old Tin was carrying that whole group alone - Coupon Clara throws hard-thrown change with real pierce and a smaller but steady payout, while Miser Morty barely fights at all but ends up paying out more than anyone by the late game if you can protect him"
   ]},
   {v:"1.15.0",items:[
@@ -967,14 +971,16 @@ var curMap=0;
 var BUGS={
   ant:    {n:"Ant",       hp:1,   spd:52,  r:9,  col:"#8a5a2e", cash:3, fly:false, child:null},
   fly:    {n:"Fly",       hp:1,   spd:96,  r:8,  col:"#5f6f7a", cash:4, fly:true,  child:null},
+  silverfish:{n:"Silverfish",hp:2,spd:132, r:8,  col:"#c8d2d8", cash:5, fly:false, child:null},
   beetle: {n:"Beetle",    hp:4,   spd:44,  r:11, col:"#43506b", cash:5, fly:false, child:"ant",  count:2},
-  moth:   {n:"Moth",      hp:3,   spd:74,  r:11, col:"#b0a389", cash:5, fly:true,  child:"fly",  count:2},
+  moth:   {n:"Moth",      hp:3,   spd:74,  r:11, col:"#a888a8", cash:5, fly:true,  child:"fly",  count:2},
   roach:  {n:"Roach",     hp:8,   spd:58,  r:13, col:"#6b3f22", cash:8, fly:false, child:"beetle",count:2},
-  weevil: {n:"Weevil",    hp:18,  spd:38,  r:15, col:"#4d4030", cash:13,fly:false, child:"roach",count:2, arm:1},
+  spider: {n:"Spider",    hp:12,  spd:66,  r:12, col:"#3a2a4a", cash:10,fly:false, child:"ant",  count:3},
+  weevil: {n:"Weevil",    hp:18,  spd:38,  r:15, col:"#5a6e2e", cash:13,fly:false, child:"roach",count:2, arm:1},
   hornet: {n:"Hornet",    hp:14,  spd:110, r:12, col:"#d8a11e", cash:12,fly:true,  child:"moth", count:2},
   king:   {n:"Grub King", hp:420, spd:26,  r:26, col:"#c96a2e", cash:160,fly:false, child:"weevil",count:3, arm:3, boss:true}
 };
-var BUG_ORDER=["ant","fly","beetle","moth","roach","weevil","hornet","king"];
+var BUG_ORDER=["ant","fly","silverfish","beetle","moth","roach","spider","weevil","hornet","king"];
 
 /* wave composition - grows steadily, boss every 10 */
 function waveMix(w){
@@ -984,8 +990,10 @@ function waveMix(w){
   add("ant",Math.max(0,10+w*2-(w>12?(w-12)*2:0)));
   if(w>=3)add("fly",Math.floor(w*1.1));
   if(w>=5)add("beetle",Math.floor((w-3)*.9));
+  if(w>=7)add("silverfish",Math.floor((w-5)*.6));
   if(w>=8)add("moth",Math.floor((w-6)*.8));
   if(w>=12)add("roach",Math.floor((w-10)*.7));
+  if(w>=15)add("spider",Math.floor((w-13)*.5));
   if(w>=18)add("weevil",Math.floor((w-16)*.5));
   if(w>=24)add("hornet",Math.floor((w-22)*.5));
   return out;
@@ -1987,10 +1995,10 @@ function drawBugArt(c,kind,t,r,wob){
   var B=BUGS[kind],col=B.col;
   wob=wob||0;
   var legT=t*9+wob;
-  var squashX=kind==="roach"?1.22:kind==="ant"?.78:1;
-  var squashY=kind==="roach"?.78:kind==="ant"?1.15:1;
+  var squashX=kind==="roach"?1.22:kind==="ant"?.78:kind==="silverfish"?.7:1;
+  var squashY=kind==="roach"?.78:kind==="ant"?1.15:kind==="silverfish"?1.3:1;
   c.strokeStyle=shade(col,-60); c.lineWidth=Math.max(1.3,r*.14); c.lineCap="round";
-  var legN=kind==="ant"||kind==="roach"?4:3;
+  var legN=kind==="ant"||kind==="roach"||kind==="spider"?4:3;
   for(var i=0;i<legN;i++){
     var off=Math.sin(legT+i*1.1)*r*.22;
     var ly=-r*.3+i*(r*.6/legN);
@@ -2037,6 +2045,20 @@ function drawBugArt(c,kind,t,r,wob){
     c.strokeStyle=shade(col,-70); c.lineWidth=Math.max(1,r*.08);
     c.beginPath(); c.moveTo(-r*.3,-r*.8); c.quadraticCurveTo(-r*.9,-r*1.3,-r*1.2,-r*1.6); c.stroke();
     c.beginPath(); c.moveTo(r*.3,-r*.8); c.quadraticCurveTo(r*.9,-r*1.3,r*1.2,-r*1.6); c.stroke();
+  }
+  if(kind==="spider"){
+    c.fillStyle=shade(col,-50);
+    c.beginPath(); c.moveTo(-r*.16,-r*.55); c.lineTo(0,-r*.3); c.lineTo(-r*.05,-r*.75); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(r*.16,-r*.55); c.lineTo(0,-r*.3); c.lineTo(r*.05,-r*.75); c.closePath(); c.fill();
+    c.strokeStyle="rgba(255,255,255,.18)"; c.lineWidth=Math.max(1,r*.08);
+    c.beginPath(); c.moveTo(0,-r*.1); c.lineTo(0,r*.85); c.stroke();
+  }
+  if(kind==="silverfish"){
+    c.fillStyle=shade(col,-25);
+    c.beginPath(); c.moveTo(-r*.1,r*.75); c.lineTo(0,r*1.5); c.lineTo(r*.1,r*.75); c.closePath(); c.fill();
+    c.globalAlpha=.35; c.fillStyle="#fff";
+    c.beginPath(); c.ellipse(-r*.15,-r*.1,r*.18,r*.5,-.2,0,6.283); c.fill();
+    c.globalAlpha=1;
   }
   c.strokeStyle=shade(col,-50); c.lineWidth=Math.max(1,r*.1);
   c.beginPath();
