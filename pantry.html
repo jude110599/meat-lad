@@ -307,7 +307,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .herogroup{margin-bottom:4px}
 .herogroup .ghdr{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
   font-weight:800;margin:12px 0 6px;padding-left:2px}
-.herorow{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.herorow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 .herocard{border:1px solid var(--line);border-radius:8px;padding:9px;cursor:pointer;
   text-align:left;display:flex;align-items:center;gap:8px;
   transition:transform .15s cubic-bezier(.34,1.56,.64,1),box-shadow .15s,border-color .15s}
@@ -607,9 +607,15 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.20.0";
+var VERSION="1.21.0";
 var CHANGELOG=[
-  {v:"1.20.0",d:"latest",items:[
+  {v:"1.21.0",d:"latest",items:[
+    "TOWER MASTERY IS PERMANENT NOW. Once any Toaster (or any tower) you've placed reaches the level an upgrade needs, that upgrade is unlocked on every Toaster you ever place again - this run or a future one - no more re-levelling the same tower from scratch every time",
+    "IN CO-OP, YOU CAN ONLY SELL, UPGRADE OR RETARGET YOUR OWN TOWERS NOW - everyone else's are labelled 'Owned by' their name so you always know whose is whose",
+    "THE HERO SELECT SCREEN IS ONE GRID NOW instead of six separate scrolling sections - every hero's visible at a glance, still colour-coded by group",
+    "Cut a hot per-frame performance sink where every tower re-scanned the entire tower list just to check for nearby support buffs, every frame - it now only scans actual support towers"
+  ]},
+  {v:"1.20.0",items:[
     "CO-OP HEROES, FOR REAL THIS TIME. Every player - host and guests alike - can now place their own hero on the shared board, and everyone sees everyone else's hero fighting right alongside the towers, not just the host's",
     "WHEN SOMEONE LEAVES A CO-OP RUN, everyone still in the pantry gets a toast about it now, not just the host",
     "Trimmed some redundant data out of the co-op sync packets and eased the sync rate back slightly to help both host and guest framerates in bigger multiplayer games"
@@ -918,7 +924,7 @@ function mSetMode(mode){
 /* ═════════════ SAVE ═════════════ */
 var SKEY="pantrypanic-save-v1";
 var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,
-  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},autostart:false};
+  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},autostart:false,towerMaxLvl:{}};
 function loadSave(){
   try{ var r=localStorage.getItem(SKEY);
     if(r){ var o=JSON.parse(r); for(var k in save)if(o[k]!=null)save[k]=o[k]; }
@@ -929,6 +935,7 @@ function loadSave(){
   if(!(save.achUnlocked instanceof Array))save.achUnlocked=[];
   if(!(save.cosOwned instanceof Array))save.cosOwned=[];
   if(!save.cosEquip||typeof save.cosEquip!=="object")save.cosEquip={};
+  if(!save.towerMaxLvl||typeof save.towerMaxLvl!=="object")save.towerMaxLvl={};
 }
 var saveT=null;
 function queueSave(){
@@ -2291,6 +2298,13 @@ var towers=[],bugs=[],shots=[],fx=[],heroes=[];
    own PeerJS id). myOwner()/myHero() find "my" hero among everyone's. */
 function myOwner(){ return party.on?(party.leader?"host":(party.peer&&party.peer.id?party.peer.id:"guest")):"solo"; }
 function myHero(){ var o=myOwner(); for(var i=0;i<heroes.length;i++)if(heroes[i].owner===o)return heroes[i]; return null; }
+var coopNames={};
+function ownerName(owner){
+  if(!party.on||!owner||owner==="solo")return null;
+  if(owner===myOwner())return "You";
+  if(party.leader)return (owner==="host"?(save.name||"cook"):(party.members[owner]&&party.members[owner].n))||"A friend";
+  return coopNames[owner]||(owner==="host"?"Host":"A friend");
+}
 var cash=0,lives=0,wave=0,waveMax=40,inWave=false,waveQueue=[],spawnT=0,runStartLives=0;
 var totalPops=0,fastFwd=false,selTower=null,buyId=null,placing=false;
 var mouse={x:0,y:0,on:false};
@@ -2387,11 +2401,19 @@ function recalcTower(tw){
   }
   tw.s=s;
 }
-function buffsFor(tw){
+function activeSupports(){
+  return towers.filter(function(o){ return o.s.support&&!o.s.income; });
+}
+/* pass the precomputed support list from activeSupports() when calling this
+   every frame for every tower (the update loop) - scanning only the
+   (usually few) support towers instead of the full towers array turns what
+   was an O(towers^2) scan every frame into O(supports*towers). */
+function buffsFor(tw,supports){
   var dmg=0,rng=1,cd=1;
-  for(var i=0;i<towers.length;i++){
-    var o=towers[i];
-    if(o===tw||!o.s.support||o.s.income)continue;
+  var list=supports||activeSupports();
+  for(var i=0;i<list.length;i++){
+    var o=list[i];
+    if(o===tw)continue;
     if(dist2(o.x,o.y,tw.x,tw.y)<=o.s.rng*o.s.rng){
       dmg+=o.s.buffDmg||0;
       rng*=o.s.buffRng||1;
@@ -2400,17 +2422,18 @@ function buffsFor(tw){
   }
   return {dmg:dmg,rng:rng,cd:cd};
 }
-function placeTower(id,gx,gy){
+function placeTower(id,gx,gy,owner){
   var def=byId(TOWERS,id),cost=towerCost(def);
   if(cash<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   cash-=cost;
-  var tw={id:id,gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1,tgt:"first"};
+  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   sfx.place(); updateHud(); renderShop();
   return true;
 }
+function canControl(tw){ return !party.on||tw.owner===myOwner(); }
 function placeHero(owner,heroId,gx,gy){
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   heroes=heroes.filter(function(h){ return h.owner!==owner; });
@@ -2475,10 +2498,18 @@ function giveHeroXp(h,n){
    its cash cost, so upgrades have to be earned by fighting, not just bought. */
 var TOWER_TIER_LVL=[2,4,6,8,10];
 function towerXpNeeded(l){ return Math.round(6*Math.pow(1.35,l-1)); }
+/* mastering an upgrade tier on ANY placed instance of a tower unlocks it
+   permanently for every instance of that tower, this run and every run
+   after - save.towerMaxLvl tracks the highest level each tower id has
+   ever reached (by towers this player themselves placed and levelled). */
+function towerGateLvl(tw){ return Math.max(tw.lvl||1,(save.towerMaxLvl&&save.towerMaxLvl[tw.id])||1); }
 function giveTowerXp(tw,n){
   tw.xp=(tw.xp||0)+n;
   while(tw.xp>=towerXpNeeded(tw.lvl)&&tw.lvl<10){
     tw.xp-=towerXpNeeded(tw.lvl); tw.lvl++;
+    if(tw.owner===myOwner()&&(save.towerMaxLvl[tw.id]||1)<tw.lvl){
+      save.towerMaxLvl[tw.id]=tw.lvl; queueSave();
+    }
   }
 }
 function sellTower(tw){
@@ -2496,11 +2527,13 @@ function setTowerTarget(tw,mode){
 var TGT_LABELS={first:"First",last:"Last",close:"Close",strong:"Strong"};
 function buildTgtRow(tw,onSet){
   var row=document.createElement("div"); row.className="tgtrow";
+  var locked=!canControl(tw);
   TGT_MODES.forEach(function(m){
     var b=document.createElement("button");
     b.className="tgtbtn"+((tw.tgt||"first")===m?" sel":"");
     b.textContent=TGT_LABELS[m];
-    b.onclick=function(){ sfx.click(); setTowerTarget(tw,m); onSet(); };
+    b.disabled=locked;
+    if(!locked)b.onclick=function(){ sfx.click(); setTowerTarget(tw,m); onSet(); };
     row.appendChild(b);
   });
   return row;
@@ -2519,7 +2552,7 @@ function upgradeTower(tw,pathN){
   var anyOtherPast2=tiers.some(function(t,i){ return i!==idx&&t>2; });
   if(anyOtherPast2&&tier>=2){ toast("Another path already went past tier 2"); return; }
   var needLvl=TOWER_TIER_LVL[tier];
-  if((tw.lvl||1)<needLvl){ toast("Needs to reach level "+needLvl+" first - "+(tw.pops||0)+" pops so far"); return; }
+  if(towerGateLvl(tw)<needLvl){ toast("Needs to reach level "+needLvl+" first - "+(tw.pops||0)+" pops so far"); return; }
   var up=p.u[tier];
   if(cash<up.c){ toast("Not enough"); return; }
   cash-=up.c; tw.spent+=up.c;
@@ -2697,7 +2730,7 @@ var uiRefreshT=0;
 var coopSyncT=0;
 function broadcastSnap(){
   party.send({t:"snap",
-    towers:towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
+    towers:towers.map(function(t){ return {id:t.id,owner:t.owner,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
       t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,xp:t.xp,lvl:t.lvl,tgt:t.tgt,s:t.s}; }),
     /* r/fly/arm dropped - they never change per bug instance and are always
        exactly BUGS[b.k].r/.fly/.arm, so the guest reconstructs them locally
@@ -2708,7 +2741,16 @@ function broadcastSnap(){
       burn:b.burn,burnT:b.burnT,wob:b.wob}; }),
     heroes:heroes.map(function(h){ return {owner:h.owner,id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,
       lvl:h.lvl,xp:h.xp,cd:h.cd,ang:h.ang,pops:h.pops,s:h.s}; }),
+    /* guests only connect to the host (star topology), so a guest has no
+       way to learn another guest's name directly - the host relays the
+       whole roster here so "Owned by X" can resolve for everyone. */
+    names:coopNameMap(),
     cash:cash,lives:lives,wave:wave,waveMax:waveMax,inWave:inWave,fastFwd:fastFwd,pops:totalPops});
+}
+function coopNameMap(){
+  var m={host:save.name||"cook"};
+  for(var k in party.members)m[k]=party.members[k].n||"cook";
+  return m;
 }
 function updateGuestSim(dt){
   uiRefreshT-=dt;
@@ -2756,10 +2798,11 @@ function update(dt){
   }
 
   // towers
+  var frameSupports=activeSupports();
   for(var j=0;j<towers.length;j++){
     var tw=towers[j],s=tw.s;
     if(s.support)continue;
-    var buf=buffsFor(tw);
+    var buf=buffsFor(tw,frameSupports);
     tw.cd-=dt*(buf.cd?1/buf.cd:1);
     if(tw.cd<=0){
       if(fireTower(tw,s,buf))tw.cd=s.cd;
@@ -3139,6 +3182,7 @@ function refreshLiveUI(){
 function renderPanel(){
   if(!selTower){ $("panel").classList.add("hide"); return; }
   var tw=selTower,def=byId(TOWERS,tw.id),s=tw.s,bf=buffsFor(tw);
+  var mine=canControl(tw),oName=ownerName(tw.owner);
   var p=$("panel"); p.classList.remove("hide"); p.innerHTML="";
   var h=document.createElement("h3"); h.textContent=def.n; p.appendChild(h);
   var sub=document.createElement("div"); sub.className="sub";
@@ -3149,6 +3193,11 @@ function renderPanel(){
   var lvlLine=document.createElement("div"); lvlLine.className="sub"; lvlLine.style.marginTop="-6px";
   lvlLine.innerHTML="Level "+(tw.lvl||1)+(tw.lvl<10?" · "+(tw.xp||0)+"/"+towerXpNeeded(tw.lvl)+" xp":" (max)");
   p.appendChild(lvlLine);
+  if(oName){
+    var ownLine=document.createElement("div"); ownLine.className="sub"; ownLine.style.marginTop="-6px";
+    ownLine.textContent=(mine?"Owned by you":"Owned by "+oName);
+    p.appendChild(ownLine);
+  }
   if(!s.income&&!s.support)p.appendChild(buildTgtRow(tw,renderPanel));
 
   var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
@@ -3166,12 +3215,12 @@ function renderPanel(){
     var lockedNew=(tier===0&&activePaths>=2);
     var lockedDeep=(pastTwoIdx>=0&&pastTwoIdx!==idx&&tier>=2);
     var needLvl=TOWER_TIER_LVL[tier];
-    var lockedLvl=(tw.lvl||1)<needLvl;
-    var locked=lockedNew||lockedDeep||lockedLvl;
+    var lockedLvl=towerGateLvl(tw)<needLvl;
+    var locked=lockedNew||lockedDeep||lockedLvl||!mine;
     var b=document.createElement("button");
     b.className="ubtn"; b.disabled=cash<up.c||locked;
     b.innerHTML="<b>"+up.n+"</b>"+up.d+" <i>$"+up.c+"</i>"+
-      (lockedNew?" &mdash; only two paths at once":lockedDeep?" &mdash; another path went past tier 2":
+      (!mine?" &mdash; owned by "+oName:lockedNew?" &mdash; only two paths at once":lockedDeep?" &mdash; another path went past tier 2":
        lockedLvl?" &mdash; needs level "+needLvl:"");
     b.onclick=function(){
       sfx.click();
@@ -3183,7 +3232,8 @@ function renderPanel(){
 
   var sell=document.createElement("button");
   sell.className="ubtn sell";
-  sell.textContent="Sell for $"+Math.round(tw.spent*.7);
+  sell.disabled=!mine;
+  sell.textContent=mine?"Sell for $"+Math.round(tw.spent*.7):"Owned by "+oName;
   sell.onclick=function(){
     sfx.click();
     if(party.on&&!party.leader)party.send({t:"reqSell",gx:tw.gx,gy:tw.gy});
@@ -3204,6 +3254,7 @@ function openTowerUp(tw){
 function renderTowerUp(){
   if(!selTower)return;
   var tw=selTower,def=byId(TOWERS,tw.id),s=tw.s,bf=buffsFor(tw),tc=TOWER_CATS[def.cat];
+  var mine=canControl(tw),oName=ownerName(tw.owner);
   $("towerUpBox").style.background=tc.bg;
   var oldIc=$("towerUpIcon"),newIc=iconFor("t",def.id,84);
   newIc.id="towerUpIcon";
@@ -3217,9 +3268,10 @@ function renderTowerUp(){
   var pct=atMax?100:Math.min(100,Math.round((tw.xp||0)/need*100));
   $("towerUpXpFill").style.width=pct+"%";
   $("towerUpXpTxt").textContent=atMax?"Fully mastered":(Math.floor(tw.xp||0)+" / "+need+" xp to next level");
-  if(s.income)$("towerUpStats").textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped";
-  else if(s.support)$("towerUpStats").textContent="+"+(s.buffDmg||0)+" damage nearby · "+(tw.pops||0)+" popped";
-  else $("towerUpStats").textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+(tw.pops||0)+" popped";
+  var ownTxt=oName?(" · "+(mine?"Owned by you":"Owned by "+oName)):"";
+  if(s.income)$("towerUpStats").textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped"+ownTxt;
+  else if(s.support)$("towerUpStats").textContent="+"+(s.buffDmg||0)+" damage nearby · "+(tw.pops||0)+" popped"+ownTxt;
+  else $("towerUpStats").textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+(tw.pops||0)+" popped"+ownTxt;
   var tgtWrap=$("towerUpTgt"); tgtWrap.innerHTML="";
   if(!s.income&&!s.support)tgtWrap.appendChild(buildTgtRow(tw,renderTowerUp));
 
@@ -3238,16 +3290,17 @@ function renderTowerUp(){
       var lockedNew=isNext&&curTier===0&&activePaths>=2;
       var lockedDeep=isNext&&pastTwoIdx>=0&&pastTwoIdx!==idx&&curTier>=2;
       var needLvl=TOWER_TIER_LVL[ti];
-      var lockedLvl=isNext&&(tw.lvl||1)<needLvl;
+      var lockedLvl=isNext&&towerGateLvl(tw)<needLvl;
       var lockedCash=isNext&&cash<up.c;
-      var locked=isNext&&(lockedNew||lockedDeep||lockedLvl);
+      var lockedOwner=isNext&&!mine;
+      var locked=isNext&&(lockedNew||lockedDeep||lockedLvl||lockedOwner);
       var card=document.createElement("div");
       card.className="tuptier"+(done?" done":"")+((locked||futureLocked)?" locked":"");
       var cv2=document.createElement("canvas"); cv2.width=60; cv2.height=60;
       var gctx=cv2.getContext("2d"); gctx.scale(2,2); gctx.translate(15,15);
       drawUpgradeIcon(gctx,upgradeIconKind(up),12,done?"#6fbf8f":(locked||futureLocked)?"#5a4f3e":tc.col);
       card.appendChild(cv2);
-      var lockReason=lockedNew?"Only two paths at once":lockedDeep?"Another path passed tier 2":
+      var lockReason=lockedOwner?"Owned by "+oName:lockedNew?"Only two paths at once":lockedDeep?"Another path passed tier 2":
         lockedLvl?"Needs level "+needLvl:futureLocked?"Unlock the tier above first":
         lockedCash?"Not enough cash":"";
       var info=document.createElement("div");
@@ -3269,7 +3322,8 @@ function renderTowerUp(){
   });
 
   var sellBtn=$("towerUpSell");
-  sellBtn.textContent="Sell for $"+Math.round(tw.spent*.7);
+  sellBtn.disabled=!mine;
+  sellBtn.textContent=mine?"Sell for $"+Math.round(tw.spent*.7):"Owned by "+oName;
   sellBtn.onclick=function(){
     sfx.click();
     if(party.on&&!party.leader)party.send({t:"reqSell",gx:tw.gx,gy:tw.gy});
@@ -3306,7 +3360,7 @@ cv.addEventListener("pointerdown",function(e){
         if(!cellFree(gx,gy)){ toast("No room there"); return; }
         party.send({t:"reqPlace",id:buyId,gx:gx,gy:gy});
         placing=false; buyId=null; renderShop();
-      } else if(placeTower(buyId,gx,gy)){ placing=false; buyId=null; renderShop(); }
+      } else if(placeTower(buyId,gx,gy,myOwner())){ placing=false; buyId=null; renderShop(); }
     }
     return;
   }
@@ -3544,32 +3598,23 @@ function renderMapGrid(gridId,onPick){
 function renderHeroGrid(onPick){
   var g=$("heroGrid"); if(!g)return;
   g.innerHTML="";
-  var byGrp={};
-  HEROES.forEach(function(H){ (byGrp[H.grp]=byGrp[H.grp]||[]).push(H); });
-  Object.keys(HERO_GROUPS).forEach(function(gk){
-    var list=byGrp[gk]; if(!list||!list.length)return;
-    var grp=HERO_GROUPS[gk];
-    var sec=document.createElement("div"); sec.className="herogroup";
-    var h=document.createElement("div"); h.className="ghdr"; h.style.color=grp.col; h.textContent=grp.n;
-    sec.appendChild(h);
-    var row=document.createElement("div"); row.className="herorow";
-    list.forEach(function(H){
-      var d=document.createElement("div");
-      d.className="herocard"+(H.id===chosenHero?" sel":"");
-      d.style.background=grp.bg;
-      d.style.borderColor=H.id===chosenHero?"":grp.col+"55";
-      d.appendChild(iconFor("h",H.id,40));
-      var meta=document.createElement("div");
-      meta.innerHTML='<div class="hn">'+H.n+'</div><div class="hl">Lv'+
-        (save.heroUsed.indexOf(H.id)>=0?"used":"new")+'</div>';
-      d.appendChild(meta);
-      d.onclick=function(){ sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
-        if(onPick)onPick(H.id); };
-      row.appendChild(d);
-    });
-    sec.appendChild(row);
-    g.appendChild(sec);
+  var row=document.createElement("div"); row.className="herorow";
+  HEROES.forEach(function(H){
+    var grp=HERO_GROUPS[H.grp];
+    var d=document.createElement("div");
+    d.className="herocard"+(H.id===chosenHero?" sel":"");
+    d.style.background=grp.bg;
+    d.style.borderColor=H.id===chosenHero?"":grp.col+"55";
+    d.appendChild(iconFor("h",H.id,40));
+    var meta=document.createElement("div");
+    meta.innerHTML='<div class="hn">'+H.n+'</div><div class="hl" style="color:'+grp.col+'">'+grp.n+
+      '</div><div class="hl">'+(save.heroUsed.indexOf(H.id)>=0?"used":"new")+'</div>';
+    d.appendChild(meta);
+    d.onclick=function(){ sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
+      if(onPick)onPick(H.id); };
+    row.appendChild(d);
   });
+  g.appendChild(row);
 }
 var heroPrevCtx=null;
 function updateHeroPreview(){
@@ -3850,6 +3895,7 @@ var party={
           var B=BUGS[b.k]; b.r=B.r; b.fly=B.fly; b.arm=B.arm||0; return b;
         });
         heroes=m.heroes||[];
+        coopNames=m.names||{};
         cash=m.cash; lives=m.lives;
         wave=m.wave; waveMax=m.waveMax; inWave=m.inWave; fastFwd=m.fastFwd; totalPops=m.pops;
         if($("o-hero").className.indexOf("hide")<0)renderHeroPanel();
@@ -3866,21 +3912,21 @@ var party={
         updateHud();
       }
     } else if(m.t==="reqPlace"){
-      if(self.leader&&state==="play")placeTower(m.id,m.gx,m.gy);
+      if(self.leader&&state==="play")placeTower(m.id,m.gx,m.gy,from);
     } else if(m.t==="reqUpgrade"){
       if(self.leader&&state==="play"){
         var utw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
-        if(utw)upgradeTower(utw,m.path);
+        if(utw&&utw.owner===from)upgradeTower(utw,m.path);
       }
     } else if(m.t==="reqSell"){
       if(self.leader&&state==="play"){
         var stw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
-        if(stw)sellTower(stw);
+        if(stw&&stw.owner===from)sellTower(stw);
       }
     } else if(m.t==="reqTarget"){
       if(self.leader&&state==="play"){
         var ttw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
-        if(ttw)ttw.tgt=m.mode;
+        if(ttw&&ttw.owner===from)ttw.tgt=m.mode;
       }
     } else if(m.t==="reqPlaceHero"){
       if(self.leader&&state==="play")placeHero(from,m.heroId,m.gx,m.gy);
@@ -4094,7 +4140,7 @@ window.__pp={
   jars:function(n){ save.jars+=n; queueSave(); },
   go:function(){ startWave(); },
   tick:function(n){ for(var i=0;i<(n||1);i++)update(1/60); },
-  place:function(id,gx,gy){ return id==="__hero"?placeHero(myOwner(),chosenHero,gx,gy):placeTower(id,gx,gy); },
+  place:function(id,gx,gy){ return id==="__hero"?placeHero(myOwner(),chosenHero,gx,gy):placeTower(id,gx,gy,myOwner()); },
   peek:function(){
     return {state:state,wave:wave,inWave:inWave,queued:waveQueue.length,
       bugs:bugs.length,shots:shots.length,towers:towers.length,
