@@ -612,9 +612,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.26.0";
+var VERSION="1.27.0";
 var CHANGELOG=[
-  {v:"1.26.0",d:"latest",items:[
+  {v:"1.27.0",d:"latest",items:[
+    "EVERY LARDER GETS ONE UNMISTAKABLE LANDMARK - an oversized version of its own scenery prop (a giant loaf, a giant snowflake, a giant wheel of cheese...) planted somewhere on the board, with its own shadow and rim-light, so each map has one specific thing you'd recognise it by",
+    "THE TRAIL ITSELF LOOKS LIKE A REAL SURFACE NOW - tile seams running its length instead of a flat coloured band",
+    "REDESIGNED THE ENTRY AND EXIT - bugs now pour in through a glowing directional arrow, and the exit is an actual illustrated glass jar with a lid and a highlight, replacing the plain circle-and-label"
+  ]},
+  {v:"1.26.0",items:[
     "COMBAT HAS REAL IMPACT NOW. Every hit throws a spark burst and a floating damage number, splash hits get a shockwave ring, and every bug's death has proper punch to it",
     "BOSS DEATHS ARE AN EVENT - a full explosion (shockwave, smoke, debris, screen flash) plus a screen shake and a brief hit-stop instead of the same small pop everything else gets",
     "BOSSES NOW ANNOUNCE THEMSELVES when they spawn - a banner across the top of the screen and a shake, so you know something's different about this wave before it reaches you",
@@ -2427,6 +2432,25 @@ function drawObstacle(g,x,y,r){
   g.moveTo(r*.72,-r*.72); g.lineTo(-r*.72,r*.72); g.stroke();
   g.restore();
 }
+/* one oversized "set piece" version of the map's own prop, placed in
+   whichever open pocket of the board it fits best - the idea being every
+   larder should have one unmistakable thing you'd recognise it by in a
+   screenshot, not just a colour scheme. */
+var mapLandmark=null;
+function bakeLandmark(){
+  mapLandmark=null;
+  var mapTh=(MAPS[curMap]&&MAPS[curMap].theme)||{deco:"jar"};
+  var candidates=[[4,3],[19,3],[4,11],[19,11],[11,2],[11,12],[2,7],[21,7],
+    [8,2],[15,2],[8,12],[15,12],[3,4],[20,4],[3,10],[20,10],[12,7]];
+  for(var i=0;i<candidates.length;i++){
+    var gx=candidates[i][0],gy=candidates[i][1];
+    if(gx<0||gy<0||gx>=GW||gy>=GH)continue;
+    if(blockedCells[gx+","+gy])continue;
+    mapLandmark={x:(gx+.5)*CELL,y:(gy+.5)*CELL,r:CELL*1.35,kind:mapTh.deco};
+    blockedCells[gx+","+gy]=1;
+    return;
+  }
+}
 /* scattered background props so each larder reads as a real place instead
    of a flat gradient with a path drawn on it - seeded off the map index so
    the same larder always looks the same, not a new layout every visit. */
@@ -2507,7 +2531,7 @@ function towerCost(t){ return Math.round(t.cost*skillCostMult()); }
 function startRun(mapIdx,diffIdx,heroId){
   curMap=mapIdx; curDiff=diffIdx; chosenHero=heroId||chosenHero;
   var D=DIFFS[curDiff];
-  buildPath(curMap); bakeBlocked(); bakeObstacles(); bakeTerrain(); bakeMapDecos();
+  buildPath(curMap); bakeBlocked(); bakeObstacles(); bakeLandmark(); bakeTerrain(); bakeMapDecos();
   towers=[]; bugs=[]; shots=[]; fx=[]; heroes=[];
   cash=D.cash+skillCashBonus();
   lives=D.lives+skillLifeBonus();
@@ -3142,6 +3166,19 @@ function render(t){
     ctx.beginPath(); ctx.ellipse(tp.x,tp.y,tp.r,tp.r*tp.sq,tp.rot,0,6.283); ctx.fill();
   }
 
+  // one oversized landmark prop so the larder reads as a specific place
+  if(mapLandmark){
+    var lm=mapLandmark;
+    var lmg=ctx.createRadialGradient(lm.x,lm.y+lm.r*.7,0,lm.x,lm.y+lm.r*.7,lm.r*1.1);
+    lmg.addColorStop(0,"rgba(0,0,0,.35)"); lmg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=lmg;
+    ctx.beginPath(); ctx.ellipse(lm.x,lm.y+lm.r*.7,lm.r*1.05,lm.r*.4,0,0,6.283); ctx.fill();
+    decoIcon(ctx,lm.kind,lm.x,lm.y,lm.r,mapTh.accent);
+    ctx.save(); ctx.globalAlpha=.4; ctx.strokeStyle=mapTh.path||"#e8dcc4"; ctx.lineWidth=1.4;
+    decoIcon(ctx,lm.kind,lm.x-lm.r*.06,lm.y-lm.r*.06,lm.r*.97,mapTh.path||"#e8dcc4");
+    ctx.restore();
+  }
+
   // scattered background props, themed per larder
   for(var dcI=0;dcI<mapDecos.length;dcI++){
     var dc=mapDecos[dcI];
@@ -3164,15 +3201,45 @@ function render(t){
   ctx.beginPath(); ctx.moveTo(path[0].x,path[0].y);
   for(var i3=1;i3<path.length;i3++)ctx.lineTo(path[i3].x,path[i3].y);
   ctx.stroke();
+  // tile seams along the trail so it reads as laid material, not a flat band
+  ctx.save();
+  ctx.strokeStyle=mapTh.accent; ctx.globalAlpha=.22; ctx.lineWidth=1.4;
+  ctx.setLineDash([CELL*.24,CELL*.3]);
+  ctx.beginPath(); ctx.moveTo(path[0].x,path[0].y);
+  for(var i4=1;i4<path.length;i4++)ctx.lineTo(path[i4].x,path[i4].y);
+  ctx.stroke();
+  ctx.restore();
 
-  // entry / exit markers
-  var pIn=path[0],pOut=path[path.length-1];
-  ctx.fillStyle="rgba(111,191,143,.25)";
-  ctx.beginPath(); ctx.arc(pIn.x,pIn.y,CELL*.4,0,6.283); ctx.fill();
-  ctx.fillStyle="rgba(196,68,46,.3)";
-  ctx.beginPath(); ctx.arc(pOut.x,pOut.y,CELL*.46,0,6.283); ctx.fill();
-  ctx.fillStyle="#e8dcc4"; ctx.font="bold 11px sans-serif"; ctx.textAlign="center";
-  ctx.fillText("JAR",pOut.x,pOut.y+4); ctx.textAlign="left";
+  // entry - a soft glowing arrow marking where bugs pour in from
+  var pIn=path[0],inDir=Math.atan2(path[1].y-pIn.y,path[1].x-pIn.x);
+  ctx.save(); ctx.translate(pIn.x,pIn.y); ctx.rotate(inDir);
+  var inG=ctx.createRadialGradient(0,0,0,0,0,CELL*.7);
+  inG.addColorStop(0,"rgba(111,191,143,.4)"); inG.addColorStop(1,"rgba(111,191,143,0)");
+  ctx.fillStyle=inG; ctx.beginPath(); ctx.arc(0,0,CELL*.7,0,6.283); ctx.fill();
+  ctx.fillStyle="rgba(111,191,143,.55)";
+  ctx.beginPath(); ctx.moveTo(-CELL*.18,-CELL*.24); ctx.lineTo(CELL*.22,0);
+  ctx.lineTo(-CELL*.18,CELL*.24); ctx.lineTo(-CELL*.05,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // exit - an illustrated pantry jar, the actual "goal" bugs are racing for
+  var pOut=path[path.length-1];
+  ctx.save(); ctx.translate(pOut.x,pOut.y);
+  var outG=ctx.createRadialGradient(0,0,0,0,0,CELL*.85);
+  outG.addColorStop(0,"rgba(196,68,46,.35)"); outG.addColorStop(1,"rgba(196,68,46,0)");
+  ctx.fillStyle=outG; ctx.beginPath(); ctx.arc(0,0,CELL*.85,0,6.283); ctx.fill();
+  ctx.fillStyle="rgba(0,0,0,.3)"; ctx.beginPath(); ctx.ellipse(0,CELL*.32,CELL*.34,CELL*.1,0,0,6.283); ctx.fill();
+  var jarG=ctx.createLinearGradient(-CELL*.24,0,CELL*.24,0);
+  jarG.addColorStop(0,"#8ab0c4"); jarG.addColorStop(.5,"#c8dce8"); jarG.addColorStop(1,"#6a8ea0");
+  ctx.fillStyle=jarG; ctx.strokeStyle="#3a4a52"; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(-CELL*.22,-CELL*.18); ctx.lineTo(-CELL*.24,CELL*.26);
+  ctx.quadraticCurveTo(-CELL*.24,CELL*.34,-CELL*.14,CELL*.34);
+  ctx.lineTo(CELL*.14,CELL*.34); ctx.quadraticCurveTo(CELL*.24,CELL*.34,CELL*.24,CELL*.26);
+  ctx.lineTo(CELL*.22,-CELL*.18); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#5a4530"; ctx.fillRect(-CELL*.26,-CELL*.3,CELL*.52,CELL*.14);
+  ctx.strokeRect(-CELL*.26,-CELL*.3,CELL*.52,CELL*.14);
+  ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(-CELL*.13,-CELL*.1); ctx.lineTo(-CELL*.13,CELL*.24); ctx.stroke();
+  ctx.restore();
 
   // build preview
   if(placing&&mouse.on){
