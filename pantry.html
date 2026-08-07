@@ -610,9 +610,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.22.0";
+var VERSION="1.22.1";
 var CHANGELOG=[
-  {v:"1.22.0",d:"latest",items:[
+  {v:"1.22.1",d:"latest",items:[
+    "Fixed dropping a dragged tower back over the shop sidebar sometimes trying to place it instead of cancelling - the drop zone check wasn't accounting for the shop sitting visually on top of the board's canvas"
+  ]},
+  {v:"1.22.0",items:[
     "FIXED THE UPGRADE PANEL EATING CLICKS. It was silently rebuilding every single one of its buttons several times a second to keep stats fresh, which could yank a button out from under your cursor mid-click - it now updates numbers in place instead and leaves the buttons alone",
     "DRAG A TOWER STRAIGHT FROM THE SHOP ONTO THE BOARD to place it - tap-then-tap still works too, this is just a faster option alongside it",
     "SUPPORT AND INCOME TOWERS CAN LEVEL UP NOW. They never land a kill so they never earned the XP that unlocks their own upgrades - they now earn it for the round they just stood through instead",
@@ -3424,9 +3427,13 @@ function shopDragEnd(e){
   document.removeEventListener("pointerup",shopDragEnd);
   if(!shopDragMoved)return;
   if(!placing||!buyId||buyId==="__hero")return;
-  var r=cv.getBoundingClientRect();
-  var overCanvas=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
-  if(!overCanvas){ placing=false; buyId=null; renderShop(); return; }
+  /* the canvas is a full-viewport background layer - the shop sidebar sits
+     on top of it as an HTML overlay, so checking cv's own bounding rect
+     can't tell "released over the board" from "released back over the
+     shop". Check what's actually topmost at the drop point instead. */
+  var dropEl=document.elementFromPoint(e.clientX,e.clientY);
+  var overShop=dropEl&&dropEl.closest&&dropEl.closest("#shop");
+  if(overShop){ placing=false; buyId=null; renderShop(); return; }
   var w=toWorld(e.clientX,e.clientY);
   commitTowerPlacement(Math.floor(w.x/CELL),Math.floor(w.y/CELL));
 }
