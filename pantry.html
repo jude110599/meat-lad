@@ -610,9 +610,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.23.0";
+var VERSION="1.24.0";
 var CHANGELOG=[
-  {v:"1.23.0",d:"latest",items:[
+  {v:"1.24.0",d:"latest",items:[
+    "THE BOARD DOESN'T LOOK LIKE A SPREADSHEET ANYMORE - the always-on grid lines are gone, replaced with soft uneven ground patches so the larder reads as real terrain instead of a lattice of cells",
+    "EVERY LARDER NOW HAS A FEW SOLID OBSTACLES - crates that block a cell outright, laid out once per map alongside the path so there's real tactical texture to work around, not just an open floor"
+  ]},
+  {v:"1.23.0",items:[
     "EVERY LARDER HAS REAL SCENERY NOW instead of just a coloured gradient with a path on it - each map scatters its own themed background props (loaves, chilis, jars, snowflakes, cobwebs, cheese wedges, pretzels and more) across the board, laid out once per map so it stays consistent every time you play it",
     "Four new prop types (cheese, egg, pretzel, spoon) and a reshuffle of which map uses which, so far fewer larders share the same scenery anymore"
   ]},
@@ -2308,6 +2312,55 @@ function bakeBlocked(){
     }
   }
 }
+/* soft irregular ground patches drawn under everything else, replacing the
+   old always-on grid lines - same seeded-per-map approach as the props
+   below, just bigger and much fainter. */
+var mapTerrain=[];
+function bakeTerrain(){
+  mapTerrain=[];
+  var seed=(curMap+1)*13579+3;
+  function trnd(){ seed=(seed*1103515245+12345)&0x7fffffff; return (seed%10000)/10000; }
+  var n=9+Math.floor(trnd()*5);
+  for(var i=0;i<n;i++){
+    mapTerrain.push({x:trnd()*VW,y:trnd()*VH,r:CELL*(1.6+trnd()*1.8),
+      sq:.55+trnd()*.35,rot:trnd()*6.283,dark:trnd()<.5});
+  }
+}
+/* a handful of solid, unbuildable obstacles per map (crates blocking a
+   cell outright) so the board has real tactical texture, not just an
+   open grid with a path through it. baked after bakeBlocked() so they
+   avoid the path, and they extend blockedCells themselves so towers
+   (and the softer background props below) steer clear of them too. */
+var mapObstacles=[];
+function bakeObstacles(){
+  mapObstacles=[];
+  var seed=(curMap+1)*54321+7;
+  function ornd(){ seed=(seed*1103515245+12345)&0x7fffffff; return (seed%10000)/10000; }
+  var target=3+Math.floor(ornd()*3);
+  var tries=0;
+  while(mapObstacles.length<target&&tries<200){
+    tries++;
+    var gx=Math.floor(ornd()*GW),gy=Math.floor(ornd()*GH);
+    if(blockedCells[gx+","+gy])continue;
+    var wx=(gx+.5)*CELL,wy=(gy+.5)*CELL;
+    var tooClose=false;
+    for(var i=0;i<mapObstacles.length;i++)if(dist2(mapObstacles[i].x,mapObstacles[i].y,wx,wy)<(CELL*2.3)*(CELL*2.3)){ tooClose=true; break; }
+    if(tooClose)continue;
+    mapObstacles.push({gx:gx,gy:gy,x:wx,y:wy});
+    blockedCells[gx+","+gy]=1;
+  }
+}
+function drawObstacle(g,x,y,r){
+  g.save(); g.translate(x,y);
+  g.fillStyle="rgba(0,0,0,.28)";
+  g.beginPath(); g.ellipse(0,r*.66,r*.85,r*.26,0,0,6.283); g.fill();
+  g.fillStyle="#5a4530"; g.strokeStyle="#2e2314"; g.lineWidth=Math.max(1,r*.09);
+  g.beginPath(); g.rect(-r*.72,-r*.72,r*1.44,r*1.44); g.fill(); g.stroke();
+  g.strokeStyle="#7a6248"; g.lineWidth=Math.max(1,r*.06);
+  g.beginPath(); g.moveTo(-r*.72,-r*.72); g.lineTo(r*.72,r*.72);
+  g.moveTo(r*.72,-r*.72); g.lineTo(-r*.72,r*.72); g.stroke();
+  g.restore();
+}
 /* scattered background props so each larder reads as a real place instead
    of a flat gradient with a path drawn on it - seeded off the map index so
    the same larder always looks the same, not a new layout every visit. */
@@ -2362,7 +2415,7 @@ function towerCost(t){ return Math.round(t.cost*skillCostMult()); }
 function startRun(mapIdx,diffIdx,heroId){
   curMap=mapIdx; curDiff=diffIdx; chosenHero=heroId||chosenHero;
   var D=DIFFS[curDiff];
-  buildPath(curMap); bakeBlocked(); bakeMapDecos();
+  buildPath(curMap); bakeBlocked(); bakeObstacles(); bakeTerrain(); bakeMapDecos();
   towers=[]; bugs=[]; shots=[]; fx=[]; heroes=[];
   cash=D.cash+skillCashBonus();
   lives=D.lives+skillLifeBonus();
@@ -2950,9 +3003,17 @@ function render(t){
   var bg=ctx.createLinearGradient(0,0,0,VH);
   bg.addColorStop(0,mapTh.bg1); bg.addColorStop(1,mapTh.bg2);
   ctx.fillStyle=bg; ctx.fillRect(0,0,VW,VH);
-  ctx.strokeStyle="rgba(255,255,255,.03)"; ctx.lineWidth=1;
-  for(var gx=0;gx<=GW;gx++){ ctx.beginPath(); ctx.moveTo(gx*CELL,0); ctx.lineTo(gx*CELL,VH); ctx.stroke(); }
-  for(var gy=0;gy<=GH;gy++){ ctx.beginPath(); ctx.moveTo(0,gy*CELL); ctx.lineTo(VW,gy*CELL); ctx.stroke(); }
+
+  // soft irregular ground patches instead of a spreadsheet-style grid, so
+  // the board reads as uneven terrain rather than a lattice of cells
+  for(var trI=0;trI<mapTerrain.length;trI++){
+    var tp=mapTerrain[trI];
+    var tg=ctx.createRadialGradient(tp.x,tp.y,0,tp.x,tp.y,tp.r);
+    tg.addColorStop(0,tp.dark?"rgba(0,0,0,.14)":"rgba(255,255,255,.05)");
+    tg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=tg;
+    ctx.beginPath(); ctx.ellipse(tp.x,tp.y,tp.r,tp.r*tp.sq,tp.rot,0,6.283); ctx.fill();
+  }
 
   // scattered background props, themed per larder
   for(var dcI=0;dcI<mapDecos.length;dcI++){
@@ -3015,6 +3076,7 @@ function render(t){
   for(var a=0;a<towers.length;a++)ents.push({y:towers[a].y,k:"t",o:towers[a]});
   for(var hE=0;hE<heroes.length;hE++)ents.push({y:heroes[hE].y,k:"h",o:heroes[hE]});
   for(var c2=0;c2<bugs.length;c2++){ var bp2=posAt(bugs[c2].d); ents.push({y:bp2.y,k:"b",o:bugs[c2],p:bp2}); }
+  for(var oI=0;oI<mapObstacles.length;oI++)ents.push({y:mapObstacles[oI].y,k:"o",o:mapObstacles[oI]});
   ents.sort(function(p,q){ return p.y-q.y; });
 
   for(var e=0;e<ents.length;e++){
@@ -3046,6 +3108,8 @@ function render(t){
       ctx.restore();
       ctx.fillStyle="#6fbf8f"; ctx.font="bold 9px sans-serif"; ctx.textAlign="center";
       ctx.fillText("LV"+en.o.lvl,en.o.x,en.o.y+21); ctx.textAlign="left";
+    } else if(en.k==="o"){
+      drawObstacle(ctx,en.o.x,en.o.y,CELL*.42);
     } else {
       var b3=en.o,p3=en.p;
       ctx.save(); ctx.translate(p3.x,p3.y);
