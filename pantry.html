@@ -185,7 +185,9 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .ubtn{display:block;width:100%;background:var(--bg2);border:1px solid var(--line);
   border-left:3px solid var(--mint);border-radius:5px;padding:8px 9px;color:var(--txt);
   font:inherit;text-align:left;cursor:pointer;margin-bottom:5px;font-size:11.5px}
-.ubtn:hover{background:var(--bg3)}
+.ubtn{transition:background .12s,transform .12s cubic-bezier(.34,1.56,.64,1),box-shadow .12s}
+.ubtn:hover:not(:disabled){background:var(--bg3);transform:translateX(2px);box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.ubtn:active:not(:disabled){transform:translateX(2px) scale(.97)}
 .ubtn:disabled{opacity:.4;cursor:default}
 .ubtn b{display:block;font-size:12px;margin-bottom:2px}
 .ubtn i{font-style:normal;color:var(--gold);font-weight:800}
@@ -610,9 +612,15 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.25.0";
+var VERSION="1.26.0";
 var CHANGELOG=[
-  {v:"1.25.0",d:"latest",items:[
+  {v:"1.26.0",d:"latest",items:[
+    "COMBAT HAS REAL IMPACT NOW. Every hit throws a spark burst and a floating damage number, splash hits get a shockwave ring, and every bug's death has proper punch to it",
+    "BOSS DEATHS ARE AN EVENT - a full explosion (shockwave, smoke, debris, screen flash) plus a screen shake and a brief hit-stop instead of the same small pop everything else gets",
+    "BOSSES NOW ANNOUNCE THEMSELVES when they spawn - a banner across the top of the screen and a shake, so you know something's different about this wave before it reaches you",
+    "A touch more life in the upgrade buttons - they lift and glow on hover/press instead of just changing colour"
+  ]},
+  {v:"1.25.0",items:[
     "THREE NEW BOSSES. Wave 10 was always the Grub King - now wave 20 brings the flying Hive Queen, wave 30 the heavily armoured Ironclad Behemoth, and wave 40 the fast, vicious Silver Widow, each with its own look and its own threat, not just a bigger number on the same boss",
     "A SOFT VIGNETTE around the board for a punchier, less flat look",
     "SIX NEW ACHIEVEMENTS covering Insane wins, boss kills, meeting all four bosses, maxing out a tower's mastery (and every tower's), and clearing the three hardest larders",
@@ -2451,6 +2459,32 @@ function cellFree(gx,gy){
 /* ═════════════ GAME STATE ═════════════ */
 var state="menu";
 var towers=[],bugs=[],shots=[],fx=[],heroes=[];
+/* combat "juice": screen shake + hit-stop + floating damage numbers +
+   richer particle bursts, all layered on top of the existing sim without
+   touching any gameplay math. addShake/addHitStop are additive (stacking
+   hits ramp up rather than resetting), so a flurry of hits reads as more
+   intense than a single one. */
+var shakeT=0,shakeMag=0,hitStopT=0;
+function addShake(mag,dur){ shakeMag=Math.min(18,Math.max(shakeMag,mag)); shakeT=Math.max(shakeT,dur); }
+function addHitStop(dur){ hitStopT=Math.max(hitStopT,dur); }
+function dmgNum(x,y,n,crit){ fx.push({dmgText:true,x:x,y:y-6,n:Math.round(n),crit:crit,t:0,life:.55,vy:-38}); }
+function sparkBurst(x,y,col,n,spd){
+  fx.push({spark:true,x:x,y:y,col:col||"#e8dcc4",t:0,life:.22,
+    lines:(function(){ var a=[]; n=n||6; for(var i=0;i<n;i++){ var ang=Math.random()*6.283,sp=(spd||60)*(.6+Math.random()*.7);
+      a.push({dx:Math.cos(ang)*sp,dy:Math.sin(ang)*sp}); } return a; })()});
+}
+function smokePuff(x,y,r,col){ fx.push({smoke:true,x:x,y:y,r:r||16,col:col||"#7a7166",t:0,life:.6}); }
+function shockRing(x,y,r,col){ fx.push({shock:true,x:x,y:y,r:r,col:col||"#fff",t:0,life:.32}); }
+function debrisBurst(x,y,col,n){
+  fx.push({debris:true,x:x,y:y,col:col,t:0,life:.65,
+    bits:(function(){ var a=[]; n=n||8; for(var i=0;i<n;i++){ var ang=Math.random()*6.283,sp=40+Math.random()*90;
+      a.push({dx:Math.cos(ang)*sp,dy:Math.sin(ang)*sp-40,rot:Math.random()*6.283,rv:(Math.random()-.5)*10,s:2+Math.random()*3}); } return a; })()});
+}
+function bigExplosion(x,y,col){
+  shockRing(x,y,54,col); smokePuff(x,y,26,col); smokePuff(x+10,y-6,20,shade(col,-20));
+  sparkBurst(x,y,col,12,140); debrisBurst(x,y,col,10);
+  fx.push({flash:true,x:x,y:y,r:70,t:0,life:.16});
+}
 /* co-op: each player gets their own hero on the shared board, tagged by
    owner ("solo" outside co-op, "host" for the host's own, or the guest's
    own PeerJS id). myOwner()/myHero() find "my" hero among everyone's. */
@@ -2737,6 +2771,14 @@ function spawnBug(kind,d){
     hp:Math.max(1,Math.round(B.hp*hpMult)),max:Math.max(1,Math.round(B.hp*hpMult)),
     spd:B.spd*D.spd,r:B.r,fly:B.fly,arm:B.arm||0,
     slow:1,slowT:0,weak:0,weakT:0,burn:0,burnT:0,wob:rnd(0,6.28)});
+  /* a dramatic one-shot entrance for the first copy of a boss wave - if a
+     banner's already up (later copies of the same multi-boss wave), just
+     add a smaller shake instead of stacking banners on top of each other */
+  if(B.boss){
+    addShake(6,.4);
+    if(!fx.some(function(e){ return e.bossBanner; }))
+      fx.push({bossBanner:true,name:B.n,t:0,life:1.6});
+  }
 }
 function popBug(b,byHero){
   var B=BUGS[b.k];
@@ -2750,7 +2792,14 @@ function popBug(b,byHero){
   }
   for(var hx=0;hx<heroes.length;hx++)giveHeroXp(heroes[hx],B.boss?60:(B.hp>4?4:1));
   sfx.pop();
-  fx.push({x:posAt(b.d).x,y:posAt(b.d).y,t:0,life:.3,col:B.col,r:b.r});
+  var pp=posAt(b.d);
+  if(B.boss){
+    bigExplosion(pp.x,pp.y,B.col);
+    addShake(10,.35); addHitStop(.09);
+  } else {
+    fx.push({x:pp.x,y:pp.y,t:0,life:.3,col:B.col,r:b.r});
+    sparkBurst(pp.x,pp.y,B.col,5,90);
+  }
   if(B.child){
     for(var i=0;i<(B.count||2);i++)
       spawnBug(B.child,Math.max(0,b.d-i*7));
@@ -2762,7 +2811,13 @@ function damageBug(b,dmg,pierceArm,tw){
   if(b.arm>0&&!pierceArm)dmg=Math.max(1,dmg-b.arm);
   if(b.weakT>0)dmg=Math.round(dmg*(1+b.weak));
   b.hp-=dmg;
-  if(b.hp<=0){ if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,1); } popBug(b); }
+  var bp=posAt(b.d);
+  sparkBurst(bp.x,bp.y,"#fff8e8",3,65);
+  dmgNum(bp.x,bp.y,dmg,dmg>=15||!!BUGS[b.k].boss);
+  if(b.hp<=0){
+    if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,1); }
+    popBug(b);
+  }
   return b.hp<=0;
 }
 
@@ -2928,6 +2983,9 @@ function update(dt){
   var speed=fastFwd?3:1;
   dt*=speed;
 
+  if(hitStopT>0){ hitStopT=Math.max(0,hitStopT-dt); dt*=.06; }
+  if(shakeT>0){ shakeT=Math.max(0,shakeT-dt); if(shakeT<=0)shakeMag=0; }
+
   uiRefreshT-=dt;
   if(uiRefreshT<=0){ uiRefreshT=.15; refreshLiveUI(); }
 
@@ -3021,6 +3079,8 @@ function update(dt){
           if(dist2(op.x,op.y,sh.x,sh.y)<=sh.splash*sh.splash)damageBug(ob,sh.dmg,sh.pierceArm,sh.tw);
         }
         fx.push({x:sh.x,y:sh.y,t:0,life:.24,col:sh.col,r:sh.splash});
+        shockRing(sh.x,sh.y,sh.splash*1.15,sh.col);
+        sparkBurst(sh.x,sh.y,sh.col,7,110);
         shots.splice(k,1); break;
       }
       damageBug(bb,sh.dmg,sh.pierceArm,sh.tw);
@@ -3061,7 +3121,9 @@ function render(t){
   var w=cv.clientWidth,h=cv.clientHeight;
   ctx.clearRect(0,0,w,h);
   ctx.save();
-  ctx.translate(view.ox,view.oy); ctx.scale(view.s,view.s);
+  var shx=0,shy=0;
+  if(shakeT>0){ shx=(Math.random()*2-1)*shakeMag; shy=(Math.random()*2-1)*shakeMag; }
+  ctx.translate(view.ox+shx,view.oy+shy); ctx.scale(view.s,view.s);
 
   // board - tinted per larder so every map has its own identity, not just its path
   var mapTh=(MAPS[curMap]&&MAPS[curMap].theme)||{bg1:"#241c14",bg2:"#191309",accent:"#3a2c1c"};
@@ -3233,6 +3295,59 @@ function render(t){
     } else if(x2.ring){
       ctx.strokeStyle="rgba(200,204,212,.5)"; ctx.lineWidth=3;
       ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r*(.5+k2*.5),0,6.283); ctx.stroke();
+    } else if(x2.spark){
+      ctx.strokeStyle=x2.col; ctx.lineWidth=2; ctx.lineCap="round";
+      for(var spI=0;spI<x2.lines.length;spI++){
+        var sl=x2.lines[spI];
+        ctx.beginPath();
+        ctx.moveTo(x2.x+sl.dx*k2*.3,x2.y+sl.dy*k2*.3);
+        ctx.lineTo(x2.x+sl.dx*k2,x2.y+sl.dy*k2);
+        ctx.stroke();
+      }
+    } else if(x2.smoke){
+      var smR=x2.r*(1+k2*1.4);
+      var smg=ctx.createRadialGradient(x2.x,x2.y-k2*14,0,x2.x,x2.y-k2*14,smR);
+      smg.addColorStop(0,x2.col); smg.addColorStop(1,"rgba(0,0,0,0)");
+      ctx.globalAlpha=(1-k2)*.55; ctx.fillStyle=smg;
+      ctx.beginPath(); ctx.arc(x2.x,x2.y-k2*14,smR,0,6.283); ctx.fill();
+    } else if(x2.shock){
+      ctx.strokeStyle=x2.col; ctx.lineWidth=Math.max(1,4*(1-k2));
+      ctx.globalAlpha=(1-k2)*.8;
+      ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r*k2,0,6.283); ctx.stroke();
+    } else if(x2.debris){
+      ctx.fillStyle=x2.col;
+      for(var dbI=0;dbI<x2.bits.length;dbI++){
+        var db=x2.bits[dbI];
+        var dx=x2.x+db.dx*k2, dy=x2.y+db.dy*k2+140*k2*k2;
+        ctx.save(); ctx.translate(dx,dy); ctx.rotate(db.rot+db.rv*x2.t);
+        ctx.fillRect(-db.s,-db.s*.6,db.s*2,db.s*1.2);
+        ctx.restore();
+      }
+    } else if(x2.flash){
+      ctx.globalAlpha=1-k2;
+      var flg=ctx.createRadialGradient(x2.x,x2.y,0,x2.x,x2.y,x2.r);
+      flg.addColorStop(0,"rgba(255,255,255,.9)"); flg.addColorStop(1,"rgba(255,255,255,0)");
+      ctx.fillStyle=flg;
+      ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r,0,6.283); ctx.fill();
+    } else if(x2.dmgText){
+      ctx.globalAlpha=k2>.7?1-(k2-.7)/.3:1;
+      ctx.fillStyle=x2.crit?"#ff5030":"#fff8e0";
+      ctx.font=(x2.crit?"bold 15px":"bold 11px")+" sans-serif"; ctx.textAlign="center";
+      ctx.fillText(String(x2.n),x2.x,x2.y+x2.vy*k2);
+      ctx.textAlign="left";
+    } else if(x2.bossBanner){
+      var bk=x2.t/x2.life;
+      var bscale=bk<.15?bk/.15:1;
+      var ba=bk>.75?1-(bk-.75)/.25:1;
+      ctx.save();
+      ctx.translate(VW/2,VH*.24); ctx.scale(bscale,bscale);
+      ctx.globalAlpha=ba;
+      ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillRect(-150,-19,300,34);
+      ctx.strokeStyle="#f0c14b"; ctx.lineWidth=1.4; ctx.strokeRect(-150,-19,300,34);
+      ctx.fillStyle="#f0c14b"; ctx.font="bold 16px sans-serif"; ctx.textAlign="center";
+      ctx.fillText(x2.name.toUpperCase(),0,5);
+      ctx.textAlign="left";
+      ctx.restore();
     } else {
       ctx.fillStyle=x2.col||"#e8a838";
       ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r*(.5+k2*.9),0,6.283); ctx.fill();
@@ -4432,6 +4547,10 @@ tryAutoSignIn().then(function(ok){
 window.__pp={
   save:save,
   startRun:startRun,
+  render:render,
+  fx:fx,
+  addShake:addShake,addHitStop:addHitStop,dmgNum:dmgNum,sparkBurst:sparkBurst,
+  smokePuff:smokePuff,shockRing:shockRing,debrisBurst:debrisBurst,bigExplosion:bigExplosion,
   give:function(n){ cash+=n; updateHud(); },
   jars:function(n){ save.jars+=n; queueSave(); },
   go:function(){ startWave(); },
