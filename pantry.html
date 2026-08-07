@@ -610,9 +610,16 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.24.0";
+var VERSION="1.25.0";
 var CHANGELOG=[
-  {v:"1.24.0",d:"latest",items:[
+  {v:"1.25.0",d:"latest",items:[
+    "THREE NEW BOSSES. Wave 10 was always the Grub King - now wave 20 brings the flying Hive Queen, wave 30 the heavily armoured Ironclad Behemoth, and wave 40 the fast, vicious Silver Widow, each with its own look and its own threat, not just a bigger number on the same boss",
+    "A SOFT VIGNETTE around the board for a punchier, less flat look",
+    "SIX NEW ACHIEVEMENTS covering Insane wins, boss kills, meeting all four bosses, maxing out a tower's mastery (and every tower's), and clearing the three hardest larders",
+    "EIGHT NEW STORE ITEMS - two emotes, two hit-effect colours, two banners, and Hive Queen / Silver Widow icons",
+    "Fixed the Every Shelf achievement still saying \"twelve larders\" after the larder count grew past that"
+  ]},
+  {v:"1.24.0",items:[
     "THE BOARD DOESN'T LOOK LIKE A SPREADSHEET ANYMORE - the always-on grid lines are gone, replaced with soft uneven ground patches so the larder reads as real terrain instead of a lattice of cells",
     "EVERY LARDER NOW HAS A FEW SOLID OBSTACLES - crates that block a cell outright, laid out once per map alongside the path so there's real tactical texture to work around, not just an open floor"
   ]},
@@ -946,8 +953,8 @@ function mSetMode(mode){
 
 /* ═════════════ SAVE ═════════════ */
 var SKEY="pantrypanic-save-v1";
-var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,
-  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},autostart:false,towerMaxLvl:{}};
+var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,insaneWins:0,bossPops:0,
+  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{}};
 function loadSave(){
   try{ var r=localStorage.getItem(SKEY);
     if(r){ var o=JSON.parse(r); for(var k in save)if(o[k]!=null)save[k]=o[k]; }
@@ -959,6 +966,7 @@ function loadSave(){
   if(!(save.cosOwned instanceof Array))save.cosOwned=[];
   if(!save.cosEquip||typeof save.cosEquip!=="object")save.cosEquip={};
   if(!save.towerMaxLvl||typeof save.towerMaxLvl!=="object")save.towerMaxLvl={};
+  if(!(save.bossesSeen instanceof Array))save.bossesSeen=[];
 }
 var saveT=null;
 function queueSave(){
@@ -1026,15 +1034,23 @@ var BUGS={
   spider: {n:"Spider",    hp:12,  spd:66,  r:12, col:"#3a2a4a", cash:10,fly:false, child:"ant",  count:3},
   weevil: {n:"Weevil",    hp:18,  spd:38,  r:15, col:"#5a6e2e", cash:13,fly:false, child:"roach",count:2, arm:1},
   hornet: {n:"Hornet",    hp:14,  spd:110, r:12, col:"#d8a11e", cash:12,fly:true,  child:"moth", count:2},
-  king:   {n:"Grub King", hp:420, spd:26,  r:26, col:"#c96a2e", cash:160,fly:false, child:"weevil",count:3, arm:3, boss:true}
+  king:   {n:"Grub King", hp:420, spd:26,  r:26, col:"#c96a2e", cash:160,fly:false, child:"weevil",count:3, arm:3, boss:true},
+  queen:  {n:"Hive Queen", hp:520, spd:58,  r:24, col:"#d8a11e", cash:190,fly:true,  child:"hornet",count:3, boss:true},
+  behemoth:{n:"Ironclad Behemoth", hp:900, spd:20, r:30, col:"#5a6e2e", cash:230,fly:false, child:"weevil",count:4, arm:6, boss:true},
+  widow:  {n:"Silver Widow", hp:750, spd:85,  r:23, col:"#3a2a4a", cash:250,fly:false, child:"spider",count:4, arm:2, boss:true}
 };
-var BUG_ORDER=["ant","fly","silverfish","beetle","moth","roach","spider","weevil","hornet","king"];
+var BUG_ORDER=["ant","fly","silverfish","beetle","moth","roach","spider","weevil","hornet","king","queen","behemoth","widow"];
 
-/* wave composition - grows steadily, boss every 10 */
+/* wave composition - grows steadily, a different boss every 10 waves so the
+   four boss milestones each feel like their own encounter, not just the
+   same boss with a bigger number in front of it */
 function waveMix(w){
   var out=[];
   function add(kind,n){ for(var i=0;i<n;i++)out.push(kind); }
-  if(w%10===0){ add("king",Math.floor(w/10)); add("weevil",2+Math.floor(w/8)); add("roach",4); return out; }
+  if(w%10===0){
+    var bossKind=w===10?"king":w===20?"queen":w===30?"behemoth":"widow";
+    add(bossKind,Math.floor(w/10)); add("weevil",2+Math.floor(w/8)); add("roach",4); return out;
+  }
   add("ant",Math.max(0,10+w*2-(w>12?(w-12)*2:0)));
   if(w>=3)add("fly",Math.floor(w*1.1));
   if(w>=5)add("beetle",Math.floor((w-3)*.9));
@@ -1645,12 +1661,23 @@ var ACHIEVEMENTS=[
   {id:"pop10000",   n:"Apocalypse",     d:"Pop 10,000 bugs in total.",              chk:function(){ return save.pops>=10000; }},
   {id:"hard_win",   n:"Nerves of Steel",d:"Win a run on Hard.",                     chk:function(){ return (save.hardWins||0)>=1; }},
   {id:"perfect",    n:"Not a Scratch",  d:"Win a run without losing a single life.",chk:function(){ return (save.perfectWins||0)>=1; }},
-  {id:"all_maps",   n:"Every Shelf",    d:"Beat all twelve larders.",               chk:function(){
+  {id:"all_maps",   n:"Every Shelf",    d:"Beat every larder in the pantry.",       chk:function(){
     var seen={}; save.mapsBeat.forEach(function(k){ seen[k.split(":")[0]]=1; });
     return Object.keys(seen).length>=MAPS.length; }},
   {id:"all_heroes", n:"Full Roster",    d:"Play a run with every hero.",            chk:function(){ return save.heroUsed.length>=HEROES.length; }},
   {id:"jars10",     n:"Jar Collector",  d:"Earn 10 Preserve Jars in total.",        chk:function(){ return (save.jarsTotal||0)>=10; }},
-  {id:"skillmaster",n:"Skill Master",   d:"Unlock every skill in the pantry.",      chk:function(){ return save.skills.length>=SKILLS.length; }}
+  {id:"skillmaster",n:"Skill Master",   d:"Unlock every skill in the pantry.",      chk:function(){ return save.skills.length>=SKILLS.length; }},
+  {id:"insane_win", n:"Beyond Reason",  d:"Win a run on Insane.",                   chk:function(){ return (save.insaneWins||0)>=1; }},
+  {id:"boss25",     n:"Boss Buster",    d:"Pop 25 bosses in total.",                chk:function(){ return (save.bossPops||0)>=25; }},
+  {id:"boss_roster",n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; }},
+  {id:"tower_grand",n:"Grand Master",   d:"Get any tower to level 10.",             chk:function(){
+    var m=save.towerMaxLvl||{}; for(var k in m)if(m[k]>=10)return true; return false; }},
+  {id:"tower_all",  n:"Master Of The Pantry",d:"Get every tower to level 10 at least once.",chk:function(){
+    var m=save.towerMaxLvl||{}; return TOWERS.every(function(T){ return (m[T.id]||0)>=10; }); }},
+  {id:"endgame_maps",n:"Off The Map",   d:"Beat the three hardest larders: Spice Cabinet Snake, The Long Cold Aisle and Pantry's End.",chk:function(){
+    var need=["snake","icebox","finale"]; var seen={};
+    save.mapsBeat.forEach(function(k){ seen[k.split(":")[0]]=1; });
+    return need.every(function(id){ return seen[id]; }); }}
 ];
 function checkAchievements(){
   ACHIEVEMENTS.forEach(function(A){
@@ -1669,18 +1696,26 @@ var COSMETICS=[
   {id:"emote_fire",     cat:"emote", n:"On Fire",   c:120, glyph:"🔥"},
   {id:"emote_laugh",    cat:"emote", n:"Cackle",    c:120, glyph:"😂"},
   {id:"emote_skull",    cat:"emote", n:"Rekt",      c:200, glyph:"💀"},
+  {id:"emote_party",    cat:"emote", n:"Celebrate", c:150, glyph:"🎉"},
+  {id:"emote_scream",   cat:"emote", n:"Boss Incoming",c:180, glyph:"😱"},
   {id:"fx_gold",        cat:"fx",    n:"Golden Hits",   c:250, col:"#f0c14b"},
   {id:"fx_mint",        cat:"fx",    n:"Mint Hits",     c:250, col:"#6fbf8f"},
   {id:"fx_purple",      cat:"fx",    n:"Royal Hits",    c:250, col:"#a880d0"},
+  {id:"fx_ice",         cat:"fx",    n:"Ice Hits",      c:280, col:"#a0e0ff"},
+  {id:"fx_shadow",      cat:"fx",    n:"Shadow Hits",   c:280, col:"#3a2a4a"},
   {id:"fx_rainbow",     cat:"fx",    n:"Rainbow Hits",  c:600, col:"rainbow"},
   {id:"banner_wheat",   cat:"banner", n:"Wheat Field",  c:150, col:["#e8a838","#c98a4b"]},
   {id:"banner_night",   cat:"banner", n:"Midnight Bake",c:150, col:["#2a1c3a","#a880d0"]},
   {id:"banner_blood",   cat:"banner", n:"Rare Steak",   c:220, col:["#a83a3a","#3a1712"]},
   {id:"banner_frost",   cat:"banner", n:"Deep Freeze",  c:220, col:["#8fd0e8","#3a5a68"]},
+  {id:"banner_insane",  cat:"banner", n:"No Mercy",     c:320, col:["#ff5030","#160404"]},
+  {id:"banner_gold",    cat:"banner", n:"Grand Larder", c:320, col:["#f0c14b","#3a2a08"]},
   {id:"icon_jar",       cat:"icon", n:"Jam Jar",     c:100, ic:"jar"},
   {id:"icon_cleaver",   cat:"icon", n:"Cleaver",     c:100, ic:"cleaver"},
   {id:"icon_hero",      cat:"icon", n:"Hero Star",   c:180, ic:"star"},
-  {id:"icon_bug",       cat:"icon", n:"Squashed Bug",c:180, ic:"bug"}
+  {id:"icon_bug",       cat:"icon", n:"Squashed Bug",c:180, ic:"bug"},
+  {id:"icon_queen",     cat:"icon", n:"Hive Queen",  c:280, ic:"queen"},
+  {id:"icon_widow",     cat:"icon", n:"Silver Widow",c:280, ic:"widow"}
 ];
 function cosOwned(id){ return save.cosOwned.indexOf(id)>=0; }
 function cosEquipped(cat){ return save.cosEquip[cat]||null; }
@@ -2172,7 +2207,7 @@ function drawBugArt(c,kind,t,r,wob){
   var squashX=kind==="roach"?1.22:kind==="ant"?.78:kind==="silverfish"?.7:1;
   var squashY=kind==="roach"?.78:kind==="ant"?1.15:kind==="silverfish"?1.3:1;
   c.strokeStyle=shade(col,-60); c.lineWidth=Math.max(1.3,r*.14); c.lineCap="round";
-  var legN=kind==="ant"||kind==="roach"||kind==="spider"?4:3;
+  var legN=kind==="ant"||kind==="roach"||kind==="spider"||kind==="widow"?4:3;
   for(var i=0;i<legN;i++){
     var off=Math.sin(legT+i*1.1)*r*.22;
     var ly=-r*.3+i*(r*.6/legN);
@@ -2200,7 +2235,7 @@ function drawBugArt(c,kind,t,r,wob){
   orb(c,0,-r*.62,r*.5,shade(col,18));
   c.restore();
   // per-kind distinguishing marks so silhouettes read apart, not just colour
-  if(kind==="beetle"||kind==="weevil"||kind==="king"){
+  if(kind==="beetle"||kind==="weevil"||kind==="king"||kind==="behemoth"){
     c.strokeStyle=shade(col,-75); c.lineWidth=Math.max(1,r*.08);
     c.beginPath(); c.moveTo(0,-r*.15); c.lineTo(0,r*.9); c.stroke();
     c.strokeStyle="rgba(255,255,255,.22)"; c.lineWidth=Math.max(1,r*.14);
@@ -2233,6 +2268,29 @@ function drawBugArt(c,kind,t,r,wob){
     c.globalAlpha=.35; c.fillStyle="#fff";
     c.beginPath(); c.ellipse(-r*.15,-r*.1,r*.18,r*.5,-.2,0,6.283); c.fill();
     c.globalAlpha=1;
+  }
+  if(kind==="queen"){
+    c.fillStyle=shade(col,-30);
+    [-.22,0,.22].forEach(function(off){
+      c.beginPath(); c.moveTo(off*r-r*.09,-r*.9); c.lineTo(off*r+r*.09,-r*.9); c.lineTo(off*r,-r*1.5); c.closePath(); c.fill();
+    });
+    c.strokeStyle=shade(col,-60); c.lineWidth=Math.max(1,r*.12);
+    c.beginPath(); c.moveTo(0,r*.85); c.quadraticCurveTo(r*.3,r*1.15,r*.12,r*1.5); c.stroke();
+  }
+  if(kind==="behemoth"){
+    c.strokeStyle=shade(col,-75); c.lineWidth=Math.max(1,r*.09);
+    [-.55,-.2,.15,.5].forEach(function(yy){
+      c.beginPath(); c.moveTo(-r*.85,r*yy); c.lineTo(r*.85,r*yy); c.stroke();
+    });
+    c.strokeStyle="rgba(255,255,255,.2)"; c.lineWidth=Math.max(1,r*.16);
+    c.beginPath(); c.arc(-r*.22,-r*.15,r*.4,3.5,4.7); c.stroke();
+  }
+  if(kind==="widow"){
+    c.fillStyle=shade(col,-55);
+    c.beginPath(); c.moveTo(-r*.2,-r*.6); c.lineTo(0,-r*.32); c.lineTo(-r*.06,-r*.85); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(r*.2,-r*.6); c.lineTo(0,-r*.32); c.lineTo(r*.06,-r*.85); c.closePath(); c.fill();
+    c.fillStyle="#c4302a";
+    c.beginPath(); c.moveTo(0,-r*.05); c.lineTo(r*.22,r*.35); c.lineTo(0,r*.75); c.lineTo(-r*.22,r*.35); c.closePath(); c.fill();
   }
   c.strokeStyle=shade(col,-50); c.lineWidth=Math.max(1,r*.1);
   c.beginPath();
@@ -2448,6 +2506,7 @@ function endRun(won){
     var key=MAPS[curMap].id+":"+DIFFS[curDiff].id;
     if(save.mapsBeat.indexOf(key)<0)save.mapsBeat.push(key);
     if(curDiff===2)save.hardWins=(save.hardWins||0)+1;
+    if(curDiff===3)save.insaneWins=(save.insaneWins||0)+1;
     if(lives>=runStartLives)save.perfectWins=(save.perfectWins||0)+1;
     sfx.win();
   } else sfx.lose();
@@ -2683,6 +2742,12 @@ function popBug(b,byHero){
   var B=BUGS[b.k];
   cash+=Math.round(B.cash*(1+wave*.012)*DIFFS[curDiff].cashMult);
   totalPops++;
+  if(B.boss){
+    save.bossPops=(save.bossPops||0)+1;
+    if(!(save.bossesSeen instanceof Array))save.bossesSeen=[];
+    if(save.bossesSeen.indexOf(b.k)<0){ save.bossesSeen.push(b.k); }
+    queueSave();
+  }
   for(var hx=0;hx<heroes.length;hx++)giveHeroXp(heroes[hx],B.boss?60:(B.hp>4?4:1));
   sfx.pop();
   fx.push({x:posAt(b.d).x,y:posAt(b.d).y,t:0,life:.3,col:B.col,r:b.r});
@@ -3176,6 +3241,13 @@ function render(t){
   }
 
   ctx.restore();
+
+  // a soft screen-space vignette ties the whole scene together and gives
+  // it a punchier, less flat look - drawn after the board transform is
+  // restored so it stays fixed to the viewport regardless of zoom/pan
+  var vig=ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*.32,w/2,h/2,Math.max(w,h)*.72);
+  vig.addColorStop(0,"rgba(0,0,0,0)"); vig.addColorStop(1,"rgba(0,0,0,.38)");
+  ctx.fillStyle=vig; ctx.fillRect(0,0,w,h);
 }
 
 /* ═════════════ HUD / UI ═════════════ */
@@ -3910,6 +3982,8 @@ function renderShop2(){
       else if(C.ic==="cleaver")drawTowerArt(mg,"cleaver",0,0);
       else if(C.ic==="star")orb(mg,0,0,14,"#f0c14b");
       else if(C.ic==="bug")drawBugArt(mg,"beetle",0,14,0);
+      else if(C.ic==="queen")drawBugArt(mg,"queen",0,15,0);
+      else if(C.ic==="widow")drawBugArt(mg,"widow",0,15,0);
       sw.appendChild(mc);
     }
     d.appendChild(sw);
