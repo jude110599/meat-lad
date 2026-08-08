@@ -635,9 +635,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.34.0";
+var VERSION="1.35.0";
 var CHANGELOG=[
-  {v:"1.34.0",d:"latest",items:[
+  {v:"1.35.0",d:"latest",items:[
+    "FIXED TWO DIFFERENT TOWERS BOTH BEING CALLED \"ROLLING PIN\" - the primary-class boomerang one is now Boomerang Pin, so it's no longer confusable with the military-class wide-crushing Rolling Pin",
+    "A NEW FLYING ENEMY, THE WASP - fast, light, shows up from wave 16 to bridge the gap between Moths and Hornets, and (like every flyer) can only be hit by air-capable towers and heroes",
+    "THE TOASTER NOW HITS FLYERS TOO, so it's not just a slower Cheese Grater anymore - it was the closest thing to a genuine duplicate in the roster"
+  ]},
+  {v:"1.34.0",items:[
     "HERO TOKENS NOW ACTUALLY BUY SOMETHING. New saves start with just Chef Gordo unlocked - every other hero has a token price now (3-6 tokens depending on how strong they are) and shows up greyed out on the pick screen with its cost until you buy it. Tap a locked hero to unlock it for good once you've saved up. Existing saves keep every hero they already had unlocked, same as towers"
   ]},
   {v:"1.33.0",items:[
@@ -1146,13 +1151,14 @@ var BUGS={
   roach:  {n:"Roach",     hp:8,   spd:58,  r:13, col:"#6b3f22", cash:8, fly:false, child:"beetle",count:2},
   spider: {n:"Spider",    hp:12,  spd:66,  r:12, col:"#3a2a4a", cash:10,fly:false, child:"ant",  count:3},
   weevil: {n:"Weevil",    hp:18,  spd:38,  r:15, col:"#5a6e2e", cash:13,fly:false, child:"roach",count:2, arm:1},
+  wasp:   {n:"Wasp",      hp:9,   spd:130, r:10, col:"#e8c020", cash:9, fly:true,  child:"fly",  count:2},
   hornet: {n:"Hornet",    hp:14,  spd:110, r:12, col:"#d8a11e", cash:12,fly:true,  child:"moth", count:2},
   king:   {n:"Grub King", hp:420, spd:26,  r:26, col:"#c96a2e", cash:160,fly:false, child:"weevil",count:3, arm:3, boss:true},
   queen:  {n:"Hive Queen", hp:520, spd:58,  r:24, col:"#d8a11e", cash:190,fly:true,  child:"hornet",count:3, boss:true},
   behemoth:{n:"Ironclad Behemoth", hp:900, spd:20, r:30, col:"#5a6e2e", cash:230,fly:false, child:"weevil",count:4, arm:6, boss:true},
   widow:  {n:"Silver Widow", hp:750, spd:85,  r:23, col:"#3a2a4a", cash:250,fly:false, child:"spider",count:4, arm:2, boss:true}
 };
-var BUG_ORDER=["ant","fly","silverfish","beetle","moth","roach","spider","weevil","hornet","king","queen","behemoth","widow"];
+var BUG_ORDER=["ant","fly","silverfish","beetle","moth","roach","spider","weevil","wasp","hornet","king","queen","behemoth","widow"];
 
 /* wave composition - grows steadily, a different boss every 10 waves so the
    four boss milestones each feel like their own encounter, not just the
@@ -1171,6 +1177,7 @@ function waveMix(w){
   if(w>=8)add("moth",Math.floor((w-6)*.8));
   if(w>=12)add("roach",Math.floor((w-10)*.7));
   if(w>=15)add("spider",Math.floor((w-13)*.5));
+  if(w>=16)add("wasp",Math.floor((w-14)*.6));
   if(w>=18)add("weevil",Math.floor((w-16)*.5));
   if(w>=24)add("hornet",Math.floor((w-22)*.5));
   return out;
@@ -1224,7 +1231,7 @@ var TOWERS=[
      {n:"Nerve Agent",c:3900,d:"Even deeper slow, +2 damage",f:function(s){s.slow=Math.min(s.slow||1,.25);s.dmg+=2;}},
      {n:"Weapons Grade",c:13000,d:"Near-total slow, +6 damage",f:function(s){s.slow=.12;s.dmg+=6;}}]}},
 
-  {id:"pin", n:"Rolling Pin", cat:"primary", cost:420, col:"#c9a06a",
+  {id:"pin", n:"Boomerang Pin", cat:"primary", cost:420, col:"#c9a06a",
    d:"Sends a pin rolling out and back, hitting everything on the way.",
    base:{dmg:2,rng:150,cd:1.4,pierce:5,air:false,boomer:true},
    p1:{n:"Heavier Pin",u:[
@@ -1379,8 +1386,8 @@ var TOWERS=[
      {n:"Mega Jackpot",c:39000,d:"+2400 a round",f:function(s){s.income+=2400;}}]}},
 
   {id:"toaster", n:"Toaster", cat:"primary", cost:260, col:"#b8825a",
-   d:"Pops bread out in a straight line. Punches through a row of bugs.",
-   base:{dmg:2,rng:130,cd:.62,pierce:3,air:false},
+   d:"Pops bread out in a straight line, high enough to catch flyers too. Punches through a row of bugs.",
+   base:{dmg:2,rng:130,cd:.62,pierce:3,air:true},
    p1:{n:"Darker Setting",u:[
      {n:"Medium Brown",c:150,d:"+2 damage",f:function(s){s.dmg+=2;}},
      {n:"Well Done",c:440,d:"+3 damage, +2 pierce",f:function(s){s.dmg+=3;s.pierce+=2;}},
@@ -2331,7 +2338,7 @@ function drawBugArt(c,kind,t,r,wob){
   }
   if(B.fly){
     c.fillStyle="rgba(230,238,248,.42)";
-    var wingSize=kind==="moth"?1.4:1;
+    var wingSize=kind==="moth"?1.4:kind==="wasp"?.75:1;
     var wf=Math.sin(t*26+wob)*r*.3;
     c.save(); c.rotate(-.32);
     c.beginPath(); c.ellipse(-r*.4,-r*.55+wf,r*.72*wingSize,r*.26*wingSize,-.2,0,6.283); c.fill();
@@ -2362,6 +2369,13 @@ function drawBugArt(c,kind,t,r,wob){
     c.strokeStyle="#1a1408"; c.lineWidth=Math.max(1,r*.13);
     for(var hb=0;hb<3;hb++){ c.beginPath();
       c.arc(0,r*(-.1+hb*.32),r*.72,.3,Math.PI-.3); c.stroke(); }
+  }
+  if(kind==="wasp"){
+    c.strokeStyle="#2a2008"; c.lineWidth=Math.max(1,r*.1);
+    for(var wb=0;wb<2;wb++){ c.beginPath();
+      c.arc(0,r*(-.05+wb*.4),r*.68,.35,Math.PI-.35); c.stroke(); }
+    c.fillStyle=shade(col,-40);
+    c.beginPath(); c.moveTo(-r*.1,r*.78); c.lineTo(r*.1,r*.78); c.lineTo(0,r*1.25); c.closePath(); c.fill();
   }
   if(kind==="roach"){
     c.strokeStyle=shade(col,-70); c.lineWidth=Math.max(1,r*.08);
