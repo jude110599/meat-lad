@@ -648,9 +648,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.29.0";
+var VERSION="1.29.1";
 var CHANGELOG=[
-  {v:"1.29.0",d:"latest",items:[
+  {v:"1.29.1",d:"latest",items:[
+    "FIXED DOUBLE-CLICKING SHOP CARDS NOT OPENING THE UPGRADE TREE. Every single click on a card was rebuilding the entire shop list to update its selection highlight - on a real double-click that could tear down and recreate the exact card the second click was about to land on, so the browser never saw it as a double-click. Selection now just toggles a class on the existing cards instead of rebuilding anything"
+  ]},
+  {v:"1.29.0",items:[
     "DOUBLE-CLICK A TOWER IN THE SHOP TO SEE ITS FULL UPGRADE TREE before you even buy one - all three paths, every tier, base stats, and how far you've permanently mastered it, same idea as the hero upgrade-tree viewer",
     "THE SHOP LIST IS NOTICEABLY MORE COMPACT NOW - smaller padding and tighter category headers so more towers are visible without scrolling",
     "TOWER ICONS IN THE SHOP GET THEIR OWN SIGNATURE COLOUR RING NOW too, same treatment as heroes got, so towers in the same category are easier to tell apart at a glance"
@@ -3589,16 +3592,27 @@ function renderShop(){
     var wrap=document.createElement("div"); wrap.className="tcinfo";
     wrap.innerHTML='<div class="tn">'+T.n+'</div><div class="tp">$'+cost+'</div>';
     d.appendChild(wrap);
-    d.ondblclick=function(){ sfx.click(); placing=false; buyId=null; renderShop(); openTowerInfo(T.id); };
+    d.ondblclick=function(){ sfx.click(); placing=false; buyId=null; markShopSel(null); openTowerInfo(T.id); };
     d.onclick=function(){
       if(cash<towerCost(T)){ toast("Not enough"); return; }
       sfx.click();
       buyId=T.id; placing=true; selTower=null;
       $("panel").classList.add("hide");
-      renderShop();
+      markShopSel(T.id);
     };
     list.appendChild(d);
   });
+}
+/* toggling .sel by rebuilding the whole shop list on every click/tap used
+   to tear down and recreate every card mid-interaction - harmless for a
+   single click, but it could destroy the very card a double-click's
+   second press was about to land on, silently breaking the upgrade-tree
+   preview. Flipping the class on the existing nodes instead keeps every
+   card's identity (and its dblclick handler) stable across the whole
+   click/drag/double-click sequence. */
+function markShopSel(tid){
+  var cards=$("shopList").querySelectorAll(".tcard[data-tid]");
+  for(var i=0;i<cards.length;i++)cards[i].classList.toggle("sel",cards[i].getAttribute("data-tid")===tid);
 }
 /* live-refresh what the shop/panel already show without a full rebuild, so
    affordability and stats never go stale while cash changes mid-round -
@@ -3901,7 +3915,7 @@ $("shopList").addEventListener("pointerdown",function(e){
   sfx.click(); audioOn();
   buyId=tid; placing=true; selTower=null;
   $("panel").classList.add("hide");
-  renderShop();
+  markShopSel(tid);
   shopDragX=e.clientX; shopDragY=e.clientY; shopDragMoved=false;
   document.addEventListener("pointermove",shopDragMove);
   document.addEventListener("pointerup",shopDragEnd);
