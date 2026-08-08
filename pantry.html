@@ -324,6 +324,8 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .herocard:active{transform:translateY(0) scale(.97)}
 .herocard.sel{box-shadow:0 0 0 2px var(--honey2),0 4px 14px rgba(232,168,56,.3);
   animation:pop .28s cubic-bezier(.34,1.56,.64,1)}
+.herocard.locked{filter:grayscale(.7);opacity:.72}
+.herocard.locked .hl{color:var(--gold)!important}
 .herocard canvas{flex:none;width:40px;height:40px;border-radius:6px;background:rgba(0,0,0,.22)}
 .herocard .hn{font-weight:800;font-size:12px;color:#fff}
 .herocard .hl{font-size:10px;color:rgba(255,255,255,.6);margin-top:1px}
@@ -633,9 +635,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.33.0";
+var VERSION="1.34.0";
 var CHANGELOG=[
-  {v:"1.33.0",d:"latest",items:[
+  {v:"1.34.0",d:"latest",items:[
+    "HERO TOKENS NOW ACTUALLY BUY SOMETHING. New saves start with just Chef Gordo unlocked - every other hero has a token price now (3-6 tokens depending on how strong they are) and shows up greyed out on the pick screen with its cost until you buy it. Tap a locked hero to unlock it for good once you've saved up. Existing saves keep every hero they already had unlocked, same as towers"
+  ]},
+  {v:"1.33.0",items:[
     "A REAL PROGRESSION SYSTEM. New saves now start with just the four cheapest towers, one per class - everything else unlocks by playing. Win a run to level up: every 2 levels from level 3 you pick one of 3 random locked towers to add for good, and every 5 levels from level 6 you earn Hero Tokens (a new currency, more of these coming). Once every tower's unlocked, Hero Tokens start coming every 2 levels instead, in smaller amounts. Anyone with an existing save keeps every tower they already had - nothing already unlocked gets taken away",
     "The title screen shows your level, tower unlock progress, and Hero Token count, and the Almanac marks which towers you haven't unlocked yet"
   ]},
@@ -1038,7 +1043,7 @@ function mSetMode(mode){
 var SKEY="pantrypanic-save-v1";
 var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,insaneWins:0,bossPops:0,
   skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{},heroMaxLvl:{},
-  playerLvl:1,heroTokens:0,towersUnlocked:null};
+  playerLvl:1,heroTokens:0,towersUnlocked:null,heroesUnlocked:null};
 /* the cheapest tower in each of the 4 classes - a small, deliberately
    basic starting kit. Everything else opens up through playerLvl. */
 function starterTowerIds(){
@@ -1069,8 +1074,13 @@ function loadSave(){
     var isFresh=save.runs===0&&save.wins===0;
     save.towersUnlocked=isFresh?starterTowerIds():TOWERS.map(function(t){ return t.id; });
   }
+  if(!(save.heroesUnlocked instanceof Array)){
+    var heroesFresh=save.runs===0&&save.wins===0;
+    save.heroesUnlocked=heroesFresh?["gordo"]:HEROES.map(function(h){ return h.id; });
+  }
 }
 function towerUnlocked(id){ return save.towersUnlocked.indexOf(id)>=0; }
+function heroUnlocked(id){ return save.heroesUnlocked.indexOf(id)>=0; }
 var saveT=null;
 function queueSave(){
   if(saveT)return;
@@ -1656,73 +1666,73 @@ var HERO_GROUPS={
   guest:    {n:"Special Guests",   col:"#e8a838", bg:"linear-gradient(160deg,#3a2a10,#201608)"}
 };
 var HEROES=[
-  {id:"gordo", n:"Chef Gordo", col:"#d84a3a", grp:"kitchen",
+  {id:"gordo", n:"Chef Gordo", col:"#d84a3a", grp:"kitchen", price:0,
    d:"Starts slow, ends up a blur. Gets faster with every level.",
    base:{dmg:2,rng:130,cd:.9,pierce:1,air:true},
    lvlup:function(s,l){ s.dmg=2+Math.floor(l/2); s.cd=Math.max(.14,.9*Math.pow(.9,l-1)); s.rng=130+l*4; },
    skills:[{l:4,n:"Fired Up",d:"Attacks 20% faster for good"},
            {l:10,n:"Service!",d:"Damage jumps by four"}]},
-  {id:"nana", n:"Nana Crust", col:"#c98a4b", grp:"kitchen",
+  {id:"nana", n:"Nana Crust", col:"#c98a4b", grp:"kitchen", price:3,
    d:"Lobs pies that burst. Everything caught in the splash takes it.",
    base:{dmg:3,rng:160,cd:1.6,pierce:1,air:true,splash:44},
    lvlup:function(s,l){ s.dmg=3+l; s.splash=44+l*4; s.cd=Math.max(.5,1.6-l*.06); },
    skills:[{l:5,n:"Bigger Tins",d:"Splash grows by half again"},
            {l:12,n:"Family Recipe",d:"Pies pop armour"}]},
-  {id:"bakerjo", n:"Baker Jo", col:"#e8b45a", grp:"kitchen",
+  {id:"bakerjo", n:"Baker Jo", col:"#e8b45a", grp:"kitchen", price:3,
    d:"Rolls heavy dough balls that flatten a bug's speed for a moment.",
    base:{dmg:2,rng:120,cd:1.1,pierce:2,air:false,slow:.08,slowT:.5},
    lvlup:function(s,l){ s.dmg=2+l; s.slowT=.5+l*.05; s.pierce=2+Math.floor(l/4); },
    skills:[{l:5,n:"Second Batch",d:"Hits two more bugs at once"},
            {l:11,n:"Burnt Crust",d:"+8 damage, pops armour"}]},
-  {id:"granny", n:"Granny Spice", col:"#c4442e", grp:"kitchen",
+  {id:"granny", n:"Granny Spice", col:"#c4442e", grp:"kitchen", price:5,
    d:"A cloud of pepper that lingers, weakening everything inside it.",
    base:{dmg:1,rng:100,cd:1,pierce:8,air:true,cone:true,coneWide:true,weaken:.15,weakenT:3},
    lvlup:function(s,l){ s.dmg=1+Math.floor(l/2); s.weaken=Math.min(.5,.15+l*.02); s.pierce=8+Math.floor(l/2); },
    skills:[{l:5,n:"Extra Spicy",d:"Weakening lasts twice as long"},
            {l:11,n:"Nuclear Pepper",d:"+6 damage, pops armour"}]},
-  {id:"fork", n:"Sir Fork", col:"#b8c0c8", grp:"cutlery",
+  {id:"fork", n:"Sir Fork", col:"#b8c0c8", grp:"cutlery", price:4,
    d:"Short reach, enormous damage. Put him right on the path.",
    base:{dmg:9,rng:78,cd:.7,pierce:3,air:false,pierceArm:true},
    lvlup:function(s,l){ s.dmg=9+l*3; s.pierce=3+Math.floor(l/3); s.rng=78+l*2; },
    skills:[{l:6,n:"Three Prongs",d:"Hits three more bugs at once"},
            {l:13,n:"Skewer",d:"Damage jumps by twenty"}]},
-  {id:"butcher", n:"Butcher Rex", col:"#a83a3a", grp:"cutlery",
+  {id:"butcher", n:"Butcher Rex", col:"#a83a3a", grp:"cutlery", price:5,
    d:"A wide cleaving swing that catches everything nearby, not just one target.",
    base:{dmg:4,rng:74,cd:.8,pierce:10,air:false,cone:true,pierceArm:true},
    lvlup:function(s,l){ s.dmg=4+Math.floor(l*1.3); s.pierce=10+Math.floor(l/2); },
    skills:[{l:6,n:"Twin Cleavers",d:"Swing becomes a full circle"},
            {l:13,n:"Butcher's Fury",d:"Damage jumps by fifteen"}]},
-  {id:"whisk", n:"Madame Whisk", col:"#a880d0", grp:"mystic",
+  {id:"whisk", n:"Madame Whisk", col:"#a880d0", grp:"mystic", price:6,
    d:"Weakens what she hits so every other tower does more to it.",
    base:{dmg:1,rng:145,cd:1,pierce:4,air:true,weaken:.25,weakenT:4},
    lvlup:function(s,l){ s.dmg=1+Math.floor(l/2); s.weaken=Math.min(.7,.25+l*.035); s.pierce=4+Math.floor(l/2); },
    skills:[{l:5,n:"Sharp Tongue",d:"Weakening lasts twice as long"},
            {l:11,n:"Whipped",d:"Also slows what she hits"}]},
-  {id:"tin", n:"Old Tin", col:"#8d9aa6", grp:"support",
+  {id:"tin", n:"Old Tin", col:"#8d9aa6", grp:"support", price:3,
    d:"Barely fights. Hands you money every round instead.",
    base:{dmg:1,rng:100,cd:1.6,pierce:1,air:true,income:70},
    lvlup:function(s,l){ s.income=70+l*45; s.dmg=1+Math.floor(l/4); },
    skills:[{l:4,n:"Loose Change",d:"Another 150 a round"},
            {l:10,n:"Rainy Day",d:"Another 500 a round"}]},
-  {id:"sprout", n:"Sprout", col:"#7bd94a", grp:"garden",
+  {id:"sprout", n:"Sprout", col:"#7bd94a", grp:"garden", price:4,
    d:"On loan from the allotment next door. Vines lash out in all directions.",
    base:{dmg:2,rng:115,cd:1.2,pierce:6,air:true,burst:6},
    lvlup:function(s,l){ s.dmg=2+Math.floor(l*.8); s.burst=6+Math.floor(l/2); s.rng=115+l*3; },
    skills:[{l:5,n:"Deep Roots",d:"Range grows by a third"},
            {l:12,n:"Overgrowth",d:"Twice as many vines"}]},
-  {id:"meatlad", n:"The Lad", col:"#d3132b", grp:"guest",
+  {id:"meatlad", n:"The Lad", col:"#d3132b", grp:"guest", price:6,
    d:"On loan from next door's platformer. Fast, frantic, up close and sticky.",
    base:{dmg:3,rng:66,cd:.4,pierce:2,air:false,burn:1},
    lvlup:function(s,l){ s.dmg=3+Math.floor(l*1.1); s.cd=Math.max(.15,.4*Math.pow(.92,l-1)); s.burn=1+Math.floor(l/5); },
    skills:[{l:5,n:"Stick Around",d:"Bleed damage doubles"},
            {l:12,n:"Meat Grinder",d:"+10 damage, +3 pierce"}]},
-  {id:"clara", n:"Coupon Clara", col:"#e8a838", grp:"support",
+  {id:"clara", n:"Coupon Clara", col:"#e8a838", grp:"support", price:4,
    d:"Throws spare change hard enough to hurt, and it pays for itself.",
    base:{dmg:3,rng:130,cd:.9,pierce:2,air:true,income:40},
    lvlup:function(s,l){ s.dmg=3+l; s.income=40+l*20; s.pierce=2+Math.floor(l/5); },
    skills:[{l:5,n:"Bulk Buy",d:"+2 pierce"},
            {l:12,n:"Clearance Sale",d:"+150 a round, +3 damage"}]},
-  {id:"morty", n:"Miser Morty", col:"#7a9c5e", grp:"support",
+  {id:"morty", n:"Miser Morty", col:"#7a9c5e", grp:"support", price:5,
    d:"Won't lift a finger to fight. Sits on a growing pile of savings instead.",
    base:{dmg:1,rng:90,cd:1.8,pierce:1,air:true,income:30},
    lvlup:function(s,l){ s.income=30+l*60; s.dmg=1+Math.floor(l/6); },
@@ -4237,19 +4247,31 @@ function renderHeroGrid(onPick){
   var row=document.createElement("div"); row.className="herorow";
   HEROES.forEach(function(H){
     var grp=HERO_GROUPS[H.grp];
+    var unlocked=heroUnlocked(H.id);
     var d=document.createElement("div");
-    d.className="herocard"+(H.id===chosenHero?" sel":"");
+    d.className="herocard"+(H.id===chosenHero?" sel":"")+(unlocked?"":" locked");
     d.style.background=grp.bg;
     d.style.borderColor=H.id===chosenHero?"":grp.col+"55";
     var hIcon=iconFor("h",H.id,40);
     hIcon.style.boxShadow="0 0 0 2px "+H.col+"99 inset";
     d.appendChild(hIcon);
     var meta=document.createElement("div");
+    var statusTxt=unlocked?(save.heroUsed.indexOf(H.id)>=0?"used":"new"):
+      ("🪙 "+H.price+" token"+(H.price===1?"":"s"));
     meta.innerHTML='<div class="hn">'+H.n+'</div><div class="hl" style="color:'+grp.col+'">'+grp.n+
-      '</div><div class="hl">'+(save.heroUsed.indexOf(H.id)>=0?"used":"new")+'</div>';
+      '</div><div class="hl">'+statusTxt+'</div>';
     d.appendChild(meta);
-    d.onclick=function(){ sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
-      if(onPick)onPick(H.id); openHeroInfo(H.id); };
+    d.onclick=function(){
+      if(!unlocked){
+        sfx.click();
+        if(save.heroTokens<H.price){ toast("Not enough hero tokens"); openHeroInfo(H.id); return; }
+        save.heroTokens-=H.price; save.heroesUnlocked.push(H.id); queueSave(); sfx.up();
+        toast(H.n+" unlocked!"); renderHeroGrid(onPick); updateTitleProgress();
+        return;
+      }
+      sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
+      if(onPick)onPick(H.id); openHeroInfo(H.id);
+    };
     row.appendChild(d);
   });
   g.appendChild(row);
@@ -4292,8 +4314,12 @@ function renderHeroInfo(heroId){
   $("heroInfoName").style.color=grp.col;
   $("heroInfoDesc").textContent=def.d;
   var bestLvl=save.heroMaxLvl[def.id]||0;
-  $("heroInfoLvl").textContent=bestLvl>0?("Best level reached: "+bestLvl):"Not played yet";
-  $("heroInfoNote").textContent="Heroes level up from XP earned in a run, not jars - place "+def.n+" and start popping to climb this tree for real.";
+  var unlocked=heroUnlocked(def.id);
+  $("heroInfoLvl").textContent=unlocked?(bestLvl>0?("Best level reached: "+bestLvl):"Not played yet"):
+    ("🪙 "+def.price+" hero token"+(def.price===1?"":"s")+" to unlock");
+  $("heroInfoNote").textContent=unlocked?
+    ("Heroes level up from XP earned in a run, not jars - place "+def.n+" and start popping to climb this tree for real."):
+    ("You have "+save.heroTokens+" hero token"+(save.heroTokens===1?"":"s")+" - tap "+def.n+" on the pick screen to unlock once you've got enough.");
 
   var sk=$("heroInfoSkills"); sk.innerHTML="";
   def.skills.forEach(function(s){
