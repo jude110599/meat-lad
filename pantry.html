@@ -146,21 +146,21 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   border-radius:6px;padding:9px 2px;font:inherit;font-size:9.5px;font-weight:800;
   letter-spacing:.04em;text-transform:uppercase;cursor:pointer;min-height:44px}
 .stab.sel{background:var(--bg4);color:var(--txt);border-color:var(--honey)}
-.tcard{display:flex;gap:8px;align-items:center;background:var(--tc-bg,var(--bg2));
+.tcard{display:flex;gap:6px;align-items:center;background:var(--tc-bg,var(--bg2));
   border:1px solid var(--line);border-left:3px solid var(--tc-col,var(--bg4));border-radius:5px;
-  padding:7px;margin-bottom:6px;cursor:grab;touch-action:none;transition:background .12s,transform .12s}
+  padding:4px 5px;margin-bottom:3px;cursor:grab;touch-action:none;transition:background .12s,transform .12s}
 .tcard:hover{background:var(--bg3);transform:translateX(-2px)}
 .tcard:active{cursor:grabbing}
 .tcard.poor{opacity:.42;cursor:default;transform:none}
 .tcard.sel{border-left-color:var(--honey);background:var(--bg3)}
-.tcard canvas{width:36px;height:36px;flex:none}
-.tcard .tn{font-size:11.5px;font-weight:800;line-height:1.2}
-.tcard .tp{font-size:11px;color:var(--gold);font-weight:800;margin-top:2px}
+.tcard canvas{width:32px;height:32px;flex:none;border-radius:6px}
+.tcard .tn{font-size:11px;font-weight:800;line-height:1.15}
+.tcard .tp{font-size:10.5px;color:var(--gold);font-weight:800;margin-top:1px}
 .shopgrp{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
-  font-weight:800;margin:10px 0 5px;padding-bottom:4px;border-bottom:1.5px solid var(--line)}
+  font-weight:800;margin:7px 0 4px;padding-bottom:3px;border-bottom:1.5px solid var(--line)}
 .shopgrp:first-child{margin-top:0}
-.shopgrpd{font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;
-  color:var(--dim);opacity:.75;margin-top:2px}
+.shopgrpd{font-size:9.5px;letter-spacing:0;text-transform:none;font-weight:400;
+  color:var(--dim);opacity:.75;margin-top:1px;line-height:1.25}
 
 /* shop hub (title screen) - cosmetics bought with Crumbs */
 #shopTabs2{display:flex;gap:5px;margin-top:12px}
@@ -249,6 +249,11 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 #towerUpTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
   border:1px solid var(--line);border-radius:10px}
 #towerUpPaths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+#towerInfoTop{display:flex;gap:14px;align-items:flex-start}
+#towerInfoTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
+  border:1px solid var(--line);border-radius:10px}
+#towerInfoPaths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+@media (max-width:700px){ #towerInfoPaths{grid-template-columns:1fr} }
 @media (max-width:700px){ #towerUpPaths{grid-template-columns:1fr} }
 .tuphead{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
   margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--line)}
@@ -623,6 +628,19 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <button class="btn sub" id="towerUpSell" style="margin-top:14px"></button>
   </div></div>
 
+  <div class="ovl hide" id="o-towerInfo"><div class="ovlbox" id="towerInfoBox">
+    <button class="back" id="towerInfoClose" style="float:right">&times;</button>
+    <div id="towerInfoTop">
+      <canvas id="towerInfoIcon" width="128" height="128"></canvas>
+      <div>
+        <div class="disp" id="towerInfoName" style="font-size:19px"></div>
+        <div class="cd" id="towerInfoDesc" style="font-size:12px;margin-top:3px"></div>
+        <div id="towerInfoStats" style="font-size:11.5px;color:var(--dim);margin-top:8px"></div>
+      </div>
+    </div>
+    <div id="towerInfoPaths"></div>
+  </div></div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -630,9 +648,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.28.0";
+var VERSION="1.29.0";
 var CHANGELOG=[
-  {v:"1.28.0",d:"latest",items:[
+  {v:"1.29.0",d:"latest",items:[
+    "DOUBLE-CLICK A TOWER IN THE SHOP TO SEE ITS FULL UPGRADE TREE before you even buy one - all three paths, every tier, base stats, and how far you've permanently mastered it, same idea as the hero upgrade-tree viewer",
+    "THE SHOP LIST IS NOTICEABLY MORE COMPACT NOW - smaller padding and tighter category headers so more towers are visible without scrolling",
+    "TOWER ICONS IN THE SHOP GET THEIR OWN SIGNATURE COLOUR RING NOW too, same treatment as heroes got, so towers in the same category are easier to tell apart at a glance"
+  ]},
+  {v:"1.28.0",items:[
     "TAP A HERO ON THE PICK SCREEN TO SEE ITS FULL UPGRADE TREE - every ability, what level it needs, and whether you've ever actually reached that level with this hero before (tracked permanently, across every run)",
     "HERO ICONS ARE EASIER TO TELL APART NOW - each one gets a ring in its own signature colour instead of just its group's colour, so heroes in the same family (all four kitchen staff, all three money heroes) don't blur together",
     "THE HERO PICKER FITS MORE PER ROW NOW so there's less scrolling to see the whole roster"
@@ -3560,10 +3583,13 @@ function renderShop(){
     d.className="tcard"+(cash<cost?" poor":"")+(buyId===T.id?" sel":"");
     d.setAttribute("data-tid",T.id);
     d.style.setProperty("--tc-bg",tc.bg); d.style.setProperty("--tc-col",tc.col);
-    d.appendChild(iconFor("t",T.id,36));
+    var tIcon=iconFor("t",T.id,36);
+    tIcon.style.boxShadow="0 0 0 2px "+T.col+"99 inset";
+    d.appendChild(tIcon);
     var wrap=document.createElement("div"); wrap.className="tcinfo";
     wrap.innerHTML='<div class="tn">'+T.n+'</div><div class="tp">$'+cost+'</div>';
     d.appendChild(wrap);
+    d.ondblclick=function(){ sfx.click(); placing=false; buyId=null; renderShop(); openTowerInfo(T.id); };
     d.onclick=function(){
       if(cash<towerCost(T)){ toast("Not enough"); return; }
       sfx.click();
@@ -3768,6 +3794,57 @@ function renderTowerUp(){
   };
 }
 $("towerUpClose").onclick=function(){ sfx.click(); if(state==="pause")state="play"; hideOvl(); };
+
+/* shop-side "what does this actually turn into" preview - double-click a
+   card to see the full 3-path upgrade tree before you've even bought one.
+   There's no live instance yet, so tier unlocks are shown against the
+   permanent per-tower-type mastery (save.towerMaxLvl) rather than a real
+   tw.lvl, and crosspathing is explained rather than simulated since which
+   two paths you'd commit to isn't decided until you actually place one. */
+function openTowerInfo(towerId){
+  renderTowerInfo(towerId);
+  showOvl("o-towerInfo");
+}
+function renderTowerInfo(towerId){
+  var def=byId(TOWERS,towerId); if(!def)return;
+  var tc=TOWER_CATS[def.cat];
+  $("towerInfoBox").style.background=tc.bg;
+  var oldIc=$("towerInfoIcon"),newIc=iconFor("t",def.id,84);
+  newIc.id="towerInfoIcon";
+  oldIc.parentNode.replaceChild(newIc,oldIc);
+  $("towerInfoName").textContent=def.n;
+  $("towerInfoName").style.color=tc.col;
+  $("towerInfoDesc").textContent=def.d;
+  var bestLvl=save.towerMaxLvl[def.id]||0;
+  var s0=baseStats(def);
+  var baseTxt=(s0.income?"$"+s0.income+" a round":s0.support?"+"+(s0.buffDmg||0)+" damage nearby":
+    Math.round(s0.dmg||0)+" dmg · "+Math.round(s0.rng||0)+" range")+" at base · $"+towerCost(def)+" to place";
+  $("towerInfoStats").textContent=baseTxt+(bestLvl>0?(" · best mastery reached: level "+bestLvl):" · never placed yet");
+
+  var wrap=$("towerInfoPaths"); wrap.innerHTML="";
+  [def.p1,def.p2,def.p3].forEach(function(pathDef){
+    var col=document.createElement("div");
+    var head=document.createElement("div"); head.className="tuphead";
+    head.textContent=pathDef.n; col.appendChild(head);
+    pathDef.u.forEach(function(up,ti){
+      var needLvl=TOWER_TIER_LVL[ti];
+      var unlocked=bestLvl>=needLvl;
+      var card=document.createElement("div");
+      card.className="tuptier"+(unlocked?" done":" locked");
+      var cv2=document.createElement("canvas"); cv2.width=60; cv2.height=60;
+      var gctx=cv2.getContext("2d"); gctx.scale(2,2); gctx.translate(15,15);
+      drawUpgradeIcon(gctx,upgradeIconKind(up),12,unlocked?"#6fbf8f":"#5a4f3e");
+      card.appendChild(cv2);
+      var info=document.createElement("div");
+      info.innerHTML='<div class="tun">'+up.n+(unlocked?" &#10003;":"")+'</div><div class="tud">'+up.d+'</div>'+
+        '<div class="tuc">$'+up.c+'</div><div class="tul">'+(unlocked?"Unlocked":"Needs level "+needLvl)+'</div>';
+      card.appendChild(info);
+      col.appendChild(card);
+    });
+    wrap.appendChild(col);
+  });
+}
+$("towerInfoClose").onclick=function(){ sfx.click(); hideOvl(); };
 
 function commitTowerPlacement(gx,gy){
   var isGuest=party.on&&!party.leader;
