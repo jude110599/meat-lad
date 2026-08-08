@@ -625,9 +625,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.30.0";
+var VERSION="1.31.0";
 var CHANGELOG=[
-  {v:"1.30.0",d:"latest",items:[
+  {v:"1.31.0",d:"latest",items:[
+    "OBSTACLES ACTUALLY BLOCK YOUR SHOTS NOW. Crates used to just take up a cell you couldn't build on - now they genuinely block line of sight, so a tower can't snipe through one to hit a bug it shouldn't be able to see (flying bugs still fly right over them, as you'd expect)",
+    "EVERY TOWER AND HERO HAS A REAL ATTACK ANIMATION NOW - a punchy little recoil and scale-kick right as they fire, on top of the existing muzzle glow, instead of just launching a projectile with no visible action behind it"
+  ]},
+  {v:"1.30.0",items:[
     "ONE UPGRADE-TREE MENU INSTEAD OF TWO. Double-clicking a placed tower on the board used to open a second, different full-screen panel on top of the sidebar one - that's gone now. Double-click still only does one thing: previewing a tower's tree from the shop before you've bought it. Once it's placed, click it and use the sidebar panel to actually upgrade or sell it, same as always",
     "Also fixed the shop's upgrade-tree preview panel being cramped into a narrow box meant for a much simpler layout - it's properly sized now"
   ]},
@@ -830,6 +834,21 @@ function rnd(a,b){ return a+Math.random()*(b-a); }
 function ri(a,b){ return Math.floor(rnd(a,b+1)); }
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 function dist2(x1,y1,x2,y2){ var a=x2-x1,b=y2-y1; return a*a+b*b; }
+function distToSeg(px,py,x1,y1,x2,y2){
+  var dx=x2-x1,dy=y2-y1,len2=dx*dx+dy*dy;
+  if(len2===0)return Math.sqrt(dist2(px,py,x1,y1));
+  var tt=Math.max(0,Math.min(1,((px-x1)*dx+(py-y1)*dy)/len2));
+  return Math.sqrt(dist2(px,py,x1+tt*dx,y1+tt*dy));
+}
+/* obstacle crates now actually block line of sight, not just tower
+   placement - ground towers can't shoot through one to hit something
+   behind it. Flying bugs pass over them, so they're exempt. */
+function losBlocked(x1,y1,x2,y2){
+  for(var i=0;i<mapObstacles.length;i++){
+    if(distToSeg(mapObstacles[i].x,mapObstacles[i].y,x1,y1,x2,y2)<CELL*.46)return true;
+  }
+  return false;
+}
 function byId(list,id){ for(var i=0;i<list.length;i++)if(list[i].id===id)return list[i]; return list[0]; }
 
 var toastT=null;
@@ -2892,6 +2911,7 @@ function towerTargets(tw,s,rngMult){
     if(!s.snipe){
       p=posAt(b.d);
       if(dist2(p.x,p.y,tw.x,tw.y)>rng*rng)continue;
+      if(!b.fly&&losBlocked(tw.x,tw.y,p.x,p.y))continue;
     }
     var score;
     if(mode==="last")score=-b.d;
@@ -3322,6 +3342,12 @@ function render(t){
         ctx.restore();
       }
       ctx.save(); ctx.translate(en.o.x,en.o.y+8);
+      /* universal recoil - reuses the same "just fired" ratio as the glow
+         pulse above, so every tower punches back along its aim line and
+         snaps its scale up a touch right as it fires, with zero bespoke
+         animation work needed per model. */
+      ctx.translate(-Math.cos(en.o.ang||0)*fireGlow*4,-Math.sin(en.o.ang||0)*fireGlow*4);
+      var twScale=1+fireGlow*.08; ctx.scale(twScale,twScale);
       drawTowerArt(ctx,en.o.id,t,en.o.ang);
       ctx.restore();
       var tot=en.o.t1+en.o.t2+en.o.t3;
@@ -3331,7 +3357,11 @@ function render(t){
         ctx.fillText(s2,en.o.x,en.o.y+20); ctx.textAlign="left";
       }
     } else if(en.k==="h"){
+      var hMaxCd=en.o.s&&en.o.s.cd?en.o.s.cd:1;
+      var hFireGlow=Math.max(0,((en.o.cd||0)/hMaxCd-.65)/.35);
       ctx.save(); ctx.translate(en.o.x,en.o.y+8);
+      ctx.translate(-Math.cos(en.o.ang||0)*hFireGlow*4,-Math.sin(en.o.ang||0)*hFireGlow*4);
+      var hScale=1+hFireGlow*.08; ctx.scale(hScale,hScale);
       drawHeroArt(ctx,en.o.id,t,en.o.ang);
       ctx.restore();
       ctx.fillStyle="#6fbf8f"; ctx.font="bold 9px sans-serif"; ctx.textAlign="center";
