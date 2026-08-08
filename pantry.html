@@ -244,17 +244,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .heroskill b{display:block;font-size:12px;margin-bottom:2px}
 .heroskill .lockl{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
 
-#towerUpBox{max-width:900px;width:96%}
-#towerUpTop{display:flex;gap:14px;align-items:flex-start}
-#towerUpTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
-  border:1px solid var(--line);border-radius:10px}
-#towerUpPaths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+#towerInfoBox{max-width:900px;width:96%}
 #towerInfoTop{display:flex;gap:14px;align-items:flex-start}
 #towerInfoTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
   border:1px solid var(--line);border-radius:10px}
 #towerInfoPaths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
 @media (max-width:700px){ #towerInfoPaths{grid-template-columns:1fr} }
-@media (max-width:700px){ #towerUpPaths{grid-template-columns:1fr} }
 .tuphead{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
   margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--line)}
 .tuptier{background:var(--bg2);border:1px solid var(--line);border-left:3px solid var(--dim);
@@ -610,24 +605,6 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <div id="heroInfoSkills"></div>
   </div></div>
 
-  <div class="ovl hide" id="o-towerup"><div class="ovlbox" id="towerUpBox">
-    <button class="back" id="towerUpClose" style="float:right">&times;</button>
-    <div id="towerUpTop">
-      <canvas id="towerUpIcon" width="128" height="128"></canvas>
-      <div>
-        <div class="disp" id="towerUpName" style="font-size:19px"></div>
-        <div class="cd" id="towerUpDesc" style="font-size:12px;margin-top:3px"></div>
-        <div id="towerUpLvl" style="margin-top:8px;font-weight:800;font-size:13px"></div>
-        <div class="xpbar"><div class="xpfill" id="towerUpXpFill"></div></div>
-        <div id="towerUpXpTxt" style="font-size:10.5px;color:var(--dim);margin-top:3px"></div>
-        <div id="towerUpStats" style="font-size:11.5px;color:var(--dim);margin-top:6px"></div>
-        <div id="towerUpTgt" style="margin-top:8px;max-width:260px"></div>
-      </div>
-    </div>
-    <div id="towerUpPaths"></div>
-    <button class="btn sub" id="towerUpSell" style="margin-top:14px"></button>
-  </div></div>
-
   <div class="ovl hide" id="o-towerInfo"><div class="ovlbox" id="towerInfoBox">
     <button class="back" id="towerInfoClose" style="float:right">&times;</button>
     <div id="towerInfoTop">
@@ -648,9 +625,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.29.1";
+var VERSION="1.30.0";
 var CHANGELOG=[
-  {v:"1.29.1",d:"latest",items:[
+  {v:"1.30.0",d:"latest",items:[
+    "ONE UPGRADE-TREE MENU INSTEAD OF TWO. Double-clicking a placed tower on the board used to open a second, different full-screen panel on top of the sidebar one - that's gone now. Double-click still only does one thing: previewing a tower's tree from the shop before you've bought it. Once it's placed, click it and use the sidebar panel to actually upgrade or sell it, same as always",
+    "Also fixed the shop's upgrade-tree preview panel being cramped into a narrow box meant for a much simpler layout - it's properly sized now"
+  ]},
+  {v:"1.29.1",items:[
     "FIXED DOUBLE-CLICKING SHOP CARDS NOT OPENING THE UPGRADE TREE. Every single click on a card was rebuilding the entire shop list to update its selection highlight - on a real double-click that could tear down and recreate the exact card the second click was about to land on, so the browser never saw it as a double-click. Selection now just toggles a class on the existing cards instead of rebuilding anything"
   ]},
   {v:"1.29.0",items:[
@@ -3718,97 +3699,6 @@ function renderPanel(){
   p.appendChild(sell);
 }
 
-/* double-click a placed tower for the full picture: all 3 paths side by
-   side with icons and descriptions, current mastery level/xp, and one-click
-   upgrading right from the card instead of a tiny sidebar list. */
-function openTowerUp(tw){
-  selTower=tw; sfx.click();
-  if(state==="play")state="pause";
-  renderTowerUp();
-  showOvl("o-towerup");
-}
-function renderTowerUp(){
-  if(!selTower)return;
-  var tw=selTower,def=byId(TOWERS,tw.id),s=tw.s,bf=buffsFor(tw),tc=TOWER_CATS[def.cat];
-  var mine=canControl(tw),oName=ownerName(tw.owner);
-  $("towerUpBox").style.background=tc.bg;
-  var oldIc=$("towerUpIcon"),newIc=iconFor("t",def.id,84);
-  newIc.id="towerUpIcon";
-  oldIc.parentNode.replaceChild(newIc,oldIc);
-  $("towerUpName").textContent=def.n;
-  $("towerUpName").style.color=tc.col;
-  $("towerUpDesc").textContent=def.d;
-  var atMax=(tw.lvl||1)>=10;
-  $("towerUpLvl").textContent="Level "+(tw.lvl||1)+(atMax?" (max mastery)":"");
-  var need=atMax?1:towerXpNeeded(tw.lvl||1);
-  var pct=atMax?100:Math.min(100,Math.round((tw.xp||0)/need*100));
-  $("towerUpXpFill").style.width=pct+"%";
-  $("towerUpXpTxt").textContent=atMax?"Fully mastered":(Math.floor(tw.xp||0)+" / "+need+" xp to next level");
-  var ownTxt=oName?(" · "+(mine?"Owned by you":"Owned by "+oName)):"";
-  if(s.income)$("towerUpStats").textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped"+ownTxt;
-  else if(s.support)$("towerUpStats").textContent="+"+(s.buffDmg||0)+" damage nearby · "+(tw.pops||0)+" popped"+ownTxt;
-  else $("towerUpStats").textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+(tw.pops||0)+" popped"+ownTxt;
-  var tgtWrap=$("towerUpTgt"); tgtWrap.innerHTML="";
-  if(!s.income&&!s.support)tgtWrap.appendChild(buildTgtRow(tw,renderTowerUp));
-
-  var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
-  var activePaths=allTiers.filter(function(x){ return x>0; }).length;
-  var pastTwoIdx=-1; allTiers.forEach(function(x,i){ if(x>2)pastTwoIdx=i; });
-
-  var wrap=$("towerUpPaths"); wrap.innerHTML="";
-  [1,2,3].forEach(function(n){
-    var idx=n-1, pathDef=allPaths[idx], curTier=allTiers[idx];
-    var col=document.createElement("div");
-    var head=document.createElement("div"); head.className="tuphead";
-    head.textContent=pathDef.n+" · "+curTier+"/5"; col.appendChild(head);
-    pathDef.u.forEach(function(up,ti){
-      var done=ti<curTier, isNext=ti===curTier, futureLocked=ti>curTier;
-      var lockedNew=isNext&&curTier===0&&activePaths>=2;
-      var lockedDeep=isNext&&pastTwoIdx>=0&&pastTwoIdx!==idx&&curTier>=2;
-      var needLvl=TOWER_TIER_LVL[ti];
-      var lockedLvl=isNext&&towerGateLvl(tw)<needLvl;
-      var lockedCash=isNext&&cash<up.c;
-      var lockedOwner=isNext&&!mine;
-      var locked=isNext&&(lockedNew||lockedDeep||lockedLvl||lockedOwner);
-      var card=document.createElement("div");
-      card.className="tuptier"+(done?" done":"")+((locked||futureLocked)?" locked":"");
-      var cv2=document.createElement("canvas"); cv2.width=60; cv2.height=60;
-      var gctx=cv2.getContext("2d"); gctx.scale(2,2); gctx.translate(15,15);
-      drawUpgradeIcon(gctx,upgradeIconKind(up),12,done?"#6fbf8f":(locked||futureLocked)?"#5a4f3e":tc.col);
-      card.appendChild(cv2);
-      var lockReason=lockedOwner?"Owned by "+oName:lockedNew?"Only two paths at once":lockedDeep?"Another path passed tier 2":
-        lockedLvl?"Needs level "+needLvl:futureLocked?"Unlock the tier above first":
-        lockedCash?"Not enough cash":"";
-      var info=document.createElement("div");
-      info.innerHTML='<div class="tun">'+up.n+(done?" &#10003;":"")+'</div><div class="tud">'+up.d+'</div>'+
-        (done?"":'<div class="tuc">$'+up.c+'</div>')+
-        (lockReason?'<div class="tul">'+lockReason+'</div>':'');
-      card.appendChild(info);
-      if(isNext&&!locked&&!lockedCash){
-        card.onclick=function(){
-          sfx.click();
-          if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
-          else upgradeTower(tw,n);
-          renderTowerUp();
-        };
-      }
-      col.appendChild(card);
-    });
-    wrap.appendChild(col);
-  });
-
-  var sellBtn=$("towerUpSell");
-  sellBtn.disabled=!mine;
-  sellBtn.textContent=mine?"Sell for $"+Math.round(tw.spent*.7):"Owned by "+oName;
-  sellBtn.onclick=function(){
-    sfx.click();
-    if(party.on&&!party.leader)party.send({t:"reqSell",gx:tw.gx,gy:tw.gy});
-    else sellTower(tw);
-    $("towerUpClose").onclick();
-  };
-}
-$("towerUpClose").onclick=function(){ sfx.click(); if(state==="pause")state="play"; hideOvl(); };
-
 /* shop-side "what does this actually turn into" preview - double-click a
    card to see the full 3-path upgrade tree before you've even bought one.
    There's no live instance yet, so tier unlocks are shown against the
@@ -3955,15 +3845,6 @@ cv.addEventListener("pointerdown",function(e){
   }
   selTower=null; $("panel").classList.add("hide");
 },{passive:false});
-cv.addEventListener("dblclick",function(e){
-  if(state!=="play"||placing)return;
-  var w=toWorld(e.clientX,e.clientY);
-  var gx=Math.floor(w.x/CELL),gy=Math.floor(w.y/CELL);
-  for(var i=0;i<towers.length;i++){
-    if(towers[i].gx===gx&&towers[i].gy===gy){ openTowerUp(towers[i]); return; }
-  }
-});
-
 window.addEventListener("keydown",function(e){
   if(state!=="play")return;
   if(e.key===" "){ e.preventDefault(); $("bGo").onclick(); }
@@ -4533,13 +4414,8 @@ var party={
         if($("o-hero").className.indexOf("hide")<0)renderHeroPanel();
         if(wasSel){
           selTower=towers.filter(function(t){ return t.gx===wasSel.gx&&t.gy===wasSel.gy; })[0]||null;
-          if(selTower){
-            renderPanel();
-            if($("o-towerup").className.indexOf("hide")<0)renderTowerUp();
-          } else {
-            $("panel").classList.add("hide");
-            if($("o-towerup").className.indexOf("hide")<0)$("towerUpClose").onclick();
-          }
+          if(selTower)renderPanel();
+          else $("panel").classList.add("hide");
         }
         updateHud();
       }
