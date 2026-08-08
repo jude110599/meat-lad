@@ -379,6 +379,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <canvas id="titleAnim" width="220" height="120"></canvas>
     <div class="logo">PANTRY<span>PANIC</span></div>
     <div class="tag">The bugs found the larder. Hold the shelves.</div>
+    <div class="note" id="titleProgress" style="margin:-4px 0 8px"></div>
     <div id="titleIcons">
       <button class="iconbtn" id="bTowers" title="Towers">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M9 21V11L6 9l1-5h10l1 5-3 2v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 15h6M8 4h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -574,6 +575,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <button class="btn sub" id="bMenu">Back to the title</button>
   </div></div>
 
+  <div class="ovl hide" id="o-lvlup"><div class="ovlbox">
+    <h2 class="disp">Level up!</h2>
+    <div class="note" style="margin-bottom:12px">Pick a new tower to unlock for good.</div>
+    <div id="lvlupChoices" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div></div>
+
   <div class="ovl hide" id="o-hero"><div class="ovlbox" id="heroBox">
     <button class="back" id="heroPanelClose" style="float:right">&times;</button>
     <div id="heroBoxTop">
@@ -626,9 +633,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.32.1";
+var VERSION="1.33.0";
 var CHANGELOG=[
-  {v:"1.32.1",d:"latest",items:[
+  {v:"1.33.0",d:"latest",items:[
+    "A REAL PROGRESSION SYSTEM. New saves now start with just the four cheapest towers, one per class - everything else unlocks by playing. Win a run to level up: every 2 levels from level 3 you pick one of 3 random locked towers to add for good, and every 5 levels from level 6 you earn Hero Tokens (a new currency, more of these coming). Once every tower's unlocked, Hero Tokens start coming every 2 levels instead, in smaller amounts. Anyone with an existing save keeps every tower they already had - nothing already unlocked gets taken away",
+    "The title screen shows your level, tower unlock progress, and Hero Token count, and the Almanac marks which towers you haven't unlocked yet"
+  ]},
+  {v:"1.32.1",items:[
     "THE PATH YOU'VE BEEN LOCKED OUT OF (by committing to the other two) NOW LOOKS OBVIOUSLY DIFFERENT from one that's just not affordable or levelled yet - desaturated and dimmer, so it reads as \"not this run\" instead of \"not yet\""
   ]},
   {v:"1.32.0",items:[
@@ -841,6 +852,7 @@ function pushAccount(){
 function $(id){ return document.getElementById(id); }
 function rnd(a,b){ return a+Math.random()*(b-a); }
 function ri(a,b){ return Math.floor(rnd(a,b+1)); }
+function shuffleArr(a){ for(var i=a.length-1;i>0;i--){ var j=ri(0,i); var tmp=a[i]; a[i]=a[j]; a[j]=tmp; } return a; }
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 function dist2(x1,y1,x2,y2){ var a=x2-x1,b=y2-y1; return a*a+b*b; }
 function distToSeg(px,py,x1,y1,x2,y2){
@@ -1025,7 +1037,16 @@ function mSetMode(mode){
 /* ═════════════ SAVE ═════════════ */
 var SKEY="pantrypanic-save-v1";
 var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,insaneWins:0,bossPops:0,
-  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{},heroMaxLvl:{}};
+  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{},heroMaxLvl:{},
+  playerLvl:1,heroTokens:0,towersUnlocked:null};
+/* the cheapest tower in each of the 4 classes - a small, deliberately
+   basic starting kit. Everything else opens up through playerLvl. */
+function starterTowerIds(){
+  return CATS.map(function(c){
+    var inCat=TOWERS.filter(function(t){ return t.cat===c; }).slice().sort(function(a,b){ return a.cost-b.cost; });
+    return inCat[0]&&inCat[0].id;
+  }).filter(Boolean);
+}
 function loadSave(){
   try{ var r=localStorage.getItem(SKEY);
     if(r){ var o=JSON.parse(r); for(var k in save)if(o[k]!=null)save[k]=o[k]; }
@@ -1039,7 +1060,17 @@ function loadSave(){
   if(!save.towerMaxLvl||typeof save.towerMaxLvl!=="object")save.towerMaxLvl={};
   if(!save.heroMaxLvl||typeof save.heroMaxLvl!=="object")save.heroMaxLvl={};
   if(!(save.bossesSeen instanceof Array))save.bossesSeen=[];
+  if(typeof save.playerLvl!=="number"||save.playerLvl<1)save.playerLvl=1;
+  if(typeof save.heroTokens!=="number")save.heroTokens=0;
+  if(!(save.towersUnlocked instanceof Array)){
+    /* anyone with existing progress (any run or win already logged) keeps
+       every tower they already had - the lock only applies to brand new
+       saves so this can't take anything away from a returning player. */
+    var isFresh=save.runs===0&&save.wins===0;
+    save.towersUnlocked=isFresh?starterTowerIds():TOWERS.map(function(t){ return t.id; });
+  }
 }
+function towerUnlocked(id){ return save.towersUnlocked.indexOf(id)>=0; }
 var saveT=null;
 function queueSave(){
   if(saveT)return;
@@ -2611,11 +2642,54 @@ function startRun(mapIdx,diffIdx,heroId){
   placing=true; buyId="__hero";
 }
 
+/* the meta-progression that gates the tower roster: every win is one
+   player level. Levels 3,5,7,... (while any tower's still locked) offer a
+   choice of 3 random locked towers to permanently unlock. Levels 6,11,16,..
+   grant hero tokens in the meantime; once the roster's fully unlocked that
+   switches to a smaller grant every 2 levels instead (comes around twice
+   as often, for a bit more total than the level-6-step pace would have
+   kept paying out). */
+var pendingTowerChoice=null;
+function checkLevelUp(){
+  save.playerLvl++;
+  var lvl=save.playerLvl,allUnlocked=save.towersUnlocked.length>=TOWERS.length;
+  var tokens=0;
+  if(!allUnlocked){
+    if(lvl>=3&&(lvl-3)%2===0){
+      var locked=shuffleArr(TOWERS.filter(function(t){ return !towerUnlocked(t.id); }));
+      if(locked.length)pendingTowerChoice=locked.slice(0,3);
+    }
+    if(lvl>=6&&(lvl-6)%5===0)tokens=3;
+  } else if(lvl%2===0)tokens=1;
+  if(tokens){ save.heroTokens+=tokens; toast("+"+tokens+" hero token"+(tokens>1?"s":"")); }
+  return tokens;
+}
+function renderTowerChoice(){
+  var g=$("lvlupChoices"); g.innerHTML="";
+  pendingTowerChoice.forEach(function(T){
+    var tc=TOWER_CATS[T.cat];
+    var d=document.createElement("div"); d.className="card";
+    d.style.background=tc.bg; d.style.borderLeftColor=tc.col;
+    d.appendChild(iconFor("t",T.id,42));
+    var info=document.createElement("div");
+    info.innerHTML='<div class="cn">'+T.n+'</div><div class="cd">'+T.d+'</div>';
+    d.appendChild(info);
+    d.onclick=function(){
+      sfx.up();
+      save.towersUnlocked.push(T.id); queueSave();
+      toast(T.n+" unlocked!");
+      pendingTowerChoice=null;
+      hideOvl(); showOvl("o-over");
+    };
+    g.appendChild(d);
+  });
+}
 function endRun(won){
   state="over";
   if(party.on&&party.leader)party.send({t:"over",won:won});
   var roundsSurvived=won?waveMax:Math.max(0,wave-1);
   save.crumbs=(save.crumbs||0)+Math.round(roundsSurvived*(6+curDiff*3));
+  var tokensGained=0;
   if(won){
     save.wins++;
     var jars=Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier));
@@ -2625,6 +2699,7 @@ function endRun(won){
     if(curDiff===2)save.hardWins=(save.hardWins||0)+1;
     if(curDiff===3)save.insaneWins=(save.insaneWins||0)+1;
     if(lives>=runStartLives)save.perfectWins=(save.perfectWins||0)+1;
+    tokensGained=checkLevelUp();
     sfx.win();
   } else sfx.lose();
   if(wave>save.best)save.best=wave;
@@ -2641,21 +2716,33 @@ function endRun(won){
     ["Round reached",wave+"/"+waveMax],["Bugs popped",totalPops],
     ["Hero",byId(HEROES,chosenHero).n+" (lv "+(myHero()?myHero().lvl:1)+")"]];
   rows.push(["Crumbs earned","+"+Math.round(roundsSurvived*(6+curDiff*3))]);
-  if(won)rows.push(["Preserve Jars earned","+"+Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier))]);
+  if(won){
+    rows.push(["Preserve Jars earned","+"+Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier))]);
+    rows.push(["Player level","Lv"+save.playerLvl]);
+    if(tokensGained)rows.push(["Hero tokens earned","+"+tokensGained]);
+  }
   rows.forEach(function(r){
     var d=document.createElement("div"); d.className="statline";
     d.innerHTML="<span>"+r[0]+"</span><b>"+r[1]+"</b>"; st.appendChild(d);
   });
-  showOvl("o-over");
+  if(won&&pendingTowerChoice){
+    renderTowerChoice();
+    showOvl("o-lvlup");
+  } else showOvl("o-over");
 }
 
+function updateTitleProgress(){
+  var el=$("titleProgress"); if(!el)return;
+  el.textContent="Level "+save.playerLvl+" · "+save.towersUnlocked.length+"/"+TOWERS.length+
+    " towers unlocked · "+save.heroTokens+" hero tokens";
+}
 function quitToTitle(){
   state="menu"; towers=[]; bugs=[]; shots=[]; fx=[]; heroes=[];
   hideOvl();
   $("hud").classList.add("hide"); $("shop").classList.add("hide"); $("panel").classList.add("hide");
   if(party.on)party.leave();
   mSetMode("menu");
-  show("s-title"); resize();
+  show("s-title"); resize(); updateTitleProgress();
 }
 
 /* ═════════════ TOWER LOGIC ═════════════ */
@@ -3609,7 +3696,8 @@ $("heroBoxBuy").onclick=function(){
 };
 function renderShop(){
   var list=$("shopList"); list.innerHTML="";
-  var sortedTowers=TOWERS.slice().sort(function(a,b){ return CATS.indexOf(a.cat)-CATS.indexOf(b.cat); });
+  var sortedTowers=TOWERS.filter(function(t){ return towerUnlocked(t.id); })
+    .slice().sort(function(a,b){ return CATS.indexOf(a.cat)-CATS.indexOf(b.cat); });
   var lastCat=null;
   sortedTowers.forEach(function(T){
     var tc=TOWER_CATS[T.cat];
@@ -4302,12 +4390,13 @@ function renderDex(){
       head.style.gridColumn="1/-1"; head.style.color=tc.col;
       head.innerHTML=tc.n+'<div class="shopgrpd">'+tc.d+'</div>'; tg.appendChild(head);
     }
-    var d=document.createElement("div"); d.className="card themed"; d.style.cursor="default";
+    var unlocked=towerUnlocked(T.id);
+    var d=document.createElement("div"); d.className="card themed"+(unlocked?"":" locked"); d.style.cursor="default";
     d.style.background=tc.bg; d.style.borderLeftColor=tc.col;
     d.appendChild(iconFor("t",T.id,42));
     var info=document.createElement("div");
     info.innerHTML='<div class="cn">'+T.n+'</div><div class="cd">'+T.d+'</div>'+
-      '<div class="cp">$'+towerCost(T)+'</div>';
+      '<div class="cp">'+(unlocked?"$"+towerCost(T):"Not unlocked yet")+'</div>';
     d.appendChild(info);
     tg.appendChild(d);
   });
@@ -4707,7 +4796,7 @@ loadSave();
 checkAchievements();   // catches anyone whose existing save already qualifies
 $("verTag").textContent="v"+VERSION;
 resize();
-show("s-title");
+show("s-title"); updateTitleProgress();
 requestAnimationFrame(frame);
 tryAutoSignIn().then(function(ok){
   if(ok){ save.name=save.name||(curUser||"").split("@")[0]; renderParty(); }
