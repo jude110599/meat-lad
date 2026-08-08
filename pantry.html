@@ -625,9 +625,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.31.0";
+var VERSION="1.32.0";
 var CHANGELOG=[
-  {v:"1.31.0",d:"latest",items:[
+  {v:"1.32.0",d:"latest",items:[
+    "MONEY TOWERS SHOW THEIR LIFETIME TOTAL NOW - the sidebar panel breaks down what you spent on them, how much they've actually made, and your net so far, plus pop counts now show for every tower type, not just the ones that fight",
+    "BUFFED TOWERS SHOW A LITTLE ARROW OVER THEIR HEAD, and their panel now lists exactly which support towers are buffing them",
+    "A TOWER CAN ONLY CARRY ONE COPY OF A GIVEN BUFF NOW - two of the same support tower in range used to stack their bonus twice; now the second one is redundancy, not a second buff. Different support towers still stack fine with each other"
+  ]},
+  {v:"1.31.0",items:[
     "OBSTACLES ACTUALLY BLOCK YOUR SHOTS NOW. Crates used to just take up a cell you couldn't build on - now they genuinely block line of sight, so a tower can't snipe through one to hit a bug it shouldn't be able to see (flying bugs still fly right over them, as you'd expect)",
     "EVERY TOWER AND HERO HAS A REAL ATTACK ANIMATION NOW - a punchy little recoil and scale-kick right as they fire, on top of the existing muzzle glow, instead of just launching a projectile with no visible action behind it"
   ]},
@@ -2678,16 +2683,24 @@ function activeSupports(){
 function buffsFor(tw,supports){
   var dmg=0,rng=1,cd=1;
   var list=supports||activeSupports();
+  /* a tower can only carry one copy of any given buff - two Salt Shakers
+     in range of the same target used to both apply, stacking additively/
+     multiplicatively; now only the first (nearest-checked) instance of
+     each support tower TYPE counts, so the fix is "own two of the same
+     support tower for redundancy," not "own two for double the buff." */
+  var seenType={},sources=[];
   for(var i=0;i<list.length;i++){
     var o=list[i];
-    if(o===tw)continue;
+    if(o===tw||seenType[o.id])continue;
     if(dist2(o.x,o.y,tw.x,tw.y)<=o.s.rng*o.s.rng){
+      seenType[o.id]=true;
       dmg+=o.s.buffDmg||0;
       rng*=o.s.buffRng||1;
       cd*=o.s.buffCd||1;
+      sources.push(o);
     }
   }
-  return {dmg:dmg,rng:rng,cd:cd};
+  return {dmg:dmg,rng:rng,cd:cd,sources:sources};
 }
 function placeTower(id,gx,gy,owner){
   var def=byId(TOWERS,id),cost=towerCost(def);
@@ -3029,7 +3042,7 @@ var coopSyncT=0;
 function broadcastSnap(){
   party.send({t:"snap",
     towers:towers.map(function(t){ return {id:t.id,owner:t.owner,gx:t.gx,gy:t.gy,x:t.x,y:t.y,
-      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,pops:t.pops,xp:t.xp,lvl:t.lvl,tgt:t.tgt,s:t.s}; }),
+      t1:t.t1,t2:t.t2,t3:t.t3,cd:t.cd,ang:t.ang,spent:t.spent,earned:t.earned,pops:t.pops,xp:t.xp,lvl:t.lvl,tgt:t.tgt,s:t.s}; }),
     /* r/fly/arm dropped - they never change per bug instance and are always
        exactly BUGS[b.k].r/.fly/.arm, so the guest reconstructs them locally
        instead of paying to resend the same 3 values for every bug, every
@@ -3174,7 +3187,10 @@ function update(dt){
   if(inWave&&!waveQueue.length&&!bugs.length){
     inWave=false;
     var income=0;
-    for(var p=0;p<towers.length;p++)if(towers[p].s.income)income+=towers[p].s.income;
+    for(var p=0;p<towers.length;p++)if(towers[p].s.income){
+      income+=towers[p].s.income;
+      towers[p].earned=(towers[p].earned||0)+towers[p].s.income;
+    }
     for(var hInc=0;hInc<heroes.length;hInc++)if(heroes[hInc].s.income)income+=heroes[hInc].s.income;
     /* support/income towers never damage a bug, so they'd never earn the
        kill-XP that unlocks their own upgrades - grant them XP for the
@@ -3327,6 +3343,7 @@ function render(t){
   for(var oI=0;oI<mapObstacles.length;oI++)ents.push({y:mapObstacles[oI].y,k:"o",o:mapObstacles[oI]});
   ents.sort(function(p,q){ return p.y-q.y; });
 
+  var renderSupports=activeSupports();
   for(var e=0;e<ents.length;e++){
     var en=ents[e];
     if(en.k==="t"){
@@ -3355,6 +3372,13 @@ function render(t){
         ctx.fillStyle="#f0c14b"; ctx.font="bold 9px sans-serif"; ctx.textAlign="center";
         var s2=""; for(var z=0;z<tot;z++)s2+="•";
         ctx.fillText(s2,en.o.x,en.o.y+20); ctx.textAlign="left";
+      }
+      if(!en.o.s.support&&buffsFor(en.o,renderSupports).sources.length){
+        ctx.save(); ctx.translate(en.o.x,en.o.y-CELL*.42);
+        ctx.fillStyle="#7bd94a";
+        ctx.beginPath(); ctx.moveTo(0,-5); ctx.lineTo(4,2); ctx.lineTo(1.4,2); ctx.lineTo(1.4,6);
+        ctx.lineTo(-1.4,6); ctx.lineTo(-1.4,2); ctx.lineTo(-4,2); ctx.closePath(); ctx.fill();
+        ctx.restore();
       }
     } else if(en.k==="h"){
       var hMaxCd=en.o.s&&en.o.s.cd?en.o.s.cd:1;
@@ -3668,10 +3692,16 @@ function renderPanel(){
   var p=$("panel"); p.classList.remove("hide"); p.innerHTML="";
   var h=document.createElement("h3"); h.textContent=def.n; p.appendChild(h);
   var sub=document.createElement("div"); sub.className="sub statline";
-  if(s.income)sub.textContent="$"+s.income+" a round";
-  else if(s.support)sub.textContent="+"+(s.buffDmg||0)+" damage nearby";
+  if(s.income)sub.textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped";
+  else if(s.support)sub.textContent="+"+(s.buffDmg||0)+" damage nearby · "+(tw.pops||0)+" popped";
   else sub.textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+tw.pops+" popped";
   p.appendChild(sub);
+  if(s.income){
+    var earned=tw.earned||0,net=earned-tw.spent;
+    var econLine=document.createElement("div"); econLine.className="sub"; econLine.style.marginTop="-6px";
+    econLine.textContent="Spent $"+tw.spent+" · Made $"+earned+" · "+(net>=0?"Net +$"+net:"Net -$"+(-net));
+    p.appendChild(econLine);
+  }
   var lvlLine=document.createElement("div"); lvlLine.className="sub lvlline"; lvlLine.style.marginTop="-6px";
   lvlLine.innerHTML="Level "+(tw.lvl||1)+(tw.lvl<10?" · "+(tw.xp||0)+"/"+towerXpNeeded(tw.lvl)+" xp":" (max)");
   p.appendChild(lvlLine);
@@ -3679,6 +3709,11 @@ function renderPanel(){
     var ownLine=document.createElement("div"); ownLine.className="sub"; ownLine.style.marginTop="-6px";
     ownLine.textContent=(mine?"Owned by you":"Owned by "+oName);
     p.appendChild(ownLine);
+  }
+  if(bf.sources&&bf.sources.length){
+    var buffLine=document.createElement("div"); buffLine.className="sub"; buffLine.style.marginTop="-6px";
+    buffLine.textContent="Buffed by: "+bf.sources.map(function(o){ return byId(TOWERS,o.id).n; }).join(", ");
+    p.appendChild(buffLine);
   }
   if(!s.income&&!s.support)p.appendChild(buildTgtRow(tw,renderPanel));
 
