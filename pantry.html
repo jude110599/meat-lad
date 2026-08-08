@@ -230,6 +230,9 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 #heroBoxTop{display:flex;gap:14px;align-items:flex-start}
 #heroBoxTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
   border:1px solid var(--line);border-radius:10px}
+#heroInfoTop{display:flex;gap:14px;align-items:flex-start}
+#heroInfoTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
+  border:1px solid var(--line);border-radius:10px}
 .xpbar{width:100%;height:8px;border-radius:5px;background:var(--bg1);
   border:1px solid var(--line);margin-top:8px;overflow:hidden}
 .xpfill{height:100%;background:linear-gradient(90deg,var(--mint),var(--gold));
@@ -312,9 +315,9 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .herogroup{margin-bottom:4px}
 .herogroup .ghdr{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
   font-weight:800;margin:12px 0 6px;padding-left:2px}
-.herorow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
-.herocard{border:1px solid var(--line);border-radius:8px;padding:9px;cursor:pointer;
-  text-align:left;display:flex;align-items:center;gap:8px;
+.herorow{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:6px}
+.herocard{border:1px solid var(--line);border-radius:8px;padding:7px;cursor:pointer;
+  text-align:left;display:flex;align-items:center;gap:7px;
   transition:transform .15s cubic-bezier(.34,1.56,.64,1),box-shadow .15s,border-color .15s}
 .herocard:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.4)}
 .herocard:active{transform:translateY(0) scale(.97)}
@@ -587,6 +590,21 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
     <button class="btn" id="heroBoxBuy" style="margin-top:12px"></button>
   </div></div>
 
+  <div class="ovl hide" id="o-heroInfo"><div class="ovlbox" id="heroInfoBox">
+    <button class="back" id="heroInfoClose" style="float:right">&times;</button>
+    <div id="heroInfoTop">
+      <canvas id="heroInfoIcon" width="128" height="128"></canvas>
+      <div>
+        <div class="disp" id="heroInfoName" style="font-size:19px"></div>
+        <div class="cd" id="heroInfoDesc" style="font-size:12px;margin-top:3px"></div>
+        <div id="heroInfoLvl" style="margin-top:8px;font-weight:800;font-size:13px"></div>
+        <div class="cd" id="heroInfoNote" style="font-size:10.5px;color:var(--dim);margin-top:3px"></div>
+      </div>
+    </div>
+    <div class="sect" style="margin-top:14px">Upgrade Tree</div>
+    <div id="heroInfoSkills"></div>
+  </div></div>
+
   <div class="ovl hide" id="o-towerup"><div class="ovlbox" id="towerUpBox">
     <button class="back" id="towerUpClose" style="float:right">&times;</button>
     <div id="towerUpTop">
@@ -612,9 +630,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.27.0";
+var VERSION="1.28.0";
 var CHANGELOG=[
-  {v:"1.27.0",d:"latest",items:[
+  {v:"1.28.0",d:"latest",items:[
+    "TAP A HERO ON THE PICK SCREEN TO SEE ITS FULL UPGRADE TREE - every ability, what level it needs, and whether you've ever actually reached that level with this hero before (tracked permanently, across every run)",
+    "HERO ICONS ARE EASIER TO TELL APART NOW - each one gets a ring in its own signature colour instead of just its group's colour, so heroes in the same family (all four kitchen staff, all three money heroes) don't blur together",
+    "THE HERO PICKER FITS MORE PER ROW NOW so there's less scrolling to see the whole roster"
+  ]},
+  {v:"1.27.0",items:[
     "EVERY LARDER GETS ONE UNMISTAKABLE LANDMARK - an oversized version of its own scenery prop (a giant loaf, a giant snowflake, a giant wheel of cheese...) planted somewhere on the board, with its own shadow and rim-light, so each map has one specific thing you'd recognise it by",
     "THE TRAIL ITSELF LOOKS LIKE A REAL SURFACE NOW - tile seams running its length instead of a flat coloured band",
     "REDESIGNED THE ENTRY AND EXIT - bugs now pour in through a glowing directional arrow, and the exit is an actual illustrated glass jar with a lid and a highlight, replacing the plain circle-and-label"
@@ -967,7 +990,7 @@ function mSetMode(mode){
 /* ═════════════ SAVE ═════════════ */
 var SKEY="pantrypanic-save-v1";
 var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,insaneWins:0,bossPops:0,
-  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{}};
+  skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{},heroMaxLvl:{}};
 function loadSave(){
   try{ var r=localStorage.getItem(SKEY);
     if(r){ var o=JSON.parse(r); for(var k in save)if(o[k]!=null)save[k]=o[k]; }
@@ -979,6 +1002,7 @@ function loadSave(){
   if(!(save.cosOwned instanceof Array))save.cosOwned=[];
   if(!save.cosEquip||typeof save.cosEquip!=="object")save.cosEquip={};
   if(!save.towerMaxLvl||typeof save.towerMaxLvl!=="object")save.towerMaxLvl={};
+  if(!save.heroMaxLvl||typeof save.heroMaxLvl!=="object")save.heroMaxLvl={};
   if(!(save.bossesSeen instanceof Array))save.bossesSeen=[];
 }
 var saveT=null;
@@ -2708,6 +2732,9 @@ function giveHeroXp(h,n){
     for(var i=0;i<def.skills.length;i++)
       if(def.skills[i].l===h.lvl&&h.owner===myOwner())toast(def.skills[i].n+" unlocked");
   }
+  if(h.owner===myOwner()&&(save.heroMaxLvl[h.id]||1)<h.lvl){
+    save.heroMaxLvl[h.id]=h.lvl; queueSave();
+  }
 }
 
 /* towers earn mastery through use, same idea as hero XP - each upgrade tier
@@ -4080,13 +4107,15 @@ function renderHeroGrid(onPick){
     d.className="herocard"+(H.id===chosenHero?" sel":"");
     d.style.background=grp.bg;
     d.style.borderColor=H.id===chosenHero?"":grp.col+"55";
-    d.appendChild(iconFor("h",H.id,40));
+    var hIcon=iconFor("h",H.id,40);
+    hIcon.style.boxShadow="0 0 0 2px "+H.col+"99 inset";
+    d.appendChild(hIcon);
     var meta=document.createElement("div");
     meta.innerHTML='<div class="hn">'+H.n+'</div><div class="hl" style="color:'+grp.col+'">'+grp.n+
       '</div><div class="hl">'+(save.heroUsed.indexOf(H.id)>=0?"used":"new")+'</div>';
     d.appendChild(meta);
     d.onclick=function(){ sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
-      if(onPick)onPick(H.id); };
+      if(onPick)onPick(H.id); openHeroInfo(H.id); };
     row.appendChild(d);
   });
   g.appendChild(row);
@@ -4108,6 +4137,40 @@ function drawHeroPreview(t){
   drawHeroArt(g,chosenHero,t,0);
   g.restore();
 }
+/* the hero-select screen has no live hero object (no run has started yet),
+   so "unlocked" here reflects the highest level this hero has EVER reached
+   in any past run (save.heroMaxLvl) rather than a live hero.lvl - lets you
+   inspect the full skill tree and see real progress before committing. */
+function openHeroInfo(heroId){
+  sfx.click();
+  renderHeroInfo(heroId);
+  showOvl("o-heroInfo");
+}
+function renderHeroInfo(heroId){
+  var def=byId(HEROES,heroId); if(!def)return;
+  var grp=HERO_GROUPS[def.grp];
+  var box=$("heroInfoBox");
+  box.style.background=grp.bg;
+  var oldIc=$("heroInfoIcon"),newIc=iconFor("h",def.id,84);
+  newIc.id="heroInfoIcon";
+  oldIc.parentNode.replaceChild(newIc,oldIc);
+  $("heroInfoName").textContent=def.n;
+  $("heroInfoName").style.color=grp.col;
+  $("heroInfoDesc").textContent=def.d;
+  var bestLvl=save.heroMaxLvl[def.id]||0;
+  $("heroInfoLvl").textContent=bestLvl>0?("Best level reached: "+bestLvl):"Not played yet";
+  $("heroInfoNote").textContent="Heroes level up from XP earned in a run, not jars - place "+def.n+" and start popping to climb this tree for real.";
+
+  var sk=$("heroInfoSkills"); sk.innerHTML="";
+  def.skills.forEach(function(s){
+    var on=bestLvl>=s.l;
+    var d=document.createElement("div");
+    d.className="heroskill"+(on?" on":"");
+    d.innerHTML='<b>'+s.n+'</b>'+s.d+'<div class="lockl">'+(on?"Unlocked":"Unlocks at level "+s.l)+'</div>';
+    sk.appendChild(d);
+  });
+}
+$("heroInfoClose").onclick=function(){ sfx.click(); hideOvl(); };
 function renderSkills(){
   $("skPoints").textContent=save.jars+" jars";
   var l=$("skList"); l.innerHTML="";
