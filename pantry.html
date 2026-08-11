@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.38.1";
+var VERSION="1.39.0";
 var CHANGELOG=[
-  {v:"1.38.1",d:"latest",items:[
+  {v:"1.39.0",d:"latest",items:[
+    "PROJECTILES NOW LOOK LIKE WHAT FIRED THEM. Crumb Flicker throws an actual crumb, Toaster launches a toast slice, Honey Pot drips a honey teardrop, Salt Shaker scatters grains, Cheese Grater flings shreds, Soup Ladle lobs a splash of soup, Blender Vortex spins out chunks, Pepper Grinder puffs dark flecks - instead of every tower firing the same recoloured blob"
+  ]},
+  {v:"1.38.1",items:[
     "Fixed the new hero shop slot not updating to \"In the pantry\" right after you actually placed your hero - it kept saying \"Free\" until something else happened to refresh the shop"
   ]},
   {v:"1.38.0",items:[
@@ -3413,6 +3416,69 @@ function update(dt){
   updateHud();
 }
 
+/* every tower used to fire the exact same gradient blob, just recoloured -
+   the projectile never actually looked like what fired it. Give the
+   towers with an iconic throwable a shot that reads as that thing (a
+   toast slice, a honey drop, a pinch of salt...); anything without a
+   bespoke shape here still gets the original blob, just as before. */
+function drawShotArt(g,sh){
+  if(sh.boomer){
+    g.save(); g.translate(sh.x,sh.y); g.rotate(sh.spin);
+    g.fillStyle=sh.col;
+    g.fillRect(-sh.r*1.6,-sh.r*.5,sh.r*3.2,sh.r);
+    g.fillStyle=shade(sh.col,40);
+    g.fillRect(-sh.r*1.6,-sh.r*.5,sh.r*3.2,sh.r*.32);
+    g.restore();
+    return;
+  }
+  var pid=sh.tw&&sh.tw.id;
+  var ang=Math.atan2(sh.vy||0,sh.vx||1);
+  if(pid==="flicker"){
+    g.save(); g.translate(sh.x,sh.y); g.rotate(ang);
+    g.fillStyle=shade(sh.col,-10);
+    g.beginPath(); g.moveTo(-sh.r,-sh.r*.6); g.lineTo(sh.r,-sh.r*.2); g.lineTo(sh.r*.4,sh.r*.7); g.lineTo(-sh.r*.7,sh.r*.5); g.closePath(); g.fill();
+    g.restore();
+  } else if(pid==="pepper"){
+    g.fillStyle="#2a2018";
+    g.beginPath(); g.arc(sh.x,sh.y,sh.r*.55,0,6.283); g.fill();
+  } else if(pid==="salt"){
+    g.fillStyle="#f0ece0";
+    for(var i=0;i<3;i++){ g.beginPath(); g.arc(sh.x+(i-1)*sh.r*.5,sh.y+((i%2)-.5)*sh.r*.5,sh.r*.32,0,6.283); g.fill(); }
+  } else if(pid==="honey"){
+    g.save(); g.translate(sh.x,sh.y); g.rotate(Math.PI/2+ang*0);
+    var hg=g.createLinearGradient(0,-sh.r,0,sh.r);
+    hg.addColorStop(0,shade(sh.col,30)); hg.addColorStop(1,shade(sh.col,-20));
+    g.fillStyle=hg;
+    g.beginPath(); g.moveTo(0,-sh.r*1.3); g.quadraticCurveTo(sh.r*1.1,sh.r*.2,0,sh.r*1.2);
+    g.quadraticCurveTo(-sh.r*1.1,sh.r*.2,0,-sh.r*1.3); g.closePath(); g.fill();
+    g.restore();
+  } else if(pid==="toaster"){
+    g.save(); g.translate(sh.x,sh.y); g.rotate(ang);
+    g.fillStyle="#d8a860"; g.fillRect(-sh.r*1.1,-sh.r*.9,sh.r*2.2,sh.r*1.8);
+    g.fillStyle="#b8823e"; g.fillRect(-sh.r*.8,-sh.r*.6,sh.r*1.6,sh.r*1.2);
+    g.restore();
+  } else if(pid==="grater"){
+    g.fillStyle=sh.col;
+    for(var j=0;j<3;j++){ g.save(); g.translate(sh.x+(j-1)*sh.r*.4,sh.y-(j-1)*sh.r*.3); g.rotate(j);
+      g.fillRect(-sh.r*.5,-sh.r*.15,sh.r,sh.r*.3); g.restore(); }
+  } else if(pid==="ladle"){
+    var lg=g.createRadialGradient(sh.x-sh.r*.3,sh.y-sh.r*.3,sh.r*.1,sh.x,sh.y,sh.r);
+    lg.addColorStop(0,shade(sh.col,60)); lg.addColorStop(1,sh.col);
+    g.fillStyle=lg;
+    g.beginPath(); g.ellipse(sh.x,sh.y,sh.r*1.15,sh.r*.85,0,0,6.283); g.fill();
+  } else if(pid==="blender"){
+    g.save(); g.translate(sh.x,sh.y); g.rotate((sh.t||0)*20);
+    g.fillStyle=sh.col;
+    g.beginPath(); g.moveTo(-sh.r,0); g.lineTo(sh.r,-sh.r*.3); g.lineTo(sh.r,sh.r*.3); g.closePath(); g.fill();
+    g.restore();
+  } else {
+    var g2=g.createRadialGradient(sh.x-sh.r*.3,sh.y-sh.r*.3,sh.r*.1,sh.x,sh.y,sh.r);
+    g2.addColorStop(0,shade(sh.col,70)); g2.addColorStop(1,sh.col);
+    g.fillStyle=g2;
+    g.beginPath(); g.arc(sh.x,sh.y,sh.r,0,6.283); g.fill();
+  }
+}
+
 /* ═════════════ RENDER ═════════════ */
 function render(t){
   var w=cv.clientWidth,h=cv.clientHeight;
@@ -3621,22 +3687,7 @@ function render(t){
   }
 
   // shots
-  for(var s3=0;s3<shots.length;s3++){
-    var sh2=shots[s3];
-    if(sh2.boomer){
-      ctx.save(); ctx.translate(sh2.x,sh2.y); ctx.rotate(sh2.spin);
-      ctx.fillStyle=sh2.col;
-      ctx.fillRect(-sh2.r*1.6,-sh2.r*.5,sh2.r*3.2,sh2.r);
-      ctx.fillStyle=shade(sh2.col,40);
-      ctx.fillRect(-sh2.r*1.6,-sh2.r*.5,sh2.r*3.2,sh2.r*.32);
-      ctx.restore();
-    } else {
-      var g2=ctx.createRadialGradient(sh2.x-sh2.r*.3,sh2.y-sh2.r*.3,sh2.r*.1,sh2.x,sh2.y,sh2.r);
-      g2.addColorStop(0,shade(sh2.col,70)); g2.addColorStop(1,sh2.col);
-      ctx.fillStyle=g2;
-      ctx.beginPath(); ctx.arc(sh2.x,sh2.y,sh2.r,0,6.283); ctx.fill();
-    }
-  }
+  for(var s3=0;s3<shots.length;s3++)drawShotArt(ctx,shots[s3]);
 
   // fx
   for(var f2=0;f2<fx.length;f2++){
