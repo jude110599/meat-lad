@@ -1,0 +1,36 @@
+name: Repair Robot Theme
+on:
+  push:
+    paths:
+      - 'REPAIR_ROBOT_THEME'
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair malformed robot script
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p=Path('pantry.html')
+          s=p.read_text(encoding='utf-8')
+          # Move drawBugArt out of the Firebase external script tag so it actually executes.
+          pat=r'(<script src="https://www\.gstatic\.com/firebasejs/10\.7\.0/firebase-app-compat\.js">)(function drawBugArt\(.*?\n</script>)'
+          m=re.search(pat,s,re.S)
+          if m:
+              fn=m.group(2)[len(m.group(1)):-len('</script>')]
+              s=s[:m.start()] + '<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script><script>' + fn + '</script>' + s[m.end():]
+          p.write_text(s,encoding='utf-8')
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f REPAIR_ROBOT_THEME .github/workflows/fix-robot-theme.yml
+          git add pantry.html
+          git add -u REPAIR_ROBOT_THEME .github/workflows/fix-robot-theme.yml
+          git commit -m 'fix: repair robot alien script' || exit 0
+          git push
