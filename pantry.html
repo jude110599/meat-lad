@@ -342,6 +342,21 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .sknode .sn{font-weight:800;font-size:13px}
 .sknode .sd{font-size:11.5px;color:var(--dim);margin-top:3px;line-height:1.45}
 .sknode .sc{font-size:11.5px;color:var(--gold);font-weight:800;margin-top:5px}
+.achgrp{margin:14px 0 8px}
+.achgrp:first-child{margin-top:0}
+.achhdr{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;font-weight:800;margin-bottom:8px;padding-bottom:5px;border-bottom:1.5px solid var(--line)}
+.achnode{background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--bg4);
+  border-radius:6px;padding:9px 11px;display:flex;gap:10px;align-items:flex-start;margin-bottom:7px}
+.achnode.owned{background:linear-gradient(100deg,var(--bg3),var(--bg2));box-shadow:0 0 0 1px rgba(232,168,56,.2)}
+.achnode.dim{opacity:.55}
+.achnode canvas{flex:none;margin-top:1px}
+.achnode .sn{font-weight:800;font-size:13px}
+.achnode .sd{font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.achnode .achbar{width:100%;height:6px;border-radius:4px;background:var(--bg1);
+  border:1px solid var(--line);margin-top:6px;overflow:hidden}
+.achnode .achbarfill{height:100%;background:var(--honey)}
+.achnode .achbartxt{font-size:10px;color:var(--dim);margin-top:3px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -666,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.36.0";
+var VERSION="1.37.0";
 var CHANGELOG=[
-  {v:"1.36.0",d:"latest",items:[
+  {v:"1.37.0",d:"latest",items:[
+    "REDESIGNED ACHIEVEMENTS AND THE SKILL TREE. Achievements are grouped into Runs/Combat/Collection/Mastery, each with its own colour and icon, and every progress-based one (pop counts, jar totals, boss kills, map completion, tower mastery) now shows a real progress bar instead of just locked-or-not. The skill tree is numbered and colour-coded per branch to actually read as a tree instead of a plain list"
+  ]},
+  {v:"1.36.0",items:[
     "A REAL SETTINGS MENU - see your progress at a glance (level, unlocks, tokens, jars, crumbs, wins) and, if you ever want to, wipe Pantry Panic's save completely and start fresh (with a proper \"are you sure\" step first - it's permanent)",
     "THE TITLE SCREEN'S ICON ROW IS BIGGER AND LABELLED NOW - Towers, Achievements, Shop, Skills, Almanac, What's New and the new Settings button all have visible text under them instead of relying on a hover tooltip to know what they do"
   ]},
@@ -1798,6 +1816,8 @@ var SKILLS=[
   {id:"disc1",  br:"Wealth",  n:"Bulk Buying",     c:3, d:"Towers cost 10% less."},
   {id:"disc2",  br:"Wealth",  n:"Trade Account",   c:5, d:"Towers cost another 12% less.", need:"disc1"}
 ];
+var SKILL_BRANCH_COL={Wealth:{col:"#e8a838",icon:"econ"},Popping:{col:"#c4442e",icon:"dmg"},
+  Defence:{col:"#7bd94a",icon:"armor"},Heroes:{col:"#a880d0",icon:"range"}};
 function hasSkill(id){ return save.skills.indexOf(id)>=0; }
 function skillCashBonus(){ return (hasSkill("cash1")?150:0)+(hasSkill("cash2")?350:0)+(hasSkill("cash3")?800:0); }
 function skillLifeBonus(){ return (hasSkill("life1")?25:0)+(hasSkill("life2")?50:0); }
@@ -1809,30 +1829,52 @@ function skillHeroStart(){ return hasSkill("hero1")?3:1; }
 function skillHeroXp(){ return hasSkill("hero2")?1.4:1; }
 
 /* ═════════════ ACHIEVEMENTS ═════════════ */
+var ACH_CATS={
+  Runs:      {col:"#e8a838", icon:"dmg"},
+  Combat:    {col:"#c4442e", icon:"splash"},
+  Collection:{col:"#7bd94a", icon:"econ"},
+  Mastery:   {col:"#a880d0", icon:"range"}
+};
 var ACHIEVEMENTS=[
-  {id:"first_win", n:"Pantry Saved",   d:"Win your first run.",                    chk:function(){ return save.wins>=1; }},
-  {id:"pop100",     n:"Pest Control",   d:"Pop 100 bugs in total.",                 chk:function(){ return save.pops>=100; }},
-  {id:"pop1000",    n:"Exterminator",   d:"Pop 1,000 bugs in total.",               chk:function(){ return save.pops>=1000; }},
-  {id:"pop10000",   n:"Apocalypse",     d:"Pop 10,000 bugs in total.",              chk:function(){ return save.pops>=10000; }},
-  {id:"hard_win",   n:"Nerves of Steel",d:"Win a run on Hard.",                     chk:function(){ return (save.hardWins||0)>=1; }},
-  {id:"perfect",    n:"Not a Scratch",  d:"Win a run without losing a single life.",chk:function(){ return (save.perfectWins||0)>=1; }},
-  {id:"all_maps",   n:"Every Shelf",    d:"Beat every larder in the pantry.",       chk:function(){
+  {id:"first_win", cat:"Runs", n:"Pantry Saved",   d:"Win your first run.",                    chk:function(){ return save.wins>=1; }},
+  {id:"pop100",     cat:"Combat", n:"Pest Control",   d:"Pop 100 bugs in total.",                 chk:function(){ return save.pops>=100; },
+    prog:function(){ return {cur:save.pops,target:100}; }},
+  {id:"pop1000",    cat:"Combat", n:"Exterminator",   d:"Pop 1,000 bugs in total.",               chk:function(){ return save.pops>=1000; },
+    prog:function(){ return {cur:save.pops,target:1000}; }},
+  {id:"pop10000",   cat:"Combat", n:"Apocalypse",     d:"Pop 10,000 bugs in total.",              chk:function(){ return save.pops>=10000; },
+    prog:function(){ return {cur:save.pops,target:10000}; }},
+  {id:"hard_win",   cat:"Runs", n:"Nerves of Steel",d:"Win a run on Hard.",                     chk:function(){ return (save.hardWins||0)>=1; }},
+  {id:"perfect",    cat:"Runs", n:"Not a Scratch",  d:"Win a run without losing a single life.",chk:function(){ return (save.perfectWins||0)>=1; }},
+  {id:"all_maps",   cat:"Collection", n:"Every Shelf",    d:"Beat every larder in the pantry.",       chk:function(){
     var seen={}; save.mapsBeat.forEach(function(k){ seen[k.split(":")[0]]=1; });
-    return Object.keys(seen).length>=MAPS.length; }},
-  {id:"all_heroes", n:"Full Roster",    d:"Play a run with every hero.",            chk:function(){ return save.heroUsed.length>=HEROES.length; }},
-  {id:"jars10",     n:"Jar Collector",  d:"Earn 10 Preserve Jars in total.",        chk:function(){ return (save.jarsTotal||0)>=10; }},
-  {id:"skillmaster",n:"Skill Master",   d:"Unlock every skill in the pantry.",      chk:function(){ return save.skills.length>=SKILLS.length; }},
-  {id:"insane_win", n:"Beyond Reason",  d:"Win a run on Insane.",                   chk:function(){ return (save.insaneWins||0)>=1; }},
-  {id:"boss25",     n:"Boss Buster",    d:"Pop 25 bosses in total.",                chk:function(){ return (save.bossPops||0)>=25; }},
-  {id:"boss_roster",n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; }},
-  {id:"tower_grand",n:"Grand Master",   d:"Get any tower to level 10.",             chk:function(){
-    var m=save.towerMaxLvl||{}; for(var k in m)if(m[k]>=10)return true; return false; }},
-  {id:"tower_all",  n:"Master Of The Pantry",d:"Get every tower to level 10 at least once.",chk:function(){
-    var m=save.towerMaxLvl||{}; return TOWERS.every(function(T){ return (m[T.id]||0)>=10; }); }},
-  {id:"endgame_maps",n:"Off The Map",   d:"Beat the three hardest larders: Spice Cabinet Snake, The Long Cold Aisle and Pantry's End.",chk:function(){
+    return Object.keys(seen).length>=MAPS.length; },
+    prog:function(){ var seen={}; save.mapsBeat.forEach(function(k){ seen[k.split(":")[0]]=1; });
+      return {cur:Object.keys(seen).length,target:MAPS.length}; }},
+  {id:"all_heroes", cat:"Collection", n:"Full Roster",    d:"Play a run with every hero.",            chk:function(){ return save.heroUsed.length>=HEROES.length; },
+    prog:function(){ return {cur:save.heroUsed.length,target:HEROES.length}; }},
+  {id:"jars10",     cat:"Collection", n:"Jar Collector",  d:"Earn 10 Preserve Jars in total.",        chk:function(){ return (save.jarsTotal||0)>=10; },
+    prog:function(){ return {cur:save.jarsTotal||0,target:10}; }},
+  {id:"skillmaster",cat:"Mastery", n:"Skill Master",   d:"Unlock every skill in the pantry.",      chk:function(){ return save.skills.length>=SKILLS.length; },
+    prog:function(){ return {cur:save.skills.length,target:SKILLS.length}; }},
+  {id:"insane_win", cat:"Runs", n:"Beyond Reason",  d:"Win a run on Insane.",                   chk:function(){ return (save.insaneWins||0)>=1; }},
+  {id:"boss25",     cat:"Combat", n:"Boss Buster",    d:"Pop 25 bosses in total.",                chk:function(){ return (save.bossPops||0)>=25; },
+    prog:function(){ return {cur:save.bossPops||0,target:25}; }},
+  {id:"boss_roster",cat:"Collection", n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; },
+    prog:function(){ return {cur:(save.bossesSeen||[]).length,target:4}; }},
+  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Get any tower to level 10.",             chk:function(){
+    var m=save.towerMaxLvl||{}; for(var k in m)if(m[k]>=10)return true; return false; },
+    prog:function(){ var m=save.towerMaxLvl||{},best=0; for(var k in m)if(m[k]>best)best=m[k]; return {cur:best,target:10}; }},
+  {id:"tower_all",  cat:"Mastery", n:"Master Of The Pantry",d:"Get every tower to level 10 at least once.",chk:function(){
+    var m=save.towerMaxLvl||{}; return TOWERS.every(function(T){ return (m[T.id]||0)>=10; }); },
+    prog:function(){ var m=save.towerMaxLvl||{}; var n=TOWERS.filter(function(T){ return (m[T.id]||0)>=10; }).length;
+      return {cur:n,target:TOWERS.length}; }},
+  {id:"endgame_maps",cat:"Runs", n:"Off The Map",   d:"Beat the three hardest larders: Spice Cabinet Snake, The Long Cold Aisle and Pantry's End.",chk:function(){
     var need=["snake","icebox","finale"]; var seen={};
     save.mapsBeat.forEach(function(k){ seen[k.split(":")[0]]=1; });
-    return need.every(function(id){ return seen[id]; }); }}
+    return need.every(function(id){ return seen[id]; }); },
+    prog:function(){ var need=["snake","icebox","finale"]; var seen={};
+      save.mapsBeat.forEach(function(k){ seen[k.split(":")[0]]=1; });
+      return {cur:need.filter(function(id){ return seen[id]; }).length,target:3}; }}
 ];
 function checkAchievements(){
   ACHIEVEMENTS.forEach(function(A){
@@ -4386,15 +4428,27 @@ function renderSkills(){
   var branches={};
   SKILLS.forEach(function(S){ (branches[S.br]=branches[S.br]||[]).push(S); });
   Object.keys(branches).forEach(function(br){
-    var h=document.createElement("div"); h.className="sect"; h.textContent=br; l.appendChild(h);
+    var bc=SKILL_BRANCH_COL[br]||{col:"var(--honey)",icon:"dmg"};
+    var ownedInBr=branches[br].filter(function(S){ return hasSkill(S.id); }).length;
+    var h=document.createElement("div"); h.className="achhdr"; h.style.color=bc.col;
+    h.textContent=br+" ("+ownedInBr+"/"+branches[br].length+")";
+    l.appendChild(h);
     var wrap=document.createElement("div"); wrap.className="skgrid";
-    branches[br].forEach(function(S){
+    branches[br].forEach(function(S,idx){
       var owned=hasSkill(S.id);
       var needOk=!S.need||hasSkill(S.need);
       var d=document.createElement("div");
-      d.className="sknode"+(owned?" owned":"")+((!needOk||save.jars<S.c)&&!owned?" locked":"");
-      d.innerHTML='<div class="sn">'+S.n+(owned?" ✓":"")+'</div><div class="sd">'+S.d+'</div>'+
+      d.className="achnode"+(owned?" owned":"")+((!needOk||save.jars<S.c)&&!owned?" dim":"");
+      d.style.borderLeftColor=owned?bc.col:"var(--bg4)";
+      d.style.cursor=(!owned&&needOk&&save.jars>=S.c)?"pointer":"default";
+      var ic=document.createElement("canvas"); ic.width=34; ic.height=34;
+      var gctx=ic.getContext("2d"); gctx.scale(2,2); gctx.translate(8.5,8.5);
+      drawUpgradeIcon(gctx,bc.icon,7,owned?bc.col:"#5a4f3e");
+      d.appendChild(ic);
+      var info=document.createElement("div"); info.style.flex="1";
+      info.innerHTML='<div class="sn">'+(idx+1)+". "+S.n+(owned?" ✓":"")+'</div><div class="sd">'+S.d+'</div>'+
         (owned?'':'<div class="sc">'+S.c+' jar'+(S.c>1?"s":"")+(needOk?"":" · needs the one above")+'</div>');
+      d.appendChild(info);
       if(!owned&&needOk&&save.jars>=S.c){
         d.onclick=function(){
           sfx.up(); save.jars-=S.c; save.skills.push(S.id); queueSave(); renderSkills();
@@ -4409,12 +4463,36 @@ function renderSkills(){
 function renderAchievements(){
   $("achCount").textContent=save.achUnlocked.length+"/"+ACHIEVEMENTS.length;
   var l=$("achList"); l.innerHTML="";
-  ACHIEVEMENTS.forEach(function(A){
-    var got=save.achUnlocked.indexOf(A.id)>=0;
-    var d=document.createElement("div");
-    d.className="sknode"+(got?" owned":" locked");
-    d.innerHTML='<div class="sn">'+A.n+(got?" ✓":"")+'</div><div class="sd">'+A.d+'</div>';
-    l.appendChild(d);
+  var byCat={};
+  ACHIEVEMENTS.forEach(function(A){ (byCat[A.cat]=byCat[A.cat]||[]).push(A); });
+  Object.keys(ACH_CATS).forEach(function(catName){
+    var list=byCat[catName]; if(!list||!list.length)return;
+    var cc=ACH_CATS[catName];
+    var grp=document.createElement("div"); grp.className="achgrp";
+    var hdr=document.createElement("div"); hdr.className="achhdr"; hdr.style.color=cc.col;
+    var gotInCat=list.filter(function(A){ return save.achUnlocked.indexOf(A.id)>=0; }).length;
+    hdr.textContent=catName+" ("+gotInCat+"/"+list.length+")";
+    grp.appendChild(hdr);
+    list.forEach(function(A){
+      var got=save.achUnlocked.indexOf(A.id)>=0;
+      var d=document.createElement("div");
+      d.className="achnode"+(got?" owned":"")+(!got&&!A.prog?" dim":"");
+      d.style.borderLeftColor=got?cc.col:"var(--bg4)";
+      var ic=document.createElement("canvas"); ic.width=34; ic.height=34;
+      var gctx=ic.getContext("2d"); gctx.scale(2,2); gctx.translate(8.5,8.5);
+      drawUpgradeIcon(gctx,cc.icon,7,got?cc.col:"#5a4f3e");
+      d.appendChild(ic);
+      var info=document.createElement("div"); info.style.flex="1";
+      info.innerHTML='<div class="sn">'+A.n+(got?" ✓":"")+'</div><div class="sd">'+A.d+'</div>';
+      if(!got&&A.prog){
+        var p=A.prog(); var pct=Math.min(100,Math.round(p.cur/p.target*100));
+        info.innerHTML+='<div class="achbar"><div class="achbarfill" style="width:'+pct+'%"></div></div>'+
+          '<div class="achbartxt">'+Math.min(p.cur,p.target)+' / '+p.target+'</div>';
+      }
+      d.appendChild(info);
+      grp.appendChild(d);
+    });
+    l.appendChild(grp);
   });
 }
 var shopCat2="emote";
