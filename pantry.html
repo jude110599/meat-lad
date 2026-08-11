@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.41.0";
+var VERSION="1.41.1";
 var CHANGELOG=[
-  {v:"1.41.0",d:"latest",items:[
+  {v:"1.41.1",d:"latest",items:[
+    "BUGS GET A REAL DEATH ANIMATION NOW instead of just vanishing the instant they pop - their own sprite squashes flat, spins and fades over a beat, on top of the existing particle burst"
+  ]},
+  {v:"1.41.0",items:[
     "SNIPER BEAMS AND CONE ATTACKS ARE TINTED PER-TOWER NOW instead of every single one being the same generic grey-white flash. Freezer Ray's beam actually reads as icy blue, Oven Blast's cone as fiery orange, Corkscrew's shot as wine-red, and so on for every cone/beam tower and hero - the beam also got a bit more visual weight with a soft outer glow"
   ]},
   {v:"1.40.0",items:[
@@ -3105,6 +3108,13 @@ function popBug(b,byHero){
   } else {
     fx.push({x:pp.x,y:pp.y,t:0,life:.3,col:B.col,r:b.r});
     sparkBurst(pp.x,pp.y,B.col,5,90);
+    /* the bug used to just vanish the instant it died, with only a generic
+       particle burst left behind - now its own sprite lingers for a beat,
+       squashed flat and spinning away as it fades, a proper "died" beat
+       instead of a pop-and-disappear. Pushed as an fx entry (not kept in
+       the live bugs array) so targeting/collision/wave-clear logic never
+       has to know or care about it. */
+    fx.push({deathBug:true,kind:b.k,x:pp.x,y:pp.y,r:b.r,wob:b.wob,ang:rnd(0,6.28),t:0,life:.35});
   }
   if(B.child){
     for(var i=0;i<(B.count||2);i++)
@@ -3724,7 +3734,14 @@ function render(t){
   for(var f2=0;f2<fx.length;f2++){
     var x2=fx[f2],k2=x2.t/x2.life;
     ctx.globalAlpha=1-k2;
-    if(x2.beam){
+    if(x2.deathBug){
+      ctx.save(); ctx.translate(x2.x,x2.y);
+      ctx.rotate(x2.ang+k2*3.2);
+      ctx.scale(1+k2*.3,Math.max(.08,1-k2*.95));
+      ctx.globalAlpha=1-k2*k2;
+      drawBugArt(ctx,x2.kind,t,x2.r,x2.wob);
+      ctx.restore();
+    } else if(x2.beam){
       ctx.strokeStyle=x2.col||"#e8dcc4"; ctx.lineWidth=2.6;
       ctx.beginPath(); ctx.moveTo(x2.x1,x2.y1); ctx.lineTo(x2.x2,x2.y2); ctx.stroke();
       ctx.globalAlpha=(1-k2)*.5; ctx.lineWidth=6;
