@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.39.0";
+var VERSION="1.39.1";
 var CHANGELOG=[
-  {v:"1.39.0",d:"latest",items:[
+  {v:"1.39.1",d:"latest",items:[
+    "BUGS FLASH WHITE WHEN THEY'RE HIT instead of just silently losing health - every landed hit now has a visible moment of impact on the bug itself, not just the floating damage number"
+  ]},
+  {v:"1.39.0",items:[
     "PROJECTILES NOW LOOK LIKE WHAT FIRED THEM. Crumb Flicker throws an actual crumb, Toaster launches a toast slice, Honey Pot drips a honey teardrop, Salt Shaker scatters grains, Cheese Grater flings shreds, Soup Ladle lobs a splash of soup, Blender Vortex spins out chunks, Pepper Grinder puffs dark flecks - instead of every tower firing the same recoloured blob"
   ]},
   {v:"1.38.1",items:[
@@ -3107,6 +3110,7 @@ function damageBug(b,dmg,pierceArm,tw){
   if(b.arm>0&&!pierceArm)dmg=Math.max(1,dmg-b.arm);
   if(b.weakT>0)dmg=Math.round(dmg*(1+b.weak));
   b.hp-=dmg;
+  b.hitT=.1;
   var bp=posAt(b.d);
   sparkBurst(bp.x,bp.y,"#fff8e8",3,65);
   dmgNum(bp.x,bp.y,dmg,dmg>=15||!!BUGS[b.k].boss);
@@ -3306,6 +3310,7 @@ function update(dt){
     var b=bugs[i];
     if(b.slowT>0){ b.slowT-=dt; if(b.slowT<=0)b.slow=1; }
     if(b.weakT>0)b.weakT-=dt;
+    if(b.hitT>0)b.hitT-=dt;
     if(b.burnT>0){ b.burnT-=dt; b.hp-=b.burn*dt;
       if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,1); } popBug(b); continue; } }
     b.d+=b.spd*b.slow*dt;
@@ -3667,6 +3672,13 @@ function render(t){
       if(b3.slowT>0){ ctx.globalAlpha=.85; }
       drawBugArt(ctx,b3.k,t,b3.r,b3.wob);
       ctx.globalAlpha=1;
+      if(b3.hitT>0){
+        ctx.globalAlpha=Math.min(1,b3.hitT/.1)*.75;
+        ctx.globalCompositeOperation="lighter";
+        ctx.fillStyle="#fff";
+        ctx.beginPath(); ctx.arc(0,0,b3.r*.8,0,6.283); ctx.fill();
+        ctx.globalCompositeOperation="source-over"; ctx.globalAlpha=1;
+      }
       ctx.restore();
       if(b3.hp<b3.max){
         var pc=clamp(b3.hp/b3.max,0,1);
