@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.41.1";
+var VERSION="1.42.0";
 var CHANGELOG=[
-  {v:"1.41.1",d:"latest",items:[
+  {v:"1.42.0",d:"latest",items:[
+    "OVEN BLAST, MOUSE TRAP AND MIXER BOT GET BESPOKE FIRE ANIMATIONS instead of only the generic recoil every tower shares - the oven's door glow blooms wide on every shot, the trap's jaws snap sharply shut instead of just wobbling, and the mixer's blades spin dramatically faster right as it fires"
+  ]},
+  {v:"1.41.1",items:[
     "BUGS GET A REAL DEATH ANIMATION NOW instead of just vanishing the instant they pop - their own sprite squashes flat, spins and fades over a beat, on top of the existing particle burst"
   ]},
   {v:"1.41.0",items:[
@@ -2030,8 +2033,8 @@ function eyes(c,x,y,r,look){
 }
 
 /* ═════════════ TOWER ART ═════════════ */
-function drawTowerArt(c,id,t,ang){
-  ang=ang||0;
+function drawTowerArt(c,id,t,ang,fireK){
+  ang=ang||0; fireK=fireK||0;
   var T=byId(TOWERS,id);
   if(id==="flicker"){
     cyl(c,0,10,17,13,"#6b543a");
@@ -2166,7 +2169,7 @@ function drawTowerArt(c,id,t,ang){
   } else if(id==="mixer"){
     cyl(c,0,13,22,18,"#7a5c3a");
     orb(c,0,-3,11,T.col,.85);
-    var sp=t*10;
+    var sp=t*(10+fireK*34);
     c.save(); c.rotate(sp);
     c.strokeStyle=shade(T.col,-50); c.lineWidth=2.2; c.lineCap="round";
     for(var bi=0;bi<3;bi++){ c.save(); c.rotate(bi/3*6.283);
@@ -2181,10 +2184,13 @@ function drawTowerArt(c,id,t,ang){
     og.addColorStop(0,shade(T.col,-50)); og.addColorStop(.4,shade(T.col,20)); og.addColorStop(1,shade(T.col,-55));
     c.fillStyle=og; c.fillRect(-18,-16,36,30);
     c.fillStyle="#2a1c12"; c.fillRect(-13,-10,26,18);
-    var glow=.4+Math.abs(Math.sin(t*3))*.35;
-    c.fillStyle="rgba(255,150,60,"+glow+")";
-    c.beginPath(); c.ellipse(0,0,9,7,0,0,6.283); c.fill();
-    c.fillStyle="#1a120c"; c.fillRect(-16,-16,32,4);
+    /* the door swings visibly open on a firing pulse instead of just an
+       idle flicker - the glow blooms and the dark cavity widens with it. */
+    var doorOpen=fireK*6;
+    var glow=.4+Math.abs(Math.sin(t*3))*.35+fireK*.5;
+    c.fillStyle="rgba(255,150,60,"+Math.min(1,glow)+")";
+    c.beginPath(); c.ellipse(0,0,9+doorOpen,7+doorOpen*.7,0,0,6.283); c.fill();
+    c.fillStyle="#1a120c"; c.fillRect(-16,-16-doorOpen*.4,32,4);
   } else if(id==="freezer"){
     cyl(c,0,13,16,17,"#7a8a94");
     c.save(); c.rotate(ang);
@@ -2233,7 +2239,7 @@ function drawTowerArt(c,id,t,ang){
     c.beginPath(); c.ellipse(0,10,16,5,0,0,6.283); c.fill();
     c.fillStyle="#6b543a"; c.fillRect(-14,2,28,8);
     c.save(); c.rotate(ang);
-    var jopen=.5+Math.sin(t*2)*.06;
+    var jopen=fireK>.2?Math.max(.04,.5-fireK*.62):.5+Math.sin(t*2)*.06;
     c.strokeStyle="#9a8878"; c.lineWidth=3; c.lineCap="round";
     c.beginPath(); c.moveTo(-10,2); c.lineTo(-10-Math.sin(jopen)*10,2-Math.cos(jopen)*14); c.stroke();
     c.beginPath(); c.moveTo(10,2); c.lineTo(10+Math.sin(jopen)*10,2-Math.cos(jopen)*14); c.stroke();
@@ -3662,7 +3668,7 @@ function render(t){
       ctx.translate(0,Math.sin(t*2.1+twPhase)*1.2);
       ctx.translate(-Math.cos(en.o.ang||0)*fireGlow*4,-Math.sin(en.o.ang||0)*fireGlow*4);
       var twScale=1+fireGlow*.08; ctx.scale(twScale,twScale);
-      drawTowerArt(ctx,en.o.id,t,en.o.ang);
+      drawTowerArt(ctx,en.o.id,t,en.o.ang,fireGlow);
       ctx.restore();
       var tot=en.o.t1+en.o.t2+en.o.t3;
       if(tot){
