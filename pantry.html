@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.43.0";
+var VERSION="1.44.0";
 var CHANGELOG=[
-  {v:"1.43.0",d:"latest",items:[
+  {v:"1.44.0",d:"latest",items:[
+    "TOWERS NOW VISUALLY CHANGE AS YOU UPGRADE THEM - each of the 3 upgrade paths gets its own colour (gold/cyan/purple) shown as small orbiting studs around the tower that grow with the tier bought, so you can read a tower's build at a glance without opening its panel. Commit to two paths at once and the tower also gets a shared pulsing ring to show the combo is active. The tower panel's path labels now show a matching colour dot too"
+  ]},
+  {v:"1.43.0",items:[
     "EVERY SINGLE TOWER AND HERO NOW HAS ITS OWN FIRE ANIMATION - the fire-reactive treatment previously limited to a handful of towers is now on all 20 towers and all 12 heroes: muzzle flashes, sparkle bursts, splashes, flour puffs, coin pops, blade-swipe streaks, spin-up boosts and more, each matching what that specific tower or hero actually does when it attacks"
   ]},
   {v:"1.42.1",items:[
@@ -2350,6 +2353,44 @@ function drawTowerArt(c,id,t,ang,fireK){
   }
 }
 
+/* Every tower's upgrade paths get their own colour, drawn as small orbiting
+   studs (count = tier bought) so a glance at the board shows which path(s)
+   a tower has leaned into without opening its panel. Buying into a second
+   path (the game only ever allows two before the third permanently locks)
+   also gets a shared pulsing ring so a "combined" tower visibly reads as
+   more powerful than a single-path one - all done generically here rather
+   than needing bespoke art per tower per path. */
+var UPGRADE_PATH_COL=["#f0c14b","#4ec8e8","#c060e0"];
+function drawUpgradeAura(c,tw,t){
+  var tiers=[tw.t1||0,tw.t2||0,tw.t3||0];
+  var activePaths=0;
+  for(var pi=0;pi<3;pi++)if(tiers[pi]>0)activePaths++;
+  if(!activePaths)return;
+  if(activePaths>=2){
+    c.save();
+    c.globalAlpha=.28+Math.sin(t*2.4)*.1;
+    c.strokeStyle="#fff"; c.lineWidth=1.6;
+    c.beginPath(); c.arc(0,0,24+Math.sin(t*2.4)*1.5,0,6.283); c.stroke();
+    c.globalAlpha=1;
+    c.restore();
+  }
+  for(var p=0;p<3;p++){
+    if(!tiers[p])continue;
+    var baseA=p/3*6.283+t*.7;
+    for(var s=0;s<tiers[p];s++){
+      var sa=baseA+s*1.15;
+      var sr=19+s*1.6;
+      c.save();
+      c.translate(Math.cos(sa)*sr,Math.sin(sa)*sr*.7-4);
+      c.fillStyle=UPGRADE_PATH_COL[p];
+      c.beginPath(); c.arc(0,0,2.2,0,6.283); c.fill();
+      c.fillStyle="rgba(255,255,255,.5)";
+      c.beginPath(); c.arc(-.5,-.5,.8,0,6.283); c.fill();
+      c.restore();
+    }
+  }
+}
+
 /* ═════════════ HERO ART ═════════════ */
 function drawHeroArt(c,id,t,ang,fireK){
   ang=ang||0; fireK=fireK||0;
@@ -3754,6 +3795,7 @@ function render(t){
       ctx.translate(-Math.cos(en.o.ang||0)*fireGlow*4,-Math.sin(en.o.ang||0)*fireGlow*4);
       var twScale=1+fireGlow*.08; ctx.scale(twScale,twScale);
       drawTowerArt(ctx,en.o.id,t,en.o.ang,fireGlow);
+      drawUpgradeAura(ctx,en.o,t);
       ctx.restore();
       var tot=en.o.t1+en.o.t2+en.o.t3;
       if(tot){
@@ -4144,7 +4186,12 @@ function renderPanel(){
   [1,2,3].forEach(function(n){
     var idx=n-1, pathDef=allPaths[idx], tier=allTiers[idx];
     var lbl=document.createElement("div"); lbl.className="sect"; lbl.style.margin="8px 0 5px";
-    lbl.textContent=pathDef.n+" "+tier+"/5"; p.appendChild(lbl);
+    /* dot colour matches the orbiting studs drawUpgradeAura draws on the
+       tower itself, so the on-board glow and this list read as the same
+       language rather than two unrelated UIs. */
+    lbl.innerHTML='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'+
+      'background:'+UPGRADE_PATH_COL[idx]+';margin-right:6px"></span>'+pathDef.n+" "+tier+"/5";
+    p.appendChild(lbl);
     if(tier>=5){
       var mx=document.createElement("button"); mx.className="ubtn max"; mx.disabled=true;
       mx.innerHTML="<b>Fully upgraded</b>"; p.appendChild(mx); return;
