@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.44.1";
+var VERSION="1.45.0";
 var CHANGELOG=[
-  {v:"1.44.1",d:"latest",items:[
+  {v:"1.45.0",d:"latest",items:[
+    "TOWER UPGRADES ACTUALLY CHANGE THE MODEL NOW, not just a ring around it - the tower's own body colour shifts toward gold/cyan/purple as you invest deeper into a path (like BTD6's Glue Gunner recolouring per tier), and each path pins a distinct badge shape (blade/bolt/burst) onto the tower instead of a floating dot. The Crumb Flicker's 'Both Hands' upgrade and the Boomerang Pin's 'Two Pins' upgrade are real double-shot mechanics now, and the model visibly grows a second flicking arm / second pin to match - more upgrades across the roster will get unique mechanics like this over time instead of flat stat stacking"
+  ]},
+  {v:"1.44.1",items:[
     "HEROES NOW SHOW THEIR LEVEL VISUALLY TOO - orbiting stars in the hero's own colour build up every 4 levels, and hitting the level 20 cap gets a pulsing gold ring so a fully-levelled hero visibly stands out on the board"
   ]},
   {v:"1.44.0",items:[
@@ -1289,7 +1292,7 @@ var TOWERS=[
      {n:"Meteor Crumb",c:13000,d:"+18 damage",f:function(s){s.dmg+=18;}}]},
    p2:{n:"Faster Hands",u:[
      {n:"Quick Wrist",c:110,d:"25% faster",f:function(s){s.cd*=.75;}},
-     {n:"Both Hands",c:320,d:"35% faster, +25 range",f:function(s){s.cd*=.65;s.rng+=25;}},
+     {n:"Both Hands",c:320,d:"Flicks with both hands now - two crumbs at once, +10 range",f:function(s){s.twin=true;s.rng+=10;}},
      {n:"Blur",c:1400,d:"Twice as fast again",f:function(s){s.cd*=.5;}},
      {n:"Lightning Wrist",c:3200,d:"35% faster again",f:function(s){s.cd*=.65;}},
      {n:"Flicker Storm",c:11000,d:"Twice as fast again, +20 range",f:function(s){s.cd*=.5;s.rng+=20;}}]},
@@ -1996,6 +1999,14 @@ function shade(hex,amt){
   var r=clamp(((n>>16)&255)+amt,0,255),g=clamp(((n>>8)&255)+amt,0,255),b=clamp((n&255)+amt,0,255);
   return "rgb("+r+","+g+","+b+")";
 }
+/* blends toward an upgrade path's colour so a tower's actual body colour
+   shifts as you invest in that path - real recolouring, not a ring drawn
+   on top of an unchanged model. */
+function mixHex(hexA,hexB,k){
+  var a=parseInt(hexA.slice(1),16),b=parseInt(hexB.slice(1),16);
+  var ar=(a>>16)&255,ag=(a>>8)&255,ab=a&255,br=(b>>16)&255,bg=(b>>8)&255,bb=b&255;
+  return "rgb("+Math.round(ar+(br-ar)*k)+","+Math.round(ag+(bg-ag)*k)+","+Math.round(ab+(bb-ab)*k)+")";
+}
 /* a shaded sphere with a ground shadow, rim light and specular - the core "3D" look */
 function orb(c,x,y,r,col,squash){
   squash=squash||1;
@@ -2045,13 +2056,35 @@ function eyes(c,x,y,r,look){
 }
 
 /* ═════════════ TOWER ART ═════════════ */
-function drawTowerArt(c,id,t,ang,fireK){
+function drawTowerArt(c,id,t,ang,fireK,tierInfo,twin){
   ang=ang||0; fireK=fireK||0;
   var T=byId(TOWERS,id);
+  if(tierInfo){
+    /* the body colour itself shifts toward whichever path you've leaned
+       into hardest, deeper the more you've bought - a real recolour of
+       the model (like BTD6's Glue Gunner) instead of a decoration bolted
+       on top of an unchanged tower. */
+    var _t1=tierInfo.t1||0,_t2=tierInfo.t2||0,_t3=tierInfo.t3||0,_tot=_t1+_t2+_t3;
+    if(_tot>0){
+      var _tiers=[_t1,_t2,_t3],_dom=0;
+      for(var _pi=1;_pi<3;_pi++)if(_tiers[_pi]>_tiers[_dom])_dom=_pi;
+      T={col:mixHex(T.col,UPGRADE_PATH_COL[_dom],Math.min(.62,_tot*.09))};
+    }
+  }
   if(id==="flicker"){
     cyl(c,0,10,17,13,"#6b543a");
     orb(c,0,-6,12,T.col);
     eyes(c,0,-8,12,ang);
+    if(twin){
+      /* the double-shot upgrade doesn't just fire faster under the hood -
+         the flicking arm itself is duplicated so the model visibly reads
+         as "throws two now" at a glance. */
+      c.save(); c.rotate(ang);
+      c.fillStyle="#8a6b46";
+      c.fillRect(6,3.6,13,5);
+      c.fillStyle=shade("#8a6b46",40); c.fillRect(6,3.6,13,1.6);
+      c.restore();
+    }
     c.save(); c.rotate(ang);
     c.fillStyle="#8a6b46";
     c.fillRect(6,-3,13,5);
@@ -2081,6 +2114,16 @@ function drawTowerArt(c,id,t,ang,fireK){
     c.beginPath(); c.roundRect?c.roundRect(-15,-7,30,14,7):c.rect(-15,-7,30,14); c.fill();
     c.fillStyle=shade(T.col,-30);
     c.fillRect(-21,-2.6,7,5.2); c.fillRect(14,-2.6,7,5.2);
+    if(twin){
+      /* Two Pins throws a second pin now, so a second pin sits loaded
+         alongside the first instead of the model staying single-barrel. */
+      c.save(); c.translate(0,11); c.scale(.72,.72);
+      c.fillStyle=g;
+      c.beginPath(); c.roundRect?c.roundRect(-15,-7,30,14,7):c.rect(-15,-7,30,14); c.fill();
+      c.fillStyle=shade(T.col,-30);
+      c.fillRect(-21,-2.6,7,5.2); c.fillRect(14,-2.6,7,5.2);
+      c.restore();
+    }
     c.restore();
   } else if(id==="salt"){
     cyl(c,0,12,19,22,T.col);
@@ -2364,6 +2407,7 @@ function drawTowerArt(c,id,t,ang,fireK){
    more powerful than a single-path one - all done generically here rather
    than needing bespoke art per tower per path. */
 var UPGRADE_PATH_COL=["#f0c14b","#4ec8e8","#c060e0"];
+var UPGRADE_BADGE_POS=[[-16,-15],[16,-15],[0,17]];
 function drawUpgradeAura(c,tw,t){
   var tiers=[tw.t1||0,tw.t2||0,tw.t3||0];
   var activePaths=0;
@@ -2377,20 +2421,29 @@ function drawUpgradeAura(c,tw,t){
     c.globalAlpha=1;
     c.restore();
   }
+  /* a fixed accessory pinned to the tower per path invested, not a ring of
+     identical dots drifting around it - a small blade badge for the
+     damage path, a bolt fin for the speed path, a burst star for the
+     utility path, each growing with the tier bought. */
   for(var p=0;p<3;p++){
     if(!tiers[p])continue;
-    var baseA=p/3*6.283+t*.7;
-    for(var s=0;s<tiers[p];s++){
-      var sa=baseA+s*1.15;
-      var sr=19+s*1.6;
-      c.save();
-      c.translate(Math.cos(sa)*sr,Math.sin(sa)*sr*.7-4);
-      c.fillStyle=UPGRADE_PATH_COL[p];
-      c.beginPath(); c.arc(0,0,2.2,0,6.283); c.fill();
-      c.fillStyle="rgba(255,255,255,.5)";
-      c.beginPath(); c.arc(-.5,-.5,.8,0,6.283); c.fill();
-      c.restore();
+    var pos=UPGRADE_BADGE_POS[p], sz=1+tiers[p]*.32;
+    c.save(); c.translate(pos[0],pos[1]); c.scale(sz,sz);
+    c.fillStyle=UPGRADE_PATH_COL[p];
+    c.strokeStyle="rgba(0,0,0,.35)"; c.lineWidth=.6;
+    if(p===0){
+      c.beginPath(); c.moveTo(0,-5); c.lineTo(3.4,3); c.lineTo(0,1.4); c.lineTo(-3.4,3); c.closePath();
+      c.fill(); c.stroke();
+    } else if(p===1){
+      c.beginPath(); c.moveTo(-2.6,-5); c.lineTo(1.4,-1); c.lineTo(-1,-1); c.lineTo(2.6,5); c.lineTo(-1.6,.6); c.lineTo(1,.6); c.closePath();
+      c.fill(); c.stroke();
+    } else {
+      c.beginPath();
+      for(var sp=0;sp<8;sp++){ var sa=sp/8*6.283,sr2=sp%2?2:4.4;
+        c[sp?"lineTo":"moveTo"](Math.cos(sa)*sr2,Math.sin(sa)*sr2); }
+      c.closePath(); c.fill(); c.stroke();
     }
+    c.restore();
   }
 }
 
@@ -3825,7 +3878,7 @@ function render(t){
       ctx.translate(0,Math.sin(t*2.1+twPhase)*1.2);
       ctx.translate(-Math.cos(en.o.ang||0)*fireGlow*4,-Math.sin(en.o.ang||0)*fireGlow*4);
       var twScale=1+fireGlow*.08; ctx.scale(twScale,twScale);
-      drawTowerArt(ctx,en.o.id,t,en.o.ang,fireGlow);
+      drawTowerArt(ctx,en.o.id,t,en.o.ang,fireGlow,en.o,en.o.s&&en.o.s.twin);
       drawUpgradeAura(ctx,en.o,t);
       ctx.restore();
       var tot=en.o.t1+en.o.t2+en.o.t3;
