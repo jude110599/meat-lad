@@ -681,9 +681,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.37.0";
+var VERSION="1.38.0";
 var CHANGELOG=[
-  {v:"1.37.0",d:"latest",items:[
+  {v:"1.38.0",d:"latest",items:[
+    "YOUR HERO NO LONGER SPAWNS STUCK TO YOUR CURSOR THE SECOND A RUN STARTS. It's a slot at the top of the shop now, same as a tower - tap it (or your placed hero) whenever you're ready instead of it following your mouse from the first frame",
+    "BALANCE PASS: the Popping skill branch was a flat +4 damage to every single tower and hero at once for just 9 jars, which especially trivialised low-damage towers - cut to +2, and its range bonus trimmed too. Bugs also gain health faster round over round now. If the game was still feeling too easy after the last tuning pass, this should bite more"
+  ]},
+  {v:"1.37.0",items:[
     "REDESIGNED ACHIEVEMENTS AND THE SKILL TREE. Achievements are grouped into Runs/Combat/Collection/Mastery, each with its own colour and icon, and every progress-based one (pop counts, jar totals, boss kills, map completion, tower mastery) now shows a real progress bar instead of just locked-or-not. The skill tree is numbered and colour-coded per branch to actually read as a tree instead of a plain list"
   ]},
   {v:"1.36.0",items:[
@@ -1807,8 +1811,8 @@ var SKILLS=[
   {id:"cash2",  br:"Wealth",  n:"Petty Cash",      c:2, d:"Another 350 to start.", need:"cash1"},
   {id:"cash3",  br:"Wealth",  n:"Family Fortune",  c:4, d:"Another 800 to start.", need:"cash2"},
   {id:"pop1",   br:"Popping", n:"Firm Grip",       c:1, d:"Every tower does 1 more damage."},
-  {id:"pop2",   br:"Popping", n:"Follow Through",  c:3, d:"Another 1 damage, and +8% range.", need:"pop1"},
-  {id:"pop3",   br:"Popping", n:"Kitchen Legend",  c:5, d:"Another 2 damage, and 10% faster.", need:"pop2"},
+  {id:"pop2",   br:"Popping", n:"Follow Through",  c:3, d:"+6% range for every tower.", need:"pop1"},
+  {id:"pop3",   br:"Popping", n:"Kitchen Legend",  c:5, d:"Another 1 damage, and 10% faster.", need:"pop2"},
   {id:"life1",  br:"Defence", n:"Thick Shelves",   c:1, d:"Start with 25 more lives."},
   {id:"life2",  br:"Defence", n:"Sealed Jars",     c:3, d:"Another 50 lives.", need:"life1"},
   {id:"hero1",  br:"Heroes",  n:"Head Start",      c:2, d:"Your hero starts at level 3."},
@@ -1821,8 +1825,14 @@ var SKILL_BRANCH_COL={Wealth:{col:"#e8a838",icon:"econ"},Popping:{col:"#c4442e",
 function hasSkill(id){ return save.skills.indexOf(id)>=0; }
 function skillCashBonus(){ return (hasSkill("cash1")?150:0)+(hasSkill("cash2")?350:0)+(hasSkill("cash3")?800:0); }
 function skillLifeBonus(){ return (hasSkill("life1")?25:0)+(hasSkill("life2")?50:0); }
-function skillDmgBonus(){ return (hasSkill("pop1")?1:0)+(hasSkill("pop2")?1:0)+(hasSkill("pop3")?2:0); }
-function skillRngMult(){ return 1+(hasSkill("pop2")?.08:0); }
+/* the Popping branch used to be a flat +4 damage to EVERY tower and hero
+   at once, stacked with +8% range and 10% faster - a cheap (9 jars total),
+   universal, always-on multiplier that trivialised anything with low base
+   damage. Halved the flat damage total (now +2) and trimmed the range
+   bonus; the speed bonus stays since it scales proportionally instead of
+   disproportionately helping 1-damage towers. */
+function skillDmgBonus(){ return (hasSkill("pop1")?1:0)+(hasSkill("pop3")?1:0); }
+function skillRngMult(){ return 1+(hasSkill("pop2")?.06:0); }
 function skillCdMult(){ return hasSkill("pop3")?.9:1; }
 function skillCostMult(){ return (hasSkill("disc1")?.9:1)*(hasSkill("disc2")?.88:1); }
 function skillHeroStart(){ return hasSkill("hero1")?3:1; }
@@ -2739,8 +2749,6 @@ function startRun(mapIdx,diffIdx,heroId){
   $("panel").classList.add("hide");
   mSetMode("play");
   renderShop(); updateHud(); resize();
-  toast("Place your hero for free");
-  placing=true; buyId="__hero";
 }
 
 /* the meta-progression that gates the tower roster: every win is one
@@ -3048,7 +3056,7 @@ function startWave(){
 }
 function spawnBug(kind,d){
   var B=BUGS[kind],D=DIFFS[curDiff];
-  var hpMult=D.hp*(1+wave*.07);
+  var hpMult=D.hp*(1+wave*.085);
   bugs.push({id:nextBugId++,k:kind,d:d||0,
     hp:Math.max(1,Math.round(B.hp*hpMult)),max:Math.max(1,Math.round(B.hp*hpMult)),
     spd:B.spd*D.spd,r:B.r,fly:B.fly,arm:B.arm||0,
@@ -3797,6 +3805,29 @@ $("heroBoxBuy").onclick=function(){
 };
 function renderShop(){
   var list=$("shopList"); list.innerHTML="";
+  /* the hero used to auto-arm placement the instant a run started, so it
+     followed your cursor around before you'd even looked at the board -
+     now it just sits here as its own slot like a tower, and you place it
+     (or check on it) whenever you're ready. */
+  var myH=myHero();
+  var heroDef=byId(HEROES,chosenHero);
+  var hSlot=document.createElement("div");
+  hSlot.className="tcard"+(buyId==="__hero"?" sel":"");
+  hSlot.setAttribute("data-tid","__hero");
+  var hIcon=iconFor("h",chosenHero,36);
+  hIcon.style.boxShadow="0 0 0 2px "+heroDef.col+"99 inset";
+  hSlot.appendChild(hIcon);
+  var hWrap=document.createElement("div"); hWrap.className="tcinfo";
+  hWrap.innerHTML='<div class="tn">'+heroDef.n+'</div><div class="tp">'+(myH?"In the pantry":"Free")+'</div>';
+  hSlot.appendChild(hWrap);
+  hSlot.onclick=function(){
+    sfx.click();
+    if(myH){ openHeroPanel(); return; }
+    buyId="__hero"; placing=true; selTower=null;
+    $("panel").classList.add("hide");
+    markShopSel("__hero");
+  };
+  list.appendChild(hSlot);
   var sortedTowers=TOWERS.filter(function(t){ return towerUnlocked(t.id); })
     .slice().sort(function(a,b){ return CATS.indexOf(a.cat)-CATS.indexOf(b.cat); });
   var lastCat=null;
@@ -4063,7 +4094,9 @@ $("shopList").addEventListener("pointerdown",function(e){
   if(state!=="play")return;
   var card=e.target.closest?e.target.closest(".tcard[data-tid]"):null;
   if(!card)return;
-  var tid=card.getAttribute("data-tid"),T=byId(TOWERS,tid);
+  var tid=card.getAttribute("data-tid");
+  if(tid==="__hero")return; // the hero slot has its own click handler, no drag support
+  var T=byId(TOWERS,tid);
   if(cash<towerCost(T)){ toast("Not enough"); return; }
   sfx.click(); audioOn();
   buyId=tid; placing=true; selTower=null;
