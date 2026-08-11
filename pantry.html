@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.40.0";
+var VERSION="1.41.0";
 var CHANGELOG=[
-  {v:"1.40.0",d:"latest",items:[
+  {v:"1.41.0",d:"latest",items:[
+    "SNIPER BEAMS AND CONE ATTACKS ARE TINTED PER-TOWER NOW instead of every single one being the same generic grey-white flash. Freezer Ray's beam actually reads as icy blue, Oven Blast's cone as fiery orange, Corkscrew's shot as wine-red, and so on for every cone/beam tower and hero - the beam also got a bit more visual weight with a soft outer glow"
+  ]},
+  {v:"1.40.0",items:[
     "TOWERS AND HEROES IDLE-BOB NOW instead of standing perfectly still between shots - a faint sway, phase-offset per placement so a row of the same tower doesn't bob in unison",
     "BUGS POP INTO EXISTENCE NOW instead of just appearing - a quick overshoot scale-in right as they spawn, same idea as a cartoon entrance"
   ]},
@@ -3164,7 +3167,7 @@ function fireTower(tw,s,buf){
       if(bugs[i].fly&&!s.air)continue;
       damageBug(bugs[i],dmg,s.pierceArm,tw); extra--;
     }
-    fx.push({beam:true,x1:tw.x,y1:tw.y,x2:tp.x,y2:tp.y,t:0,life:.14});
+    fx.push({beam:true,x1:tw.x,y1:tw.y,x2:tp.x,y2:tp.y,t:0,life:.14,col:byId(TOWERS,tw.id).col});
     sfx.splat();
     return true;
   }
@@ -3182,7 +3185,7 @@ function fireTower(tw,s,buf){
       if(s.burn){ b.burn=Math.max(b.burn,dmg*.3); b.burnT=Math.max(b.burnT,s.burn); b.burnSrc=tw; }
       damageBug(b,dmg,s.pierceArm,tw); hits++; j--;
     }
-    fx.push({cone:!s.coneWide,ring:s.coneWide,x:tw.x,y:tw.y,a:tw.ang,r:rng,t:0,life:.22});
+    fx.push({cone:!s.coneWide,ring:s.coneWide,x:tw.x,y:tw.y,a:tw.ang,r:rng,t:0,life:.22,col:byId(TOWERS,tw.id).col});
     return hits>0;
   }
   if(s.burst){
@@ -3226,7 +3229,7 @@ function fireHero(h){
       if(s.burn){ cb.burn=Math.max(cb.burn,s.dmg*.3); cb.burnT=Math.max(cb.burnT,s.burn); }
       damageBug(cb,s.dmg,s.pierceArm); hits++; ci--;
     }
-    fx.push({cone:!s.coneWide,ring:s.coneWide,x:h.x,y:h.y,a:h.ang,r:s.rng,t:0,life:.2});
+    fx.push({cone:!s.coneWide,ring:s.coneWide,x:h.x,y:h.y,a:h.ang,r:s.rng,t:0,life:.2,col:byId(HEROES,h.id).col});
     return hits>0;
   }
   if(s.burst){
@@ -3722,15 +3725,19 @@ function render(t){
     var x2=fx[f2],k2=x2.t/x2.life;
     ctx.globalAlpha=1-k2;
     if(x2.beam){
-      ctx.strokeStyle="#e8dcc4"; ctx.lineWidth=2.2;
+      ctx.strokeStyle=x2.col||"#e8dcc4"; ctx.lineWidth=2.6;
+      ctx.beginPath(); ctx.moveTo(x2.x1,x2.y1); ctx.lineTo(x2.x2,x2.y2); ctx.stroke();
+      ctx.globalAlpha=(1-k2)*.5; ctx.lineWidth=6;
       ctx.beginPath(); ctx.moveTo(x2.x1,x2.y1); ctx.lineTo(x2.x2,x2.y2); ctx.stroke();
     } else if(x2.cone){
-      ctx.fillStyle="rgba(232,224,212,.35)";
+      ctx.globalAlpha=(1-k2)*.4;
+      ctx.fillStyle=x2.col||"#e8e0d4";
       ctx.beginPath(); ctx.moveTo(x2.x,x2.y);
       ctx.arc(x2.x,x2.y,x2.r*(.4+k2*.6),x2.a-.85,x2.a+.85);
       ctx.closePath(); ctx.fill();
     } else if(x2.ring){
-      ctx.strokeStyle="rgba(200,204,212,.5)"; ctx.lineWidth=3;
+      ctx.globalAlpha=(1-k2)*.55;
+      ctx.strokeStyle=x2.col||"#c8ccd4"; ctx.lineWidth=3;
       ctx.beginPath(); ctx.arc(x2.x,x2.y,x2.r*(.5+k2*.5),0,6.283); ctx.stroke();
     } else if(x2.spark){
       ctx.strokeStyle=x2.col; ctx.lineWidth=2; ctx.lineCap="round";
