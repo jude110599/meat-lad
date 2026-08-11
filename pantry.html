@@ -696,7 +696,8 @@ var CHANGELOG=[
   {v:"2.0.0",d:"latest",items:[
     "ROBOTS VS ALIENS FULL VISUAL REWORK - replaced the old Pantry Panic brown visual identity with a bright blue/white futuristic command theme; rebuilt the title scene as a moon battlefield with moving robots, UFOs, laser fire and ground aliens; removed the old Pantry Panic wording from the visible UI; and gave every map a distinct sci-fi location identity such as Lunar Command, Xeno Jungle, Robot Foundry, Xeno Laboratory, Orbital Dock, Crystal Moon, Terraformer Yard, Scrap City, Bio Reactor, UFO Crash Site, Ice Relay, Alien Hive, Solar Array, Defense Ring, Alien Garden and Core Chamber. Each map now uses a dedicated landmark and themed environment instead of generic pantry props.",
     "ROBOTS VS ALIENS - all 21 towers now have final robot art, every one a proper mechanical robot with its own silhouette, weapon and personality: Flicker Bot, Pepper Bot, Return Bot, Shaker Bot, Drill Bot, Steam Bot, Sticky Bot, Upgrade Hub, Credit Bot, Launch Bot, Cleaver Bot, Mixer Bot, Thermo Bot, Cryo Bot, AI Core, Shredder Bot, Slosh Bot, Trap Bot, Roller Bot, Vortex Bot and Growth Bot. Categories are now Basic Robots / Heavy Machines / Advanced Robotics / Robot Support, Old Tin/Sprout/Meat Lad have new robot/alien-flavoured descriptions, and all 14 enemies are renamed aliens with a pulsing bioluminescent glow and a running-lights boss ring instead of a gold crown.",
-    "EVERY TOWER'S UPGRADE TREE HAS BEEN REWORKED with unique mechanics in place of flat plus-damage/plus-range stacking: armour corrosion (weaken), cleaving/blast shockwaves (splash), bleed and burn effects, EMP shutdown and heat-haze slow fields, multi-target drilling and rail-piercing, full-circle wide-blast attack modes, sticky fields, gravity/suction vortexes, nanite infection, hunter-AI target marking, ice-shatter vulnerability, and cleaner single-purpose buff paths for the support robots. This also surfaced and fixed a real engine gap: weaken, burn and splash effects on towers were silently doing nothing on snipe and cone-type attacks (only the default projectile path applied them) - Growth Bot's own base weaken stat had been non-functional since it shipped. All four attack types now apply every effect correctly. Every tower and enemy kept its internal id throughout, so existing saves, unlocks and mastery progress are untouched"
+    "EVERY TOWER'S UPGRADE TREE HAS BEEN REWORKED with unique mechanics in place of flat plus-damage/plus-range stacking: armour corrosion (weaken), cleaving/blast shockwaves (splash), bleed and burn effects, EMP shutdown and heat-haze slow fields, multi-target drilling and rail-piercing, full-circle wide-blast attack modes, sticky fields, gravity/suction vortexes, nanite infection, hunter-AI target marking, ice-shatter vulnerability, and cleaner single-purpose buff paths for the support robots. This also surfaced and fixed a real engine gap: weaken, burn and splash effects on towers were silently doing nothing on snipe and cone-type attacks (only the default projectile path applied them) - Growth Bot's own base weaken stat had been non-functional since it shipped. All four attack types now apply every effect correctly. Every tower and enemy kept its internal id throughout, so existing saves, unlocks and mastery progress are untouched",
+    "ROBOTS NOW PHYSICALLY GROW AS YOU UPGRADE THEM - a robot with 10 tiers invested across its two open paths stands visibly ~25% bigger than a stock one, with riveted armour plating appearing once you're 6+ tiers deep. Max both paths out and it triggers a pulsing white 'final form' nova, so a fully-kitted-out robot reads as dramatically more powerful from across the board, not just from its upgrade panel - the T5 transformation the design brief called for, applied generically across all 21 robots at once"
   ]},
   {v:"1.45.0",items:[
     "TOWER UPGRADES ACTUALLY CHANGE THE MODEL NOW, not just a ring around it - the tower's own body colour shifts toward gold/cyan/purple as you invest deeper into a path (like BTD6's Glue Gunner recolouring per tier), and each path pins a distinct badge shape (blade/bolt/burst) onto the tower instead of a floating dot. The Crumb Flicker's 'Both Hands' upgrade and the Boomerang Pin's 'Two Pins' upgrade are real double-shot mechanics now, and the model visibly grows a second flicking arm / second pin to match - more upgrades across the roster will get unique mechanics like this over time instead of flat stat stacking"
@@ -2565,6 +2566,7 @@ var UPGRADE_PATH_COL=["#66e7ff","#4ec8e8","#c060e0"];
 var UPGRADE_BADGE_POS=[[-16,-15],[16,-15],[0,17]];
 function drawUpgradeAura(c,tw,t){
   var tiers=[tw.t1||0,tw.t2||0,tw.t3||0];
+  var tot=tiers[0]+tiers[1]+tiers[2];
   var activePaths=0;
   for(var pi=0;pi<3;pi++)if(tiers[pi]>0)activePaths++;
   if(!activePaths)return;
@@ -2574,6 +2576,34 @@ function drawUpgradeAura(c,tw,t){
     c.strokeStyle="#fff"; c.lineWidth=1.6;
     c.beginPath(); c.arc(0,0,24+Math.sin(t*2.4)*1.5,0,6.283); c.stroke();
     c.globalAlpha=1;
+    c.restore();
+  }
+  /* deep investment gets visible armour plating riveted onto the body,
+     and maxing both open paths (10 tiers total) triggers a "final form"
+     nova - the dramatic T5 transformation the design brief asked for,
+     done generically so it applies to all 21 robots at once. */
+  if(tot>=6){
+    var domP=tiers[1]>tiers[0]?1:0; if(tiers[2]>tiers[domP])domP=2;
+    c.save();
+    c.fillStyle=shade(UPGRADE_PATH_COL[domP],-15);
+    c.strokeStyle="rgba(0,0,0,.4)"; c.lineWidth=.8;
+    for(var pl=0;pl<3;pl++){
+      var pa=pl/3*6.283+.5;
+      c.save(); c.rotate(pa); c.translate(0,17);
+      c.beginPath(); c.moveTo(-3.4,-2); c.lineTo(3.4,-2); c.lineTo(2.6,3); c.lineTo(-2.6,3); c.closePath();
+      c.fill(); c.stroke();
+      c.restore();
+    }
+    c.restore();
+  }
+  if(tot>=10){
+    c.save();
+    var nova=.4+Math.sin(t*3.6)*.2;
+    var ng=c.createRadialGradient(0,0,10,0,0,30);
+    ng.addColorStop(0,"rgba(255,255,255,"+(nova*.35)+")");
+    ng.addColorStop(1,"rgba(255,255,255,0)");
+    c.fillStyle=ng;
+    c.beginPath(); c.arc(0,0,30,0,6.283); c.fill();
     c.restore();
   }
   /* a fixed accessory pinned to the tower per path invested, not a ring of
@@ -4140,7 +4170,14 @@ function render(t){
       var twPhase=(en.o.x*.13+en.o.y*.07)%6.283;
       ctx.translate(0,Math.sin(t*2.1+twPhase)*1.2);
       ctx.translate(-Math.cos(en.o.ang||0)*fireGlow*4,-Math.sin(en.o.ang||0)*fireGlow*4);
-      var twScale=1+fireGlow*.08; ctx.scale(twScale,twScale);
+      /* the more a robot has been upgraded, the physically bigger and more
+         armoured it reads - a maxed-out robot (10 tiers across its two
+         open paths) is visibly ~25% larger than a stock one, on top of
+         the usual fire-recoil punch, so "fully kitted out" is readable
+         from across the board, not just from its panel. */
+      var twTot=(en.o.t1||0)+(en.o.t2||0)+(en.o.t3||0);
+      var twGrow=1+Math.min(twTot,10)*.025;
+      var twScale=twGrow*(1+fireGlow*.08); ctx.scale(twScale,twScale);
       drawTowerArt(ctx,en.o.id,t,en.o.ang,fireGlow,en.o,en.o.s&&en.o.s.twin);
       drawUpgradeAura(ctx,en.o,t);
       ctx.restore();
