@@ -681,9 +681,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 (function(){
 "use strict";
 
-var VERSION="1.44.0";
+var VERSION="1.44.1";
 var CHANGELOG=[
-  {v:"1.44.0",d:"latest",items:[
+  {v:"1.44.1",d:"latest",items:[
+    "HEROES NOW SHOW THEIR LEVEL VISUALLY TOO - orbiting stars in the hero's own colour build up every 4 levels, and hitting the level 20 cap gets a pulsing gold ring so a fully-levelled hero visibly stands out on the board"
+  ]},
+  {v:"1.44.0",items:[
     "TOWERS NOW VISUALLY CHANGE AS YOU UPGRADE THEM - each of the 3 upgrade paths gets its own colour (gold/cyan/purple) shown as small orbiting studs around the tower that grow with the tier bought, so you can read a tower's build at a glance without opening its panel. Commit to two paths at once and the tower also gets a shared pulsing ring to show the combo is active. The tower panel's path labels now show a matching colour dot too"
   ]},
   {v:"1.43.0",items:[
@@ -2391,6 +2394,34 @@ function drawUpgradeAura(c,tw,t){
   }
 }
 
+/* Same idea as drawUpgradeAura but for hero levels (1-20, no paths to pick
+   between) - a star orbits in every four levels, and hitting the level cap
+   gets its own gold pulsing ring so a maxed-out hero visibly reads as
+   maxed rather than looking identical to one still catching up. */
+function drawHeroLevelAura(c,hero,t,col){
+  var lvl=hero.lvl||1;
+  var stars=Math.floor((lvl-1)/4);
+  if(lvl>=20){
+    c.save();
+    c.globalAlpha=.3+Math.sin(t*2.6)*.12;
+    c.strokeStyle="#f0c14b"; c.lineWidth=1.8;
+    c.beginPath(); c.arc(0,-4,22+Math.sin(t*2.6)*1.5,0,6.283); c.stroke();
+    c.globalAlpha=1;
+    c.restore();
+  }
+  for(var i=0;i<stars;i++){
+    var sa=t*.6+i/Math.max(stars,1)*6.283;
+    var sr=18+ (i%3)*1.4;
+    c.save();
+    c.translate(Math.cos(sa)*sr,Math.sin(sa)*sr*.7-6);
+    c.fillStyle=col;
+    c.beginPath(); c.arc(0,0,2,0,6.283); c.fill();
+    c.fillStyle="rgba(255,255,255,.55)";
+    c.beginPath(); c.arc(-.4,-.4,.7,0,6.283); c.fill();
+    c.restore();
+  }
+}
+
 /* ═════════════ HERO ART ═════════════ */
 function drawHeroArt(c,id,t,ang,fireK){
   ang=ang||0; fireK=fireK||0;
@@ -3819,6 +3850,7 @@ function render(t){
       ctx.translate(-Math.cos(en.o.ang||0)*hFireGlow*4,-Math.sin(en.o.ang||0)*hFireGlow*4);
       var hScale=1+hFireGlow*.08; ctx.scale(hScale,hScale);
       drawHeroArt(ctx,en.o.id,t,en.o.ang,hFireGlow);
+      drawHeroLevelAura(ctx,en.o,t,byId(HEROES,en.o.id).col);
       ctx.restore();
       ctx.fillStyle="#6fbf8f"; ctx.font="bold 9px sans-serif"; ctx.textAlign="center";
       ctx.fillText("LV"+en.o.lvl,en.o.x,en.o.y+21); ctx.textAlign="left";
