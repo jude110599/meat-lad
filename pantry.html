@@ -237,6 +237,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 #rosterEmotes button{width:38px;height:38px;font-size:20px;background:var(--bg2);
   border:1px solid var(--line);border-radius:8px;cursor:pointer;flex:none}
 #rosterEmotes button:hover{background:var(--bg3)}
+.sendMoney{display:flex;gap:4px;flex:none}
+.sendMoney input{width:56px;background:var(--bg);border:1px solid var(--line);border-radius:5px;
+  color:var(--txt);font:inherit;font-size:11px;padding:5px 6px;text-align:right}
+.sendMoney input::-webkit-outer-spin-button,.sendMoney input::-webkit-inner-spin-button{margin:0}
+.sendMoney button{background:var(--bg3);border:1px solid var(--honey);border-radius:5px;
+  color:var(--honey);font:inherit;font-size:10.5px;font-weight:800;padding:5px 8px;cursor:pointer;flex:none}
+.sendMoney button:hover{background:var(--bg4)}
 
 #shop{position:absolute;right:0;top:0;bottom:0;width:186px;z-index:2;
   background:rgba(20,15,10,.93);border-left:1px solid var(--line);
@@ -943,9 +950,13 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.1";
+var VERSION="2.12.2";
 var CHANGELOG=[
-  {v:"2.12.1",d:"latest",items:[
+  {v:"2.12.2",d:"latest",items:[
+    "CO-OP MONEY IS NO LONGER SHARED. Everyone gets their own balance now - your own placements, sells, hero level-ups and kill rewards only ever touch your own cash, and each round's income/bonus pays every active player their own full amount instead of one pool everyone drew from. A new Send button next to each other player in the Players panel lets you wire them cash directly",
+    "Fixed the hero row on map select rendering its icon bigger than the row was built for (a shared CSS class was overriding the intended size), which made it visually crowd into the hero's name text next to it"
+  ]},
+  {v:"2.12.1",items:[
     "EVERY TOWER NOW STARTS WITH ITS FIRST UPGRADE ALREADY UNLOCKED, FREE. Towers earning their own XP from scratch (see 2.12.0) meant a freshly placed tower had nothing to lean on until it fought its way to its first tier - now tier 1 of its first path is already applied the moment you place it, combat, support and income towers alike"
   ]},
   {v:"2.12.0",items:[
@@ -3485,7 +3496,14 @@ function ownerName(owner){
   if(party.leader)return (owner==="host"?(save.name||"cook"):(party.members[owner]&&party.members[owner].n))||"A friend";
   return coopNames[owner]||(owner==="host"?"Host":"A friend");
 }
-var cash=0,lives=0,wave=0,waveMax=40,inWave=false,waveQueue=[],spawnT=0,runStartLives=0;
+/* co-op used to pool everyone's cash into one shared number - each player
+   now has their own balance, keyed by owner id (myOwner()'s "solo"/"host"/
+   guest peer id, same scheme towers/heroes already use). Lives stay a
+   single shared team pool on purpose (the user only asked to un-share
+   money, and "how many mistakes can the team make" reads fine as
+   collective in a way individual wallets don't). */
+var playerCash={},lives=0,wave=0,waveMax=40,inWave=false,waveQueue=[],spawnT=0,runStartLives=0;
+function myCash(){ return playerCash[myOwner()]||0; }
 var totalPops=0,fastFwd=false,selTower=null,buyId=null,placing=false,runXpGained=0,runTokensGained=0,runStartLvl=1;
 var mouse={x:0,y:0,on:false};
 var nextBugId=1;
@@ -3497,7 +3515,11 @@ function startRun(mapIdx,diffIdx,heroId){
   var D=DIFFS[curDiff];
   buildPath(curMap); bakeBlocked(); bakeObstacles(); bakeLandmark(); bakeTerrain(); bakeMapDecos();
   towers=[]; bugs=[]; shots=[]; fx=[]; heroes=[];
-  cash=D.cash+skillCashBonus();
+  /* everyone known at kickoff (self plus any connected party members)
+     starts with their own balance - a later joiner is handled where
+     "hi" is received, same idea. */
+  playerCash={}; playerCash[myOwner()]=D.cash+skillCashBonus();
+  if(party.on)for(var pk in party.members)playerCash[pk]=D.cash+skillCashBonus();
   lives=D.lives+skillLifeBonus();
   runStartLives=lives;
   wave=0; waveMax=MAPS[curMap].waves; inWave=false; waveQueue=[]; spawnT=0;
@@ -3715,10 +3737,10 @@ function buffsFor(tw,supports){
   return {dmg:dmg,rng:rng,cd:cd,sources:sources};
 }
 function placeTower(id,gx,gy,owner){
-  var def=byId(TOWERS,id),cost=towerCost(def);
-  if(cash<cost){ toast("Not enough"); return false; }
+  var def=byId(TOWERS,id),cost=towerCost(def),ownerId=owner||"solo";
+  if((playerCash[ownerId]||0)<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
-  cash-=cost;
+  playerCash[ownerId]=(playerCash[ownerId]||0)-cost;
   /* every tower now starts with its first path's tier-1 upgrade already
      unlocked for free - a fresh XP-less tower used to feel completely
      bare (no cash upgrades to lean on any more while it earns its own
@@ -3805,7 +3827,7 @@ function giveHeroXp(h,n){
 function giveTowerXp(tw,n){ tw.xp=(tw.xp||0)+n; }
 function sellTower(tw){
   var back=Math.round(tw.spent*.7);
-  cash+=back;
+  playerCash[tw.owner]=(playerCash[tw.owner]||0)+back;
   var i=towers.indexOf(tw);
   if(i>=0)towers.splice(i,1);
   selTower=null; $("panel").classList.add("hide");
@@ -3889,9 +3911,16 @@ function spawnBug(kind,d){
       fx.push({bossBanner:true,name:B.n,t:0,life:1.6});
   }
 }
-function popBug(b,byHero){
+function popBug(b,earnerOwner){
   var B=BUGS[b.k];
-  cash+=Math.round(B.cash*(1+wave*.012)*DIFFS[curDiff].cashMult);
+  /* each player has their own money now (see playerCash) - the cash
+     reward for a kill goes to whoever's tower or hero actually dealt
+     it (an owner id string, deliberately NOT the tower/hero object
+     itself - see damageBug's cashOwner param for why), falling back
+     to the local player only for the rare case that's genuinely
+     unknown. */
+  var earner=earnerOwner||myOwner();
+  playerCash[earner]=(playerCash[earner]||0)+Math.round(B.cash*(1+wave*.012)*DIFFS[curDiff].cashMult);
   totalPops++;
   if(B.boss){
     save.bossPops=(save.bossPops||0)+1;
@@ -3928,7 +3957,14 @@ function popBug(b,byHero){
   var idx=bugs.indexOf(b);
   if(idx>=0)bugs.splice(idx,1);
 }
-function damageBug(b,dmg,pierceArm,tw){
+/* cashOwner is deliberately a separate owner-id string, not read off tw -
+   hero shots need to credit their hero's owner without ever passing the
+   hero object itself in as tw, because giveTowerXp(tw,...) below writes
+   to tw.xp, and heroes already use .xp for their own, differently-paced
+   levelling system. Mixing raw damage numbers into that would silently
+   wreck hero XP pacing. Tower shots still credit tw.owner as before by
+   just leaving cashOwner unset. */
+function damageBug(b,dmg,pierceArm,tw,cashOwner){
   if(b.arm>0&&!pierceArm)dmg=Math.max(1,dmg-b.arm);
   if(b.weakT>0)dmg=Math.round(dmg*(1+b.weak));
   b.hp-=dmg;
@@ -3943,7 +3979,7 @@ function damageBug(b,dmg,pierceArm,tw){
   if(tw)giveTowerXp(tw,dmg);
   if(b.hp<=0){
     if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,BUGS[b.k].boss?150:15); }
-    popBug(b);
+    popBug(b,cashOwner||(tw&&tw.owner));
   }
   return b.hp<=0;
 }
@@ -4072,7 +4108,7 @@ function fireHero(h){
       }
       if(s.weaken){ cb.weak=Math.max(cb.weak,s.weaken); cb.weakT=Math.max(cb.weakT,s.weakenT||4); }
       if(s.burn){ cb.burn=Math.max(cb.burn,s.dmg*.3); cb.burnT=Math.max(cb.burnT,s.burn); }
-      damageBug(cb,s.dmg,s.pierceArm); hits++; ci--;
+      damageBug(cb,s.dmg,s.pierceArm,null,h.owner); hits++; ci--;
     }
     fx.push({cone:!s.coneWide,ring:s.coneWide,x:h.x,y:h.y,a:h.ang,r:s.rng,t:0,life:.2,col:byId(HEROES,h.id).col});
     return hits>0;
@@ -4082,7 +4118,7 @@ function fireHero(h){
       var a2=k/s.burst*6.283;
       shots.push({x:h.x,y:h.y,vx:Math.cos(a2)*280,vy:Math.sin(a2)*280,
         dmg:s.dmg,pierce:2,hit:{},life:s.rng/280,air:s.air,
-        pierceArm:s.pierceArm,col:byId(HEROES,h.id).col,r:4,hero:true});
+        pierceArm:s.pierceArm,col:byId(HEROES,h.id).col,r:4,hero:true,owner:h.owner});
     }
     return true;
   }
@@ -4095,7 +4131,7 @@ function fireHero(h){
       dmg:s.dmg,pierce:s.pierce||1,hit:{},life:s.rng/420,air:s.air,
       pierceArm:s.pierceArm,col:byId(HEROES,h.id).col,r:6,splash:s.splash,
       weaken:s.weaken,weakenT:s.weakenT,slow:s.slow,slowT:s.slowT,
-      burn:s.burn?s.dmg*.3:0,burnT:s.burn,hero:true});
+      burn:s.burn?s.dmg*.3:0,burnT:s.burn,hero:true,owner:h.owner});
   }
   return true;
 }
@@ -4124,7 +4160,7 @@ function broadcastSnap(){
        way to learn another guest's name directly - the host relays the
        whole roster here so "Owned by X" can resolve for everyone. */
     names:coopNameMap(),
-    cash:cash,lives:lives,wave:wave,waveMax:waveMax,inWave:inWave,fastFwd:fastFwd,pops:totalPops});
+    cash:playerCash,lives:lives,wave:wave,waveMax:waveMax,inWave:inWave,fastFwd:fastFwd,pops:totalPops});
 }
 function coopNameMap(){
   var m={host:save.name||"cook"};
@@ -4172,7 +4208,7 @@ function update(dt){
     if(b.ageT<.22)b.ageT+=dt;
     if(b.burnT>0){ b.burnT-=dt; var burnTick=b.burn*dt; b.hp-=burnTick;
       if(b.burnSrc)giveTowerXp(b.burnSrc,burnTick);
-      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,BUGS[b.k].boss?150:15); } popBug(b); continue; } }
+      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,BUGS[b.k].boss?150:15); } popBug(b,b.burnOwner); continue; } }
     b.d+=b.spd*b.slow*dt;
     if(b.d>=pathLen){
       lives-=BUGS[b.k].boss?20:Math.max(1,Math.round(BUGS[b.k].hp/2));
@@ -4232,20 +4268,24 @@ function update(dt){
       sh.hit[bb.id]=1;
       if(sh.slow){ bb.slow=Math.min(bb.slow,sh.slow); bb.slowT=Math.max(bb.slowT,sh.slowT||3); }
       if(sh.weaken){ bb.weak=Math.max(bb.weak,sh.weaken); bb.weakT=Math.max(bb.weakT,sh.weakenT||4); }
-      if(sh.burn){ bb.burn=Math.max(bb.burn,sh.burn); bb.burnT=Math.max(bb.burnT,sh.burnT||2); bb.burnSrc=sh.tw; }
+      /* burnOwner is a plain owner-id string (works for hero-sourced burns
+         too), kept separate from burnSrc which stays tower-only - burnSrc
+         still feeds giveTowerXp on the DOT tick below, and a hero object
+         must never reach that (see damageBug's cashOwner comment). */
+      if(sh.burn){ bb.burn=Math.max(bb.burn,sh.burn); bb.burnT=Math.max(bb.burnT,sh.burnT||2); bb.burnSrc=sh.tw; bb.burnOwner=sh.owner||(sh.tw&&sh.tw.owner); }
       if(sh.splash){
         for(var n=bugs.length-1;n>=0;n--){
           var ob=bugs[n];
           if(ob.fly&&!sh.air)continue;
           var op=posAt(ob.d);
-          if(dist2(op.x,op.y,sh.x,sh.y)<=sh.splash*sh.splash)damageBug(ob,sh.dmg,sh.pierceArm,sh.tw);
+          if(dist2(op.x,op.y,sh.x,sh.y)<=sh.splash*sh.splash)damageBug(ob,sh.dmg,sh.pierceArm,sh.tw,sh.owner);
         }
         fx.push({x:sh.x,y:sh.y,t:0,life:.24,col:sh.col,r:sh.splash});
         shockRing(sh.x,sh.y,sh.splash*1.15,sh.col);
         sparkBurst(sh.x,sh.y,sh.col,7,110);
         shots.splice(k,1); break;
       }
-      damageBug(bb,sh.dmg,sh.pierceArm,sh.tw);
+      damageBug(bb,sh.dmg,sh.pierceArm,sh.tw,sh.owner);
       sh.pierce--;
       if(sh.pierce<=0){ shots.splice(k,1); break; }
     }
@@ -4257,7 +4297,7 @@ function update(dt){
   // wave over
   if(inWave&&!waveQueue.length&&!bugs.length){
     inWave=false;
-    var income=0;
+    var incomeByOwner={};
     for(var p=0;p<towers.length;p++)if(towers[p].s.income){
       /* Credit Bot's "Jackpot" upgrade was named for a mechanic it never
          actually had - just another flat number. Give it a real, isolated
@@ -4269,10 +4309,11 @@ function update(dt){
         toast(byId(TOWERS,towers[p].id).n+" hit the jackpot! +"+Math.round(payout));
         sfx.cash();
       }
-      income+=payout;
+      incomeByOwner[towers[p].owner]=(incomeByOwner[towers[p].owner]||0)+payout;
       towers[p].earned=(towers[p].earned||0)+payout;
     }
-    for(var hInc=0;hInc<heroes.length;hInc++)if(heroes[hInc].s.income)income+=heroes[hInc].s.income;
+    for(var hInc=0;hInc<heroes.length;hInc++)if(heroes[hInc].s.income)
+      incomeByOwner[heroes[hInc].owner]=(incomeByOwner[heroes[hInc].owner]||0)+heroes[hInc].s.income;
     /* support/income towers never damage a bug, so they'd never earn the
        kill-XP that unlocks their own upgrades - grant them XP for the
        round they just stood through instead, same idea, different trigger. */
@@ -4281,8 +4322,18 @@ function update(dt){
       if(ptw.s.support||ptw.s.income)giveTowerXp(ptw,250+wave*15);
     }
     var bonus=Math.round((80+wave*12)*DIFFS[curDiff].cashMult);
-    cash+=income+bonus;
-    if(income)toast("Round bonus "+bonus+" + income "+income);
+    /* everyone has their own money now - each active player gets their
+       own full round bonus (not split between however many are playing)
+       plus whatever their OWN income towers/heroes earned this round. */
+    var activeOwners={}; activeOwners[myOwner()]=1;
+    if(party.on)for(var pk2 in party.members)activeOwners[pk2]=1;
+    var myIncome=0;
+    for(var ownerKey in activeOwners){
+      var thisIncome=incomeByOwner[ownerKey]||0;
+      playerCash[ownerKey]=(playerCash[ownerKey]||0)+thisIncome+bonus;
+      if(ownerKey===myOwner())myIncome=thisIncome;
+    }
+    if(myIncome)toast("Round bonus "+bonus+" + income "+myIncome);
     sfx.cash();
     if(wave>=waveMax){ endRun(true); return; }
     updateHud();
@@ -4733,7 +4784,7 @@ function flashPill(id){
   el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
 }
 function updateHud(){
-  var cashV=Math.floor(cash),lifeV=Math.max(0,Math.floor(lives));
+  var cashV=Math.floor(myCash()),lifeV=Math.max(0,Math.floor(lives));
   $("pCashV").textContent="$"+cashV;
   $("pLifeV").textContent=lifeV;
   $("pWaveV").textContent=Math.max(1,wave)+"/"+waveMax;
@@ -4793,7 +4844,7 @@ function renderHeroPanel(){
   else{
     var cost=heroLevelCost(hero.lvl+1);
     buy.textContent="Level up to "+(hero.lvl+1)+" — $"+cost;
-    buy.disabled=cash<cost;
+    buy.disabled=myCash()<cost;
   }
 }
 $("pHeroBtn").onclick=openHeroPanel;
@@ -4801,8 +4852,11 @@ $("heroPanelClose").onclick=function(){ sfx.click(); if(state==="pause")state="p
 function levelUpHero(hero){
   if(!hero||hero.lvl>=20)return;
   var cost=heroLevelCost(hero.lvl+1);
-  if(cash<cost){ toast("Not enough"); return; }
-  cash-=cost; hero.lvl++; hero.xp=0; recalcHero(hero); sfx.up();
+  /* this runs on the HOST for a guest's own hero too (see reqHeroLevel),
+     so it must charge the hero's actual owner, not myOwner() (which
+     would be the host itself, wrongly, when relaying a guest's request). */
+  if((playerCash[hero.owner]||0)<cost){ toast("Not enough"); return; }
+  playerCash[hero.owner]=(playerCash[hero.owner]||0)-cost; hero.lvl++; hero.xp=0; recalcHero(hero); sfx.up();
   var def=byId(HEROES,hero.id);
   for(var i=0;i<def.skills.length;i++)
     if(def.skills[i].l===hero.lvl)toast(def.skills[i].n+" unlocked");
@@ -4856,7 +4910,7 @@ function renderShop(){
     }
     var cost=towerCost(T);
     var d=document.createElement("div");
-    d.className="tcard"+(cash<cost?" poor":"")+(buyId===T.id?" sel":"");
+    d.className="tcard"+(myCash()<cost?" poor":"")+(buyId===T.id?" sel":"");
     d.setAttribute("data-tid",T.id);
     d.style.setProperty("--tc-bg",tc.bg); d.style.setProperty("--tc-col",tc.col);
     var tIcon=iconFor("t",T.id,52);
@@ -4869,7 +4923,7 @@ function renderShop(){
     d.appendChild(wrap);
     d.ondblclick=function(){ sfx.click(); placing=false; buyId=null; markShopSel(null); openTowerInfo(T.id); };
     d.onclick=function(){
-      if(cash<towerCost(T)){ toast("Not enough"); return; }
+      if(myCash()<towerCost(T)){ toast("Not enough"); return; }
       sfx.click();
       buyId=T.id; placing=true; selTower=null;
       $("panel").classList.add("hide");
@@ -4903,7 +4957,7 @@ function refreshLiveUI(){
     var cards=list.querySelectorAll(".tcard[data-tid]");
     for(var i=0;i<cards.length;i++){
       var T=byId(TOWERS,cards[i].getAttribute("data-tid"));
-      cards[i].classList.toggle("poor",cash<towerCost(T));
+      cards[i].classList.toggle("poor",myCash()<towerCost(T));
     }
   }
   if(selTower){
@@ -5176,7 +5230,7 @@ $("shopList").addEventListener("pointerdown",function(e){
   var tid=card.getAttribute("data-tid");
   if(tid==="__hero")return; // the hero slot has its own click handler, no drag support
   var T=byId(TOWERS,tid);
-  if(cash<towerCost(T)){ toast("Not enough"); return; }
+  if(myCash()<towerCost(T)){ toast("Not enough"); return; }
   sfx.click(); audioOn();
   buyId=tid; placing=true; selTower=null;
   $("panel").classList.add("hide");
@@ -5245,6 +5299,25 @@ $("bEmote").onclick=function(){
   renderEmotePicker();
   $("emotePicker").classList.toggle("hide");
 };
+/* everyone has their own money now (playerCash) - sendMoney is the one
+   place that ever moves cash directly between two owners. Called
+   locally by whoever's authoritative (the host, or yourself in solo/
+   before a party exists); guests go through reqSendMoney instead,
+   same request/host-applies/snap-propagates pattern as reqPlace etc. */
+function sendMoney(from,to,amount){
+  amount=Math.floor(amount);
+  if(!amount||amount<=0)return false;
+  if((playerCash[from]||0)<amount)return false;
+  playerCash[from]=(playerCash[from]||0)-amount;
+  playerCash[to]=(playerCash[to]||0)+amount;
+  updateHud();
+  return true;
+}
+function requestSendMoney(to,amount){
+  if(party.on&&!party.leader)party.send({t:"reqSendMoney",to:to,amount:amount});
+  else if(sendMoney(myOwner(),to,amount))toast("Sent $"+Math.floor(amount));
+  else toast("Not enough");
+}
 /* the co-op players panel - who's actually in this run, with their
    equipped icon/banner (via the "hi" handshake) instead of the always-
    there head-icon-above-the-tower approach, plus the emote picker moved
@@ -5253,17 +5326,39 @@ $("bEmote").onclick=function(){
    same as emotes always were. */
 function renderRoster(){
   var l=$("rosterList"); l.innerHTML="";
-  function row(n,s,iconId,bannerId){
+  function row(owner,n,s,iconId,bannerId,isMe){
     var d=document.createElement("div"); d.className="mem";
     var glyph=cosIconGlyph(iconId), bannerCol=cosBannerCol(bannerId);
     var iconHtml=glyph?'<div class="memicon">'+glyph+'</div>':"";
     if(bannerCol)d.style.borderLeft="4px solid "+bannerCol[0];
-    d.innerHTML=iconHtml+'<div><div class="mn">'+n+'</div><div class="ms">'+s+'</div></div>';
+    var body=document.createElement("div"); body.style.flex="1"; body.style.minWidth="0";
+    body.innerHTML='<div class="mn">'+n+'</div><div class="ms">'+s+" · $"+Math.floor(playerCash[owner]||0)+'</div>';
+    d.innerHTML=iconHtml;
+    d.appendChild(body);
+    if(!isMe&&party.on){
+      var sendWrap=document.createElement("div"); sendWrap.className="sendMoney";
+      var amt=document.createElement("input"); amt.type="number"; amt.min="1"; amt.placeholder="$";
+      var sbtn=document.createElement("button"); sbtn.textContent="Send";
+      sbtn.onclick=function(){
+        var v=Math.floor(Number(amt.value));
+        if(!v||v<=0){ toast("Enter an amount"); return; }
+        if(v>(playerCash[myOwner()]||0)){ toast("Not enough"); return; }
+        sfx.click(); requestSendMoney(owner,v); amt.value="";
+        /* the host applies (and thus knows) a send immediately - a guest's
+           request is still in flight until the next snapshot, which
+           already re-renders this panel itself (see the snap handler),
+           so re-rendering here too would just show stale numbers for a
+           beat and get overwritten - only worth doing eagerly here. */
+        if(!party.on||party.leader)renderRoster();
+      };
+      sendWrap.appendChild(amt); sendWrap.appendChild(sbtn);
+      d.appendChild(sendWrap);
+    }
     l.appendChild(d);
   }
-  row((save.name||"you")+" (you)",party.leader?"host":"guest",cosEquipped("icon"),cosEquipped("banner"));
+  row(myOwner(),(save.name||"you")+" (you)",party.leader?"host":"guest",cosEquipped("icon"),cosEquipped("banner"),true);
   Object.keys(party.members).forEach(function(k){
-    var mm=party.members[k]; row(mm.n||"defender","",mm.icon,mm.banner);
+    var mm=party.members[k]; row(k,mm.n||"defender","",mm.icon,mm.banner,false);
   });
   var eg=$("rosterEmotes"); eg.innerHTML="";
   var owned=COSMETICS.filter(function(C){ return C.cat==="emote"&&cosOwned(C.id); });
@@ -5941,7 +6036,13 @@ function updateMapHeroPreview(){
   var H=byId(HEROES,chosenHero);
   $("mapHeroName").textContent=H.n;
   var oldIc=$("mapHeroIcon"),newIc=iconFor("h",H.id,34);
-  newIc.id="mapHeroIcon"; newIc.style.margin="0";
+  /* iconFor() always tags its canvas with the shared .icon class, which
+     forces a 46x46 DISPLAY size regardless of the size passed in - fine
+     for the places that class was designed for, but here it made the
+     icon render noticeably bigger than this tight row was laid out for,
+     overlapping into the "HERO / name" text next to it. Pin the actual
+     display size explicitly instead of trusting the shared class. */
+  newIc.id="mapHeroIcon"; newIc.style.margin="0"; newIc.style.width="34px"; newIc.style.height="34px"; newIc.style.flex="none";
   oldIc.parentNode.replaceChild(newIc,oldIc);
 }
 $("bSolo").onclick=function(){ audioOn(); sfx.click();
@@ -6208,7 +6309,7 @@ var party={
         });
         heroes=m.heroes||[];
         coopNames=m.names||{};
-        cash=m.cash; lives=m.lives;
+        playerCash=m.cash||{}; lives=m.lives;
         wave=m.wave; waveMax=m.waveMax; inWave=m.inWave; fastFwd=m.fastFwd; totalPops=m.pops;
         if($("o-hero").className.indexOf("hide")<0)renderHeroPanel();
         if(wasSel){
@@ -6220,6 +6321,7 @@ var party={
           upgTarget=towers.filter(function(t){ return t.gx===upgTarget.gx&&t.gy===upgTarget.gy; })[0]||null;
           if(upgTarget)renderTowerUpgScreen(); else closeTowerUpgrade();
         }
+        if($("o-roster").className.indexOf("hide")<0)renderRoster();
         updateHud();
       }
     } else if(m.t==="reqPlace"){
@@ -6234,6 +6336,11 @@ var party={
         var stw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
         if(stw&&stw.owner===from)sellTower(stw);
       }
+    } else if(m.t==="reqSendMoney"){
+      /* "from" is the actual sender (the connection this message arrived
+         on), never trust a client-supplied sender id here - a guest could
+         otherwise claim to be sending someone else's money. */
+      if(self.leader&&state==="play")sendMoney(from,m.to,m.amount);
     } else if(m.t==="reqTarget"){
       if(self.leader&&state==="play"){
         var ttw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
@@ -6517,7 +6624,9 @@ window.__pp={
   fx:fx,
   addShake:addShake,addHitStop:addHitStop,dmgNum:dmgNum,sparkBurst:sparkBurst,
   smokePuff:smokePuff,shockRing:shockRing,debrisBurst:debrisBurst,bigExplosion:bigExplosion,
-  give:function(n){ cash+=n; updateHud(); },
+  give:function(n){ playerCash[myOwner()]=(playerCash[myOwner()]||0)+n; updateHud(); },
+  giveTo:function(owner,n){ playerCash[owner]=(playerCash[owner]||0)+n; updateHud(); },
+  getPlayerCash:function(){ return JSON.parse(JSON.stringify(playerCash)); },
   jars:function(n){ save.jars+=n; queueSave(); },
   go:function(){ startWave(); },
   endRun:function(won){ endRun(won); },
@@ -6526,7 +6635,7 @@ window.__pp={
   peek:function(){
     return {state:state,wave:wave,inWave:inWave,queued:waveQueue.length,
       bugs:bugs.length,shots:shots.length,towers:towers.length,
-      cash:Math.floor(cash),lives:Math.floor(lives),pops:totalPops,
+      cash:Math.floor(myCash()),lives:Math.floor(lives),pops:totalPops,
       hero:myHero()?{lvl:myHero().lvl,dmg:myHero().s.dmg}:null,heroCount:heroes.length};
   },
   MAPS:MAPS, BUGS:BUGS, TOWERS:TOWERS, HEROES:HEROES,
