@@ -36,6 +36,32 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .page{flex:1;overflow-y:auto;padding:16px;max-width:660px;margin:0 auto;width:100%;
   display:flex;flex-direction:column}
 .hdr{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+/* the profile screen's header card - same avatar/level/bar language as
+   the top-left acctWidget, just bigger, and with the equipped banner as
+   an actual background instead of a border sliver (its only other use,
+   in the co-op party list) so owning one finally has real payoff. */
+#profCard{display:flex;align-items:center;gap:14px;background:linear-gradient(160deg,var(--bg3),var(--bg2));
+  border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:4px}
+#profAvatar{width:60px;height:60px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:30px;background:radial-gradient(circle at 35% 30%,var(--bg4),var(--bg));border:2px solid var(--honey)}
+#profNameLvl{min-width:0;flex:1}
+#profRow{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+#profName{font-size:17px;font-weight:800;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#profLvlChip{font-size:13px;font-weight:900;color:var(--honey);letter-spacing:.04em;flex:none}
+#profBarTrack{height:7px;border-radius:4px;background:rgba(0,0,0,.4);margin-top:7px;overflow:hidden}
+#profBarFill{height:100%;width:4%;background:linear-gradient(90deg,var(--honey),var(--mint));
+  border-radius:4px;transition:width .4s ease}
+#profBarLbl{font-size:10.5px;color:var(--dim);letter-spacing:.03em;margin-top:3px}
+/* shop counter - a vendor bot stood to the left of the racks, like an
+   actual shop with someone behind the counter instead of a bare item
+   grid. Its head/eyes track the cursor (or last tap, on touch) via
+   drawShopBot in the main render loop. */
+#shopLayout{display:flex;gap:16px;align-items:flex-start;margin-top:10px}
+#shopBot{flex:none;width:170px;height:260px;background:linear-gradient(160deg,var(--bg3),var(--bg2));
+  border:1px solid var(--line);border-radius:14px}
+#shopMain{flex:1;min-width:0}
+@media (max-width:640px){ #shopLayout{flex-direction:column;align-items:stretch}
+  #shopBot{width:100%;height:150px} }
 .hdr h2{font-size:20px}
 .back{background:var(--bg3);border:1px solid var(--line);color:var(--txt);
   width:38px;height:38px;border-radius:10px;font-size:20px;cursor:pointer;flex:none}
@@ -636,6 +662,26 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
   <canvas class="warpFlash hide" id="warpFlash"></canvas>
 
   <!-- ============ SETTINGS ============ -->
+  <!-- ============ PROFILE ============ -->
+  <div class="screen hide" id="s-profile"><div class="page">
+    <div class="hdr"><button class="back" id="profBack">&lsaquo;</button><h2 class="disp">Profile</h2></div>
+    <div id="profCard">
+      <div id="profAvatar">🤖</div>
+      <div id="profNameLvl">
+        <div id="profRow"><span id="profName">Commander</span><span id="profLvlChip">Lv 1</span></div>
+        <div id="profBarTrack"><div id="profBarFill"></div></div>
+        <div id="profBarLbl">0/90 XP</div>
+      </div>
+    </div>
+    <div class="sect" style="margin-top:14px">Icon</div>
+    <div class="grid" id="profIconGrid"></div>
+    <div class="sect">Banner</div>
+    <div class="grid" id="profBannerGrid"></div>
+    <div class="sect" style="margin-top:14px">Your Progress</div>
+    <div id="profStats"></div>
+    <div class="spacer"></div>
+  </div></div>
+
   <div class="screen hide" id="s-settings"><div class="page">
     <div class="hdr"><button class="back" id="setBack">&lsaquo;</button><h2 class="disp">Settings</h2></div>
     <div class="note">Local settings for Alien Attack only - Meat Lad and Beetdown aren't affected.</div>
@@ -673,17 +719,22 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
   </div></div>
 
   <!-- ============ SHOP ============ -->
-  <div class="screen hide" id="s-shop"><div class="page">
+  <div class="screen hide" id="s-shop"><div class="page" style="max-width:820px">
     <div class="hdr"><button class="back" id="shopBack">&lsaquo;</button><h2 class="disp">Shop</h2>
       <span class="chip" id="shopCrumbs" style="margin-left:auto">0 crumbs</span></div>
     <div class="note">Purely cosmetic - emotes, hit effects, banners and icons. Earned by finishing rounds, not by winning or losing.</div>
-    <div id="shopTabs2">
-      <button class="stab sel" data-scat="emote">Emotes</button>
-      <button class="stab" data-scat="fx">Hit FX</button>
-      <button class="stab" data-scat="banner">Banners</button>
-      <button class="stab" data-scat="icon">Icons</button>
+    <div id="shopLayout">
+      <canvas id="shopBot" width="170" height="260"></canvas>
+      <div id="shopMain">
+        <div id="shopTabs2">
+          <button class="stab sel" data-scat="emote">Emotes</button>
+          <button class="stab" data-scat="fx">Hit FX</button>
+          <button class="stab" data-scat="banner">Banners</button>
+          <button class="stab" data-scat="icon">Icons</button>
+        </div>
+        <div class="grid" id="shopCosGrid" style="margin-top:10px"></div>
+      </div>
     </div>
-    <div class="grid" id="shopCosGrid" style="margin-top:10px"></div>
     <div class="spacer"></div>
   </div></div>
 
@@ -721,8 +772,9 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     <div id="pIn" style="display:none">
       <div class="note">Share this code</div>
       <div class="disp code" id="pCodeBig">-----</div>
-      <div class="row"><button class="btn sub" id="bCopy">Copy code</button>
-        <button class="btn sub" id="bLeave">Leave</button></div>
+      <div class="row"><button class="btn sub" id="bInvite">Invite a friend</button>
+        <button class="btn sub" id="bCopy">Copy code</button></div>
+      <button class="btn sub" id="bLeave" style="border-left-color:var(--danger);color:var(--danger)">Leave</button>
       <div class="sect">In the party <span id="pCnt"></span></div>
       <div id="pList"></div>
       <button class="btn sub" id="bPHero" style="margin-bottom:12px">Change hero &middot; <span id="pHeroLbl">Commander Gordo</span></button>
@@ -819,9 +871,16 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.10.3";
+var VERSION="2.11.0";
 var CHANGELOG=[
-  {v:"2.10.3",d:"latest",items:[
+  {v:"2.11.0",d:"latest",items:[
+    "A REAL PROFILE SCREEN. The top-left account card now opens its own Profile page instead of Settings - equip an owned icon or banner right there and see it applied immediately, both on the card and on the profile page itself, plus your full progress stats. Settings keeps its own copy of the stats and the danger-zone reset",
+    "THE SHOP HAS A VENDOR BOT NOW. A robot behind the counter on the left whose eyes and head track your cursor (or your last tap, on touch) - smoothed rather than snapping straight to it. Also added 13 new items across emotes, hit colours, banners and icons",
+    "LEVELING UP MID-RUN NOW ACTUALLY POPS UP MID-RUN. Account XP used to only land as one lump sum at the very end of a run, so a tower-unlock choice never showed up until the results screen - by which point the run was already over and there was nothing to place it into. XP now lands as each round is cleared, and a tower choice pauses the game and pops up right then so you can actually deploy what you just unlocked",
+    "SELECTING A HERO NO LONGER FORCES OPEN ITS FULL INFO POPUP EVERY TIME - a single click just selects it now (for comparing heroes by clicking through the row); double-click for the full description and skill breakdown",
+    "AN ACTUAL INVITE BUTTON IN CO-OP, next to Copy Code - hands your party code straight to your device's own share sheet (texts, Discord, whatever's installed) instead of making a friend copy-paste it manually. A real friends list with online status and join requests isn't possible without a backend server this static, peer-to-peer site doesn't have - party codes are random and one-time-only, so there's no stable identity to build a friends list on top of - and building a fake one that looks like it works would be worse than not having it"
+  ]},
+  {v:"2.10.3",items:[
     "PLACING A ROBOT OR HERO HAS SOME IMPACT NOW - a quick dust ring and spark burst in the robot's own colour when it lands, instead of just silently appearing. Small thing, but every kill already got this kind of punch and placement never did"
   ]},
   {v:"2.10.2",items:[
@@ -2151,26 +2210,39 @@ var COSMETICS=[
   {id:"emote_skull",    cat:"emote", n:"Rekt",      c:200, glyph:"💀"},
   {id:"emote_party",    cat:"emote", n:"Celebrate", c:150, glyph:"🎉"},
   {id:"emote_scream",   cat:"emote", n:"Boss Incoming",c:180, glyph:"😱"},
+  {id:"emote_gg",       cat:"emote", n:"GG",         c:90,  glyph:"🤝"},
+  {id:"emote_rocket",   cat:"emote", n:"Liftoff",    c:140, glyph:"🚀"},
+  {id:"emote_shield",   cat:"emote", n:"Turtling",   c:140, glyph:"🛡️"},
+  {id:"emote_alien",    cat:"emote", n:"Fraternizing",c:220, glyph:"👽"},
   {id:"fx_gold",        cat:"fx",    n:"Golden Hits",   c:250, col:"#66e7ff"},
   {id:"fx_mint",        cat:"fx",    n:"Mint Hits",     c:250, col:"#5ff0c0"},
   {id:"fx_purple",      cat:"fx",    n:"Royal Hits",    c:250, col:"#a880d0"},
   {id:"fx_ice",         cat:"fx",    n:"Ice Hits",      c:280, col:"#a0e0ff"},
   {id:"fx_shadow",      cat:"fx",    n:"Shadow Hits",   c:280, col:"#3a2a4a"},
   {id:"fx_rainbow",     cat:"fx",    n:"Rainbow Hits",  c:600, col:"rainbow"},
+  {id:"fx_lime",        cat:"fx",    n:"Toxic Hits",    c:260, col:"#a8e83a"},
+  {id:"fx_crimson",     cat:"fx",    n:"Crimson Hits",  c:260, col:"#e8324a"},
+  {id:"fx_white",       cat:"fx",    n:"Pure Hits",     c:300, col:"#f4faff"},
   {id:"banner_wheat",   cat:"banner", n:"Wheat Field",  c:150, col:["#35d8ff","#c98a4b"]},
   {id:"banner_night",   cat:"banner", n:"Midnight Bake",c:150, col:["#2a1c3a","#a880d0"]},
   {id:"banner_blood",   cat:"banner", n:"Rare Steak",   c:220, col:["#a83a3a","#3a1712"]},
   {id:"banner_frost",   cat:"banner", n:"Deep Freeze",  c:220, col:["#8fd0e8","#3a5a68"]},
   {id:"banner_insane",  cat:"banner", n:"No Mercy",     c:320, col:["#ff5030","#160404"]},
   {id:"banner_gold",    cat:"banner", n:"Core Chamber", c:320, col:["#66e7ff","#3a2a08"]},
+  {id:"banner_toxic",   cat:"banner", n:"Toxic Spill",  c:260, col:["#a8e83a","#0c1a08"]},
+  {id:"banner_royal",   cat:"banner", n:"Royal Command",c:260, col:["#3a5ae8","#f0c14b"]},
+  {id:"banner_plasma",  cat:"banner", n:"Plasma Storm", c:340, col:["#d84cff","#35d8ff"]},
   {id:"icon_jar",       cat:"icon", n:"Energy Cell",     c:100, ic:"jar"},
   {id:"icon_cleaver",   cat:"icon", n:"Cleaver",     c:100, ic:"cleaver"},
   {id:"icon_hero",      cat:"icon", n:"Hero Star",   c:180, ic:"star"},
   {id:"icon_bug",       cat:"icon", n:"Squashed Alien",c:180, ic:"bug"},
   {id:"icon_queen",     cat:"icon", n:"Alien Queen",  c:280, ic:"queen"},
-  {id:"icon_widow",     cat:"icon", n:"Mothership",c:280, ic:"widow"}
+  {id:"icon_widow",     cat:"icon", n:"Mothership",c:280, ic:"widow"},
+  {id:"icon_hornet",    cat:"icon", n:"Hornet",      c:200, ic:"hornet"},
+  {id:"icon_flicker",   cat:"icon", n:"Flicker Bot", c:220, ic:"flicker"},
+  {id:"icon_gordo",     cat:"icon", n:"Commander Gordo",c:260, ic:"gordo"}
 ];
-var COS_ICON_GLYPH={jar:"📦",cleaver:"⚔️",star:"⭐",bug:"👾",queen:"👑",widow:"🛸"};
+var COS_ICON_GLYPH={jar:"📦",cleaver:"⚔️",star:"⭐",bug:"👾",queen:"👑",widow:"🛸",hornet:"🐝",flicker:"🤖",gordo:"🧑‍🚀"};
 function cosOwned(id){ return save.cosOwned.indexOf(id)>=0; }
 function cosEquipped(cat){ return save.cosEquip[cat]||null; }
 function buyCosmetic(C){
@@ -3308,7 +3380,7 @@ function ownerName(owner){
   return coopNames[owner]||(owner==="host"?"Host":"A friend");
 }
 var cash=0,lives=0,wave=0,waveMax=40,inWave=false,waveQueue=[],spawnT=0,runStartLives=0;
-var totalPops=0,fastFwd=false,selTower=null,buyId=null,placing=false;
+var totalPops=0,fastFwd=false,selTower=null,buyId=null,placing=false,runXpGained=0,runTokensGained=0,runStartLvl=1;
 var mouse={x:0,y:0,on:false};
 var nextBugId=1;
 
@@ -3324,6 +3396,7 @@ function startRun(mapIdx,diffIdx,heroId){
   runStartLives=lives;
   wave=0; waveMax=MAPS[curMap].waves; inWave=false; waveQueue=[]; spawnT=0;
   totalPops=0; fastFwd=false; selTower=null; buyId=null; placing=false;
+  runXpGained=0; runTokensGained=0; runStartLvl=save.playerLvl;
   hudLastCash=null; hudLastLife=null;
   nextBugId=1;
   state="play";
@@ -3364,6 +3437,7 @@ function pickTowerChoicePool(){
 }
 function gainAccountXp(amount){
   if(amount<=0)return 0;
+  runXpGained+=amount;
   save.acctXp=(save.acctXp||0)+amount;
   var tokens=0;
   while(save.acctXp>=acctXpNeeded(save.playerLvl)){
@@ -3379,7 +3453,7 @@ function gainAccountXp(amount){
     if(!allHeroes){ if(lvl>=3&&(lvl-3)%3===0)tokens+=2; }
     else tokens+=1;
   }
-  if(tokens){ save.heroTokens+=tokens; toast("+"+tokens+" hero token"+(tokens>1?"s":"")); }
+  if(tokens){ save.heroTokens+=tokens; runTokensGained+=tokens; toast("+"+tokens+" hero token"+(tokens>1?"s":"")); }
   updateAcctWidget();
   return tokens;
 }
@@ -3400,6 +3474,11 @@ function renderTowerChoice(){
       toast(T.n+" unlocked!");
       pendingTowerChoices.shift();
       if(pendingTowerChoices.length)renderTowerChoice();
+      /* this same queue/overlay now also fires mid-run (state:"pause",
+         see the "wave over" block in update()) so you can actually place
+         the tower you just unlocked instead of only seeing it on the
+         results screen - resume play instead of jumping to o-over there. */
+      else if(state==="pause"){ hideOvl(); state="play"; }
       else { hideOvl(); showOvl("o-over"); }
     };
     g.appendChild(d);
@@ -3410,8 +3489,6 @@ function endRun(won){
   if(party.on&&party.leader)party.send({t:"over",won:won});
   var roundsSurvived=won?waveMax:Math.max(0,wave-1);
   save.crumbs=(save.crumbs||0)+Math.round(roundsSurvived*(6+curDiff*3));
-  var startLvl=save.playerLvl;
-  var xpGain=Math.round(roundsSurvived*(4+curDiff*2)+(won?15+curDiff*8:0));
   if(won){
     save.wins++;
     var jars=Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier));
@@ -3423,7 +3500,12 @@ function endRun(won){
     if(lives>=runStartLives)save.perfectWins=(save.perfectWins||0)+1;
     sfx.win();
   } else sfx.lose();
-  var tokensGained=gainAccountXp(xpGain);
+  /* per-round XP already landed live as each wave cleared (see the "wave
+     over" block in update()) - this is only the run's completion bonus,
+     not the whole run's XP. runXpGained/runTokensGained (reset in
+     startRun) track the true run total for the results screen below,
+     since save.playerLvl may already have climbed mid-run. */
+  gainAccountXp(won?Math.round(15+curDiff*8):0);
   if(wave>save.best)save.best=wave;
   save.pops+=totalPops;
   checkAchievements();
@@ -3439,9 +3521,9 @@ function endRun(won){
     ["Hero",byId(HEROES,chosenHero).n+" (lv "+(myHero()?myHero().lvl:1)+")"]];
   rows.push(["Crumbs earned","+"+Math.round(roundsSurvived*(6+curDiff*3))]);
   if(won)rows.push(["Preserve Jars earned","+"+Math.max(1,Math.round(DIFFS[curDiff].rew*MAPS[curMap].tier))]);
-  rows.push(["Account XP earned","+"+xpGain]);
-  if(save.playerLvl>startLvl)rows.push(["Player level","Lv"+startLvl+" → Lv"+save.playerLvl]);
-  if(tokensGained)rows.push(["Hero tokens earned","+"+tokensGained]);
+  rows.push(["Account XP earned","+"+runXpGained]);
+  if(save.playerLvl>runStartLvl)rows.push(["Player level","Lv"+runStartLvl+" → Lv"+save.playerLvl]);
+  if(runTokensGained)rows.push(["Hero tokens earned","+"+runTokensGained]);
   rows.forEach(function(r){
     var d=document.createElement("div"); d.className="statline";
     d.innerHTML="<span>"+r[0]+"</span><b>"+r[1]+"</b>"; st.appendChild(d);
@@ -3464,6 +3546,7 @@ function updateAcctWidget(){
   $("acctLvlChip").textContent="Lv "+lvl;
   $("acctBarFill").style.width=Math.max(4,Math.round(xp/need*100))+"%";
   $("acctBarLbl").textContent=xp+"/"+need+" XP";
+  el.style.background=equippedBannerBg()||"";
 }
 function updateTitleProgress(){ updateAcctWidget(); }
 function quitToTitle(){
@@ -4077,9 +4160,18 @@ function update(dt){
     cash+=income+bonus;
     if(income)toast("Round bonus "+bonus+" + income "+income);
     sfx.cash();
+    /* account XP used to only land as one lump sum at the very end of a
+       run (endRun's roundsSurvived*rate term), so a level-up - and the
+       tower choice it can unlock - never showed up until you'd already
+       finished playing. Granting it per cleared round instead means it
+       can now happen mid-run, right when you'd actually get to use the
+       new tower. The run's own completion bonus in endRun is unaffected -
+       this only replaces the old roundsSurvived accrual, not the win bonus. */
+    gainAccountXp(Math.round(4+curDiff*2));
     if(wave>=waveMax){ endRun(true); return; }
     updateHud();
-    if(save.autostart)startWave();
+    if(pendingTowerChoices.length){ state="pause"; renderTowerChoice(); showOvl("o-lvlup"); }
+    else if(save.autostart)startWave();
   }
   updateHud();
 }
@@ -5248,14 +5340,19 @@ function renderHeroGrid(onPick){
     d.onclick=function(){
       if(!unlocked){
         sfx.click();
-        if(save.heroTokens<H.price){ toast("Not enough hero tokens"); openHeroInfo(H.id); return; }
+        if(save.heroTokens<H.price){ toast("Not enough hero tokens - double-click for details"); return; }
         save.heroTokens-=H.price; save.heroesUnlocked.push(H.id); queueSave(); sfx.up();
         toast(H.n+" unlocked!"); renderHeroGrid(onPick); updateTitleProgress();
         return;
       }
       sfx.click(); chosenHero=H.id; renderHeroGrid(onPick); updateHeroPreview();
-      if(onPick)onPick(H.id); openHeroInfo(H.id);
+      if(onPick)onPick(H.id);
     };
+    /* a single click used to also blow open the full info popup every
+       time, which got in the way of just clicking through the row to
+       compare heroes - now selecting and reading up are two different
+       gestures, same as most game menus. */
+    d.ondblclick=function(){ openHeroInfo(H.id); };
     row.appendChild(d);
   });
   g.appendChild(row);
@@ -5276,6 +5373,56 @@ function drawHeroPreview(t){
   g.save(); g.translate(75,95); g.scale(2.1,2.1);
   drawHeroArt(g,chosenHero,t,0);
   drawHeroUpgradeArmor(g,{lvl:save.heroMaxLvl[chosenHero]||1},byId(HEROES,chosenHero),t);
+  g.restore();
+}
+/* the shop's vendor bot - eyes and a slight head-tilt track wherever the
+   cursor is (or wherever you last tapped, on touch, since that's the only
+   signal touch gives us). Target updates instantly on the input event;
+   the actual look direction eases toward it every frame so it reads as a
+   smooth turn rather than a snap. */
+var shopBotCtx=null,shopBotTX=0,shopBotTY=-40,shopBotLX=0,shopBotLY=-40;
+function setShopBotLookTarget(cx,cy){
+  var c=$("shopBot"); if(!c)return;
+  var r=c.getBoundingClientRect();
+  shopBotTX=cx-(r.left+r.width/2);
+  shopBotTY=cy-(r.top+r.height*.32);
+}
+document.addEventListener("mousemove",function(e){ setShopBotLookTarget(e.clientX,e.clientY); });
+document.addEventListener("click",function(e){ setShopBotLookTarget(e.clientX,e.clientY); });
+function drawShopBot(t){
+  var c=$("shopBot"); if(!c)return;
+  if(!shopBotCtx)shopBotCtx=c.getContext("2d");
+  var g=shopBotCtx,w=c.width,h=c.height;
+  shopBotLX+=(shopBotTX-shopBotLX)*.1; shopBotLY+=(shopBotTY-shopBotLY)*.1;
+  g.clearRect(0,0,w,h);
+  var bob=Math.sin(t*1.6)*3;
+  g.save(); g.translate(w/2,h*.64+bob);
+  // stubby legs + body
+  g.fillStyle="#14263d"; g.fillRect(-16,66,10,26); g.fillRect(6,66,10,26);
+  g.fillStyle="#1d3652"; g.beginPath(); g.roundRect(-36,4,72,72,18); g.fill();
+  g.strokeStyle="#35d8ff"; g.lineWidth=2; g.beginPath(); g.roundRect(-36,4,72,72,18); g.stroke();
+  g.fillStyle="#66e7ff"; g.beginPath(); g.arc(0,40,8,0,6.283); g.fill();
+  g.strokeStyle="rgba(102,231,255,.5)"; g.lineWidth=1.4;
+  g.beginPath(); g.arc(0,40,13,0,6.283); g.stroke();
+  // arms
+  g.strokeStyle="#1d3652"; g.lineWidth=9; g.lineCap="round";
+  g.beginPath(); g.moveTo(-34,20); g.lineTo(-46,50+Math.sin(t*1.6+1)*3); g.stroke();
+  g.beginPath(); g.moveTo(34,20); g.lineTo(46,50+Math.sin(t*1.6)*3); g.stroke();
+  // neck + head, head tilts toward the look target
+  g.fillStyle="#0d1b2d"; g.fillRect(-7,-8,14,14);
+  g.save();
+  g.translate(0,-34);
+  g.rotate(clamp(shopBotLX*.0035,-.32,.32));
+  g.fillStyle="#e8f6ff"; g.beginPath(); g.roundRect(-30,-32,60,56,20); g.fill();
+  g.strokeStyle="#35d8ff"; g.lineWidth=2.2; g.beginPath(); g.roundRect(-30,-32,60,56,20); g.stroke();
+  g.fillStyle="#07111f"; g.beginPath(); g.roundRect(-22,-19,44,24,9); g.fill();
+  var ex=clamp(shopBotLX*.045,-8,8), ey=clamp(shopBotLY*.045,-4.5,4.5);
+  g.fillStyle="#35d8ff";
+  g.beginPath(); g.arc(-9+ex,-7+ey,3.6,0,6.283); g.fill();
+  g.beginPath(); g.arc(9+ex,-7+ey,3.6,0,6.283); g.fill();
+  g.strokeStyle="#8cecff"; g.lineWidth=2; g.beginPath(); g.moveTo(0,-32); g.lineTo(0,-43); g.stroke();
+  g.fillStyle="#ff72e8"; g.beginPath(); g.arc(0,-45,3.6,0,6.283); g.fill();
+  g.restore();
   g.restore();
 }
 /* the hero-select screen has no live hero object (no run has started yet),
@@ -5474,39 +5621,48 @@ function renderAchievements(){
   });
 }
 var shopCat2="emote";
+/* shared by the shop grid and the profile screen's icon/banner pickers -
+   same card, same buy-or-equip click rule, so equipping something from
+   your profile behaves identically to equipping it from the shop. */
+function cosCard(C,onChange){
+  var owned=cosOwned(C.id), eq=cosEquipped(C.cat)===C.id;
+  var d=document.createElement("div");
+  d.className="coscard"+(owned?" owned":"")+(eq?" equipped":"");
+  var sw=document.createElement("div"); sw.className="swatch";
+  if(C.cat==="emote")sw.textContent=C.glyph;
+  else if(C.cat==="fx")sw.style.background=C.col==="rainbow"?
+    "linear-gradient(90deg,#e8324a,#35d8ff,#7bd94a,#3a8ae8,#a880d0)":C.col;
+  else if(C.cat==="banner")sw.style.background="linear-gradient(135deg,"+C.col[0]+","+C.col[1]+")";
+  else if(C.cat==="icon"){ var mc=document.createElement("canvas"); mc.width=52; mc.height=52;
+    var mg=mc.getContext("2d"); mg.translate(26,30);
+    if(C.ic==="jar"){ cyl(mg,0,4,18,20,"#3a4a52"); orb(mg,0,-8,7,"#66e7ff"); }
+    else if(C.ic==="cleaver")drawTowerArt(mg,"cleaver",0,0);
+    else if(C.ic==="star")orb(mg,0,0,14,"#66e7ff");
+    else if(C.ic==="bug")drawBugArt(mg,"beetle",0,14,0);
+    else if(C.ic==="queen")drawBugArt(mg,"queen",0,15,0);
+    else if(C.ic==="widow")drawBugArt(mg,"widow",0,15,0);
+    else if(C.ic==="hornet")drawBugArt(mg,"hornet",0,14,0);
+    else if(C.ic==="flicker")drawTowerArt(mg,"flicker",0,0);
+    else if(C.ic==="gordo"){ mg.translate(0,10); drawHeroArt(mg,"gordo",0,0,0); }
+    sw.appendChild(mc);
+  }
+  d.appendChild(sw);
+  var meta=document.createElement("div");
+  meta.innerHTML='<div class="cn">'+C.n+'</div><div class="cp'+(owned?" owned":"")+'">'+
+    (owned?(eq?"Equipped":"Owned - tap to equip"):(C.c+" crumbs"))+'</div>';
+  d.appendChild(meta);
+  d.onclick=function(){
+    if(owned){ save.cosEquip[C.cat]=C.id; queueSave(); updateAcctWidget(); sfx.click(); onChange(); return; }
+    if(buyCosmetic(C)){ sfx.up(); toast(C.n+" unlocked"); updateAcctWidget(); onChange(); }
+    else toast("Not enough crumbs");
+  };
+  return d;
+}
 function renderShop2(){
   $("shopCrumbs").textContent=(save.crumbs||0)+" crumbs";
   var g=$("shopCosGrid"); g.innerHTML="";
   COSMETICS.filter(function(C){ return C.cat===shopCat2; }).forEach(function(C){
-    var owned=cosOwned(C.id), eq=cosEquipped(C.cat)===C.id;
-    var d=document.createElement("div");
-    d.className="coscard"+(owned?" owned":"")+(eq?" equipped":"");
-    var sw=document.createElement("div"); sw.className="swatch";
-    if(C.cat==="emote")sw.textContent=C.glyph;
-    else if(C.cat==="fx")sw.style.background=C.col==="rainbow"?
-      "linear-gradient(90deg,#e8324a,#35d8ff,#7bd94a,#3a8ae8,#a880d0)":C.col;
-    else if(C.cat==="banner")sw.style.background="linear-gradient(135deg,"+C.col[0]+","+C.col[1]+")";
-    else if(C.cat==="icon"){ var mc=document.createElement("canvas"); mc.width=52; mc.height=52;
-      var mg=mc.getContext("2d"); mg.translate(26,30);
-      if(C.ic==="jar"){ cyl(mg,0,4,18,20,"#3a4a52"); orb(mg,0,-8,7,"#66e7ff"); }
-      else if(C.ic==="cleaver")drawTowerArt(mg,"cleaver",0,0);
-      else if(C.ic==="star")orb(mg,0,0,14,"#66e7ff");
-      else if(C.ic==="bug")drawBugArt(mg,"beetle",0,14,0);
-      else if(C.ic==="queen")drawBugArt(mg,"queen",0,15,0);
-      else if(C.ic==="widow")drawBugArt(mg,"widow",0,15,0);
-      sw.appendChild(mc);
-    }
-    d.appendChild(sw);
-    var meta=document.createElement("div");
-    meta.innerHTML='<div class="cn">'+C.n+'</div><div class="cp'+(owned?" owned":"")+'">'+
-      (owned?(eq?"Equipped":"Owned - tap to equip"):(C.c+" crumbs"))+'</div>';
-    d.appendChild(meta);
-    d.onclick=function(){
-      if(owned){ save.cosEquip[C.cat]=C.id; queueSave(); updateAcctWidget(); sfx.click(); renderShop2(); return; }
-      if(buyCosmetic(C)){ sfx.up(); toast(C.n+" unlocked"); updateAcctWidget(); renderShop2(); }
-      else toast("Not enough crumbs");
-    };
-    g.appendChild(d);
+    g.appendChild(cosCard(C,renderShop2));
   });
 }
 function renderDex(){
@@ -5564,19 +5720,47 @@ $("bSkills").onclick=function(){
   runWarpAnim(function(){ renderSkills(); show("s-skills"); });
 };
 $("skBack").onclick=function(){ sfx.click(); show("s-title"); resize(); };
-function renderSettings(){
-  var st=$("setStats"); st.innerHTML="";
-  var rows=[["Player level",save.playerLvl],["Account XP",save.acctXp+"/"+acctXpNeeded(save.playerLvl)],
+function progressStatsRows(){
+  return [["Player level",save.playerLvl],["Account XP",save.acctXp+"/"+acctXpNeeded(save.playerLvl)],
     ["Towers unlocked",save.towersUnlocked.length+"/"+TOWERS.length],
     ["Heroes unlocked",save.heroesUnlocked.length+"/"+HEROES.length],["Hero tokens",save.heroTokens],
     ["Preserve Jars",save.jars],["Crumbs",save.crumbs||0],["Wins",save.wins],["Runs played",save.runs]];
+}
+function fillStatRows(container,rows){
+  container.innerHTML="";
   rows.forEach(function(r){
     var d=document.createElement("div"); d.className="statline";
-    d.innerHTML="<span>"+r[0]+"</span><b>"+r[1]+"</b>"; st.appendChild(d);
+    d.innerHTML="<span>"+r[0]+"</span><b>"+r[1]+"</b>"; container.appendChild(d);
   });
 }
+function renderSettings(){ fillStatRows($("setStats"),progressStatsRows()); }
+function equippedBannerBg(){
+  var id=cosEquipped("banner"), B=id&&byId(COSMETICS,id);
+  return (B&&B.cat==="banner")?"linear-gradient(135deg,"+B.col[0]+","+B.col[1]+")":null;
+}
+/* the profile screen: equip your icon and banner right where you look at
+   them (instead of only in the shop), see the banner as an actual
+   background instead of just a lobby-list border sliver, and see your
+   progress stats in the same place - all reached from the top-left
+   account card instead of it opening Settings. */
+function renderProfile(){
+  updateAcctWidget();
+  var lvl=save.playerLvl||1, need=acctXpNeeded(lvl), xp=Math.min(save.acctXp||0,need);
+  $("profName").textContent=save.name||"Commander";
+  $("profAvatar").textContent=acctIconGlyph();
+  $("profLvlChip").textContent="Lv "+lvl;
+  $("profBarFill").style.width=Math.max(4,Math.round(xp/need*100))+"%";
+  $("profBarLbl").textContent=xp+"/"+need+" XP";
+  $("profCard").style.background=equippedBannerBg()||"linear-gradient(160deg,var(--bg3),var(--bg2))";
+  var ig=$("profIconGrid"); ig.innerHTML="";
+  COSMETICS.filter(function(C){ return C.cat==="icon"; }).forEach(function(C){ ig.appendChild(cosCard(C,renderProfile)); });
+  var bg=$("profBannerGrid"); bg.innerHTML="";
+  COSMETICS.filter(function(C){ return C.cat==="banner"; }).forEach(function(C){ bg.appendChild(cosCard(C,renderProfile)); });
+  fillStatRows($("profStats"),progressStatsRows());
+}
 $("bSettings").onclick=function(){ audioOn(); sfx.click(); renderSettings(); show("s-settings"); };
-$("acctWidget").onclick=function(){ audioOn(); sfx.click(); renderSettings(); show("s-settings"); };
+$("acctWidget").onclick=function(){ audioOn(); sfx.click(); renderProfile(); show("s-profile"); };
+$("profBack").onclick=function(){ sfx.click(); show("s-title"); resize(); };
 $("setBack").onclick=function(){ sfx.click(); show("s-title"); resize(); };
 $("setResetBtn").onclick=function(){ sfx.click(); showOvl("o-resetConfirm"); };
 $("setResetCancelBtn").onclick=function(){ sfx.click(); hideOvl(); show("s-settings"); };
@@ -5874,6 +6058,24 @@ $("bCopy").onclick=function(){
   try{ navigator.clipboard.writeText(party.code); toast("Code copied"); }
   catch(e){ toast(party.code); }
 };
+/* there's no account system or server tying player identities together
+   here - party codes are a fresh random one every time someone hosts, so
+   there's nothing to build a real friends/presence list or join-request
+   flow on top of without standing up a backend that doesn't exist. The
+   one honest, useful piece of "invite a friend" that IS buildable
+   client-side: hand the code straight to whatever the OS's own share
+   sheet already knows how to reach (texts, Discord, whatever) instead of
+   making them copy-paste it manually. */
+$("bInvite").onclick=function(){
+  sfx.click();
+  var text="Join my Alien Attack party - code "+party.code;
+  if(navigator.share){
+    navigator.share({title:"Alien Attack",text:text}).catch(function(){});
+  } else {
+    try{ navigator.clipboard.writeText(text); toast("Invite text copied"); }
+    catch(e){ toast(text); }
+  }
+};
 $("pStart").onclick=function(){
   sfx.click();
   party.send({t:"start",map:MAPS[curMap].id,diff:DIFFS[curDiff].id});
@@ -6023,6 +6225,7 @@ function frameBody(now){
   if($("s-title")&&$("s-title").className.indexOf("hide")<0){ drawTitleBg(t); drawTitleAnim(t); }
   if($("s-skills")&&$("s-skills").className.indexOf("hide")<0)drawSkyBg(t);
   if($("s-hero")&&$("s-hero").className.indexOf("hide")<0)drawHeroPreview(t);
+  if($("s-shop")&&$("s-shop").className.indexOf("hide")<0)drawShopBot(t);
   if(state==="play"){
     acc+=dt;
     var step=1/60,guard=0;
