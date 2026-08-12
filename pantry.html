@@ -780,9 +780,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.10.0";
+var VERSION="2.10.1";
 var CHANGELOG=[
-  {v:"2.10.0",d:"latest",items:[
+  {v:"2.10.1",d:"latest",items:[
+    "FIXED A ROBOT UPGRADE BUG FOUND BY ACTUALLY LOOKING AT A MAXED-OUT ROBOT: the 'final form' power nova was wired to trigger at 10 combined upgrade tiers, but the upgrade rules themselves cap a robot at 7 (5 on one path, 2 on a second - only one path can ever go past tier 2) once you're two paths deep. The nova could never actually fire. It now triggers off fully maxing a path instead, so it's the reachable payoff it was meant to be"
+  ]},
+  {v:"2.10.0",items:[
     "SKILL TREE REBUILT AS AN ACTUAL CONSTELLATION. Tap the glowing orb top-right for a real hyperspace warp transition, then spend Preserve Jars among the stars instead of scrolling a list - each skill chain radiates from a centre point, and the line to whatever a skill needs only lights up once you actually own both ends",
     "TOWER UPGRADES ARE MORE UNIQUE. Ten upgrade paths that were pure damage/speed/range stacking now gain a real effect partway through (weaken, burn, slow or splash) instead of just bigger numbers all the way down. Credit Bot's \"Jackpot\" upgrade is an actual jackpot now too - a real chance-based bonus payout, not just another flat number wearing the name",
     "COSMETICS ACTUALLY DO SOMETHING. Emotes, hit-effect colours, and your co-op lobby icon/banner could all be bought and equipped before with nothing anywhere reading them back - the whole shop was a dead end. Your hit colour now shows on your own kills, your icon and banner show in the party list, and a new HUD button lets you fire an owned emote that syncs to the rest of your co-op party",
@@ -2737,9 +2740,12 @@ function drawUpgradeAura(c,tw,t){
     c.restore();
   }
   /* deep investment gets visible armour plating riveted onto the body,
-     and maxing both open paths (10 tiers total) triggers a "final form"
-     nova - the dramatic T5 transformation the design brief asked for,
-     done generically so it applies to all 21 robots at once. */
+     and fully maxing a path (tier 5) triggers a "final form" nova - the
+     dramatic transformation the design brief asked for, done generically
+     so it applies to all 21 robots at once. Note: tot can only ever reach
+     7 (5 on one path + 2 on a second) because upgradeTower forbids a
+     second path from passing tier 2 once any path is past it, so the
+     nova must key off an actual maxed tier, not a tot threshold. */
   if(tot>=6){
     var domP=tiers[1]>tiers[0]?1:0; if(tiers[2]>tiers[domP])domP=2;
     c.save();
@@ -2754,7 +2760,7 @@ function drawUpgradeAura(c,tw,t){
     }
     c.restore();
   }
-  if(tot>=10){
+  if(tiers[0]>=5||tiers[1]>=5||tiers[2]>=5){
     c.save();
     var nova=.4+Math.sin(t*3.6)*.2;
     var ng=c.createRadialGradient(0,0,10,0,0,30);
@@ -5957,13 +5963,15 @@ window.__pp={
       cash:Math.floor(cash),lives:Math.floor(lives),pops:totalPops,
       hero:myHero()?{lvl:myHero().lvl,dmg:myHero().s.dmg}:null,heroCount:heroes.length};
   },
-  MAPS:MAPS, BUGS:BUGS, TOWERS:TOWERS,
+  MAPS:MAPS, BUGS:BUGS, TOWERS:TOWERS, HEROES:HEROES,
   drawMapThumb:drawMapThumb, drawBugArt:drawBugArt, decoIcon:decoIcon,
   drawTitleBg:drawTitleBg, drawTitleAnim:drawTitleAnim, drawHeroArt:drawHeroArt,
   drawHeroUpgradeArmor:drawHeroUpgradeArmor, drawTowerArt:drawTowerArt, drawUpgradeAura:drawUpgradeAura,
   myHitCol:myHitCol,
   view:view, CELL:CELL, cv:cv,
   getTowers:function(){ return towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,t1:t.t1,t2:t.t2,t3:t.t3,spent:t.spent,pops:t.pops,cd:t.cd,ang:t.ang,xp:t.xp,lvl:t.lvl,s:t.s}; }); },
+  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; for(var i=0;i<(times||1);i++){ tw.lvl=10; cash+=99999; upgradeTower(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,lvl:tw.lvl}; },
+  forceHeroLvl:function(owner,lvl){ var h=heroes.filter(function(x){return x.owner===(owner||"solo");})[0]; if(!h)return "no hero"; while(h.lvl<lvl)giveHeroXp(h,heroXpNeeded(h.lvl)); return {lvl:h.lvl,xp:h.xp}; },
   getShots:function(){ return shots.map(function(sh){ return {x:sh.x,y:sh.y,dmg:sh.dmg,hit:Object.keys(sh.hit||{}).length}; }); },
   getHero:function(){ var h=myHero(); return h?{id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}:null; },
   getHeroes:function(){ return heroes.map(function(h){ return {owner:h.owner,id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}; }); },
