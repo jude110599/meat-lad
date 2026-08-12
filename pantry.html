@@ -174,9 +174,9 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .tcard{position:relative;display:flex;align-items:center;justify-content:center;
   background:var(--tc-bg,var(--bg2));aspect-ratio:1;
   border:1px solid var(--line);border-left:3px solid var(--tc-col,var(--bg4));border-radius:8px;
-  padding:4px;cursor:grab;touch-action:none;transition:background .12s,transform .12s}
+  padding:4px;cursor:pointer;touch-action:manipulation;transition:background .12s,transform .12s}
 .tcard:hover{background:var(--bg3);transform:scale(1.05)}
-.tcard:active{cursor:grabbing}
+.tcard:active{transform:scale(.95)}
 .tcard.poor{opacity:.42;cursor:default;transform:none}
 .tcard.sel{border-left-color:var(--honey);background:var(--bg3);box-shadow:0 0 0 2px var(--honey) inset}
 .tcard canvas{width:68%;height:68%;flex:none}
@@ -1959,8 +1959,13 @@ function buildSkyLayout(){
   chains.forEach(function(chain,ci){
     var ang=-Math.PI/2+ci/chains.length*Math.PI*2;
     chain.forEach(function(S,idx){
-      var r=.15+idx*.13;
-      pos[S.id]={x:.5+Math.cos(ang)*r*1.25,y:.5+Math.sin(ang)*r};
+      /* the outermost star in the longest chains used to land past the
+         right edge on a narrow phone screen (r=.41 * the 1.25 x-bias put
+         it at 51% from centre - fine on a wide desktop window, clipped
+         clean off a 375px-wide one). Capped low enough that even the
+         3rd-tier stars stay safely inside on any aspect ratio. */
+      var r=.12+idx*.095;
+      pos[S.id]={x:.5+Math.cos(ang)*r*1.15,y:.5+Math.sin(ang)*r};
     });
   });
   return pos;
@@ -5396,14 +5401,39 @@ $("shopBack").onclick=function(){ sfx.click(); show("s-title"); resize(); };
    chrome, and there was no way to reclaim it from inside the game before. */
 function isFs(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
 function updateFsLabel(){ var l=$("fsLabel"); if(l)l.textContent=isFs()?"Exit Full":"Fullscreen"; }
+/* iOS Safari has no requestFullscreen() at all for a plain page (only for
+   <video>), so the button used to just silently do nothing there - no
+   error, no feedback, which reads as "broken". Tell people what's
+   actually going on instead, and surface it if a supported browser's
+   request gets rejected (some mobile browsers refuse it outside a very
+   narrow definition of "user gesture", e.g. if it's not the very first
+   thing that happens in the click handler). */
+function fsRequestFn(){
+  var root=document.documentElement;
+  return root.requestFullscreen||root.webkitRequestFullscreen||root.mozRequestFullScreen||root.msRequestFullscreen;
+}
+function fsExitFn(){
+  return document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen||document.msExitFullscreen;
+}
 $("bFullscreen").onclick=function(){
   sfx.click();
-  var root=document.documentElement;
-  if(!isFs()){
-    (root.requestFullscreen||root.webkitRequestFullscreen||function(){}).call(root);
-  } else {
-    (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
+  if(isFs()){ var exit=fsExitFn(); if(exit)exit.call(document); return; }
+  var req=fsRequestFn();
+  if(!req){
+    /* modern iPadOS reports itself as "Macintosh" in the user agent
+       unless a site opts into "request desktop site" being off - the
+       old /iPad/ check misses it, so also catch the Mac-with-touch
+       signature Apple's own docs point to for detecting it. */
+    var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||
+      (navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+    toast(isIOS?
+      "iPhone/iPad don't support in-page fullscreen - add this to your Home Screen instead for a fullscreen app icon":
+      "Fullscreen isn't supported in this browser");
+    return;
   }
+  var root=document.documentElement,p;
+  try{ p=req.call(root); }catch(err){ toast("Couldn't go fullscreen"); return; }
+  if(p&&p.catch)p.catch(function(){ toast("Couldn't go fullscreen - try tapping the button again"); });
 };
 document.addEventListener("fullscreenchange",updateFsLabel);
 document.addEventListener("webkitfullscreenchange",updateFsLabel);
