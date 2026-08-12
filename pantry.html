@@ -421,9 +421,8 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   border:1px solid #a880d0;color:#fff;border-radius:8px;padding:9px 20px;font:inherit;
   font-weight:800;cursor:pointer}
 .skDetail button:disabled{opacity:.4;cursor:default}
-.warpFlash{position:fixed;inset:0;z-index:20;background:#fff;opacity:0;pointer-events:none}
-.warpFlash.go{animation:warpGo .5s ease-out}
-@keyframes warpGo{0%{opacity:0}35%{opacity:1}100%{opacity:0}}
+.warpFlash{position:fixed;inset:0;z-index:20;pointer-events:none;background:#000;opacity:0}
+.warpFlash.go{opacity:1}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ROBOTS VS ALIENS COMMAND UI */
@@ -579,7 +578,7 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     <div id="skStars"></div>
     <div id="skDetail" class="skDetail hide"></div>
   </div>
-  <div class="warpFlash hide" id="warpFlash"></div>
+  <canvas class="warpFlash hide" id="warpFlash"></canvas>
 
   <!-- ============ SETTINGS ============ -->
   <div class="screen hide" id="s-settings"><div class="page">
@@ -5194,6 +5193,54 @@ function drawSkyBg(t){
     g.beginPath(); g.moveTo(a.x*w,a.y*h); g.lineTo(b.x*w,b.y*h); g.stroke();
   });
 }
+/* the actual "warped into space" moment - streaks race outward from the
+   centre and accelerate like a hyperspace jump, peaking in a white flash
+   right as the skill screen swaps in underneath, then clear on the way
+   out so the new starfield is what's left once it settles. Runs on its
+   own rAF loop (not the game's) so it works from the title screen too. */
+var warpStreaks=null;
+function runWarpAnim(onMid,onDone){
+  var c=$("warpFlash"); if(!c){ onMid&&onMid(); onDone&&onDone(); return; }
+  c.classList.remove("hide"); c.classList.add("go");
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  var w=window.innerWidth,h=window.innerHeight;
+  c.width=Math.round(w*dpr); c.height=Math.round(h*dpr);
+  c.style.width=w+"px"; c.style.height=h+"px";
+  var g=c.getContext("2d");
+  g.setTransform(dpr,0,0,dpr,0,0);
+  if(!warpStreaks){
+    warpStreaks=[];
+    for(var i=0;i<70;i++)warpStreaks.push({a:rnd(0,6.283),sp:rnd(.7,1.6),ph:rnd(0,1)});
+  }
+  var dur=900,start=performance.now(),midFired=false;
+  var cols=["#d6b7ff","#8cecff","#ffffff"];
+  function step(now){
+    var k=Math.min(1,(now-start)/dur);
+    var cx=w/2,cy=h/2;
+    g.clearRect(0,0,w,h);
+    g.fillStyle="rgba(5,3,10,"+(.55+.4*Math.sin(k*Math.PI))+")";
+    g.fillRect(0,0,w,h);
+    var reach=Math.pow(k,1.8)*Math.max(w,h)*.75;
+    warpStreaks.forEach(function(s,i){
+      var len=reach*s.sp;
+      var x1=cx+Math.cos(s.a)*len*.15,y1=cy+Math.sin(s.a)*len*.15;
+      var x2=cx+Math.cos(s.a)*len,y2=cy+Math.sin(s.a)*len;
+      g.strokeStyle=cols[i%cols.length];
+      g.globalAlpha=Math.min(.9,k*2)*(1-Math.pow(k,3));
+      g.lineWidth=1+k*2;
+      g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke();
+    });
+    g.globalAlpha=1;
+    if(k>.55&&k<.82){
+      g.fillStyle="rgba(255,255,255,"+((k-.55)/.27*.7*(1-(k-.55)/.27))+")";
+      g.fillRect(0,0,w,h);
+    }
+    if(!midFired&&k>=.4){ midFired=true; onMid&&onMid(); }
+    if(k<1){ requestAnimationFrame(step); }
+    else { c.classList.remove("go"); c.classList.add("hide"); onDone&&onDone(); }
+  }
+  requestAnimationFrame(step);
+}
 function renderAchievements(){
   $("achCount").textContent=save.achUnlocked.length+"/"+ACHIEVEMENTS.length;
   var l=$("achList"); l.innerHTML="";
@@ -5317,9 +5364,7 @@ $("bSolo").onclick=function(){ audioOn(); sfx.click();
 $("mapBack").onclick=function(){ sfx.click(); show("s-title"); resize(); };
 $("bSkills").onclick=function(){
   audioOn(); sfx.up();
-  var flash=$("warpFlash"); flash.classList.remove("hide"); flash.classList.add("go");
-  setTimeout(function(){ flash.classList.remove("go"); flash.classList.add("hide"); },500);
-  setTimeout(function(){ renderSkills(); show("s-skills"); },220);
+  runWarpAnim(function(){ renderSkills(); show("s-skills"); });
 };
 $("skBack").onclick=function(){ sfx.click(); show("s-title"); resize(); };
 function renderSettings(){
