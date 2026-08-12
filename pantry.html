@@ -357,8 +357,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 #towerInfoTop{display:flex;gap:14px;align-items:flex-start}
 #towerInfoTop canvas{flex:none;width:84px;height:84px;background:var(--bg1);
   border:1px solid var(--line);border-radius:10px}
-#towerInfoPaths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
-@media (max-width:700px){ #towerInfoPaths{grid-template-columns:1fr} }
+#towerInfoPaths{display:flex;flex-direction:column;gap:10px;margin-top:18px}
 .tuphead{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
   margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--line)}
 .tuptier{background:var(--bg2);border:1px solid var(--line);border-left:3px solid var(--dim);
@@ -944,9 +943,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.0";
+var VERSION="2.12.1";
 var CHANGELOG=[
-  {v:"2.12.0",d:"latest",items:[
+  {v:"2.12.1",d:"latest",items:[
+    "EVERY TOWER NOW STARTS WITH ITS FIRST UPGRADE ALREADY UNLOCKED, FREE. Towers earning their own XP from scratch (see 2.12.0) meant a freshly placed tower had nothing to lean on until it fought its way to its first tier - now tier 1 of its first path is already applied the moment you place it, combat, support and income towers alike"
+  ]},
+  {v:"2.12.0",items:[
     "TOWERS DON'T LEVEL UP ANY MORE - THEY EARN THEIR OWN XP AND YOU SPEND IT, BTD6-STYLE. Every tower now has its own XP pool, earned purely from damage it deals and things it pops (support/income towers that never damage anything earn it for the rounds they stand through instead). Tap Upgrades on a selected tower to open a full-screen tree: 3 upgrade paths as rows, 5 tiers each running left to right, tier 5 always a hidden ❓ until you actually own it. Every upgrade now costs XP straight out of that pool - no more cash cost, no more \"reach level N first\" gate blocking a tier you could otherwise afford",
     "Heroes are unaffected - they still level up from run XP exactly as before. This only touched towers",
     "Achievements and the shop's tower-info preview updated to match: \"Grand Master\"/\"Master Of The Fleet\" now track fully committing a tower's upgrades (one path maxed, a second at tier 2 - the real ceiling under crosspathing) instead of a tower \"level\" that no longer exists",
@@ -3717,7 +3719,12 @@ function placeTower(id,gx,gy,owner){
   if(cash<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   cash-=cost;
-  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,tgt:"first"};
+  /* every tower now starts with its first path's tier-1 upgrade already
+     unlocked for free - a fresh XP-less tower used to feel completely
+     bare (no cash upgrades to lean on any more while it earns its own
+     XP from scratch), so the very first tier is a given, not something
+     you have to survive long enough to afford. */
+  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:1,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   deployPuff(tw.x,tw.y,def.col);
@@ -5066,10 +5073,10 @@ $("towerUpgClose").onclick=function(){ sfx.click(); closeTowerUpgrade(); };
 
 /* shop-side "what does this actually turn into" preview - double-click a
    card to see the full 3-path upgrade tree before you've even bought one.
-   Tiers no longer have any level gate to preview (they're bought with a
-   tower's own XP, in any order the crosspathing rules allow), so this is
-   now purely informational - every tier's cost and effect, plus the best
-   total-tiers mastery (save.towerMaxLvl) this tower type has ever reached. */
+   Same 3-rows-of-5-tiers layout and tier-5-is-a-mystery treatment as the
+   real, live, spendable version (renderTowerUpgScreen) - there's no
+   placed tower here to actually hold XP against, so this stays read-only,
+   but it shouldn't look like a different, older screen because of that. */
 function openTowerInfo(towerId){
   renderTowerInfo(towerId);
   showOvl("o-towerInfo");
@@ -5091,23 +5098,27 @@ function renderTowerInfo(towerId){
   $("towerInfoStats").textContent=baseTxt+(bestTiers>0?(" · best ever: "+bestTiers+" tiers unlocked in one run"):" · never placed yet");
 
   var wrap=$("towerInfoPaths"); wrap.innerHTML="";
-  [def.p1,def.p2,def.p3].forEach(function(pathDef){
-    var col=document.createElement("div");
-    var head=document.createElement("div"); head.className="tuphead";
-    head.textContent=pathDef.n; col.appendChild(head);
-    pathDef.u.forEach(function(up){
-      var card=document.createElement("div"); card.className="tuptier done";
-      var cv2=document.createElement("canvas"); cv2.width=60; cv2.height=60;
-      var gctx=cv2.getContext("2d"); gctx.scale(2,2); gctx.translate(15,15);
-      drawUpgradeIcon(gctx,upgradeIconKind(up),12,"#5ff0c0");
-      card.appendChild(cv2);
-      var info=document.createElement("div");
-      info.innerHTML='<div class="tun">'+up.n+'</div><div class="tud">'+up.d+'</div>'+
-        '<div class="tuc">'+up.c.toLocaleString()+' XP</div>';
-      card.appendChild(info);
-      col.appendChild(card);
+  [def.p1,def.p2,def.p3].forEach(function(pathDef,idx){
+    var row=document.createElement("div"); row.className="upgRow";
+    var lbl=document.createElement("div"); lbl.className="upgRowLbl";
+    lbl.style.color=UPGRADE_PATH_COL[idx];
+    lbl.textContent=pathDef.n;
+    row.appendChild(lbl);
+    var cellsWrap=document.createElement("div"); cellsWrap.className="upgCells";
+    pathDef.u.forEach(function(up,ti){
+      var cell=document.createElement("div"); cell.className="upgCell";
+      if(ti===4){
+        cell.classList.add("mystery");
+        cell.innerHTML="&#10067;";
+        cell.title="A hidden final upgrade - "+up.c.toLocaleString()+" XP once placed and earned";
+      } else {
+        cell.innerHTML="<b>"+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>"+
+          '<div class="upgCost">'+up.c.toLocaleString()+" XP</div>";
+      }
+      cellsWrap.appendChild(cell);
     });
-    wrap.appendChild(col);
+    row.appendChild(cellsWrap);
+    wrap.appendChild(row);
   });
 }
 $("towerInfoClose").onclick=function(){ sfx.click(); hideOvl(); };
