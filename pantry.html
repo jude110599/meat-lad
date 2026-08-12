@@ -373,6 +373,37 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .tuptier .tuc{font-size:10.5px;color:var(--gold);font-weight:800;margin-top:3px}
 .tuptier .tul{font-size:9.5px;color:var(--jam2);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
 
+/* the actual full-screen upgrade tree - 3 path rows, 5 tier columns left
+   to right, BTD6-style, replacing the old cramped "one buyable button at
+   a time" list in the small corner panel. Tier 5 is a mystery box (❓)
+   until owned, whatever tier's currently reachable in a row highlights
+   as spendable when there's enough banked XP for it. */
+#towerUpgHead{display:flex;gap:14px;align-items:flex-start;margin-bottom:4px}
+#towerUpgHead canvas{flex:none;width:84px;height:84px;background:var(--bg1);
+  border:1px solid var(--line);border-radius:10px}
+#towerUpgXp{font-size:15px;font-weight:900;color:var(--gold);margin-top:8px;letter-spacing:.02em}
+#towerUpgRows{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+.upgRow{display:flex;align-items:stretch;gap:8px}
+.upgRowLbl{flex:0 0 96px;display:flex;align-items:center;font-weight:800;font-size:12px;letter-spacing:.03em}
+.upgCells{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.upgCell{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:88px;
+  display:flex;flex-direction:column;justify-content:center;text-align:center;font-size:10.5px;
+  cursor:default;transition:transform .12s,background .12s}
+.upgCell b{display:block;font-size:11px;margin-bottom:2px}
+.upgCell .upgDesc{color:var(--dim);font-size:9.5px;line-height:1.3;margin-bottom:3px}
+.upgCell .upgCost{font-weight:800;color:var(--gold);font-size:10px}
+.upgCell.owned{border-color:var(--mint);background:linear-gradient(160deg,rgba(95,240,192,.16),var(--bg2))}
+.upgCell.ready{border-color:var(--honey);cursor:pointer;box-shadow:0 0 0 1px var(--honey) inset}
+.upgCell.ready:hover{background:var(--bg3);transform:translateY(-2px)}
+.upgCell.locked{opacity:.5}
+.upgCell.excluded{opacity:.35;filter:grayscale(1)}
+.upgCell.mystery{font-size:24px;font-weight:900;color:var(--dim)}
+.upgCell.mystery.ready{color:var(--honey);cursor:pointer}
+@media (max-width:640px){
+  .upgRow{flex-direction:column} .upgRowLbl{flex:none;margin-bottom:2px}
+  .upgCell{min-height:60px;padding:5px;font-size:9px} .upgCell b{font-size:9.5px} .upgCell .upgDesc{display:none}
+}
+
 .toast{position:absolute;left:50%;top:62px;transform:translateX(-50%);z-index:9;
   background:rgba(20,15,10,.95);border:1px solid var(--line);border-left:3px solid var(--honey);
   border-radius:6px;padding:9px 15px;font-size:13px;font-weight:700;pointer-events:none;
@@ -894,6 +925,18 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     <div id="towerInfoPaths"></div>
   </div></div>
 
+  <div class="ovl hide" id="o-towerUpg"><div class="ovlbox" id="towerUpgBox" style="max-width:960px;width:96%">
+    <button class="back" id="towerUpgClose" style="float:right">&times;</button>
+    <div id="towerUpgHead">
+      <canvas id="towerUpgIcon" width="128" height="128"></canvas>
+      <div>
+        <div class="disp" id="towerUpgName" style="font-size:20px"></div>
+        <div id="towerUpgXp"></div>
+      </div>
+    </div>
+    <div id="towerUpgRows"></div>
+  </div></div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -901,9 +944,15 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.11.2";
+var VERSION="2.12.0";
 var CHANGELOG=[
-  {v:"2.11.2",d:"latest",items:[
+  {v:"2.12.0",d:"latest",items:[
+    "TOWERS DON'T LEVEL UP ANY MORE - THEY EARN THEIR OWN XP AND YOU SPEND IT, BTD6-STYLE. Every tower now has its own XP pool, earned purely from damage it deals and things it pops (support/income towers that never damage anything earn it for the rounds they stand through instead). Tap Upgrades on a selected tower to open a full-screen tree: 3 upgrade paths as rows, 5 tiers each running left to right, tier 5 always a hidden ❓ until you actually own it. Every upgrade now costs XP straight out of that pool - no more cash cost, no more \"reach level N first\" gate blocking a tier you could otherwise afford",
+    "Heroes are unaffected - they still level up from run XP exactly as before. This only touched towers",
+    "Achievements and the shop's tower-info preview updated to match: \"Grand Master\"/\"Master Of The Fleet\" now track fully committing a tower's upgrades (one path maxed, a second at tier 2 - the real ceiling under crosspathing) instead of a tower \"level\" that no longer exists",
+    "Fixed a co-op sync bug the new upgrade screen would have made obvious immediately: guests only apply the host's game-state snapshots while state is literally \"play\", but opening any full-screen panel (hero, upgrades) pauses locally - a guest who opened their upgrade screen would stop receiving snapshots entirely, so their own purchase wouldn't visibly go through until they closed and reopened it. Snapshots now apply whenever a run is actually in progress, paused or not"
+  ]},
+  {v:"2.11.2",items:[
     "A CO-OP PLAYERS PANEL. New button in the HUD (co-op only) lists everyone in the run with their name, equipped icon and banner colour - the emote picker now lives here too instead of its own separate button, since \"who am I sending this to\" is exactly what this list answers. The lobby list before a run starts also now shows everyone's icon/banner, not just your own",
     "TOWER BUFFS MOVED OFF THE BOARD AND INTO THE UPGRADE PANEL. A support tower's buff used to draw a small permanent green arrow above every tower it boosted, all the time, whether you were looking or not. Select a buffed tower now and its panel shows a badge for each buffing tower (that tower's own icon, so you can see who) with a hover tooltip spelling out exactly what it grants",
     "THE UPGRADE PANEL NO LONGER ALWAYS SITS BOTTOM-LEFT. It now opens on whichever side of the board the selected tower ISN'T on, so placing something on the left half doesn't bury it under its own panel the moment you click it",
@@ -2219,12 +2268,12 @@ var ACHIEVEMENTS=[
     prog:function(){ return {cur:save.bossPops||0,target:25}; }},
   {id:"boss_roster",cat:"Collection", n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; },
     prog:function(){ return {cur:(save.bossesSeen||[]).length,target:4}; }},
-  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Get any tower to level 10.",             chk:function(){
-    var m=save.towerMaxLvl||{}; for(var k in m)if(m[k]>=10)return true; return false; },
-    prog:function(){ var m=save.towerMaxLvl||{},best=0; for(var k in m)if(m[k]>best)best=m[k]; return {cur:best,target:10}; }},
-  {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Get every tower to level 10 at least once.",chk:function(){
-    var m=save.towerMaxLvl||{}; return TOWERS.every(function(T){ return (m[T.id]||0)>=10; }); },
-    prog:function(){ var m=save.towerMaxLvl||{}; var n=TOWERS.filter(function(T){ return (m[T.id]||0)>=10; }).length;
+  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully commit a tower's upgrades - one path maxed, a second at tier 2.",chk:function(){
+    var m=save.towerMaxLvl||{}; for(var k in m)if(m[k]>=7)return true; return false; },
+    prog:function(){ var m=save.towerMaxLvl||{},best=0; for(var k in m)if(m[k]>best)best=m[k]; return {cur:best,target:7}; }},
+  {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Fully commit every tower's upgrades at least once.",chk:function(){
+    var m=save.towerMaxLvl||{}; return TOWERS.every(function(T){ return (m[T.id]||0)>=7; }); },
+    prog:function(){ var m=save.towerMaxLvl||{}; var n=TOWERS.filter(function(T){ return (m[T.id]||0)>=7; }).length;
       return {cur:n,target:TOWERS.length}; }},
   {id:"endgame_maps",cat:"Runs", n:"Off The Map",   d:"Beat the three hardest sectors: Solar Array, Defense Ring and Core Chamber.",chk:function(){
     var need=["snake","icebox","finale"]; var seen={};
@@ -3668,7 +3717,7 @@ function placeTower(id,gx,gy,owner){
   if(cash<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   cash-=cost;
-  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1,tgt:"first"};
+  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   deployPuff(tw.x,tw.y,def.col);
@@ -3739,25 +3788,14 @@ function giveHeroXp(h,n){
   }
 }
 
-/* towers earn mastery through use, same idea as hero XP - each upgrade tier
-   needs a minimum tower level (TOWER_TIER_LVL, indexed by tier) on top of
-   its cash cost, so upgrades have to be earned by fighting, not just bought. */
-var TOWER_TIER_LVL=[2,4,6,8,10];
-function towerXpNeeded(l){ return Math.round(6*Math.pow(1.35,l-1)); }
-/* mastering an upgrade tier on ANY placed instance of a tower unlocks it
-   permanently for every instance of that tower, this run and every run
-   after - save.towerMaxLvl tracks the highest level each tower id has
-   ever reached (by towers this player themselves placed and levelled). */
-function towerGateLvl(tw){ return Math.max(tw.lvl||1,(save.towerMaxLvl&&save.towerMaxLvl[tw.id])||1); }
-function giveTowerXp(tw,n){
-  tw.xp=(tw.xp||0)+n;
-  while(tw.xp>=towerXpNeeded(tw.lvl)&&tw.lvl<10){
-    tw.xp-=towerXpNeeded(tw.lvl); tw.lvl++;
-    if(tw.owner===myOwner()&&(save.towerMaxLvl[tw.id]||1)<tw.lvl){
-      save.towerMaxLvl[tw.id]=tw.lvl; queueSave();
-    }
-  }
-}
+/* towers no longer "level up" at all - each tower earns its own XP purely
+   from damage it deals and things it pops, and that XP is spent directly
+   on upgrade tiers (see upgradeTower/openTowerUpgrade), BTD6-style,
+   instead of gating a cash purchase behind a passive level. Existing
+   upgrade tier costs (pathDef.u[tier].c) already span roughly 100-15000,
+   which happens to already be the right scale for an XP economy, so
+   they're reused as-is rather than rebalanced into a separate currency. */
+function giveTowerXp(tw,n){ tw.xp=(tw.xp||0)+n; }
 function sellTower(tw){
   var back=Math.round(tw.spent*.7);
   cash+=back;
@@ -3797,13 +3835,24 @@ function upgradeTower(tw,pathN){
   if(tier===0&&activePaths>=2){ toast("Only two paths can be upgraded at once"); return; }
   var anyOtherPast2=tiers.some(function(t,i){ return i!==idx&&t>2; });
   if(anyOtherPast2&&tier>=2){ toast("Another path already went past tier 2"); return; }
-  var needLvl=TOWER_TIER_LVL[tier];
-  if(towerGateLvl(tw)<needLvl){ toast("Needs to reach level "+needLvl+" first - "+(tw.pops||0)+" pops so far"); return; }
   var up=p.u[tier];
-  if(cash<up.c){ toast("Not enough"); return; }
-  cash-=up.c; tw.spent+=up.c;
+  /* upgrades spend the tower's OWN banked XP now, not cash - the old
+     cash-cost numbers (pathDef.u[tier].c) are reused as the XP cost
+     directly rather than rebalanced, see the giveTowerXp comment. */
+  if((tw.xp||0)<up.c){ toast("Not enough XP"); return; }
+  tw.xp-=up.c;
   if(pathN===1)tw.t1++; else if(pathN===2)tw.t2++; else tw.t3++;
+  /* save.towerMaxLvl now tracks the highest combined tier total (0-7,
+     since crosspathing caps a second path at tier 2 once any path is
+     past it) any placed instance of this tower id has ever reached -
+     same field name/shape as the old per-tower "mastery level" so
+     existing saves don't need migrating, just a new meaning for the number. */
+  var totalTiers=tw.t1+tw.t2+tw.t3;
+  if(tw.owner===myOwner()&&(save.towerMaxLvl[tw.id]||0)<totalTiers){
+    save.towerMaxLvl[tw.id]=totalTiers; queueSave();
+  }
   recalcTower(tw); sfx.up(); updateHud(); renderPanel(); renderShop();
+  if($("o-towerUpg").className.indexOf("hide")<0)renderTowerUpgScreen();
 }
 
 /* ═════════════ WAVE / BUG LOGIC ═════════════ */
@@ -3880,8 +3929,13 @@ function damageBug(b,dmg,pierceArm,tw){
   var bp=posAt(b.d);
   sparkBurst(bp.x,bp.y,myHitCol(tw)||"#fff8e8",3,65);
   dmgNum(bp.x,bp.y,dmg,dmg>=15||!!BUGS[b.k].boss);
+  /* 1 XP per point of damage actually dealt (after armour/weaken), same
+     currency the upgrade tiers cost - a tower that's doing real work
+     against tough/armoured targets earns proportionally more than one
+     tickling something for chip damage. */
+  if(tw)giveTowerXp(tw,dmg);
   if(b.hp<=0){
-    if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,1); }
+    if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,BUGS[b.k].boss?150:15); }
     popBug(b);
   }
   return b.hp<=0;
@@ -4109,8 +4163,9 @@ function update(dt){
     if(b.weakT>0)b.weakT-=dt;
     if(b.hitT>0)b.hitT-=dt;
     if(b.ageT<.22)b.ageT+=dt;
-    if(b.burnT>0){ b.burnT-=dt; b.hp-=b.burn*dt;
-      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,1); } popBug(b); continue; } }
+    if(b.burnT>0){ b.burnT-=dt; var burnTick=b.burn*dt; b.hp-=burnTick;
+      if(b.burnSrc)giveTowerXp(b.burnSrc,burnTick);
+      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,BUGS[b.k].boss?150:15); } popBug(b); continue; } }
     b.d+=b.spd*b.slow*dt;
     if(b.d>=pathLen){
       lives-=BUGS[b.k].boss?20:Math.max(1,Math.round(BUGS[b.k].hp/2));
@@ -4216,7 +4271,7 @@ function update(dt){
        round they just stood through instead, same idea, different trigger. */
     for(var pp=0;pp<towers.length;pp++){
       var ptw=towers[pp];
-      if(ptw.s.support||ptw.s.income)giveTowerXp(ptw,6);
+      if(ptw.s.support||ptw.s.income)giveTowerXp(ptw,250+wave*15);
     }
     var bonus=Math.round((80+wave*12)*DIFFS[curDiff].cashMult);
     cash+=income+bonus;
@@ -4853,14 +4908,8 @@ function refreshLiveUI(){
       else if(s.support)statEl.textContent="+"+(s.buffDmg||0)+" damage nearby";
       else statEl.textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+tw.pops+" popped";
     }
-    var lvlEl=$("panel").querySelector(".lvlline");
-    if(lvlEl)lvlEl.innerHTML="Level "+(tw.lvl||1)+(tw.lvl<10?" · "+(tw.xp||0)+"/"+towerXpNeeded(tw.lvl)+" xp":" (max)");
-    var pbtns=$("panel").querySelectorAll(".ubtn[data-cost]");
-    for(var j=0;j<pbtns.length;j++){
-      var pb=pbtns[j];
-      var lvlLocked=pb.dataset.structlock!=="1"&&towerGateLvl(selTower)<Number(pb.dataset.need);
-      pb.disabled=pb.dataset.structlock==="1"||lvlLocked||cash<parseFloat(pb.dataset.cost);
-    }
+    var xpEl=$("panel").querySelector(".xpline");
+    if(xpEl)xpEl.textContent=Math.floor(tw.xp||0).toLocaleString()+" XP banked";
   }
 }
 function renderPanel(){
@@ -4886,9 +4935,9 @@ function renderPanel(){
     econLine.textContent="Spent $"+tw.spent+" · Made $"+earned+" · "+(net>=0?"Net +$"+net:"Net -$"+(-net));
     p.appendChild(econLine);
   }
-  var lvlLine=document.createElement("div"); lvlLine.className="sub lvlline"; lvlLine.style.marginTop="-6px";
-  lvlLine.innerHTML="Level "+(tw.lvl||1)+(tw.lvl<10?" · "+(tw.xp||0)+"/"+towerXpNeeded(tw.lvl)+" xp":" (max)");
-  p.appendChild(lvlLine);
+  var xpLine=document.createElement("div"); xpLine.className="sub xpline"; xpLine.style.marginTop="-6px";
+  xpLine.textContent=Math.floor(tw.xp||0).toLocaleString()+" XP banked";
+  p.appendChild(xpLine);
   if(oName){
     var ownLine=document.createElement("div"); ownLine.className="sub"; ownLine.style.marginTop="-6px";
     ownLine.textContent=(mine?"Owned by you":"Owned by "+oName);
@@ -4915,50 +4964,12 @@ function renderPanel(){
   }
   if(!s.income&&!s.support)p.appendChild(buildTgtRow(tw,renderPanel));
 
-  var allPaths=[def.p1,def.p2,def.p3], allTiers=[tw.t1,tw.t2,tw.t3];
-  var activePaths=allTiers.filter(function(t){ return t>0; }).length;
-  var pastTwoIdx=-1; allTiers.forEach(function(t,i){ if(t>2)pastTwoIdx=i; });
-  [1,2,3].forEach(function(n){
-    var idx=n-1, pathDef=allPaths[idx], tier=allTiers[idx];
-    var lbl=document.createElement("div"); lbl.className="sect"; lbl.style.margin="8px 0 5px";
-    /* dot colour matches the orbiting studs drawUpgradeAura draws on the
-       tower itself, so the on-board glow and this list read as the same
-       language rather than two unrelated UIs. */
-    lbl.innerHTML='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'+
-      'background:'+UPGRADE_PATH_COL[idx]+';margin-right:6px"></span>'+pathDef.n+" "+tier+"/5";
-    p.appendChild(lbl);
-    if(tier>=5){
-      var mx=document.createElement("button"); mx.className="ubtn max"; mx.disabled=true;
-      mx.innerHTML="<b>Fully upgraded</b>"; p.appendChild(mx); return;
-    }
-    var up=pathDef.u[tier];
-    var lockedNew=(tier===0&&activePaths>=2);
-    var lockedDeep=(pastTwoIdx>=0&&pastTwoIdx!==idx&&tier>=2);
-    var needLvl=TOWER_TIER_LVL[tier];
-    var lockedLvl=towerGateLvl(tw)<needLvl;
-    var locked=lockedNew||lockedDeep||lockedLvl||!mine;
-    var b=document.createElement("button");
-    /* a path you've been shut out of by committing elsewhere reads very
-       differently from one that's just not affordable/levelled yet - it's
-       not coming back this run, so it gets a harder, desaturated look
-       instead of the same soft "not yet" dimming everything else gets. */
-    b.className="ubtn"+((lockedNew||lockedDeep)?" excluded":"");
-    b.disabled=cash<up.c||locked;
-    /* cost/structLock are stable until the next real rebuild (which only
-       happens on select/purchase/sell/snapshot); needLvl is re-checked live
-       every tick below since a tower can cross its mastery gate mid-view
-       without a rebuild otherwise being triggered. */
-    b.dataset.cost=up.c; b.dataset.structlock=(lockedNew||lockedDeep||!mine)?"1":"0"; b.dataset.need=needLvl;
-    b.innerHTML="<b>"+up.n+"</b>"+up.d+" <i>$"+up.c+"</i>"+
-      (!mine?" &mdash; owned by "+oName:lockedNew?" &mdash; only two paths at once":lockedDeep?" &mdash; another path went past tier 2":
-       lockedLvl?" &mdash; needs level "+needLvl:"");
-    b.onclick=function(){
-      sfx.click();
-      if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
-      else upgradeTower(tw,n);
-    };
-    p.appendChild(b);
-  });
+  var totalTiers=(tw.t1||0)+(tw.t2||0)+(tw.t3||0);
+  var upgBtn=document.createElement("button"); upgBtn.className="ubtn upgOpen";
+  upgBtn.innerHTML="<b>Upgrades</b>"+(totalTiers?(totalTiers+" tier"+(totalTiers>1?"s":"")+" unlocked - tap to spend more XP"):"Tap to spend XP on a path");
+  upgBtn.disabled=!mine;
+  upgBtn.onclick=function(){ sfx.click(); openTowerUpgrade(tw); };
+  p.appendChild(upgBtn);
 
   var sell=document.createElement("button");
   sell.className="ubtn sell";
@@ -4972,12 +4983,93 @@ function renderPanel(){
   p.appendChild(sell);
 }
 
+/* the live, spendable upgrade tree for a placed tower - 3 path rows x 5
+   tier columns, tier 5 always shown as a "?" mystery box until it's
+   actually owned. Pauses the game while open (same as the hero panel)
+   since it's meant to be a deliberate "step back and spend XP" moment,
+   not something to make snap decisions in mid-swarm. */
+var upgTarget=null;
+function openTowerUpgrade(tw){
+  if(!canControl(tw))return;
+  upgTarget=tw;
+  if(state==="play")state="pause";
+  renderTowerUpgScreen();
+  showOvl("o-towerUpg");
+}
+function closeTowerUpgrade(){
+  hideOvl();
+  if(state==="pause")state="play";
+}
+function renderTowerUpgScreen(){
+  var tw=upgTarget; if(!tw)return;
+  var def=byId(TOWERS,tw.id),mine=canControl(tw);
+  var oldIc=$("towerUpgIcon"),newIc=iconFor("t",tw.id,84);
+  newIc.id="towerUpgIcon";
+  oldIc.parentNode.replaceChild(newIc,oldIc);
+  $("towerUpgName").textContent=def.n;
+  $("towerUpgXp").textContent=Math.floor(tw.xp||0).toLocaleString()+" XP available";
+  var allPaths=[def.p1,def.p2,def.p3], tiers=[tw.t1,tw.t2,tw.t3];
+  var activePaths=tiers.filter(function(t){ return t>0; }).length;
+  var pastTwoIdx=-1; tiers.forEach(function(t,i){ if(t>2)pastTwoIdx=i; });
+  var rowsEl=$("towerUpgRows"); rowsEl.innerHTML="";
+  allPaths.forEach(function(pathDef,idx){
+    var tier=tiers[idx];
+    var row=document.createElement("div"); row.className="upgRow";
+    var lbl=document.createElement("div"); lbl.className="upgRowLbl";
+    lbl.style.color=UPGRADE_PATH_COL[idx];
+    lbl.textContent=pathDef.n;
+    row.appendChild(lbl);
+    var cellsWrap=document.createElement("div"); cellsWrap.className="upgCells";
+    for(var ti=0;ti<5;ti++){
+      var up=pathDef.u[ti];
+      var cell=document.createElement("div"); cell.className="upgCell";
+      if(tier>ti){
+        cell.classList.add("owned");
+        cell.innerHTML=(ti===4?"<b>&#9733; "+up.n+"</b>":"<b>&#10003; "+up.n+"</b>")+
+          '<div class="upgDesc">'+up.d+'</div>';
+        cell.title=up.n+" - "+up.d;
+      } else if(ti===4){
+        cell.classList.add("mystery");
+        var isNext=(tier===4), afford=isNext&&(tw.xp||0)>=up.c;
+        cell.innerHTML=afford?"&#10067;<div class=\"upgCost\">"+up.c.toLocaleString()+" XP</div>":"&#10067;";
+        cell.classList.add(afford?"ready":"locked");
+        cell.title=isNext?"A hidden final upgrade - costs "+up.c.toLocaleString()+" XP":"Unlocks once tier 4 is bought";
+        if(afford&&mine)cell.onclick=makeUpgClick(tw,idx+1);
+      } else {
+        var lockedNew=(tier===0&&ti===0&&activePaths>=2);
+        var lockedDeep=(pastTwoIdx>=0&&pastTwoIdx!==idx&&ti>=2);
+        var isNext=(tier===ti);
+        var afford=isNext&&(tw.xp||0)>=up.c;
+        var ready=isNext&&afford&&!lockedNew&&!lockedDeep&&mine;
+        cell.innerHTML="<b>"+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>"+
+          '<div class="upgCost">'+up.c.toLocaleString()+" XP</div>";
+        if(lockedNew||lockedDeep)cell.classList.add("excluded");
+        else if(!isNext||!afford||!mine)cell.classList.add("locked");
+        if(ready){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
+        cell.title=lockedNew?"Only two paths at once":lockedDeep?"Another path already went past tier 2":
+          !isNext?"Buy the earlier tiers in this path first":!afford?"Not enough XP yet":up.n+" - "+up.d;
+      }
+      cellsWrap.appendChild(cell);
+    }
+    row.appendChild(cellsWrap);
+    rowsEl.appendChild(row);
+  });
+}
+function makeUpgClick(tw,pathN){
+  return function(){
+    sfx.click();
+    if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:pathN});
+    else upgradeTower(tw,pathN);
+  };
+}
+$("towerUpgClose").onclick=function(){ sfx.click(); closeTowerUpgrade(); };
+
 /* shop-side "what does this actually turn into" preview - double-click a
    card to see the full 3-path upgrade tree before you've even bought one.
-   There's no live instance yet, so tier unlocks are shown against the
-   permanent per-tower-type mastery (save.towerMaxLvl) rather than a real
-   tw.lvl, and crosspathing is explained rather than simulated since which
-   two paths you'd commit to isn't decided until you actually place one. */
+   Tiers no longer have any level gate to preview (they're bought with a
+   tower's own XP, in any order the crosspathing rules allow), so this is
+   now purely informational - every tier's cost and effect, plus the best
+   total-tiers mastery (save.towerMaxLvl) this tower type has ever reached. */
 function openTowerInfo(towerId){
   renderTowerInfo(towerId);
   showOvl("o-towerInfo");
@@ -4992,29 +5084,26 @@ function renderTowerInfo(towerId){
   $("towerInfoName").textContent=def.n;
   $("towerInfoName").style.color=tc.col;
   $("towerInfoDesc").textContent=def.d;
-  var bestLvl=save.towerMaxLvl[def.id]||0;
+  var bestTiers=save.towerMaxLvl[def.id]||0;
   var s0=baseStats(def);
   var baseTxt=(s0.income?"$"+s0.income+" a round":s0.support?"+"+(s0.buffDmg||0)+" damage nearby":
     Math.round(s0.dmg||0)+" dmg · "+Math.round(s0.rng||0)+" range")+" at base · $"+towerCost(def)+" to place";
-  $("towerInfoStats").textContent=baseTxt+(bestLvl>0?(" · best mastery reached: level "+bestLvl):" · never placed yet");
+  $("towerInfoStats").textContent=baseTxt+(bestTiers>0?(" · best ever: "+bestTiers+" tiers unlocked in one run"):" · never placed yet");
 
   var wrap=$("towerInfoPaths"); wrap.innerHTML="";
   [def.p1,def.p2,def.p3].forEach(function(pathDef){
     var col=document.createElement("div");
     var head=document.createElement("div"); head.className="tuphead";
     head.textContent=pathDef.n; col.appendChild(head);
-    pathDef.u.forEach(function(up,ti){
-      var needLvl=TOWER_TIER_LVL[ti];
-      var unlocked=bestLvl>=needLvl;
-      var card=document.createElement("div");
-      card.className="tuptier"+(unlocked?" done":" locked");
+    pathDef.u.forEach(function(up){
+      var card=document.createElement("div"); card.className="tuptier done";
       var cv2=document.createElement("canvas"); cv2.width=60; cv2.height=60;
       var gctx=cv2.getContext("2d"); gctx.scale(2,2); gctx.translate(15,15);
-      drawUpgradeIcon(gctx,upgradeIconKind(up),12,unlocked?"#5ff0c0":"#5a4f3e");
+      drawUpgradeIcon(gctx,upgradeIconKind(up),12,"#5ff0c0");
       card.appendChild(cv2);
       var info=document.createElement("div");
-      info.innerHTML='<div class="tun">'+up.n+(unlocked?" &#10003;":"")+'</div><div class="tud">'+up.d+'</div>'+
-        '<div class="tuc">$'+up.c+'</div><div class="tul">'+(unlocked?"Unlocked":"Needs level "+needLvl)+'</div>';
+      info.innerHTML='<div class="tun">'+up.n+'</div><div class="tud">'+up.d+'</div>'+
+        '<div class="tuc">'+up.c.toLocaleString()+' XP</div>';
       card.appendChild(info);
       col.appendChild(card);
     });
@@ -5498,23 +5587,25 @@ function drawShopBot(t){
   var g=shopBotCtx,w=c.width,h=c.height;
   shopBotLX+=(shopBotTX-shopBotLX)*.1; shopBotLY+=(shopBotTY-shopBotLY)*.1;
   g.clearRect(0,0,w,h);
-  var bob=Math.sin(t*1.6)*3;
-  g.save(); g.translate(w/2,h*.64+bob);
-  // stubby legs + body
-  g.fillStyle="#14263d"; g.fillRect(-16,66,10,26); g.fillRect(6,66,10,26);
-  g.fillStyle="#1d3652"; g.beginPath(); g.roundRect(-36,4,72,72,18); g.fill();
-  g.strokeStyle="#35d8ff"; g.lineWidth=2; g.beginPath(); g.roundRect(-36,4,72,72,18); g.stroke();
-  g.fillStyle="#66e7ff"; g.beginPath(); g.arc(0,40,8,0,6.283); g.fill();
+  var bob=Math.sin(t*1.6)*2;
+  var counterY=h-58,bodyY=h*.42+bob;
+  g.save(); g.translate(w/2,0);
+  // torso - legs are never drawn at all, the counter covers where they'd be
+  g.fillStyle="#1d3652"; g.beginPath(); g.roundRect(-36,bodyY-34,72,88,18); g.fill();
+  g.strokeStyle="#35d8ff"; g.lineWidth=2; g.beginPath(); g.roundRect(-36,bodyY-34,72,88,18); g.stroke();
+  g.fillStyle="#66e7ff"; g.beginPath(); g.arc(0,bodyY+4,8,0,6.283); g.fill();
   g.strokeStyle="rgba(102,231,255,.5)"; g.lineWidth=1.4;
-  g.beginPath(); g.arc(0,40,13,0,6.283); g.stroke();
-  // arms
-  g.strokeStyle="#1d3652"; g.lineWidth=9; g.lineCap="round";
-  g.beginPath(); g.moveTo(-34,20); g.lineTo(-46,50+Math.sin(t*1.6+1)*3); g.stroke();
-  g.beginPath(); g.moveTo(34,20); g.lineTo(46,50+Math.sin(t*1.6)*3); g.stroke();
+  g.beginPath(); g.arc(0,bodyY+4,13,0,6.283); g.stroke();
+  // arms bend at the elbow and rest flat on the counter, instead of just
+  // hanging - this is most of what actually sells "tending the counter"
+  // rather than "standing near some furniture."
+  g.strokeStyle="#1d3652"; g.lineWidth=9; g.lineCap="round"; g.lineJoin="round";
+  g.beginPath(); g.moveTo(-32,bodyY+18); g.lineTo(-44,counterY-9); g.lineTo(-28,counterY-9); g.stroke();
+  g.beginPath(); g.moveTo(32,bodyY+18); g.lineTo(44,counterY-9); g.lineTo(28,counterY-9); g.stroke();
   // neck + head, head tilts toward the look target
-  g.fillStyle="#0d1b2d"; g.fillRect(-7,-8,14,14);
+  g.fillStyle="#0d1b2d"; g.fillRect(-7,bodyY-42,14,14);
   g.save();
-  g.translate(0,-34);
+  g.translate(0,bodyY-68);
   g.rotate(clamp(shopBotLX*.0035,-.32,.32));
   g.fillStyle="#e8f6ff"; g.beginPath(); g.roundRect(-30,-32,60,56,20); g.fill();
   g.strokeStyle="#35d8ff"; g.lineWidth=2.2; g.beginPath(); g.roundRect(-30,-32,60,56,20); g.stroke();
@@ -5526,6 +5617,23 @@ function drawShopBot(t){
   g.strokeStyle="#8cecff"; g.lineWidth=2; g.beginPath(); g.moveTo(0,-32); g.lineTo(0,-43); g.stroke();
   g.fillStyle="#ff72e8"; g.beginPath(); g.arc(0,-45,3.6,0,6.283); g.fill();
   g.restore();
+  // the counter itself, drawn last so its front face and top lip sit in
+  // front of the lower body/arms - a bare cursor-tracking robot read as
+  // "standing near some furniture," not "running the shop."
+  var cw=w-16;
+  g.fillStyle="#0a1622"; g.fillRect(-cw/2,counterY,cw,h-counterY);
+  g.strokeStyle="#2b4968"; g.lineWidth=2; g.strokeRect(-cw/2,counterY,cw,h-counterY);
+  g.fillStyle="#14263d"; g.fillRect(-cw/2,counterY-7,cw,9);
+  g.strokeStyle="rgba(102,231,255,.6)"; g.lineWidth=1.5; g.strokeRect(-cw/2,counterY-7,cw,9);
+  [[-cw/2+15,6],[0,8],[cw/2-15,6]].forEach(function(it){
+    g.save(); g.translate(it[0],counterY-13);
+    g.fillStyle="rgba(102,231,255,.3)"; g.beginPath(); g.arc(0,0,it[1],0,6.283); g.fill();
+    g.fillStyle=it[1]>7?"#66e7ff":"#8cecff"; g.beginPath(); g.arc(0,0,it[1]*.5,0,6.283); g.fill();
+    g.restore();
+  });
+  g.fillStyle="#5ff0c0"; g.font="bold 9px sans-serif"; g.textAlign="center";
+  g.fillText("OPEN",0,h-14);
+  g.textAlign="left";
   g.restore();
 }
 /* the hero-select screen has no live hero object (no run has started yet),
@@ -5866,10 +5974,18 @@ function renderProfile(){
   $("profBarFill").style.width=Math.max(4,Math.round(xp/need*100))+"%";
   $("profBarLbl").textContent=xp+"/"+need+" XP";
   $("profCard").style.background=equippedBannerBg()||"linear-gradient(160deg,var(--bg3),var(--bg2))";
+  /* profile is for equipping what you already own, not shopping - buying
+     happens in the Shop. Showing locked items here too just duplicated
+     the shop screen and made "why is this greyed out" a question people
+     had to answer twice. */
+  var ownedIcons=COSMETICS.filter(function(C){ return C.cat==="icon"&&cosOwned(C.id); });
   var ig=$("profIconGrid"); ig.innerHTML="";
-  COSMETICS.filter(function(C){ return C.cat==="icon"; }).forEach(function(C){ ig.appendChild(cosCard(C,renderProfile)); });
+  if(ownedIcons.length)ownedIcons.forEach(function(C){ ig.appendChild(cosCard(C,renderProfile)); });
+  else ig.innerHTML='<div class="note">No icons owned yet - buy some from the Shop.</div>';
+  var ownedBanners=COSMETICS.filter(function(C){ return C.cat==="banner"&&cosOwned(C.id); });
   var bg=$("profBannerGrid"); bg.innerHTML="";
-  COSMETICS.filter(function(C){ return C.cat==="banner"; }).forEach(function(C){ bg.appendChild(cosCard(C,renderProfile)); });
+  if(ownedBanners.length)ownedBanners.forEach(function(C){ bg.appendChild(cosCard(C,renderProfile)); });
+  else bg.innerHTML='<div class="note">No banners owned yet - buy some from the Shop.</div>';
   fillStatRows($("profStats"),progressStatsRows());
 }
 $("bSettings").onclick=function(){ audioOn(); sfx.click(); renderSettings(); show("s-settings"); };
@@ -6065,7 +6181,15 @@ var party={
         startRun(mi,di,chosenHero);
       }
     } else if(m.t==="snap"){
-      if(state==="play"&&!self.leader){
+      /* used to only apply while state==="play" - harmless before the
+         tower upgrade screen existed, but that screen pauses on open (a
+         deliberate "step back and spend XP" moment, same as the hero
+         panel), and a paused guest would then stop receiving snaps
+         entirely: their own reqUpgrade purchase would silently not show
+         up until they closed and reopened the screen. Pause is a local
+         UI state, not a reason to stop syncing the authoritative game
+         state - only truly non-run states (menu/over) should skip this. */
+      if((state==="play"||state==="pause")&&!self.leader){
         var wasSel=selTower?{gx:selTower.gx,gy:selTower.gy}:null;
         towers=m.towers;
         bugs=m.bugs.map(function(b){
@@ -6080,6 +6204,10 @@ var party={
           selTower=towers.filter(function(t){ return t.gx===wasSel.gx&&t.gy===wasSel.gy; })[0]||null;
           if(selTower)renderPanel();
           else $("panel").classList.add("hide");
+        }
+        if(upgTarget&&$("o-towerUpg").className.indexOf("hide")<0){
+          upgTarget=towers.filter(function(t){ return t.gx===upgTarget.gx&&t.gy===upgTarget.gy; })[0]||null;
+          if(upgTarget)renderTowerUpgScreen(); else closeTowerUpgrade();
         }
         updateHud();
       }
@@ -6397,7 +6525,7 @@ window.__pp={
   myHitCol:myHitCol,
   view:view, CELL:CELL, cv:cv,
   getTowers:function(){ return towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,t1:t.t1,t2:t.t2,t3:t.t3,spent:t.spent,pops:t.pops,cd:t.cd,ang:t.ang,xp:t.xp,lvl:t.lvl,s:t.s}; }); },
-  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; for(var i=0;i<(times||1);i++){ tw.lvl=10; cash+=99999; upgradeTower(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,lvl:tw.lvl}; },
+  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; for(var i=0;i<(times||1);i++){ tw.xp=(tw.xp||0)+99999; upgradeTower(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,xp:tw.xp}; },
   forceHeroLvl:function(owner,lvl){ var h=heroes.filter(function(x){return x.owner===(owner||"solo");})[0]; if(!h)return "no hero"; while(h.lvl<lvl)giveHeroXp(h,heroXpNeeded(h.lvl)); return {lvl:h.lvl,xp:h.xp}; },
   gainAccountXp:function(n){ return gainAccountXp(n); },
   getAcctSave:function(){ return {playerLvl:save.playerLvl,acctXp:save.acctXp,heroTokens:save.heroTokens,
@@ -6407,6 +6535,7 @@ window.__pp={
   forceUnlockAllHeroes:function(){ save.heroesUnlocked=HEROES.map(function(h){return h.id;}); queueSave(); return save.heroesUnlocked.length; },
   updateAcctWidget:function(){ updateAcctWidget(); },
   showSkillsNow:function(){ renderSkills(); show("s-skills"); },
+  drawShopBotNow:function(tt){ drawShopBot(tt||1); },
   selectTower:function(gx,gy){ selTower=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]||null; renderPanel(); return !!selTower; },
   getFx:function(){ return fx.map(function(f){ return {shock:!!f.shock,smoke:!!f.smoke,spark:!!f.spark,x:f.x,y:f.y,t:f.t,life:f.life,col:f.col,r:f.r}; }); },
   getShots:function(){ return shots.map(function(sh){ return {x:sh.x,y:sh.y,dmg:sh.dmg,hit:Object.keys(sh.hit||{}).length}; }); },

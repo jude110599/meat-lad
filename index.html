@@ -183,6 +183,9 @@ footer{text-align:center;margin-top:26px;font-size:11.5px;color:#4e4468;letter-s
         <input id="lPass" type="password" maxlength="40" placeholder="PASSWORD" autocomplete="off">
       </div>
       <div class="row">
+        <input id="lUsername" type="text" maxlength="20" placeholder="USERNAME (for signing up)" autocomplete="off">
+      </div>
+      <div class="row">
         <button id="lSignIn">Sign in</button>
         <button id="lSignUp" class="primary">Sign up</button>
       </div>
@@ -371,18 +374,28 @@ $("lSignIn").onclick=function(){
 };
 $("lSignUp").onclick=function(){
   var email=($("lUser").value||"").trim().toLowerCase(),pw=$("lPass").value||"";
-  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email to create an account (you'll be able to sign in with just your username afterward).";return;}
+  /* username used to just be silently derived from the email's local
+     part (everything before the @) - no choice, and two different
+     emails with the same local part would collide and overwrite each
+     other's username doc. Now it's its own required field, checked for
+     availability before the account is even created. */
+  var username=($("lUsername").value||"").trim().toLowerCase().replace(/[^a-z0-9_.-]/g,"");
+  if(!email||email.indexOf("@")<0){$("acctErr").textContent="Enter a valid email to create an account.";return;}
+  if(!username){$("acctErr").textContent="Choose a username.";return;}
   if(pw.length<6){$("acctErr").textContent="Password must be at least 6 characters.";return;}
   $("acctErr").textContent="Creating account..."; busy(true);
-  var username=email.split("@")[0].replace(/[^a-z0-9_.-]/g,"");
-  fbAuth.createUserWithEmailAndPassword(email,pw).then(function(cred){
+  fbDb.collection("usernames").doc(username).get().then(function(snap){
+    if(snap.exists)return Promise.reject({code:"username-taken"});
+    return fbAuth.createUserWithEmailAndPassword(email,pw);
+  }).then(function(cred){
     return fbDb.collection("usernames").doc(username).set({email:email,uid:cred.user.uid})
       .catch(function(){}).then(function(){ return cred; });
   }).then(function(cred){
     busy(false);$("acctErr").textContent="";render(cred.user.email);
   }).catch(function(e){
     busy(false);
-    var msg=e.code==="auth/email-already-in-use"?"Email already in use. Try signing in.":
+    var msg=e.code==="username-taken"?"That username is already taken.":
+           e.code==="auth/email-already-in-use"?"Email already in use. Try signing in.":
            e.code==="auth/weak-password"?"Password too weak. Use at least 6 characters.":"Couldn't create account.";
     $("acctErr").textContent=msg;
   });
@@ -998,7 +1011,13 @@ var ML_LOG=[
   ]}
 ];
 var PP_LOG=[
-  {v:"2.11.2",d:"latest",items:[
+  {v:"2.12.0",d:"latest",items:[
+    "TOWERS DON'T LEVEL UP ANY MORE - THEY EARN THEIR OWN XP AND YOU SPEND IT, BTD6-STYLE. Every tower now has its own XP pool, earned purely from damage it deals and things it pops (support/income towers that never damage anything earn it for the rounds they stand through instead). Tap Upgrades on a selected tower to open a full-screen tree: 3 upgrade paths as rows, 5 tiers each running left to right, tier 5 always a hidden ❓ until you actually own it. Every upgrade now costs XP straight out of that pool - no more cash cost, no more \"reach level N first\" gate blocking a tier you could otherwise afford",
+    "Heroes are unaffected - they still level up from run XP exactly as before. This only touched towers",
+    "Achievements and the shop's tower-info preview updated to match: \"Grand Master\"/\"Master Of The Fleet\" now track fully committing a tower's upgrades (one path maxed, a second at tier 2 - the real ceiling under crosspathing) instead of a tower \"level\" that no longer exists",
+    "Fixed a co-op sync bug the new upgrade screen would have made obvious immediately: guests only apply the host's game-state snapshots while state is literally \"play\", but opening any full-screen panel (hero, upgrades) pauses locally - a guest who opened their upgrade screen would stop receiving snapshots entirely, so their own purchase wouldn't visibly go through until they closed and reopened it. Snapshots now apply whenever a run is actually in progress, paused or not"
+  ]},
+  {v:"2.11.2",items:[
     "A CO-OP PLAYERS PANEL. New button in the HUD (co-op only) lists everyone in the run with their name, equipped icon and banner colour - the emote picker now lives here too instead of its own separate button, since \"who am I sending this to\" is exactly what this list answers. The lobby list before a run starts also now shows everyone's icon/banner, not just your own",
     "TOWER BUFFS MOVED OFF THE BOARD AND INTO THE UPGRADE PANEL. A support tower's buff used to draw a small permanent green arrow above every tower it boosted, all the time, whether you were looking or not. Select a buffed tower now and its panel shows a badge for each buffing tower (that tower's own icon, so you can see who) with a hover tooltip spelling out exactly what it grants",
     "THE UPGRADE PANEL NO LONGER ALWAYS SITS BOTTOM-LEFT. It now opens on whichever side of the board the selected tower ISN'T on, so placing something on the left half doesn't bury it under its own panel the moment you click it",
