@@ -232,6 +232,11 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   border:1px solid var(--line);border-radius:8px;cursor:pointer;flex:none}
 #emotePicker button:hover{background:var(--bg3)}
 #emotePicker .none{font-size:11.5px;color:var(--dim);padding:4px;max-width:160px;line-height:1.4}
+#rosterList{margin-bottom:4px}
+#rosterEmotes{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#rosterEmotes button{width:38px;height:38px;font-size:20px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:8px;cursor:pointer;flex:none}
+#rosterEmotes button:hover{background:var(--bg3)}
 
 #shop{position:absolute;right:0;top:0;bottom:0;width:186px;z-index:2;
   background:rgba(20,15,10,.93);border-left:1px solid var(--line);
@@ -278,8 +283,13 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   background:rgba(20,15,10,.95);border:1px solid var(--line);border-radius:0 10px 0 0;
   padding:11px;max-height:74%;overflow-y:auto}
 #panel.hide{display:none}
+#panel.right{border-radius:10px 0 0 0}
 #panel h3{font-size:14px;margin-bottom:2px}
 #panel .sub{font-size:11px;color:var(--dim);margin-bottom:8px}
+.buffRow{display:flex;flex-wrap:wrap;gap:5px;margin:-2px 0 8px}
+.buffBadge{width:26px;height:26px;border-radius:50%;background:var(--bg2);
+  border:1.5px solid var(--mint);display:flex;align-items:center;justify-content:center;cursor:help}
+.buffBadge canvas.icon{width:22px;height:22px;margin-bottom:0}
 .ubtn{display:block;width:100%;background:var(--bg2);border:1px solid var(--line);
   border-left:3px solid var(--mint);border-radius:5px;padding:8px 9px;color:var(--txt);
   font:inherit;text-align:left;cursor:pointer;margin-bottom:5px;font-size:11.5px}
@@ -530,6 +540,7 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     </button>
     <div id="hudBtns">
       <button class="hbtn" id="bEmote" title="Emotes">&#128578;</button>
+      <button class="hbtn hide" id="bPlayers" title="Players">&#128101;</button>
       <button class="hbtn go" id="bGo">GO</button>
       <button class="hbtn" id="bPause">&#10073;&#10073;</button>
     </div>
@@ -861,6 +872,15 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     <div id="heroInfoSkills"></div>
   </div></div>
 
+  <div class="ovl hide" id="o-roster"><div class="ovlbox" style="max-width:380px">
+    <button class="back" id="rosterClose" style="float:right">&times;</button>
+    <h3 style="margin-bottom:2px">Party</h3>
+    <div class="note" style="margin-bottom:10px">Everyone in this run.</div>
+    <div id="rosterList"></div>
+    <div class="sect">Emotes</div>
+    <div id="rosterEmotes"></div>
+  </div></div>
+
   <div class="ovl hide" id="o-towerInfo"><div class="ovlbox" id="towerInfoBox">
     <button class="back" id="towerInfoClose" style="float:right">&times;</button>
     <div id="towerInfoTop">
@@ -881,9 +901,15 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.11.1";
+var VERSION="2.11.2";
 var CHANGELOG=[
-  {v:"2.11.1",d:"latest",items:[
+  {v:"2.11.2",d:"latest",items:[
+    "A CO-OP PLAYERS PANEL. New button in the HUD (co-op only) lists everyone in the run with their name, equipped icon and banner colour - the emote picker now lives here too instead of its own separate button, since \"who am I sending this to\" is exactly what this list answers. The lobby list before a run starts also now shows everyone's icon/banner, not just your own",
+    "TOWER BUFFS MOVED OFF THE BOARD AND INTO THE UPGRADE PANEL. A support tower's buff used to draw a small permanent green arrow above every tower it boosted, all the time, whether you were looking or not. Select a buffed tower now and its panel shows a badge for each buffing tower (that tower's own icon, so you can see who) with a hover tooltip spelling out exactly what it grants",
+    "THE UPGRADE PANEL NO LONGER ALWAYS SITS BOTTOM-LEFT. It now opens on whichever side of the board the selected tower ISN'T on, so placing something on the left half doesn't bury it under its own panel the moment you click it",
+    "Fixed a gap in leaving-the-party cleanup: when a non-host player disconnected mid-run, only the host actually removed them from its player list - other connected guests kept a ghost entry around forever after just showing the toast. All clients clean up properly now"
+  ]},
+  {v:"2.11.1",items:[
     "ACCOUNT XP NOW COMES FROM POPPING ALIENS, not from winning or clearing a round - a loss where you still popped plenty progresses your account exactly as much as a win with the same pops would. There's no separate win bonus any more, on purpose",
     "FIXED SIGN-IN BEING UNREACHABLE ON MOST PHONES (and plenty of shorter desktop windows too) on the game-select page. The page centred its content vertically assuming it would always be shorter than the screen; the moment the games list dropped to one column instead of three, that assumption broke and the header plus the whole sign-in form rendered above the top of the screen with no way to scroll up to them",
     "SOLO PLAY SKIPS THE SEPARATE HERO-PICK SCREEN. Map select now shows your current hero right above a single Deploy button - tap the hero row to change who you're playing as, but the extra full screen in between is gone for the common case of already knowing who you want",
@@ -2262,6 +2288,18 @@ var COSMETICS=[
 var COS_ICON_GLYPH={jar:"📦",cleaver:"⚔️",star:"⭐",bug:"👾",queen:"👑",widow:"🛸",hornet:"🐝",flicker:"🤖",gordo:"🧑‍🚀"};
 function cosOwned(id){ return save.cosOwned.indexOf(id)>=0; }
 function cosEquipped(cat){ return save.cosEquip[cat]||null; }
+/* shared by the account widget/profile, the co-op lobby list and the
+   in-run players panel - anywhere an icon/banner cosmetic id (yours or
+   another connected player's, once the "hi" handshake started carrying
+   them) needs to become an actual glyph or gradient. */
+function cosIconGlyph(iconId){
+  var IC=iconId&&byId(COSMETICS,iconId);
+  return (IC&&IC.cat==="icon"&&COS_ICON_GLYPH[IC.ic])||null;
+}
+function cosBannerCol(bannerId){
+  var BC=bannerId&&byId(COSMETICS,bannerId);
+  return (BC&&BC.cat==="banner")?BC.col:null;
+}
 function buyCosmetic(C){
   if(cosOwned(C.id))return false;
   if((save.crumbs||0)<C.c)return false;
@@ -3556,10 +3594,7 @@ function endRun(won){
   } else showOvl("o-over");
 }
 
-function acctIconGlyph(){
-  var eq=cosEquipped("icon"), C=eq&&byId(COSMETICS,eq);
-  return (C&&C.cat==="icon"&&COS_ICON_GLYPH[C.ic])||"🤖";
-}
+function acctIconGlyph(){ return cosIconGlyph(cosEquipped("icon"))||"🤖"; }
 function updateAcctWidget(){
   var el=$("acctWidget"); if(!el)return;
   var lvl=save.playerLvl||1, need=acctXpNeeded(lvl), xp=Math.min(save.acctXp||0,need);
@@ -4416,7 +4451,6 @@ function render(t){
   for(var oI=0;oI<mapObstacles.length;oI++)ents.push({y:mapObstacles[oI].y,k:"o",o:mapObstacles[oI]});
   ents.sort(function(p,q){ return p.y-q.y; });
 
-  var renderSupports=activeSupports();
   for(var e=0;e<ents.length;e++){
     var en=ents[e];
     if(en.k==="t"){
@@ -4469,13 +4503,6 @@ function render(t){
         ctx.fillStyle="#66e7ff"; ctx.font="bold 9px sans-serif"; ctx.textAlign="center";
         var s2=""; for(var z=0;z<tot;z++)s2+="•";
         ctx.fillText(s2,en.o.x,en.o.y+20); ctx.textAlign="left";
-      }
-      if(!en.o.s.support&&buffsFor(en.o,renderSupports).sources.length){
-        ctx.save(); ctx.translate(en.o.x,en.o.y-CELL*.42);
-        ctx.fillStyle="#7bd94a";
-        ctx.beginPath(); ctx.moveTo(0,-5); ctx.lineTo(4,2); ctx.lineTo(1.4,2); ctx.lineTo(1.4,6);
-        ctx.lineTo(-1.4,6); ctx.lineTo(-1.4,2); ctx.lineTo(-4,2); ctx.closePath(); ctx.fill();
-        ctx.restore();
       }
     } else if(en.k==="h"){
       var hMaxCd=en.o.s&&en.o.s.cd?en.o.s.cd:1;
@@ -4656,6 +4683,12 @@ function updateHud(){
   var hb=$("pHeroBtn"),myH=myHero();
   if(myH){ hb.classList.remove("hide"); $("pHeroV").textContent="Lv"+myH.lvl; }
   else hb.classList.add("hide");
+  /* emotes only matter with someone else around to see them - in co-op
+     they move into the players panel (which shows who's actually there
+     to send one to), so the standalone HUD button steps aside there
+     rather than sitting next to a second, redundant emote entry point. */
+  $("bEmote").classList.toggle("hide",party.on);
+  $("bPlayers").classList.toggle("hide",!party.on);
 }
 function heroLevelCost(nextLvl){ return Math.round(60*Math.pow(1.3,nextLvl-2)); }
 function openHeroPanel(){
@@ -4835,6 +4868,12 @@ function renderPanel(){
   var tw=selTower,def=byId(TOWERS,tw.id),s=tw.s,bf=buffsFor(tw);
   var mine=canControl(tw),oName=ownerName(tw.owner);
   var p=$("panel"); p.classList.remove("hide"); p.innerHTML="";
+  /* the panel used to always sit bottom-left no matter where you clicked,
+     so a tower placed over there ended up hidden under its own upgrade
+     panel. Flip to the opposite corner from whichever half of the board
+     the tower's actually on instead. */
+  if(tw.gx<GW/2){ p.classList.add("right"); p.style.left="auto"; p.style.right=$("shop").offsetWidth+"px"; }
+  else { p.classList.remove("right"); p.style.right=""; p.style.left="0"; }
   var h=document.createElement("h3"); h.textContent=def.n; p.appendChild(h);
   var sub=document.createElement("div"); sub.className="sub statline";
   if(s.income)sub.textContent="$"+s.income+" a round · "+(tw.pops||0)+" popped";
@@ -4856,9 +4895,23 @@ function renderPanel(){
     p.appendChild(ownLine);
   }
   if(bf.sources&&bf.sources.length){
-    var buffLine=document.createElement("div"); buffLine.className="sub"; buffLine.style.marginTop="-6px";
-    buffLine.textContent="Buffed by: "+bf.sources.map(function(o){ return byId(TOWERS,o.id).n; }).join(", ");
-    p.appendChild(buffLine);
+    /* used to be a permanent green arrow drawn above the tower's head on
+       the board itself, every frame, whether you cared or not - buffs
+       now only show once you've actually selected the tower, as real
+       badges (the buffing tower's own icon, so "who" is visible at a
+       glance) with a hover tooltip spelling out what each one grants. */
+    var buffRow=document.createElement("div"); buffRow.className="buffRow";
+    bf.sources.forEach(function(o){
+      var od=byId(TOWERS,o.id),parts=[];
+      if(o.s.buffDmg)parts.push("+"+o.s.buffDmg+" damage");
+      if(o.s.buffRng&&o.s.buffRng!==1)parts.push("+"+Math.round((o.s.buffRng-1)*100)+"% range");
+      if(o.s.buffCd&&o.s.buffCd!==1)parts.push(Math.round((1-o.s.buffCd)*100)+"% faster");
+      var badge=document.createElement("div"); badge.className="buffBadge";
+      badge.title=od.n+": "+(parts.join(", ")||"buffed");
+      badge.appendChild(iconFor("t",o.id,22));
+      buffRow.appendChild(badge);
+    });
+    p.appendChild(buffRow);
   }
   if(!s.income&&!s.support)p.appendChild(buildTgtRow(tw,renderPanel));
 
@@ -5092,6 +5145,38 @@ $("bEmote").onclick=function(){
   renderEmotePicker();
   $("emotePicker").classList.toggle("hide");
 };
+/* the co-op players panel - who's actually in this run, with their
+   equipped icon/banner (via the "hi" handshake) instead of the always-
+   there head-icon-above-the-tower approach, plus the emote picker moved
+   in here since "who am I sending this to" is exactly what this list
+   answers. Doesn't pause the game - purely informational/expressive,
+   same as emotes always were. */
+function renderRoster(){
+  var l=$("rosterList"); l.innerHTML="";
+  function row(n,s,iconId,bannerId){
+    var d=document.createElement("div"); d.className="mem";
+    var glyph=cosIconGlyph(iconId), bannerCol=cosBannerCol(bannerId);
+    var iconHtml=glyph?'<div class="memicon">'+glyph+'</div>':"";
+    if(bannerCol)d.style.borderLeft="4px solid "+bannerCol[0];
+    d.innerHTML=iconHtml+'<div><div class="mn">'+n+'</div><div class="ms">'+s+'</div></div>';
+    l.appendChild(d);
+  }
+  row((save.name||"you")+" (you)",party.leader?"host":"guest",cosEquipped("icon"),cosEquipped("banner"));
+  Object.keys(party.members).forEach(function(k){
+    var mm=party.members[k]; row(mm.n||"defender","",mm.icon,mm.banner);
+  });
+  var eg=$("rosterEmotes"); eg.innerHTML="";
+  var owned=COSMETICS.filter(function(C){ return C.cat==="emote"&&cosOwned(C.id); });
+  if(!owned.length){ eg.innerHTML='<div class="note">No emotes yet - buy some from the Shop on the title screen.</div>'; return; }
+  owned.forEach(function(C){
+    var b=document.createElement("button");
+    b.textContent=C.glyph; b.title=C.n;
+    b.onclick=function(){ sfx.click(); sendEmote(C.glyph); hideOvl(); };
+    eg.appendChild(b);
+  });
+}
+$("bPlayers").onclick=function(){ sfx.click(); renderRoster(); showOvl("o-roster"); };
+$("rosterClose").onclick=function(){ sfx.click(); hideOvl(); };
 $("bAutostart").onclick=function(){ sfx.click(); save.autostart=!save.autostart; queueSave(); syncAutostartBtn(); };
 $("bResume").onclick=function(){ sfx.click(); state="play"; hideOvl(); };
 $("bQuit").onclick=function(){ sfx.click(); quitToTitle(); };
@@ -5764,8 +5849,8 @@ function fillStatRows(container,rows){
 }
 function renderSettings(){ fillStatRows($("setStats"),progressStatsRows()); }
 function equippedBannerBg(){
-  var id=cosEquipped("banner"), B=id&&byId(COSMETICS,id);
-  return (B&&B.cat==="banner")?"linear-gradient(135deg,"+B.col[0]+","+B.col[1]+")":null;
+  var col=cosBannerCol(cosEquipped("banner"));
+  return col?"linear-gradient(135deg,"+col[0]+","+col[1]+")":null;
 }
 /* the profile screen: equip your icon and banner right where you look at
    them (instead of only in the shop), see the banner as an actual
@@ -5949,16 +6034,19 @@ var party={
     var self=this;
     self.conns[c.peer]=c;
     c.on("data",function(m){ self._onData(c,m); });
-    c.on("open",function(){ self._send(c,{t:"hi",n:save.name||"cook"}); });
-    if(c.open)self._send(c,{t:"hi",n:save.name||"cook"});
+    c.on("open",function(){ self._send(c,{t:"hi",n:save.name||"cook",icon:cosEquipped("icon"),banner:cosEquipped("banner")}); });
+    if(c.open)self._send(c,{t:"hi",n:save.name||"cook",icon:cosEquipped("icon"),banner:cosEquipped("banner")});
     c.on("close",function(){
       var leftName=(self.members[c.peer]&&self.members[c.peer].n)||"A friend";
       delete self.conns[c.peer]; delete self.members[c.peer];
-      renderParty(); toast(leftName+" left the party");
+      renderParty(); if(state==="play")renderRoster(); toast(leftName+" left the party");
       /* star topology - guests only connect to the host, so only the host's
          own connection notices a disconnect directly. Relay it to everyone
-         else still connected so they find out too, not just the host. */
-      if(self.leader)self.send({t:"peerLeft",n:leftName});
+         else still connected so they find out too, not just the host -
+         and include the departed peer's id so non-host guests can clean
+         up their own copy of party.members too, not just show a toast
+         and leave a ghost entry behind. */
+      if(self.leader)self.send({t:"peerLeft",n:leftName,id:c.peer});
     });
   },
   _send:function(c,m){ try{ if(c&&c.open)c.send(m); }catch(e){} },
@@ -5966,9 +6054,9 @@ var party={
   _onData:function(c,m){
     var self=this,from=c.peer;
     if(m.t==="hi"){
-      self.members[from]={n:m.n||"cook"};
-      renderParty();
-      if(self.leader)self._send(c,{t:"hi",n:save.name||"cook"});
+      self.members[from]={n:m.n||"cook",icon:m.icon||null,banner:m.banner||null};
+      renderParty(); if(state==="play")renderRoster();
+      if(self.leader)self._send(c,{t:"hi",n:save.name||"cook",icon:cosEquipped("icon"),banner:cosEquipped("banner")});
     } else if(m.t==="start"){
       if(state==="menu"){
         var mi=0,di=0;
@@ -6022,7 +6110,11 @@ var party={
     } else if(m.t==="over"){
       if(!self.leader&&state==="play")endRun(m.won);
     } else if(m.t==="peerLeft"){
-      if(!self.leader)toast((m.n||"A friend")+" left the party");
+      if(!self.leader){
+        if(m.id)delete self.members[m.id];
+        renderParty(); if(state==="play")renderRoster();
+        toast((m.n||"A friend")+" left the party");
+      }
     } else if(m.t==="emote"){
       var eOwner=m.owner||from, eh=heroByOwner(eOwner);
       if(eh)spawnEmote(eh.x,eh.y,m.glyph);
@@ -6059,24 +6151,20 @@ function renderParty(){
   l.innerHTML="";
   $("pCnt").textContent="("+(ids.length+1)+")";
   /* icon/banner cosmetics used to be bought and "equipped" with nothing
-     anywhere ever reading them back - this is their one payoff, showing
-     on your own row in the lobby list everyone else sees. COS_ICON_GLYPH
-     is shared with the top-left account widget's avatar now too. */
-  function row(n,s,isMe){
+     anywhere ever reading them back - this is their payoff, showing on
+     everyone's row in the lobby list, not just your own, now that the
+     "hi" handshake carries each player's icon/banner id along with
+     their name. */
+  function row(n,s,iconId,bannerId){
     var d=document.createElement("div"); d.className="mem";
-    var iconHtml="", bannerCol=null;
-    if(isMe){
-      var iconId=cosEquipped("icon"), bannerId=cosEquipped("banner");
-      if(iconId){ var IC=byId(COSMETICS,iconId);
-        if(IC&&IC.cat==="icon")iconHtml='<div class="memicon">'+(COS_ICON_GLYPH[IC.ic]||"✦")+'</div>'; }
-      if(bannerId){ var BC=byId(COSMETICS,bannerId); if(BC&&BC.cat==="banner")bannerCol=BC.col; }
-    }
+    var glyph=cosIconGlyph(iconId), bannerCol=cosBannerCol(bannerId);
+    var iconHtml=glyph?'<div class="memicon">'+glyph+'</div>':"";
     if(bannerCol)d.style.borderLeft="4px solid "+bannerCol[0];
     d.innerHTML=iconHtml+'<div><div class="mn">'+n+'</div><div class="ms">'+s+'</div></div>';
     l.appendChild(d);
   }
-  row((save.name||"you")+" (you)",party.leader?"host · runs the rounds":"guest",true);
-  ids.forEach(function(k){ row(party.members[k].n||"defender","ready"); });
+  row((save.name||"you")+" (you)",party.leader?"host · runs the rounds":"guest",cosEquipped("icon"),cosEquipped("banner"));
+  ids.forEach(function(k){ var mm=party.members[k]; row(mm.n||"defender","ready",mm.icon,mm.banner); });
   $("pHeroLbl").textContent=byId(HEROES,chosenHero).n;
   if(party.leader){ renderDiffGrid("pDiffGrid"); renderMapGrid("pMapGrid"); }
 }
@@ -6319,6 +6407,7 @@ window.__pp={
   forceUnlockAllHeroes:function(){ save.heroesUnlocked=HEROES.map(function(h){return h.id;}); queueSave(); return save.heroesUnlocked.length; },
   updateAcctWidget:function(){ updateAcctWidget(); },
   showSkillsNow:function(){ renderSkills(); show("s-skills"); },
+  selectTower:function(gx,gy){ selTower=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]||null; renderPanel(); return !!selTower; },
   getFx:function(){ return fx.map(function(f){ return {shock:!!f.shock,smoke:!!f.smoke,spark:!!f.spark,x:f.x,y:f.y,t:f.t,life:f.life,col:f.col,r:f.r}; }); },
   getShots:function(){ return shots.map(function(sh){ return {x:sh.x,y:sh.y,dmg:sh.dmg,hit:Object.keys(sh.hit||{}).length}; }); },
   getHero:function(){ var h=myHero(); return h?{id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}:null; },
