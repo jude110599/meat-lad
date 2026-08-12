@@ -819,9 +819,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.10.2";
+var VERSION="2.10.3";
 var CHANGELOG=[
-  {v:"2.10.2",d:"latest",items:[
+  {v:"2.10.3",d:"latest",items:[
+    "PLACING A ROBOT OR HERO HAS SOME IMPACT NOW - a quick dust ring and spark burst in the robot's own colour when it lands, instead of just silently appearing. Small thing, but every kill already got this kind of punch and placement never did"
+  ]},
+  {v:"2.10.2",items:[
     "A REAL ACCOUNT CARD, TOP LEFT, LIKE BTD6. Your name, equipped icon, level and an actual XP bar toward the next level - the account-level system that gates the tower roster and hands out hero tokens has existed since v1.33 but was never more than a line of text buried in Settings. Tap the card to jump into Settings",
     "ACCOUNT LEVELING IS A REAL XP BAR NOW, not a flat +1 per win. Every round played earns XP toward the next level - win or lose, though a win earns more - instead of only a full clear ever moving the needle at all",
     "TOWER UNLOCK CHOICES NOW QUEUE PROPERLY. A big XP gain can cross several unlock milestones in one run; previously that silently discarded all but the last choice-of-3 and could even offer the same tower in two different choices at once. Every milestone now queues its own choice and they resolve one after another",
@@ -3257,6 +3260,13 @@ function bigExplosion(x,y,col){
   sparkBurst(x,y,col,12,140); debrisBurst(x,y,col,10);
   fx.push({flash:true,x:x,y:y,r:70,t:0,life:.16});
 }
+/* a robot/hero used to just silently appear the instant you paid for it -
+   a quick landing puff (dust ring + a few sparks in its own colour) gives
+   placement the same bit of impact a kill already gets, without the
+   weight of a full bigExplosion. */
+function deployPuff(x,y,col){
+  shockRing(x,y,26,col); smokePuff(x,y-4,15,col); sparkBurst(x,y,col,7,85);
+}
 /* co-op: each player gets their own hero on the shared board, tagged by
    owner ("solo" outside co-op, "host" for the host's own, or the guest's
    own PeerJS id). myOwner()/myHero() find "my" hero among everyone's. */
@@ -3521,6 +3531,7 @@ function placeTower(id,gx,gy,owner){
   var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,lvl:1,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
+  deployPuff(tw.x,tw.y,def.col);
   sfx.place(); updateHud(); renderShop();
   return true;
 }
@@ -3532,6 +3543,7 @@ function placeHero(owner,heroId,gx,gy){
     lvl:skillHeroStart(),xp:0,cd:0,ang:0,pops:0,s:{}};
   heroes.push(h);
   recalcHero(h);
+  deployPuff(h.x,h.y,byId(HEROES,heroId).col);
   sfx.place();
   if(owner===myOwner()&&save.heroUsed.indexOf(heroId)<0){ save.heroUsed.push(heroId); queueSave(); }
   return true;
@@ -6068,6 +6080,7 @@ window.__pp={
   acctXpNeeded:function(lvl){ return acctXpNeeded(lvl); },
   forceUnlockAllHeroes:function(){ save.heroesUnlocked=HEROES.map(function(h){return h.id;}); queueSave(); return save.heroesUnlocked.length; },
   updateAcctWidget:function(){ updateAcctWidget(); },
+  getFx:function(){ return fx.map(function(f){ return {shock:!!f.shock,smoke:!!f.smoke,spark:!!f.spark,x:f.x,y:f.y,t:f.t,life:f.life,col:f.col,r:f.r}; }); },
   getShots:function(){ return shots.map(function(sh){ return {x:sh.x,y:sh.y,dmg:sh.dmg,hit:Object.keys(sh.hit||{}).length}; }); },
   getHero:function(){ var h=myHero(); return h?{id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}:null; },
   getHeroes:function(){ return heroes.map(function(h){ return {owner:h.owner,id:h.id,gx:h.gx,gy:h.gy,x:h.x,y:h.y,cd:h.cd,lvl:h.lvl,xp:h.xp,s:h.s}; }); },
