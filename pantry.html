@@ -167,6 +167,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .hbtn.go{width:auto;padding:0 15px;font-weight:800;font-size:13px;
   border-color:var(--mint);color:var(--mint)}
 .hbtn.go.fast{background:var(--mint);color:#0f1a12}
+#emotePicker{position:absolute;top:56px;right:10px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;
+  background:rgba(20,15,10,.96);border:1px solid var(--line);border-radius:10px;padding:8px;
+  max-width:190px;pointer-events:auto}
+#emotePicker.hide{display:none}
+#emotePicker button{width:38px;height:38px;font-size:20px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:8px;cursor:pointer;flex:none}
+#emotePicker button:hover{background:var(--bg3)}
+#emotePicker .none{font-size:11.5px;color:var(--dim);padding:4px;max-width:160px;line-height:1.4}
 
 #shop{position:absolute;right:0;top:0;bottom:0;width:186px;z-index:2;
   background:rgba(20,15,10,.93);border-left:1px solid var(--line);
@@ -464,9 +472,11 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
       <b id="pHeroV">Lv1</b>
     </button>
     <div id="hudBtns">
+      <button class="hbtn" id="bEmote" title="Emotes">&#128578;</button>
       <button class="hbtn go" id="bGo">GO</button>
       <button class="hbtn" id="bPause">&#10073;&#10073;</button>
     </div>
+    <div id="emotePicker" class="hide"></div>
   </div>
 
   <div id="shop" class="hide">
@@ -3164,6 +3174,7 @@ var shakeT=0,shakeMag=0,hitStopT=0;
 function addShake(mag,dur){ shakeMag=Math.min(18,Math.max(shakeMag,mag)); shakeT=Math.max(shakeT,dur); }
 function addHitStop(dur){ hitStopT=Math.max(hitStopT,dur); }
 function dmgNum(x,y,n,crit){ fx.push({dmgText:true,x:x,y:y-6,n:Math.round(n),crit:crit,t:0,life:.55,vy:-38}); }
+function spawnEmote(x,y,glyph){ fx.push({emote:true,x:x,y:y-24,glyph:glyph,t:0,life:2}); }
 function sparkBurst(x,y,col,n,spd){
   fx.push({spark:true,x:x,y:y,col:col||"#e8dcc4",t:0,life:.22,
     lines:(function(){ var a=[]; n=n||6; for(var i=0;i<n;i++){ var ang=Math.random()*6.283,sp=(spd||60)*(.6+Math.random()*.7);
@@ -3186,6 +3197,34 @@ function bigExplosion(x,y,col){
    own PeerJS id). myOwner()/myHero() find "my" hero among everyone's. */
 function myOwner(){ return party.on?(party.leader?"host":(party.peer&&party.peer.id?party.peer.id:"guest")):"solo"; }
 function myHero(){ var o=myOwner(); for(var i=0;i<heroes.length;i++)if(heroes[i].owner===o)return heroes[i]; return null; }
+function heroByOwner(owner){ for(var i=0;i<heroes.length;i++)if(heroes[i].owner===owner)return heroes[i]; return null; }
+/* the cosmetics shop could sell emotes and "equip" one, but nothing ever
+   actually let you fire it - no trigger, no way for anyone else to see
+   it. Shows above your own hero if you've placed one (falls back to a
+   fixed HUD-corner spot if not, so it's never a silent no-op), and syncs
+   to the rest of the party over the same host-relays-to-guests path
+   everything else in co-op already uses. */
+function sendEmote(glyph){
+  var h=myHero();
+  if(h)spawnEmote(h.x,h.y,glyph);
+  else fx.push({emote:true,x:VW-60,y:80,glyph:glyph,t:0,life:2});
+  if(party.on)party.send({t:"emote",owner:myOwner(),glyph:glyph});
+}
+function renderEmotePicker(){
+  var p=$("emotePicker");
+  var owned=COSMETICS.filter(function(C){ return C.cat==="emote"&&cosOwned(C.id); });
+  p.innerHTML="";
+  if(!owned.length){
+    p.innerHTML='<div class="none">No emotes yet - buy some from the Shop on the title screen.</div>';
+    return;
+  }
+  owned.forEach(function(C){
+    var b=document.createElement("button");
+    b.textContent=C.glyph; b.title=C.n;
+    b.onclick=function(){ sfx.click(); sendEmote(C.glyph); $("emotePicker").classList.add("hide"); };
+    p.appendChild(b);
+  });
+}
 var coopNames={};
 function ownerName(owner){
   if(!party.on||!owner||owner==="solo")return null;
@@ -4336,6 +4375,12 @@ function render(t){
       ctx.font=(x2.crit?"bold 15px":"bold 11px")+" sans-serif"; ctx.textAlign="center";
       ctx.fillText(String(x2.n),x2.x,x2.y+x2.vy*k2);
       ctx.textAlign="left";
+    } else if(x2.emote){
+      var eK=x2.t/x2.life;
+      ctx.globalAlpha=eK<.12?eK/.12:(eK>.75?1-(eK-.75)/.25:1);
+      ctx.font="26px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(x2.glyph,x2.x,x2.y-eK*26);
+      ctx.textAlign="left"; ctx.textBaseline="alphabetic";
     } else if(x2.bossBanner){
       var bk=x2.t/x2.life;
       var bscale=bk<.15?bk/.15:1;
@@ -4815,6 +4860,11 @@ function syncAutostartBtn(){
 $("bPause").onclick=function(){
   sfx.click();
   if(state==="play"){ state="pause"; syncAutostartBtn(); showOvl("o-pause"); }
+};
+$("bEmote").onclick=function(){
+  sfx.click();
+  renderEmotePicker();
+  $("emotePicker").classList.toggle("hide");
 };
 $("bAutostart").onclick=function(){ sfx.click(); save.autostart=!save.autostart; queueSave(); syncAutostartBtn(); };
 $("bResume").onclick=function(){ sfx.click(); state="play"; hideOvl(); };
@@ -5626,6 +5676,13 @@ var party={
       if(!self.leader&&state==="play")endRun(m.won);
     } else if(m.t==="peerLeft"){
       if(!self.leader)toast((m.n||"A friend")+" left the pantry");
+    } else if(m.t==="emote"){
+      var eOwner=m.owner||from, eh=heroByOwner(eOwner);
+      if(eh)spawnEmote(eh.x,eh.y,m.glyph);
+      /* star topology again - a guest's emote only reaches the host
+         directly, so the host relays it on to every other guest (but not
+         back to whoever sent it, they already showed their own locally). */
+      if(self.leader)for(var ek in self.conns)if(self.conns[ek]!==c)self._send(self.conns[ek],{t:"emote",owner:eOwner,glyph:m.glyph});
     }
   },
   leave:function(){
