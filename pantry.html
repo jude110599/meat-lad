@@ -945,9 +945,13 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.5";
+var VERSION="2.12.6";
 var CHANGELOG=[
-  {v:"2.12.5",d:"latest",items:[
+  {v:"2.12.6",d:"latest",items:[
+    "CROSSPATHING TIGHTENED: ONLY TWO OF A TOWER'S THREE PATHS CAN EVER BE USED, ACCOUNT-WIDE, PER TOWER TYPE - not even a free tier 1 in the third any more. Pick your two paths (one can go all the way to tier 5, the other caps at tier 2) and the third stays fully locked forever for that tower type",
+    "Fixed the Grand Master / Master Of The Fleet achievements again - max possible unlocked tiers dropped from 8 to 7 now that the third path no longer gets a free tier 1"
+  ]},
+  {v:"2.12.5",items:[
     "UPGRADING A TOWER COSTS REAL CASH AGAIN, in-game, per tower - like the classic economy always worked. Unlocking a tier with XP (in the shop's tower-info screen, double-click a card) only makes it AVAILABLE account-wide for that tower type; you still pay cash to actually equip it on any one placed tower, same price as before",
     "THE OLD IN-GAME UPGRADE PANEL IS BACK - click a placed tower and its 3 paths show right there with a buy button each, no separate full-screen page. The full-screen upgrade screen is gone",
     "The shop's tower-info popup (double-click a card) is interactive now instead of read-only - click a glowing upgrade there to spend that tower type's banked XP and unlock it account-wide",
@@ -2296,12 +2300,12 @@ var ACHIEVEMENTS=[
     prog:function(){ return {cur:save.bossPops||0,target:25}; }},
   {id:"boss_roster",cat:"Collection", n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; },
     prog:function(){ return {cur:(save.bossesSeen||[]).length,target:4}; }},
-  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully unlock a tower's permanent upgrades account-wide - one path maxed, a second at tier 2.",chk:function(){
-    var m=save.towerMastery||{}; for(var k in m)if(m[k].t1+m[k].t2+m[k].t3>=8)return true; return false; },
-    prog:function(){ var m=save.towerMastery||{},best=0; for(var k in m){ var t=m[k].t1+m[k].t2+m[k].t3; if(t>best)best=t; } return {cur:best,target:8}; }},
+  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully unlock a tower's permanent upgrades account-wide - one path maxed, a second at tier 2, the third left untouched.",chk:function(){
+    var m=save.towerMastery||{}; for(var k in m)if(m[k].t1+m[k].t2+m[k].t3>=7)return true; return false; },
+    prog:function(){ var m=save.towerMastery||{},best=0; for(var k in m){ var t=m[k].t1+m[k].t2+m[k].t3; if(t>best)best=t; } return {cur:best,target:7}; }},
   {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Fully unlock every tower's permanent upgrades account-wide.",chk:function(){
-    var m=save.towerMastery||{}; return TOWERS.every(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=8; }); },
-    prog:function(){ var m=save.towerMastery||{}; var n=TOWERS.filter(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=8; }).length;
+    var m=save.towerMastery||{}; return TOWERS.every(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=7; }); },
+    prog:function(){ var m=save.towerMastery||{}; var n=TOWERS.filter(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=7; }).length;
       return {cur:n,target:TOWERS.length}; }},
   {id:"endgame_maps",cat:"Runs", n:"Off The Map",   d:"Beat the three hardest sectors: Solar Array, Defense Ring and Core Chamber.",chk:function(){
     var need=["snake","icebox","finale"]; var seen={};
@@ -3848,7 +3852,7 @@ function giveHeroXp(h,n){
    sites below), since this pool now compounds across every instance
    placed in every run forever, not reset per placement. */
 function towerMastery(id){
-  if(!save.towerMastery[id])save.towerMastery[id]={t1:1,t2:1,t3:1,xp:0};
+  if(!save.towerMastery[id])save.towerMastery[id]={t1:0,t2:0,t3:0,xp:0};
   return save.towerMastery[id];
 }
 function giveTowerXp(tw,n){
@@ -3882,29 +3886,30 @@ function buildTgtRow(tw,onSet){
   });
   return row;
 }
-/* classic BTD6 crosspathing, unchanged shape: at most two of the three
-   paths may ever go past tier 1 (the free baseline), and once one of
-   those two passes tier 2, the other is capped there - one path to 5,
-   the other to 2, the third stays at its free 1. Checked against the
-   tower TYPE's shared, permanent unlock ceiling (towerMastery), not any
-   one instance - that ceiling is the only thing crosspathing actually
-   constrains, since it's the only thing ever paid for. */
+/* crosspathing, tightened to only two paths ever, period: at most two of
+   the three paths may hold ANY tiers at all (not even a free tier 1 in
+   the third any more), and once one of those two passes tier 2, the
+   other is capped there - one path to 5, the other to 2, the third
+   stays fully locked at 0 forever. Checked against the tower TYPE's
+   shared, permanent unlock ceiling (towerMastery), not any one instance
+   - that ceiling is the only thing crosspathing actually constrains,
+   since it's the only thing ever paid for. */
 /* drives the little green arrow badge on a tower's shop card - true if
    this tower TYPE has enough banked XP to unlock at least one more
    tier right now (respecting crosspathing), regardless of whether any
-   instance of it is even on the board. Mirrors upgradeTower's own gate
-   checks so the badge never promises something a click can't do. */
+   instance of it is even on the board. Mirrors unlockTowerTier's own
+   gate checks so the badge never promises something a click can't do. */
 function towerHasAvailableUpgrade(id){
   var m=save.towerMastery[id];
   if(!m)return false;
   var def=byId(TOWERS,id);
   var paths=[def.p1,def.p2,def.p3], tiers=[m.t1,m.t2,m.t3];
-  var activePaths=tiers.filter(function(t){ return t>1; }).length;
+  var activePaths=tiers.filter(function(t){ return t>0; }).length;
   var pastIdx=-1; tiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
   for(var i=0;i<3;i++){
     var tier=tiers[i];
     if(tier>=5)continue;
-    var lockedNew=(tier===1&&activePaths>=2);
+    var lockedNew=(tier===0&&activePaths>=2);
     var lockedDeep=(pastIdx>=0&&pastIdx!==i&&tier>=2);
     if(lockedNew||lockedDeep)continue;
     if((m.xp||0)>=paths[i].u[tier].c)return true;
@@ -3943,8 +3948,8 @@ function unlockTowerTier(id,pathN){
   var m=towerMastery(id), ceilTiers=[m.t1,m.t2,m.t3];
   var idx=pathN-1, ceil=ceilTiers[idx];
   if(ceil>=5)return;
-  var activePaths=ceilTiers.filter(function(t){ return t>1; }).length;
-  if(ceil===1&&activePaths>=2){ toast("Only two paths can go past tier 1 at once"); return; }
+  var activePaths=ceilTiers.filter(function(t){ return t>0; }).length;
+  if(ceil===0&&activePaths>=2){ toast("Only two paths can be used at once"); return; }
   var pastIdx=-1; ceilTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
   if(pastIdx>=0&&pastIdx!==idx&&ceil>=2){ toast("Another path already went past tier 2"); return; }
   var up=paths[idx].u[ceil];
@@ -5188,7 +5193,7 @@ function renderTowerInfo(towerId){
   $("towerInfoStats").textContent=baseTxt+(m?"":" · never placed yet - place one to start earning XP");
   $("towerInfoXp").innerHTML=m?('<span class="xpIcon">&#9889;</span>'+Math.floor(m.xp||0).toLocaleString()+" XP - tap a glowing upgrade to unlock it"):"";
 
-  var activePaths=ceilTiers.filter(function(t){ return t>1; }).length;
+  var activePaths=ceilTiers.filter(function(t){ return t>0; }).length;
   var pastIdx=-1; ceilTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
   var wrap=$("towerInfoPaths"); wrap.innerHTML="";
   [def.p1,def.p2,def.p3].forEach(function(pathDef,idx){
@@ -5226,7 +5231,7 @@ function renderTowerInfo(towerId){
           cell.title="A hidden final upgrade - costs "+up.c.toLocaleString()+" XP to unlock";
           if(afford4)cell.onclick=(function(pathN){ return function(){ sfx.click(); unlockTowerTier(def.id,pathN); }; })(idx+1);
         } else {
-          var lockedNew=ceil===1&&activePaths>=2;
+          var lockedNew=ceil===0&&activePaths>=2;
           var lockedDeep=pastIdx>=0&&pastIdx!==idx&&ceil>=2;
           var afford=m&&(m.xp||0)>=up.c;
           var ready=afford&&!lockedNew&&!lockedDeep;
@@ -5237,7 +5242,7 @@ function renderTowerInfo(towerId){
           if(lockedNew||lockedDeep)cell.classList.add("excluded");
           else if(!afford)cell.classList.add("locked");
           if(ready){ cell.classList.add("ready"); cell.onclick=(function(pathN){ return function(){ sfx.click(); unlockTowerTier(def.id,pathN); }; })(idx+1); }
-          cell.title=lockedNew?"Only two paths can go past tier 1 at once":lockedDeep?"Another path already went past tier 2":
+          cell.title=lockedNew?"Only two paths can be used at once":lockedDeep?"Another path already went past tier 2":
             !afford?"Not enough XP yet to unlock":up.n+" - "+up.d;
         }
       } else {
