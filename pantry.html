@@ -984,9 +984,14 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.4";
+var VERSION="2.13.5";
 var CHANGELOG=[
-  {v:"2.13.4",d:"latest",items:[
+  {v:"2.13.5",d:"latest",items:[
+    "BUGS HAVE FACES NOW. Every tower already had cute cartoon eyes (see the shop, the board, anywhere) - the whole enemy side of the board never did, reusing the exact same eyes so the art style stays one consistent language instead of a second bespoke look. A little side-to-side glance keeps a swarm of the same kind from all staring in lockstep",
+    "SMOKE/POOF EFFECTS ARE A CARTOON CLOUD SHAPE NOW instead of one soft gradient blob - a cluster of flat-filled lobes, the same comic-book \"poof\" language, showing up everywhere a puff already did (placing, selling, splash hits, upgrades, hero level-ups) since it's all one shared effect",
+    "TOWERS AND HEROES BREATHE NOW - the existing idle bob squashes a touch wider at the bottom and stretches a touch taller at the top, the same cheap squash-and-stretch cheat every bouncy cartoon mascot uses, riding on the bob animation that was already there"
+  ]},
+  {v:"2.13.4",items:[
     "TAP THE WAVE COUNTER TO SEE WHAT'S COMING. A real QoL gap - there was no way to plan a purchase around the next wave without just eating it blind. Shows the upcoming wave's enemy mix (icons + counts), boss waves called out distinctly, no pausing required since it's meant to be a quick peek mid-round"
   ]},
   {v:"2.13.3",items:[
@@ -3266,6 +3271,14 @@ function drawBugArt(c,kind,t,r,wob){
   orb(c,0,r*.16,r*.82,col,.92);
   orb(c,0,-r*.62,r*.5,shade(col,18));
   c.restore();
+  /* every tower already had cute cartoon eyes (see eyes()) - bugs never
+     did, so the whole enemy side of the board read as faceless blobs
+     next to a cast of expressive robots. Reusing the exact same helper
+     keeps the art style consistent instead of inventing a second "angry
+     bug eye" look, with a little side-to-side glance (driven by the
+     same wob offset that already staggers their leg-wiggle) so a swarm
+     of the same kind doesn't all stare in lockstep. */
+  eyes(c,0,-r*.62,r*.5,Math.sin(t*1.3+wob)*.6);
   // per-kind distinguishing marks so silhouettes read apart, not just colour
   if(kind==="beetle"||kind==="weevil"||kind==="king"||kind==="behemoth"){
     c.strokeStyle=shade(col,-75); c.lineWidth=Math.max(1,r*.08);
@@ -4772,7 +4785,13 @@ function render(t){
          touch right as it fires, with zero bespoke animation work needed
          per model. */
       var twPhase=(en.o.x*.13+en.o.y*.07)%6.283;
-      ctx.translate(0,Math.sin(t*2.1+twPhase)*1.2);
+      var twBob=Math.sin(t*2.1+twPhase);
+      ctx.translate(0,twBob*1.2);
+      /* a cartoon character never just bobs rigidly - it squashes a touch
+         wider at the bottom of the bob and stretches a touch taller at
+         the top, same "breathing" cheat every squash-and-stretch mascot
+         uses, cheap enough to ride on the bob that already existed. */
+      ctx.scale(1+twBob*.035,1-twBob*.05);
       ctx.translate(-Math.cos(en.o.ang||0)*fireGlow*4,-Math.sin(en.o.ang||0)*fireGlow*4);
       /* the more a robot has been upgraded, the physically bigger and more
          armoured it reads - a maxed-out robot (10 tiers across its two
@@ -4796,7 +4815,9 @@ function render(t){
       var hFireGlow=Math.max(0,((en.o.cd||0)/hMaxCd-.65)/.35);
       ctx.save(); ctx.translate(en.o.x,en.o.y+8);
       var hPhase=(en.o.x*.13+en.o.y*.07)%6.283;
-      ctx.translate(0,Math.sin(t*2.1+hPhase)*1.2);
+      var hBob=Math.sin(t*2.1+hPhase);
+      ctx.translate(0,hBob*1.2);
+      ctx.scale(1+hBob*.035,1-hBob*.05);
       ctx.translate(-Math.cos(en.o.ang||0)*hFireGlow*4,-Math.sin(en.o.ang||0)*hFireGlow*4);
       /* heroes grow the same way towers do now - a level 20 hero reads as
          visibly bigger than a level 1 one, on top of the fire-recoil punch. */
@@ -4885,11 +4906,20 @@ function render(t){
         ctx.stroke();
       }
     } else if(x2.smoke){
-      var smR=x2.r*(1+k2*1.4);
-      var smg=ctx.createRadialGradient(x2.x,x2.y-k2*14,0,x2.x,x2.y-k2*14,smR);
-      smg.addColorStop(0,x2.col); smg.addColorStop(1,"rgba(0,0,0,0)");
-      ctx.globalAlpha=(1-k2)*.55; ctx.fillStyle=smg;
-      ctx.beginPath(); ctx.arc(x2.x,x2.y-k2*14,smR,0,6.283); ctx.fill();
+      /* used to be one soft gradient blob - a cluster of flat-filled lobes
+         reads as a proper cartoon "poof" cloud instead, the same shape
+         language as a comic-book puff, and it's shared by every puff in
+         the game (placement, selling, splash hits, upgrades, level-ups)
+         so one change here reads everywhere at once. */
+      var smR=x2.r*(1+k2*1.1),smCx=x2.x,smCy=x2.y-k2*14;
+      ctx.globalAlpha=(1-k2)*.6; ctx.fillStyle=x2.col;
+      var lobeN=5;
+      for(var lo=0;lo<lobeN;lo++){
+        var loA=(lo/lobeN)*6.283+x2.t*1.1;
+        var loR=smR*.4;
+        ctx.beginPath(); ctx.arc(smCx+Math.cos(loA)*smR*.42,smCy+Math.sin(loA)*smR*.34,loR,0,6.283); ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(smCx,smCy,smR*.48,0,6.283); ctx.fill();
     } else if(x2.shock){
       ctx.strokeStyle=x2.col; ctx.lineWidth=Math.max(1,4*(1-k2));
       ctx.globalAlpha=(1-k2)*.8;
