@@ -315,15 +315,36 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
   text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
 .tgtbtn.sel{background:var(--honey);color:#241708;border-color:var(--honey)}
 
-/* narrow phones: the shop tray and the tower upgrade panel are both fixed-
-   width and can be open at once - at the old 186px+238px they overlapped by
-   49px on a 375px-wide screen (iPhone SE/mini class), making part of every
-   upgrade button sit under the shop and miss taps. Shrink both so they never
-   overlap down to ~330px wide, and give shop cards a bit more breathing room. */
+/* mobile: the shop used to be a permanent right-hand sidebar, which on a
+   narrow portrait phone left barely a quarter of the screen width for the
+   canvas - since the map itself is landscape-shaped (24x15 cells), that
+   squeezed the whole play area into a thin horizontal strip with empty
+   space above and below it. Docks the shop to the bottom as a collapsible
+   drawer instead: collapsed, it's just a slim handle bar (so the canvas
+   gets almost the full screen), and tapping the handle slides the same
+   card grid up as an overlay ON TOP of the canvas rather than shrinking
+   it. #panel (the tap-a-tower card) moves to dock just above the handle
+   so the two never overlap. */
+#shopHandle{display:none;align-items:center;justify-content:center;gap:6px;
+  height:50px;margin:0 -8px;background:var(--bg3);border-bottom:1px solid var(--line);
+  border-radius:14px 14px 0 0;font-weight:800;font-size:12px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--honey);cursor:pointer}
+#shopHandle .arrow{transition:transform .28s}
+#shop.open #shopHandle .arrow{transform:rotate(180deg)}
+@media (max-width:640px){
+  #hud{right:0}
+  #shop{left:0;right:0;top:auto;bottom:0;width:auto;height:64vh;max-height:520px;
+    border-left:none;border-top:1px solid var(--line);border-radius:14px 14px 0 0;
+    padding:0 8px calc(8px + env(safe-area-inset-bottom,0px));
+    transform:translateY(calc(100% - 50px));
+    transition:transform .28s cubic-bezier(.34,1.56,.64,1);z-index:5}
+  #shop.open{transform:translateY(0)}
+  #shopHandle{display:flex}
+  #shopList{margin-top:8px}
+  #panel{left:8px;right:8px;width:auto;bottom:50px;border-radius:10px}
+}
+/* extra breathing room on the narrowest phones only. */
 @media (max-width:520px){
-  #hud{right:128px}
-  #shop{width:128px}
-  #panel{width:198px}
   #shopList{gap:5px}
   .tcard{padding:3px}
   .tcard .tp{font-size:9px}
@@ -553,6 +574,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 #shop{background:linear-gradient(180deg,rgba(7,18,32,.99),rgba(3,10,20,.99));border-left-color:#2b617e;box-shadow:-12px 0 35px rgba(0,0,0,.35),inset 1px 0 rgba(53,216,255,.12)}
 #shop:before{content:"ROBOT DEPLOYMENT";display:block;color:#5ff0c0;font-size:9px;letter-spacing:.18em;font-weight:900;padding:0 2px 8px;border-bottom:1px solid #2b4968;margin-bottom:8px}
+@media (max-width:640px){ #shop:before{display:none} }
 #hud{background:linear-gradient(rgba(4,13,25,.97),rgba(4,13,25,0))}
 .pill{background:linear-gradient(160deg,rgba(12,29,47,.96),rgba(4,10,20,.94));border-color:#2b4968}.pill.cash{color:#66e7ff}.pill.life{color:#ff72e8}.pill.wave{color:#5ff0c0}
 .tcard.sel,.stab.sel{border-color:#35d8ff;background:#142b43}.btn{border-left-color:#35d8ff}.card.sel{border-left-color:#35d8ff}.hbtn.go{border-color:#5ff0c0;color:#5ff0c0}.hbtn.go.fast{background:#5ff0c0;color:#061b16}
@@ -600,6 +622,7 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
   </button>
 
   <div id="shop" class="hide">
+    <div id="shopHandle"><span>Shop</span><span class="arrow">&#9650;</span></div>
     <div id="shopList"></div>
   </div>
 
@@ -945,9 +968,14 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.8";
+var VERSION="2.13.0";
 var CHANGELOG=[
-  {v:"2.12.8",d:"latest",items:[
+  {v:"2.13.0",d:"latest",items:[
+    "MOBILE: THE SHOP NO LONGER PERMANENTLY EATS A THIRD OF THE SCREEN. It used to sit as a fixed sidebar, which on a narrow phone squeezed the whole (landscape-shaped) play area into a thin strip - it now docks to the bottom as a collapsible drawer instead: collapsed, it's just a slim handle, so the board gets almost the full screen; tap it to slide the same card list up as an overlay. Picking a tower auto-collapses it so you can immediately tap the board. The tower click panel moves to dock above the handle so nothing overlaps",
+    "BUYING AN UPGRADE IS A REAL MOMENT ON THE BOARD NOW, not just a number changing in a panel - a burst and ring in the path's own colour hits the tower itself, with a tiny freeze-frame for impact",
+    "Shortened some of the more cramped upgrade-panel button text (\"unlock this in the shop first\" -> \"unlock in shop first\", etc.) so it reads faster and fits tighter panels better"
+  ]},
+  {v:"2.12.8",items:[
     "MOVED THE 2-PATH CAP OFF THE ACCOUNT-WIDE UNLOCK SCREEN AND ONTO EACH TOWER ITSELF, WHERE IT ALWAYS SHOULD'VE BEEN. Unlocking tiers with XP (shop, double-click a card) is unrestricted again - bank XP into all three paths if you want, nothing's ever permanently locked out for the tower type. The 2-path limit now applies per PLACED TOWER instead: any one tower can only ever commit cash to two of its three paths, but different towers of the same type are free to pick different pairs",
     "Reverted the save-data migration from 2.12.7 (it doesn't apply any more - there's no account-wide 2-path limit to violate)"
   ]},
@@ -2426,8 +2454,16 @@ function resize(){
   cv.width=w*dpr; cv.height=h*dpr;
   cv.style.width=w+"px"; cv.style.height=h+"px";
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  var padR=(state==="play"||state==="pause")?$("shop").offsetWidth+4:0;
-  var availW=w-padR, availH=h-58;
+  var shopOn=(state==="play"||state==="pause");
+  /* mobile docks the shop to the bottom as a collapsible drawer instead
+     of a permanent right-hand sidebar (see #shop.open in CSS) - it only
+     ever costs the canvas its collapsed handle height, not the full
+     drawer, since opening it overlays the canvas rather than resizing
+     it. */
+  var mobile=w<640;
+  var padR=(shopOn&&!mobile)?$("shop").offsetWidth+4:0;
+  var padB=(shopOn&&mobile)?58:0;
+  var availW=w-padR, availH=h-58-padB;
   view.s=Math.min(availW/VW,availH/VH);
   view.ox=(availW-VW*view.s)/2;
   view.oy=58+(availH-VH*view.s)/2;
@@ -3933,13 +3969,21 @@ function buyTowerTier(tw,pathN){
   var idx=pathN-1, ceil=ceilTiers[idx], applied=appliedTiers[idx];
   if(applied>=5||applied>=ceil)return;
   var activePaths=appliedTiers.filter(function(t){ return t>0; }).length;
-  if(applied===0&&activePaths>=2){ toast("Only two paths can be used on one tower at once"); return; }
+  if(applied===0&&activePaths>=2){ toast("Only two paths per tower"); return; }
   var pastIdx=-1; appliedTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
-  if(pastIdx>=0&&pastIdx!==idx&&applied>=2){ toast("Another path on this tower already went past tier 2"); return; }
+  if(pastIdx>=0&&pastIdx!==idx&&applied>=2){ toast("Another path already past tier 2"); return; }
   var up=paths[idx].u[applied], owner=tw.owner||"solo";
   if((playerCash[owner]||0)<up.c){ toast("Not enough cash"); return; }
   playerCash[owner]-=up.c;
   applyTowerTier(tw,pathN);
+  /* a purchase used to just silently change some numbers - now it's a
+     real moment on the board itself, not just in the panel you're
+     looking at: a burst and ring in the path's own colour right on the
+     tower, plus a tiny freeze-frame, the same "impact" language already
+     used for landing a hit. */
+  sparkBurst(tw.x,tw.y,UPGRADE_PATH_COL[idx],10,120);
+  shockRing(tw.x,tw.y,34,UPGRADE_PATH_COL[idx]);
+  addHitStop(.05);
   sfx.up(); updateHud(); renderPanel(); renderShop();
 }
 /* unlocking a tier is account-wide and permanent for this tower TYPE,
@@ -4952,6 +4996,15 @@ $("heroBoxBuy").onclick=function(){
   else levelUpHero(hero);
   renderHeroPanel(); updateHud();
 };
+/* mobile-only: the shop docks to the bottom as a collapsible drawer (see
+   #shopHandle/#shop.open in CSS) so the canvas gets the full screen while
+   it's closed. Harmless to call on desktop - the .open class has no
+   effect there since that CSS only exists inside the mobile media query. */
+function toggleShopMobile(force){
+  var open=typeof force==="boolean"?force:!$("shop").classList.contains("open");
+  $("shop").classList.toggle("open",open);
+}
+$("shopHandle").onclick=function(){ sfx.click(); toggleShopMobile(); };
 function renderShop(){
   var list=$("shopList"); list.innerHTML="";
   /* the hero used to auto-arm placement the instant a run started, so it
@@ -4973,6 +5026,7 @@ function renderShop(){
   hSlot.appendChild(hWrap);
   hSlot.onclick=function(){
     sfx.click();
+    toggleShopMobile(false);
     if(myH){ openHeroPanel(); return; }
     buyId="__hero"; placing=true; selTower=null;
     $("panel").classList.add("hide");
@@ -5013,6 +5067,7 @@ function renderShop(){
     d.onclick=function(){
       if(myCash()<towerCost(T)){ toast("Not enough"); return; }
       sfx.click();
+      toggleShopMobile(false);
       buyId=T.id; placing=true; selTower=null;
       $("panel").classList.add("hide");
       markShopSel(T.id);
@@ -5081,8 +5136,11 @@ function renderPanel(){
   /* the panel used to always sit bottom-left no matter where you clicked,
      so a tower placed over there ended up hidden under its own upgrade
      panel. Flip to the opposite corner from whichever half of the board
-     the tower's actually on instead. */
-  if(tw.gx<GW/2){ p.classList.add("right"); p.style.left="auto"; p.style.right=$("shop").offsetWidth+"px"; }
+     the tower's actually on instead - desktop only, since on mobile the
+     panel docks full-width above the shop's collapsed handle (see CSS)
+     regardless of which half of the board the tower is on. */
+  if($("wrap").clientWidth<640){ p.style.left=""; p.style.right=""; }
+  else if(tw.gx<GW/2){ p.classList.add("right"); p.style.left="auto"; p.style.right=$("shop").offsetWidth+"px"; }
   else { p.classList.remove("right"); p.style.right=""; p.style.left="0"; }
   var h=document.createElement("h3"); h.textContent=def.n; p.appendChild(h);
   var sub=document.createElement("div"); sub.className="sub statline";
@@ -5158,8 +5216,8 @@ function renderPanel(){
     b.disabled=!mine||!unlocked||excluded||myCash()<up.c;
     b.dataset.cost=up.c; b.dataset.structlock=(!unlocked||excluded||!mine)?"1":"0";
     b.innerHTML="<b>"+up.n+"</b>"+up.d+" <i>$"+up.c+"</i>"+
-      (!mine?" &mdash; owned by "+oName:lockedNew?" &mdash; only two paths per tower":lockedDeep?" &mdash; another path here went past tier 2":
-       !unlocked?" &mdash; unlock this in the shop first":"");
+      (!mine?" &mdash; owned by "+oName:lockedNew?" &mdash; only two paths per tower":lockedDeep?" &mdash; another path past tier 2":
+       !unlocked?" &mdash; unlock in shop first":"");
     b.onclick=function(){
       sfx.click();
       if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
