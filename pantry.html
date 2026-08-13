@@ -945,9 +945,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.6";
+var VERSION="2.12.7";
 var CHANGELOG=[
-  {v:"2.12.6",d:"latest",items:[
+  {v:"2.12.7",d:"latest",items:[
+    "FIXED THE 2-PATH CAP NOT ACTUALLY STICKING - it only blocked NEW third-path unlocks going forward, so anyone who'd already unlocked tier 1 in all three paths under the old rule (basically everyone with existing progress) could keep right on upgrading that third path forever. Existing save data now gets corrected on load: whichever two paths are furthest along are kept, the weakest third path gets locked back to 0"
+  ]},
+  {v:"2.12.6",items:[
     "CROSSPATHING TIGHTENED: ONLY TWO OF A TOWER'S THREE PATHS CAN EVER BE USED, ACCOUNT-WIDE, PER TOWER TYPE - not even a free tier 1 in the third any more. Pick your two paths (one can go all the way to tier 5, the other caps at tier 2) and the third stays fully locked forever for that tower type",
     "Fixed the Grand Master / Master Of The Fleet achievements again - max possible unlocked tiers dropped from 8 to 7 now that the third path no longer gets a free tier 1"
   ]},
@@ -1521,6 +1524,22 @@ function loadSave(){
   if(!save.towerMaxLvl||typeof save.towerMaxLvl!=="object")save.towerMaxLvl={};
   if(!save.heroMaxLvl||typeof save.heroMaxLvl!=="object")save.heroMaxLvl={};
   if(!save.towerMastery||typeof save.towerMastery!=="object")save.towerMastery={};
+  /* crosspathing tightened in v2.12.6 to only ever allow two of a
+     tower's three paths, from tier 1 on - but anyone who'd already
+     unlocked things under the old "free tier 1 in all three" rule has
+     save data that violates that (all three paths sitting at t>0). New
+     unlocks already can't create that state (unlockTowerTier blocks a
+     third path from 0), but existing saves need a one-time correction:
+     keep whichever two paths are furthest along, zero the weakest one. */
+  for(var mtk in save.towerMastery){
+    var mt=save.towerMastery[mtk], mtiers=[mt.t1||0,mt.t2||0,mt.t3||0];
+    var mactive=mtiers.filter(function(t){ return t>0; }).length;
+    if(mactive>2){
+      var weakest=0; for(var wi=1;wi<3;wi++)if(mtiers[wi]<mtiers[weakest])weakest=wi;
+      mtiers[weakest]=0;
+      mt.t1=mtiers[0]; mt.t2=mtiers[1]; mt.t3=mtiers[2];
+    }
+  }
   if(!(save.bossesSeen instanceof Array))save.bossesSeen=[];
   if(typeof save.playerLvl!=="number"||save.playerLvl<1)save.playerLvl=1;
   if(typeof save.acctXp!=="number"||save.acctXp<0)save.acctXp=0;
