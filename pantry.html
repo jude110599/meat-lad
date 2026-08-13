@@ -395,6 +395,8 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .upgCell{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:88px;
   display:flex;flex-direction:column;justify-content:center;text-align:center;font-size:10.5px;
   cursor:default;transition:transform .12s,background .12s}
+.upgIcon{display:flex;justify-content:center;margin-bottom:2px}
+.upgIcon canvas{display:block;width:18px;height:18px}
 .upgCell b{display:block;font-size:11px;margin-bottom:2px}
 .upgCell .upgDesc{color:var(--dim);font-size:9.5px;line-height:1.3;margin-bottom:3px}
 .upgCell .upgCost{font-weight:800;color:var(--gold);font-size:10px}
@@ -950,9 +952,15 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.2";
+var VERSION="2.12.3";
 var CHANGELOG=[
-  {v:"2.12.2",d:"latest",items:[
+  {v:"2.12.3",d:"latest",items:[
+    "TOWER UPGRADES ARE PERMANENT AND ACCOUNT-WIDE NOW, PER TOWER TYPE - the way this was actually meant to work. Unlock an upgrade on a Cleaver Bot and it's not just that one Cleaver Bot any more: every Cleaver Bot you ever place, this run or any run after, already has it, forever, the same way a real BTD6 unlock works. Each tower TYPE has one shared, permanent XP pool now instead of every placed instance starting from zero",
+    "EVERY PATH'S TIER 1 IS FREE FROM THE FIRST PLACEMENT - all three, not just one. The meaningful choice starts at tier 2; crosspathing shifted to match (two paths can go past tier 1, one of those two can go all the way to tier 5, the other caps at tier 3 once it does)",
+    "XP EARN RATES CUT SIGNIFICANTLY (roughly to a sixth to an eighth of before) - this pool now compounds across every instance placed in every run forever instead of resetting each placement, so it has to build slowly or mastery would trivialise after a handful of runs",
+    "UPGRADE CELLS SHOW A SMALL ICON FOR WHAT THEY ACTUALLY DO NOW (damage, speed, range, pierce, splash, crowd control, economy, armour), reusing the same icon set the shop's tower preview already had, instead of relying on the description text alone"
+  ]},
+  {v:"2.12.2",items:[
     "CO-OP MONEY IS NO LONGER SHARED. Everyone gets their own balance now - your own placements, sells, hero level-ups and kill rewards only ever touch your own cash, and each round's income/bonus pays every active player their own full amount instead of one pool everyone drew from. A new Send button next to each other player in the Players panel lets you wire them cash directly",
     "Fixed the hero row on map select rendering its icon bigger than the row was built for (a shared CSS class was overriding the intended size), which made it visually crowd into the hero's name text next to it"
   ]},
@@ -1481,7 +1489,7 @@ function mSetMode(mode){
 var SKEY="pantrypanic-save-v1";
 var save={wins:0,runs:0,pops:0,best:0,jars:0,jarsTotal:0,crumbs:0,hardWins:0,perfectWins:0,insaneWins:0,bossPops:0,
   skills:[],mapsBeat:[],name:"",heroUsed:[],achUnlocked:[],cosOwned:[],cosEquip:{},bossesSeen:[],autostart:false,towerMaxLvl:{},heroMaxLvl:{},
-  playerLvl:1,acctXp:0,heroTokens:0,towersUnlocked:null,heroesUnlocked:null};
+  playerLvl:1,acctXp:0,heroTokens:0,towersUnlocked:null,heroesUnlocked:null,towerMastery:{}};
 /* the cheapest tower in each of the 4 classes - a small, deliberately
    basic starting kit. Everything else opens up through playerLvl. */
 function starterTowerIds(){
@@ -1502,6 +1510,7 @@ function loadSave(){
   if(!save.cosEquip||typeof save.cosEquip!=="object")save.cosEquip={};
   if(!save.towerMaxLvl||typeof save.towerMaxLvl!=="object")save.towerMaxLvl={};
   if(!save.heroMaxLvl||typeof save.heroMaxLvl!=="object")save.heroMaxLvl={};
+  if(!save.towerMastery||typeof save.towerMastery!=="object")save.towerMastery={};
   if(!(save.bossesSeen instanceof Array))save.bossesSeen=[];
   if(typeof save.playerLvl!=="number"||save.playerLvl<1)save.playerLvl=1;
   if(typeof save.acctXp!=="number"||save.acctXp<0)save.acctXp=0;
@@ -2281,12 +2290,12 @@ var ACHIEVEMENTS=[
     prog:function(){ return {cur:save.bossPops||0,target:25}; }},
   {id:"boss_roster",cat:"Collection", n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; },
     prog:function(){ return {cur:(save.bossesSeen||[]).length,target:4}; }},
-  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully commit a tower's upgrades - one path maxed, a second at tier 2.",chk:function(){
-    var m=save.towerMaxLvl||{}; for(var k in m)if(m[k]>=7)return true; return false; },
-    prog:function(){ var m=save.towerMaxLvl||{},best=0; for(var k in m)if(m[k]>best)best=m[k]; return {cur:best,target:7}; }},
-  {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Fully commit every tower's upgrades at least once.",chk:function(){
-    var m=save.towerMaxLvl||{}; return TOWERS.every(function(T){ return (m[T.id]||0)>=7; }); },
-    prog:function(){ var m=save.towerMaxLvl||{}; var n=TOWERS.filter(function(T){ return (m[T.id]||0)>=7; }).length;
+  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully commit a tower's permanent upgrades - one path maxed, a second at tier 3.",chk:function(){
+    var m=save.towerMastery||{}; for(var k in m)if(m[k].t1+m[k].t2+m[k].t3>=9)return true; return false; },
+    prog:function(){ var m=save.towerMastery||{},best=0; for(var k in m){ var t=m[k].t1+m[k].t2+m[k].t3; if(t>best)best=t; } return {cur:best,target:9}; }},
+  {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Fully commit every tower's permanent upgrades at least once.",chk:function(){
+    var m=save.towerMastery||{}; return TOWERS.every(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=9; }); },
+    prog:function(){ var m=save.towerMastery||{}; var n=TOWERS.filter(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=9; }).length;
       return {cur:n,target:TOWERS.length}; }},
   {id:"endgame_maps",cat:"Runs", n:"Off The Map",   d:"Beat the three hardest sectors: Solar Array, Defense Ring and Core Chamber.",chk:function(){
     var need=["snake","icebox","finale"]; var seen={};
@@ -3741,12 +3750,15 @@ function placeTower(id,gx,gy,owner){
   if((playerCash[ownerId]||0)<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   playerCash[ownerId]=(playerCash[ownerId]||0)-cost;
-  /* every tower now starts with its first path's tier-1 upgrade already
-     unlocked for free - a fresh XP-less tower used to feel completely
-     bare (no cash upgrades to lean on any more while it earns its own
-     XP from scratch), so the very first tier is a given, not something
-     you have to survive long enough to afford. */
-  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,t1:1,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,xp:0,tgt:"first"};
+  /* tiers come from this tower TYPE's permanent, account-wide mastery
+     record (see giveTowerXp's comment) - every path's tier 1 is free
+     and active from the very first time this type is ever placed, and
+     anything unlocked since (on this instance or any other) is already
+     here too. There's no more per-instance xp/lvl on the tower object
+     at all - the shared mastery record is the only XP that exists now. */
+  var m=towerMastery(id);
+  var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,
+    t1:m.t1,t2:m.t2,t3:m.t3,cd:0,ang:0,spent:cost,pops:0,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   deployPuff(tw.x,tw.y,def.col);
@@ -3817,14 +3829,29 @@ function giveHeroXp(h,n){
   }
 }
 
-/* towers no longer "level up" at all - each tower earns its own XP purely
-   from damage it deals and things it pops, and that XP is spent directly
-   on upgrade tiers (see upgradeTower/openTowerUpgrade), BTD6-style,
-   instead of gating a cash purchase behind a passive level. Existing
-   upgrade tier costs (pathDef.u[tier].c) already span roughly 100-15000,
-   which happens to already be the right scale for an XP economy, so
-   they're reused as-is rather than rebalanced into a separate currency. */
-function giveTowerXp(tw,n){ tw.xp=(tw.xp||0)+n; }
+/* towers no longer "level up" at all - each TOWER TYPE (not each placed
+   instance) earns its own permanent, account-wide XP pool from damage it
+   deals and things it pops, spent directly on upgrade tiers, BTD6-style.
+   Unlock "Cleaver Two-Hand" once and every Cleaver Bot you ever place -
+   this run, next run, forever - already has it, the same way a real
+   BTD6 unlock works. save.towerMastery[id] = {t1,t2,t3,xp}, t1-t3 start
+   at 1 (not 0): every tower's first tier on all three paths is free and
+   active from the moment it's ever placed, so the meaningful choice
+   starts at tier 2. Existing upgrade tier costs (pathDef.u[tier].c)
+   already span roughly 100-15000, which happens to be the right scale
+   for an XP economy, so they're reused as-is rather than a separate
+   currency - but the EARN rate is deliberately slow (see the call
+   sites below), since this pool now compounds across every instance
+   placed in every run forever, not reset per placement. */
+function towerMastery(id){
+  if(!save.towerMastery[id])save.towerMastery[id]={t1:1,t2:1,t3:1,xp:0};
+  return save.towerMastery[id];
+}
+function giveTowerXp(tw,n){
+  var m=towerMastery(tw.id);
+  m.xp=(m.xp||0)+n;
+  queueSave();
+}
 function sellTower(tw){
   var back=Math.round(tw.spent*.7);
   playerCash[tw.owner]=(playerCash[tw.owner]||0)+back;
@@ -3851,36 +3878,33 @@ function buildTgtRow(tw,onSet){
   });
   return row;
 }
-/* BTD6-style crosspathing: at most two of the three paths may ever get a
-   point spent in them, and once any one path passes tier 2, every other
-   path is capped there - you commit to a "main" path early. */
+/* BTD6-style crosspathing, shifted by the free tier-1 baseline every path
+   already starts at: at most two of the three paths may ever go PAST
+   tier 1, and once one of those two passes tier 3, the other is capped
+   there - you commit to a "main" path early, same shape as before, just
+   relative to tier 1 being a given instead of tier 0. Spends from and
+   writes to this tower TYPE's shared, permanent mastery record (see
+   towerMastery/giveTowerXp) - not the placed instance - and then applies
+   the result to every currently-placed instance of this tower id at
+   once, since the whole point is "unlock it once, every one has it." */
 function upgradeTower(tw,pathN){
   var def=byId(TOWERS,tw.id);
   var paths=[def.p1,def.p2,def.p3];
-  var tiers=[tw.t1,tw.t2,tw.t3];
+  var m=towerMastery(tw.id);
+  var tiers=[m.t1,m.t2,m.t3];
   var idx=pathN-1, p=paths[idx], tier=tiers[idx];
   if(tier>=5)return;
-  var activePaths=tiers.filter(function(t){ return t>0; }).length;
-  if(tier===0&&activePaths>=2){ toast("Only two paths can be upgraded at once"); return; }
-  var anyOtherPast2=tiers.some(function(t,i){ return i!==idx&&t>2; });
-  if(anyOtherPast2&&tier>=2){ toast("Another path already went past tier 2"); return; }
+  var activePaths=tiers.filter(function(t){ return t>1; }).length;
+  if(tier===1&&activePaths>=2){ toast("Only two paths can go past tier 1 at once"); return; }
+  var pastIdx=-1; tiers.forEach(function(t,i){ if(t>3)pastIdx=i; });
+  if(pastIdx>=0&&pastIdx!==idx&&tier>=3){ toast("Another path already went past tier 3"); return; }
   var up=p.u[tier];
-  /* upgrades spend the tower's OWN banked XP now, not cash - the old
-     cash-cost numbers (pathDef.u[tier].c) are reused as the XP cost
-     directly rather than rebalanced, see the giveTowerXp comment. */
-  if((tw.xp||0)<up.c){ toast("Not enough XP"); return; }
-  tw.xp-=up.c;
-  if(pathN===1)tw.t1++; else if(pathN===2)tw.t2++; else tw.t3++;
-  /* save.towerMaxLvl now tracks the highest combined tier total (0-7,
-     since crosspathing caps a second path at tier 2 once any path is
-     past it) any placed instance of this tower id has ever reached -
-     same field name/shape as the old per-tower "mastery level" so
-     existing saves don't need migrating, just a new meaning for the number. */
-  var totalTiers=tw.t1+tw.t2+tw.t3;
-  if(tw.owner===myOwner()&&(save.towerMaxLvl[tw.id]||0)<totalTiers){
-    save.towerMaxLvl[tw.id]=totalTiers; queueSave();
-  }
-  recalcTower(tw); sfx.up(); updateHud(); renderPanel(); renderShop();
+  if((m.xp||0)<up.c){ toast("Not enough XP"); return; }
+  m.xp-=up.c;
+  if(pathN===1)m.t1++; else if(pathN===2)m.t2++; else m.t3++;
+  queueSave();
+  towers.forEach(function(t){ if(t.id===tw.id){ t.t1=m.t1; t.t2=m.t2; t.t3=m.t3; recalcTower(t); } });
+  sfx.up(); updateHud(); renderPanel(); renderShop();
   if($("o-towerUpg").className.indexOf("hide")<0)renderTowerUpgScreen();
 }
 
@@ -3972,13 +3996,16 @@ function damageBug(b,dmg,pierceArm,tw,cashOwner){
   var bp=posAt(b.d);
   sparkBurst(bp.x,bp.y,myHitCol(tw)||"#fff8e8",3,65);
   dmgNum(bp.x,bp.y,dmg,dmg>=15||!!BUGS[b.k].boss);
-  /* 1 XP per point of damage actually dealt (after armour/weaken), same
-     currency the upgrade tiers cost - a tower that's doing real work
-     against tough/armoured targets earns proportionally more than one
-     tickling something for chip damage. */
-  if(tw)giveTowerXp(tw,dmg);
+  /* a fraction of a point of XP per point of damage actually dealt (after
+     armour/weaken), same currency the upgrade tiers cost - a tower doing
+     real work against tough/armoured targets earns proportionally more
+     than one tickling something for chip damage. Deliberately slow: this
+     pool is shared across every instance of this tower type and every
+     run forever now, not reset per placement, so it has to compound
+     slowly or mastery trivialises after a handful of runs. */
+  if(tw)giveTowerXp(tw,dmg*.15);
   if(b.hp<=0){
-    if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,BUGS[b.k].boss?150:15); }
+    if(tw){ tw.pops=(tw.pops||0)+1; giveTowerXp(tw,BUGS[b.k].boss?25:3); }
     popBug(b,cashOwner||(tw&&tw.owner));
   }
   return b.hp<=0;
@@ -4207,8 +4234,8 @@ function update(dt){
     if(b.hitT>0)b.hitT-=dt;
     if(b.ageT<.22)b.ageT+=dt;
     if(b.burnT>0){ b.burnT-=dt; var burnTick=b.burn*dt; b.hp-=burnTick;
-      if(b.burnSrc)giveTowerXp(b.burnSrc,burnTick);
-      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,BUGS[b.k].boss?150:15); } popBug(b,b.burnOwner); continue; } }
+      if(b.burnSrc)giveTowerXp(b.burnSrc,burnTick*.15);
+      if(b.hp<=0){ if(b.burnSrc){ b.burnSrc.pops=(b.burnSrc.pops||0)+1; giveTowerXp(b.burnSrc,BUGS[b.k].boss?25:3); } popBug(b,b.burnOwner); continue; } }
     b.d+=b.spd*b.slow*dt;
     if(b.d>=pathLen){
       lives-=BUGS[b.k].boss?20:Math.max(1,Math.round(BUGS[b.k].hp/2));
@@ -4319,7 +4346,7 @@ function update(dt){
        round they just stood through instead, same idea, different trigger. */
     for(var pp=0;pp<towers.length;pp++){
       var ptw=towers[pp];
-      if(ptw.s.support||ptw.s.income)giveTowerXp(ptw,250+wave*15);
+      if(ptw.s.support||ptw.s.income)giveTowerXp(ptw,35+wave*2);
     }
     var bonus=Math.round((80+wave*12)*DIFFS[curDiff].cashMult);
     /* everyone has their own money now - each active player gets their
@@ -4970,7 +4997,7 @@ function refreshLiveUI(){
       else statEl.textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+tw.pops+" popped";
     }
     var xpEl=$("panel").querySelector(".xpline");
-    if(xpEl)xpEl.textContent=Math.floor(tw.xp||0).toLocaleString()+" XP banked";
+    if(xpEl)xpEl.textContent=Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP banked";
   }
 }
 function renderPanel(){
@@ -4997,7 +5024,7 @@ function renderPanel(){
     p.appendChild(econLine);
   }
   var xpLine=document.createElement("div"); xpLine.className="sub xpline"; xpLine.style.marginTop="-6px";
-  xpLine.textContent=Math.floor(tw.xp||0).toLocaleString()+" XP banked";
+  xpLine.textContent=Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP banked";
   p.appendChild(xpLine);
   if(oName){
     var ownLine=document.createElement("div"); ownLine.className="sub"; ownLine.style.marginTop="-6px";
@@ -5061,17 +5088,25 @@ function closeTowerUpgrade(){
   hideOvl();
   if(state==="pause")state="play";
 }
+/* tier is 1-indexed now (every path has a free, permanent tier 1 - see
+   towerMastery), so slot ti (0-indexed, 0-4) represents tier ti+1
+   throughout: owned when tier>ti, "the one you'd buy next" when
+   tier===ti. Crosspathing shifts by that same +1 - "only two paths past
+   tier 1" and "the other's capped at tier 3 once one passes it" instead
+   of the old tier-0/tier-2 wording - matching upgradeTower's own checks
+   exactly so the UI never disagrees with what a click will actually do. */
 function renderTowerUpgScreen(){
   var tw=upgTarget; if(!tw)return;
   var def=byId(TOWERS,tw.id),mine=canControl(tw);
+  var m=towerMastery(tw.id);
   var oldIc=$("towerUpgIcon"),newIc=iconFor("t",tw.id,84);
   newIc.id="towerUpgIcon";
   oldIc.parentNode.replaceChild(newIc,oldIc);
   $("towerUpgName").textContent=def.n;
-  $("towerUpgXp").textContent=Math.floor(tw.xp||0).toLocaleString()+" XP available";
-  var allPaths=[def.p1,def.p2,def.p3], tiers=[tw.t1,tw.t2,tw.t3];
-  var activePaths=tiers.filter(function(t){ return t>0; }).length;
-  var pastTwoIdx=-1; tiers.forEach(function(t,i){ if(t>2)pastTwoIdx=i; });
+  $("towerUpgXp").textContent=Math.floor(m.xp||0).toLocaleString()+" XP available";
+  var allPaths=[def.p1,def.p2,def.p3], tiers=[m.t1,m.t2,m.t3];
+  var activePaths=tiers.filter(function(t){ return t>1; }).length;
+  var pastIdx=-1; tiers.forEach(function(t,i){ if(t>3)pastIdx=i; });
   var rowsEl=$("towerUpgRows"); rowsEl.innerHTML="";
   allPaths.forEach(function(pathDef,idx){
     var tier=tiers[idx];
@@ -5084,30 +5119,41 @@ function renderTowerUpgScreen(){
     for(var ti=0;ti<5;ti++){
       var up=pathDef.u[ti];
       var cell=document.createElement("div"); cell.className="upgCell";
+      var isNext=(tier===ti);
       if(tier>ti){
         cell.classList.add("owned");
-        cell.innerHTML=(ti===4?"<b>&#9733; "+up.n+"</b>":"<b>&#10003; "+up.n+"</b>")+
-          '<div class="upgDesc">'+up.d+'</div>';
+        var iconWrap=document.createElement("div"); iconWrap.className="upgIcon";
+        var ic=document.createElement("canvas"); ic.width=36; ic.height=36;
+        var ig=ic.getContext("2d"); ig.scale(2,2); ig.translate(9,9);
+        drawUpgradeIcon(ig,upgradeIconKind(up),7,"#5ff0c0");
+        iconWrap.appendChild(ic); cell.appendChild(iconWrap);
+        var lab=document.createElement("b"); lab.textContent=(ti===4?"★ ":"✓ ")+up.n; cell.appendChild(lab);
+        var desc=document.createElement("div"); desc.className="upgDesc"; desc.textContent=up.d; cell.appendChild(desc);
         cell.title=up.n+" - "+up.d;
       } else if(ti===4){
         cell.classList.add("mystery");
-        var isNext=(tier===4), afford=isNext&&(tw.xp||0)>=up.c;
-        cell.innerHTML=afford?"&#10067;<div class=\"upgCost\">"+up.c.toLocaleString()+" XP</div>":"&#10067;";
-        cell.classList.add(afford?"ready":"locked");
+        var afford4=isNext&&(m.xp||0)>=up.c;
+        cell.innerHTML="&#10067;"+(afford4?"<div class=\"upgCost\">"+up.c.toLocaleString()+" XP</div>":"");
+        cell.classList.add(afford4?"ready":"locked");
         cell.title=isNext?"A hidden final upgrade - costs "+up.c.toLocaleString()+" XP":"Unlocks once tier 4 is bought";
-        if(afford&&mine)cell.onclick=makeUpgClick(tw,idx+1);
+        if(afford4&&mine)cell.onclick=makeUpgClick(tw,idx+1);
       } else {
-        var lockedNew=(tier===0&&ti===0&&activePaths>=2);
-        var lockedDeep=(pastTwoIdx>=0&&pastTwoIdx!==idx&&ti>=2);
-        var isNext=(tier===ti);
-        var afford=isNext&&(tw.xp||0)>=up.c;
+        var lockedNew=isNext&&tier===1&&activePaths>=2;
+        var lockedDeep=isNext&&pastIdx>=0&&pastIdx!==idx&&tier>=3;
+        var afford=isNext&&(m.xp||0)>=up.c;
         var ready=isNext&&afford&&!lockedNew&&!lockedDeep&&mine;
-        cell.innerHTML="<b>"+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>"+
-          '<div class="upgCost">'+up.c.toLocaleString()+" XP</div>";
+        var iconWrap2=document.createElement("div"); iconWrap2.className="upgIcon";
+        var ic2=document.createElement("canvas"); ic2.width=36; ic2.height=36;
+        var ig2=ic2.getContext("2d"); ig2.scale(2,2); ig2.translate(9,9);
+        drawUpgradeIcon(ig2,upgradeIconKind(up),7,ready?"#66e7ff":"#7894af");
+        iconWrap2.appendChild(ic2); cell.appendChild(iconWrap2);
+        var lab2=document.createElement("b"); lab2.textContent=up.n; cell.appendChild(lab2);
+        var desc2=document.createElement("div"); desc2.className="upgDesc"; desc2.textContent=up.d; cell.appendChild(desc2);
+        var costEl=document.createElement("div"); costEl.className="upgCost"; costEl.textContent=up.c.toLocaleString()+" XP"; cell.appendChild(costEl);
         if(lockedNew||lockedDeep)cell.classList.add("excluded");
         else if(!isNext||!afford||!mine)cell.classList.add("locked");
         if(ready){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
-        cell.title=lockedNew?"Only two paths at once":lockedDeep?"Another path already went past tier 2":
+        cell.title=lockedNew?"Only two paths can go past tier 1 at once":lockedDeep?"Another path already went past tier 3":
           !isNext?"Buy the earlier tiers in this path first":!afford?"Not enough XP yet":up.n+" - "+up.d;
       }
       cellsWrap.appendChild(cell);
@@ -5145,14 +5191,22 @@ function renderTowerInfo(towerId){
   $("towerInfoName").textContent=def.n;
   $("towerInfoName").style.color=tc.col;
   $("towerInfoDesc").textContent=def.d;
-  var bestTiers=save.towerMaxLvl[def.id]||0;
+  /* upgrades are a permanent, account-wide unlock per tower TYPE now
+     (see towerMastery) - this preview isn't hypothetical any more, it's
+     showing this tower's REAL current unlock state, tiers you've
+     already earned included, whether or not you've ever placed one
+     this run. */
+  var m=save.towerMastery[def.id];
+  var tiers=m?[m.t1,m.t2,m.t3]:[0,0,0];
+  var totalTiers=m?(m.t1+m.t2+m.t3):0;
   var s0=baseStats(def);
   var baseTxt=(s0.income?"$"+s0.income+" a round":s0.support?"+"+(s0.buffDmg||0)+" damage nearby":
     Math.round(s0.dmg||0)+" dmg · "+Math.round(s0.rng||0)+" range")+" at base · $"+towerCost(def)+" to place";
-  $("towerInfoStats").textContent=baseTxt+(bestTiers>0?(" · best ever: "+bestTiers+" tiers unlocked in one run"):" · never placed yet");
+  $("towerInfoStats").textContent=baseTxt+(m?(" · "+totalTiers+" tiers unlocked so far, "+Math.floor(m.xp||0).toLocaleString()+" XP banked"):" · never placed yet - every path's tier 1 unlocks free the first time");
 
   var wrap=$("towerInfoPaths"); wrap.innerHTML="";
   [def.p1,def.p2,def.p3].forEach(function(pathDef,idx){
+    var tier=tiers[idx];
     var row=document.createElement("div"); row.className="upgRow";
     var lbl=document.createElement("div"); lbl.className="upgRowLbl";
     lbl.style.color=UPGRADE_PATH_COL[idx];
@@ -5161,11 +5215,16 @@ function renderTowerInfo(towerId){
     var cellsWrap=document.createElement("div"); cellsWrap.className="upgCells";
     pathDef.u.forEach(function(up,ti){
       var cell=document.createElement("div"); cell.className="upgCell";
-      if(ti===4){
-        cell.classList.add("mystery");
+      var owned=tier>ti;
+      if(owned){
+        cell.classList.add("owned");
+        cell.innerHTML="<b>"+(ti===4?"★ ":"✓ ")+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>";
+      } else if(ti===4){
+        cell.classList.add("mystery"); cell.classList.add("locked");
         cell.innerHTML="&#10067;";
         cell.title="A hidden final upgrade - "+up.c.toLocaleString()+" XP once placed and earned";
       } else {
+        cell.classList.add("locked");
         cell.innerHTML="<b>"+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>"+
           '<div class="upgCost">'+up.c.toLocaleString()+" XP</div>";
       }
@@ -6645,7 +6704,8 @@ window.__pp={
   myHitCol:myHitCol,
   view:view, CELL:CELL, cv:cv,
   getTowers:function(){ return towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,t1:t.t1,t2:t.t2,t3:t.t3,spent:t.spent,pops:t.pops,cd:t.cd,ang:t.ang,xp:t.xp,lvl:t.lvl,s:t.s}; }); },
-  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; for(var i=0;i<(times||1);i++){ tw.xp=(tw.xp||0)+99999; upgradeTower(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,xp:tw.xp}; },
+  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; var m=towerMastery(tw.id); for(var i=0;i<(times||1);i++){ m.xp=(m.xp||0)+99999; upgradeTower(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,xp:m.xp}; },
+  getTowerMastery:function(id){ return towerMastery(id); },
   forceHeroLvl:function(owner,lvl){ var h=heroes.filter(function(x){return x.owner===(owner||"solo");})[0]; if(!h)return "no hero"; while(h.lvl<lvl)giveHeroXp(h,heroXpNeeded(h.lvl)); return {lvl:h.lvl,xp:h.xp}; },
   gainAccountXp:function(n){ return gainAccountXp(n); },
   getAcctSave:function(){ return {playerLvl:save.playerLvl,acctXp:save.acctXp,heroTokens:save.heroTokens,
