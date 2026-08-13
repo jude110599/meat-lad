@@ -379,16 +379,12 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .tuptier .tuc{font-size:10.5px;color:var(--gold);font-weight:800;margin-top:3px}
 .tuptier .tul{font-size:9.5px;color:var(--jam2);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
 
-/* the actual full-screen upgrade tree - 3 path rows, 5 tier columns left
-   to right, BTD6-style, replacing the old cramped "one buyable button at
-   a time" list in the small corner panel. Tier 5 is a mystery box (❓)
-   until owned, whatever tier's currently reachable in a row highlights
-   as spendable when there's enough banked XP for it. */
-#towerUpgHead{display:flex;gap:14px;align-items:flex-start;margin-bottom:4px}
-#towerUpgHead canvas{flex:none;width:84px;height:84px;background:var(--bg1);
-  border:1px solid var(--line);border-radius:10px}
-#towerUpgXp{font-size:15px;font-weight:900;color:var(--gold);margin-top:8px;letter-spacing:.02em}
-#towerUpgRows{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+/* the shop's tower-info screen uses this same row-of-5-tiers grid to show
+   (and, unlike a plain preview, let you actually spend XP to unlock)
+   each tower TYPE's account-wide upgrade ceiling. Tier 5 is a mystery
+   box (❓) until unlocked. Buying a tier onto any one placed tower still
+   costs real cash in-game (see the tower click panel) - unlocking here
+   only makes that purchase possible, it doesn't equip anything itself. */
 .upgRow{display:flex;align-items:stretch;gap:8px}
 .upgRowLbl{flex:0 0 96px;display:flex;align-items:center;font-weight:800;font-size:12px;letter-spacing:.03em}
 .upgCells{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
@@ -401,8 +397,6 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .upgCell .upgDesc{color:var(--dim);font-size:9.5px;line-height:1.3;margin-bottom:3px}
 .upgCell .upgCost{font-weight:800;color:var(--gold);font-size:10px}
 .upgCell.owned{border-color:var(--mint);background:linear-gradient(160deg,rgba(95,240,192,.16),var(--bg2))}
-.upgCell.unlocked{border-color:var(--honey);border-style:dashed;background:linear-gradient(160deg,rgba(102,231,255,.1),var(--bg2))}
-.upgCell .upgCost.free{color:var(--mint)}
 .xpBig{display:flex;align-items:center;gap:6px;font-size:21px;font-weight:900;color:var(--mint);margin-top:8px;letter-spacing:.02em}
 .xpBig .xpIcon{font-size:19px;line-height:1}
 .xpline.xpBig{font-size:15px;margin-top:2px}
@@ -944,18 +938,6 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     <div id="towerInfoPaths"></div>
   </div></div>
 
-  <div class="ovl hide" id="o-towerUpg"><div class="ovlbox" id="towerUpgBox" style="max-width:960px;width:96%">
-    <button class="back" id="towerUpgClose" style="float:right">&times;</button>
-    <div id="towerUpgHead">
-      <canvas id="towerUpgIcon" width="128" height="128"></canvas>
-      <div>
-        <div class="disp" id="towerUpgName" style="font-size:20px"></div>
-        <div id="towerUpgXp"></div>
-      </div>
-    </div>
-    <div id="towerUpgRows"></div>
-  </div></div>
-
   <div class="toast" id="toast"></div>
 </div>
 
@@ -963,9 +945,16 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.4";
+var VERSION="2.12.5";
 var CHANGELOG=[
-  {v:"2.12.4",d:"latest",items:[
+  {v:"2.12.5",d:"latest",items:[
+    "UPGRADING A TOWER COSTS REAL CASH AGAIN, in-game, per tower - like the classic economy always worked. Unlocking a tier with XP (in the shop's tower-info screen, double-click a card) only makes it AVAILABLE account-wide for that tower type; you still pay cash to actually equip it on any one placed tower, same price as before",
+    "THE OLD IN-GAME UPGRADE PANEL IS BACK - click a placed tower and its 3 paths show right there with a buy button each, no separate full-screen page. The full-screen upgrade screen is gone",
+    "The shop's tower-info popup (double-click a card) is interactive now instead of read-only - click a glowing upgrade there to spend that tower type's banked XP and unlock it account-wide",
+    "A freshly placed tower now starts with none of its tiers equipped, even tier 1 - it's unlocked account-wide from the start (free XP cost, same as before) but still needs a cash purchase in-game like every other tier",
+    "Fixed the Grand Master / Master Of The Fleet achievements requiring 9 unlocked tiers when the crosspathing shape has only allowed 8 (5+2+1) since the last update - they were quietly impossible to earn"
+  ]},
+  {v:"2.12.4",items:[
     "CORRECTED HOW ACCOUNT-WIDE UPGRADES ACTUALLY WORK. Unlocking a tier no longer auto-applies it to every placed tower of that type - it makes that tier AVAILABLE account-wide, and you still open each individual tower's own panel to apply it there (free, no extra cost, since it's already paid for - just not automatic). Crosspathing reverted to the classic shape: one path to tier 5, a second to tier 2, the third stays at its free tier 1",
     "FIXED A REAL BUG the above surfaced: the upgrade screen could throw and silently fail to open at all for a tower with any path still below its next unlockable tier - a near-guaranteed situation for any lightly-upgraded tower - because of an empty CSS class being passed to a browser API that (unlike jQuery-style helpers) throws on that instead of ignoring it",
     "Shop cards now show a small pulsing green arrow when that tower type has enough banked XP to unlock something right now",
@@ -2307,12 +2296,12 @@ var ACHIEVEMENTS=[
     prog:function(){ return {cur:save.bossPops||0,target:25}; }},
   {id:"boss_roster",cat:"Collection", n:"Meet The Family",d:"Face down all four bosses at least once.",chk:function(){ return (save.bossesSeen||[]).length>=4; },
     prog:function(){ return {cur:(save.bossesSeen||[]).length,target:4}; }},
-  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully commit a tower's permanent upgrades - one path maxed, a second at tier 3.",chk:function(){
-    var m=save.towerMastery||{}; for(var k in m)if(m[k].t1+m[k].t2+m[k].t3>=9)return true; return false; },
-    prog:function(){ var m=save.towerMastery||{},best=0; for(var k in m){ var t=m[k].t1+m[k].t2+m[k].t3; if(t>best)best=t; } return {cur:best,target:9}; }},
-  {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Fully commit every tower's permanent upgrades at least once.",chk:function(){
-    var m=save.towerMastery||{}; return TOWERS.every(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=9; }); },
-    prog:function(){ var m=save.towerMastery||{}; var n=TOWERS.filter(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=9; }).length;
+  {id:"tower_grand",cat:"Mastery", n:"Grand Master",   d:"Fully unlock a tower's permanent upgrades account-wide - one path maxed, a second at tier 2.",chk:function(){
+    var m=save.towerMastery||{}; for(var k in m)if(m[k].t1+m[k].t2+m[k].t3>=8)return true; return false; },
+    prog:function(){ var m=save.towerMastery||{},best=0; for(var k in m){ var t=m[k].t1+m[k].t2+m[k].t3; if(t>best)best=t; } return {cur:best,target:8}; }},
+  {id:"tower_all",  cat:"Mastery", n:"Master Of The Fleet",d:"Fully unlock every tower's permanent upgrades account-wide.",chk:function(){
+    var m=save.towerMastery||{}; return TOWERS.every(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=8; }); },
+    prog:function(){ var m=save.towerMastery||{}; var n=TOWERS.filter(function(T){ var r=m[T.id]; return r&&(r.t1+r.t2+r.t3)>=8; }).length;
       return {cur:n,target:TOWERS.length}; }},
   {id:"endgame_maps",cat:"Runs", n:"Off The Map",   d:"Beat the three hardest sectors: Solar Array, Defense Ring and Core Chamber.",chk:function(){
     var need=["snake","icebox","finale"]; var seen={};
@@ -3767,15 +3756,13 @@ function placeTower(id,gx,gy,owner){
   if((playerCash[ownerId]||0)<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   playerCash[ownerId]=(playerCash[ownerId]||0)-cost;
-  /* every path's tier 1 is free the instant a tower is placed - beyond
-     that, this instance starts at baseline regardless of how much this
-     tower TYPE has unlocked account-wide (towerMastery). Unlocking a
-     tier account-wide makes it AVAILABLE to apply for free on any
-     instance, new or old - it doesn't apply itself automatically. You
-     still open this tower's own panel and apply (or unlock) each tier
-     yourself, same as any other instance of the type. */
+  /* a fresh instance starts with none of its tiers bought yet, no matter
+     how much this tower TYPE has unlocked account-wide (towerMastery) -
+     unlocking a tier (with XP, in the shop) only makes it AVAILABLE to
+     buy, it doesn't equip it. You still click this tower in-game and
+     spend real cash on each tier yourself, same as any other instance. */
   var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,
-    t1:1,t2:1,t3:1,cd:0,ang:0,spent:cost,pops:0,tgt:"first"};
+    t1:0,t2:0,t3:0,cd:0,ang:0,spent:cost,pops:0,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   deployPuff(tw.x,tw.y,def.col);
@@ -3928,43 +3915,44 @@ function applyTowerTier(tw,pathN){
   if(pathN===1)tw.t1++; else if(pathN===2)tw.t2++; else tw.t3++;
   recalcTower(tw);
 }
-/* two things can happen here depending on whether this instance has
-   already caught up to what's unlocked account-wide for this path:
-   - applied < ceiling: this tier is already unlocked (someone paid for
-     it, on this tower or any other) but never applied HERE - free,
-     instant, no XP spent. This is "every tower is available to get
-     that upgrade" - available, not automatic.
-   - applied === ceiling: this is actually the next tier to unlock,
-     spending the tower type's shared XP and raising the ceiling for
-     every instance, applied immediately to the one you're looking at
-     (not to any other already-placed instance - those catch up the
-     same free way, next time you open them). */
-function upgradeTower(tw,pathN){
-  var def=byId(TOWERS,tw.id);
-  var paths=[def.p1,def.p2,def.p3];
-  var m=towerMastery(tw.id);
-  var ceilTiers=[m.t1,m.t2,m.t3];
-  var appliedTiers=[tw.t1,tw.t2,tw.t3];
-  var idx=pathN-1, p=paths[idx], ceil=ceilTiers[idx], applied=appliedTiers[idx];
-  if(applied<ceil){
-    applyTowerTier(tw,pathN);
-    sfx.click(); updateHud(); renderPanel(); renderShop();
-    if($("o-towerUpg").className.indexOf("hide")<0)renderTowerUpgScreen();
-    return;
-  }
+/* buying a tier onto one specific placed tower - real cash, same as the
+   old level-based economy always cost, and only possible once that tier
+   is already unlocked account-wide for this tower TYPE (unlockTowerTier
+   below). Unlock and buy are deliberately two different currencies: XP
+   unlocks what's POSSIBLE forever, cash is what actually equips it on
+   the tower in front of you, tower by tower, run by run. */
+function buyTowerTier(tw,pathN){
+  var def=byId(TOWERS,tw.id), paths=[def.p1,def.p2,def.p3];
+  var m=towerMastery(tw.id), ceilTiers=[m.t1,m.t2,m.t3], appliedTiers=[tw.t1,tw.t2,tw.t3];
+  var idx=pathN-1, ceil=ceilTiers[idx], applied=appliedTiers[idx];
+  if(applied>=5||applied>=ceil)return;
+  var up=paths[idx].u[applied], owner=tw.owner||"solo";
+  if((playerCash[owner]||0)<up.c){ toast("Not enough cash"); return; }
+  playerCash[owner]-=up.c;
+  applyTowerTier(tw,pathN);
+  sfx.up(); updateHud(); renderPanel(); renderShop();
+}
+/* unlocking a tier is account-wide and permanent for this tower TYPE,
+   paid for once out of that type's shared XP pool (earned by any placed
+   instance dealing damage/popping bugs). It doesn't equip anything by
+   itself - it just makes that tier available to BUY, for cash, on any
+   tower of this type, in-game (see buyTowerTier), this run or any
+   future one. Lives in the shop's tower-info screen, not in-game. */
+function unlockTowerTier(id,pathN){
+  var def=byId(TOWERS,id), paths=[def.p1,def.p2,def.p3];
+  var m=towerMastery(id), ceilTiers=[m.t1,m.t2,m.t3];
+  var idx=pathN-1, ceil=ceilTiers[idx];
   if(ceil>=5)return;
   var activePaths=ceilTiers.filter(function(t){ return t>1; }).length;
   if(ceil===1&&activePaths>=2){ toast("Only two paths can go past tier 1 at once"); return; }
   var pastIdx=-1; ceilTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
   if(pastIdx>=0&&pastIdx!==idx&&ceil>=2){ toast("Another path already went past tier 2"); return; }
-  var up=p.u[ceil];
+  var up=paths[idx].u[ceil];
   if((m.xp||0)<up.c){ toast("Not enough XP"); return; }
   m.xp-=up.c;
   if(pathN===1)m.t1++; else if(pathN===2)m.t2++; else m.t3++;
   queueSave();
-  applyTowerTier(tw,pathN);
-  sfx.up(); updateHud(); renderPanel(); renderShop();
-  if($("o-towerUpg").className.indexOf("hide")<0)renderTowerUpgScreen();
+  sfx.up(); renderTowerInfo(id); renderShop();
 }
 
 /* ═════════════ WAVE / BUG LOGIC ═════════════ */
@@ -5069,6 +5057,11 @@ function refreshLiveUI(){
     }
     var xpEl=$("panel").querySelector(".xpline");
     if(xpEl)xpEl.innerHTML='<span class="xpIcon">&#9889;</span>'+Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP";
+    var pbtns=$("panel").querySelectorAll(".ubtn[data-cost]");
+    for(var j=0;j<pbtns.length;j++){
+      var pb=pbtns[j];
+      pb.disabled=pb.dataset.structlock==="1"||myCash()<parseFloat(pb.dataset.cost);
+    }
   }
 }
 function renderPanel(){
@@ -5123,12 +5116,38 @@ function renderPanel(){
   }
   if(!s.income&&!s.support)p.appendChild(buildTgtRow(tw,renderPanel));
 
-  var totalTiers=(tw.t1||0)+(tw.t2||0)+(tw.t3||0);
-  var upgBtn=document.createElement("button"); upgBtn.className="ubtn upgOpen";
-  upgBtn.innerHTML="<b>Upgrades</b>"+(totalTiers?(totalTiers+" tier"+(totalTiers>1?"s":"")+" unlocked - tap to spend more XP"):"Tap to spend XP on a path");
-  upgBtn.disabled=!mine;
-  upgBtn.onclick=function(){ sfx.click(); openTowerUpgrade(tw); };
-  p.appendChild(upgBtn);
+  /* classic BTD6-style panel: one buyable button per path, right here on
+     the tower you clicked - no separate full-screen page. A path's next
+     tier only shows as buyable once it's already unlocked account-wide
+     (paid for with XP in the shop's tower-info screen); until then the
+     button just points you there instead of taking cash it can't spend. */
+  var allPaths=[def.p1,def.p2,def.p3], appliedTiers=[tw.t1||0,tw.t2||0,tw.t3||0];
+  var pm=towerMastery(tw.id), ceilTiers=[pm.t1,pm.t2,pm.t3];
+  [1,2,3].forEach(function(n){
+    var idx=n-1, pathDef=allPaths[idx], tier=appliedTiers[idx], ceil=ceilTiers[idx];
+    var lbl=document.createElement("div"); lbl.className="sect"; lbl.style.margin="8px 0 5px";
+    lbl.innerHTML='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'+
+      'background:'+UPGRADE_PATH_COL[idx]+';margin-right:6px"></span>'+pathDef.n+" "+tier+"/5";
+    p.appendChild(lbl);
+    if(tier>=5){
+      var mx=document.createElement("button"); mx.className="ubtn max"; mx.disabled=true;
+      mx.innerHTML="<b>Fully upgraded</b>"; p.appendChild(mx); return;
+    }
+    var up=pathDef.u[tier];
+    var unlocked=tier<ceil;
+    var b=document.createElement("button");
+    b.className="ubtn"+(!unlocked?" excluded":"");
+    b.disabled=!mine||!unlocked||myCash()<up.c;
+    b.dataset.cost=up.c; b.dataset.structlock=(!unlocked||!mine)?"1":"0";
+    b.innerHTML="<b>"+up.n+"</b>"+up.d+" <i>$"+up.c+"</i>"+
+      (!mine?" &mdash; owned by "+oName:!unlocked?" &mdash; unlock this in the shop first":"");
+    b.onclick=function(){
+      sfx.click();
+      if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:n});
+      else buyTowerTier(tw,n);
+    };
+    p.appendChild(b);
+  });
 
   var sell=document.createElement("button");
   sell.className="ubtn sell";
@@ -5142,52 +5161,38 @@ function renderPanel(){
   p.appendChild(sell);
 }
 
-/* the live, spendable upgrade tree for a placed tower - 3 path rows x 5
-   tier columns, tier 5 always shown as a "?" mystery box until it's
-   actually owned. Pauses the game while open (same as the hero panel)
-   since it's meant to be a deliberate "step back and spend XP" moment,
-   not something to make snap decisions in mid-swarm. */
-var upgTarget=null;
-function openTowerUpgrade(tw){
-  if(!canControl(tw))return;
-  upgTarget=tw;
-  if(state==="play")state="pause";
-  renderTowerUpgScreen();
-  showOvl("o-towerUpg");
+/* shop-side "spend XP here" screen - double-click a tower card to see its
+   full 3-path x 5-tier tree and actually unlock tiers account-wide for
+   that TYPE, XP for XP (see unlockTowerTier). Unlocking here doesn't
+   equip anything on any placed tower - that's a separate, in-game, cash
+   purchase from the tower's own click panel (renderPanel/buyTowerTier). */
+function openTowerInfo(towerId){
+  renderTowerInfo(towerId);
+  showOvl("o-towerInfo");
 }
-function closeTowerUpgrade(){
-  hideOvl();
-  if(state==="pause")state="play";
-}
-/* four states per cell now, not two - tier is 1-indexed (every path has
-   a free, permanent tier 1), slot ti (0-indexed 0-4) represents tier
-   ti+1:
-   - owned (applied>ti): active on THIS instance already.
-   - unlocked, not applied (ti<ceil): some tower of this type already
-     paid the XP for this tier account-wide - free to apply here, no
-     cost, just not automatic.
-   - next to unlock (ti===ceil): this instance's own XP-spending
-     purchase, gated by crosspathing against the shared ceiling.
-   - locked (ti>ceil): can't skip ahead of what's unlocked account-wide.
-   Tier 5 (ti===4) stays a mystery box specifically until APPLIED to
-   THIS instance - even if unlocked elsewhere, its actual identity was
-   only "unlocked", not "given away", so the free-apply state still
-   shows ❓ for it, just marked free instead of priced. */
-function renderTowerUpgScreen(){
-  var tw=upgTarget; if(!tw)return;
-  var def=byId(TOWERS,tw.id),mine=canControl(tw);
-  var m=towerMastery(tw.id);
-  var oldIc=$("towerUpgIcon"),newIc=iconFor("t",tw.id,84);
-  newIc.id="towerUpgIcon";
+function renderTowerInfo(towerId){
+  var def=byId(TOWERS,towerId); if(!def)return;
+  var tc=TOWER_CATS[def.cat];
+  $("towerInfoBox").style.background=tc.bg;
+  var oldIc=$("towerInfoIcon"),newIc=iconFor("t",def.id,84);
+  newIc.id="towerInfoIcon";
   oldIc.parentNode.replaceChild(newIc,oldIc);
-  $("towerUpgName").textContent=def.n;
-  $("towerUpgXp").textContent=Math.floor(m.xp||0).toLocaleString()+" XP available";
-  var allPaths=[def.p1,def.p2,def.p3], ceilTiers=[m.t1,m.t2,m.t3], appliedTiers=[tw.t1,tw.t2,tw.t3];
+  $("towerInfoName").textContent=def.n;
+  $("towerInfoName").style.color=tc.col;
+  $("towerInfoDesc").textContent=def.d;
+  var m=save.towerMastery[def.id];
+  var ceilTiers=m?[m.t1,m.t2,m.t3]:[0,0,0];
+  var s0=baseStats(def);
+  var baseTxt=(s0.income?"$"+s0.income+" a round":s0.support?"+"+(s0.buffDmg||0)+" damage nearby":
+    Math.round(s0.dmg||0)+" dmg · "+Math.round(s0.rng||0)+" range")+" at base · $"+towerCost(def)+" to place";
+  $("towerInfoStats").textContent=baseTxt+(m?"":" · never placed yet - place one to start earning XP");
+  $("towerInfoXp").innerHTML=m?('<span class="xpIcon">&#9889;</span>'+Math.floor(m.xp||0).toLocaleString()+" XP - tap a glowing upgrade to unlock it"):"";
+
   var activePaths=ceilTiers.filter(function(t){ return t>1; }).length;
   var pastIdx=-1; ceilTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
-  var rowsEl=$("towerUpgRows"); rowsEl.innerHTML="";
-  allPaths.forEach(function(pathDef,idx){
-    var ceil=ceilTiers[idx], applied=appliedTiers[idx];
+  var wrap=$("towerInfoPaths"); wrap.innerHTML="";
+  [def.p1,def.p2,def.p3].forEach(function(pathDef,idx){
+    var ceil=ceilTiers[idx];
     var row=document.createElement("div"); row.className="upgRow";
     var lbl=document.createElement("div"); lbl.className="upgRowLbl";
     lbl.style.color=UPGRADE_PATH_COL[idx];
@@ -5204,52 +5209,36 @@ function renderTowerUpgScreen(){
         drawUpgradeIcon(ig,upgradeIconKind(up),7,col);
         iw.appendChild(ic); cell.appendChild(iw);
       };
-      if(applied>ti){
-        // owned - active on this instance
+      if(ti<ceil){
+        // already unlocked account-wide - buy it in-game with cash
         cell.classList.add("owned");
         addIcon("#5ff0c0");
         var lab=document.createElement("b"); lab.textContent=(ti===4?"★ ":"✓ ")+up.n; cell.appendChild(lab);
         var desc=document.createElement("div"); desc.className="upgDesc"; desc.textContent=up.d; cell.appendChild(desc);
-        cell.title=up.n+" - "+up.d;
-      } else if(ti<ceil){
-        // unlocked account-wide already, just needs a free apply here
-        cell.classList.add("unlocked");
-        if(ti===4){
-          addIcon("#8cecff");
-          var lab5=document.createElement("b"); lab5.textContent="★ "+up.n; cell.appendChild(lab5);
-          var desc5=document.createElement("div"); desc5.className="upgDesc"; desc5.textContent=up.d; cell.appendChild(desc5);
-        } else {
-          addIcon("#8cecff");
-          var lab2=document.createElement("b"); lab2.textContent=up.n; cell.appendChild(lab2);
-          var desc2=document.createElement("div"); desc2.className="upgDesc"; desc2.textContent=up.d; cell.appendChild(desc2);
-        }
-        var freeEl=document.createElement("div"); freeEl.className="upgCost free"; freeEl.textContent="FREE - apply"; cell.appendChild(freeEl);
-        cell.title="Already unlocked for this tower type - tap to apply it here for free";
-        if(mine){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
+        cell.title=up.n+" - "+up.d+" (unlocked - buy it on any tower in-game)";
       } else if(ti===ceil){
-        // the next tier to actually unlock account-wide, spending XP
-        var isNext=true;
+        // the next tier to unlock account-wide, spending XP
         if(ti===4){
           cell.classList.add("mystery");
-          var afford4=(m.xp||0)>=up.c;
+          var afford4=m&&(m.xp||0)>=up.c;
           cell.innerHTML="&#10067;"+(afford4?"<div class=\"upgCost\">"+up.c.toLocaleString()+" XP</div>":"");
           cell.classList.add(afford4?"ready":"locked");
-          cell.title="A hidden final upgrade - costs "+up.c.toLocaleString()+" XP to unlock account-wide";
-          if(afford4&&mine)cell.onclick=makeUpgClick(tw,idx+1);
+          cell.title="A hidden final upgrade - costs "+up.c.toLocaleString()+" XP to unlock";
+          if(afford4)cell.onclick=(function(pathN){ return function(){ sfx.click(); unlockTowerTier(def.id,pathN); }; })(idx+1);
         } else {
           var lockedNew=ceil===1&&activePaths>=2;
           var lockedDeep=pastIdx>=0&&pastIdx!==idx&&ceil>=2;
-          var afford=(m.xp||0)>=up.c;
-          var ready=afford&&!lockedNew&&!lockedDeep&&mine;
+          var afford=m&&(m.xp||0)>=up.c;
+          var ready=afford&&!lockedNew&&!lockedDeep;
           addIcon(ready?"#66e7ff":"#7894af");
           var lab3=document.createElement("b"); lab3.textContent=up.n; cell.appendChild(lab3);
           var desc3=document.createElement("div"); desc3.className="upgDesc"; desc3.textContent=up.d; cell.appendChild(desc3);
           var costEl=document.createElement("div"); costEl.className="upgCost"; costEl.textContent=up.c.toLocaleString()+" XP"; cell.appendChild(costEl);
           if(lockedNew||lockedDeep)cell.classList.add("excluded");
-          else if(!afford||!mine)cell.classList.add("locked");
-          if(ready){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
+          else if(!afford)cell.classList.add("locked");
+          if(ready){ cell.classList.add("ready"); cell.onclick=(function(pathN){ return function(){ sfx.click(); unlockTowerTier(def.id,pathN); }; })(idx+1); }
           cell.title=lockedNew?"Only two paths can go past tier 1 at once":lockedDeep?"Another path already went past tier 2":
-            !afford?"Not enough XP yet to unlock account-wide":up.n+" - "+up.d;
+            !afford?"Not enough XP yet to unlock":up.n+" - "+up.d;
         }
       } else {
         // beyond even the next unlockable tier - can't skip ahead
@@ -5260,78 +5249,6 @@ function renderTowerUpgScreen(){
       }
       cellsWrap.appendChild(cell);
     }
-    row.appendChild(cellsWrap);
-    rowsEl.appendChild(row);
-  });
-}
-function makeUpgClick(tw,pathN){
-  return function(){
-    sfx.click();
-    if(party.on&&!party.leader)party.send({t:"reqUpgrade",gx:tw.gx,gy:tw.gy,path:pathN});
-    else upgradeTower(tw,pathN);
-  };
-}
-$("towerUpgClose").onclick=function(){ sfx.click(); closeTowerUpgrade(); };
-
-/* shop-side "what does this actually turn into" preview - double-click a
-   card to see the full 3-path upgrade tree before you've even bought one.
-   Same 3-rows-of-5-tiers layout and tier-5-is-a-mystery treatment as the
-   real, live, spendable version (renderTowerUpgScreen) - there's no
-   placed tower here to actually hold XP against, so this stays read-only,
-   but it shouldn't look like a different, older screen because of that. */
-function openTowerInfo(towerId){
-  renderTowerInfo(towerId);
-  showOvl("o-towerInfo");
-}
-function renderTowerInfo(towerId){
-  var def=byId(TOWERS,towerId); if(!def)return;
-  var tc=TOWER_CATS[def.cat];
-  $("towerInfoBox").style.background=tc.bg;
-  var oldIc=$("towerInfoIcon"),newIc=iconFor("t",def.id,84);
-  newIc.id="towerInfoIcon";
-  oldIc.parentNode.replaceChild(newIc,oldIc);
-  $("towerInfoName").textContent=def.n;
-  $("towerInfoName").style.color=tc.col;
-  $("towerInfoDesc").textContent=def.d;
-  /* upgrades are a permanent, account-wide unlock per tower TYPE now
-     (see towerMastery) - this preview isn't hypothetical any more, it's
-     showing this tower's REAL current unlock state, tiers you've
-     already earned included, whether or not you've ever placed one
-     this run. */
-  var m=save.towerMastery[def.id];
-  var tiers=m?[m.t1,m.t2,m.t3]:[0,0,0];
-  var s0=baseStats(def);
-  var baseTxt=(s0.income?"$"+s0.income+" a round":s0.support?"+"+(s0.buffDmg||0)+" damage nearby":
-    Math.round(s0.dmg||0)+" dmg · "+Math.round(s0.rng||0)+" range")+" at base · $"+towerCost(def)+" to place";
-  $("towerInfoStats").textContent=baseTxt+(m?"":" · never placed yet - every path's tier 1 unlocks free the first time");
-  $("towerInfoXp").innerHTML=m?('<span class="xpIcon">&#9889;</span>'+Math.floor(m.xp||0).toLocaleString()+" XP"):"";
-
-  var wrap=$("towerInfoPaths"); wrap.innerHTML="";
-  [def.p1,def.p2,def.p3].forEach(function(pathDef,idx){
-    var tier=tiers[idx];
-    var row=document.createElement("div"); row.className="upgRow";
-    var lbl=document.createElement("div"); lbl.className="upgRowLbl";
-    lbl.style.color=UPGRADE_PATH_COL[idx];
-    lbl.textContent=pathDef.n;
-    row.appendChild(lbl);
-    var cellsWrap=document.createElement("div"); cellsWrap.className="upgCells";
-    pathDef.u.forEach(function(up,ti){
-      var cell=document.createElement("div"); cell.className="upgCell";
-      var owned=tier>ti;
-      if(owned){
-        cell.classList.add("owned");
-        cell.innerHTML="<b>"+(ti===4?"★ ":"✓ ")+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>";
-      } else if(ti===4){
-        cell.classList.add("mystery"); cell.classList.add("locked");
-        cell.innerHTML="&#10067;";
-        cell.title="A hidden final upgrade - "+up.c.toLocaleString()+" XP once placed and earned";
-      } else {
-        cell.classList.add("locked");
-        cell.innerHTML="<b>"+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>"+
-          '<div class="upgCost">'+up.c.toLocaleString()+" XP</div>";
-      }
-      cellsWrap.appendChild(cell);
-    });
     row.appendChild(cellsWrap);
     wrap.appendChild(row);
   });
@@ -6455,13 +6372,13 @@ var party={
       }
     } else if(m.t==="snap"){
       /* used to only apply while state==="play" - harmless before the
-         tower upgrade screen existed, but that screen pauses on open (a
-         deliberate "step back and spend XP" moment, same as the hero
-         panel), and a paused guest would then stop receiving snaps
-         entirely: their own reqUpgrade purchase would silently not show
-         up until they closed and reopened the screen. Pause is a local
-         UI state, not a reason to stop syncing the authoritative game
-         state - only truly non-run states (menu/over) should skip this. */
+         hero panel existed, but that panel pauses on open (a deliberate
+         "step back and spend XP" moment), and a paused guest would then
+         stop receiving snaps entirely: their own reqUpgrade purchase
+         would silently not show up until they closed and reopened it.
+         Pause is a local UI state, not a reason to stop syncing the
+         authoritative game state - only truly non-run states (menu/over)
+         should skip this. */
       if((state==="play"||state==="pause")&&!self.leader){
         var wasSel=selTower?{gx:selTower.gx,gy:selTower.gy}:null;
         towers=m.towers;
@@ -6478,10 +6395,6 @@ var party={
           if(selTower)renderPanel();
           else $("panel").classList.add("hide");
         }
-        if(upgTarget&&$("o-towerUpg").className.indexOf("hide")<0){
-          upgTarget=towers.filter(function(t){ return t.gx===upgTarget.gx&&t.gy===upgTarget.gy; })[0]||null;
-          if(upgTarget)renderTowerUpgScreen(); else closeTowerUpgrade();
-        }
         if($("o-roster").className.indexOf("hide")<0)renderRoster();
         updateHud();
       }
@@ -6490,7 +6403,7 @@ var party={
     } else if(m.t==="reqUpgrade"){
       if(self.leader&&state==="play"){
         var utw=towers.filter(function(t){ return t.gx===m.gx&&t.gy===m.gy; })[0];
-        if(utw&&utw.owner===from)upgradeTower(utw,m.path);
+        if(utw&&utw.owner===from)buyTowerTier(utw,m.path);
       }
     } else if(m.t==="reqSell"){
       if(self.leader&&state==="play"){
@@ -6806,7 +6719,7 @@ window.__pp={
   myHitCol:myHitCol,
   view:view, CELL:CELL, cv:cv,
   getTowers:function(){ return towers.map(function(t){ return {id:t.id,gx:t.gx,gy:t.gy,t1:t.t1,t2:t.t2,t3:t.t3,spent:t.spent,pops:t.pops,cd:t.cd,ang:t.ang,xp:t.xp,lvl:t.lvl,s:t.s}; }); },
-  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; var m=towerMastery(tw.id); for(var i=0;i<(times||1);i++){ m.xp=(m.xp||0)+99999; upgradeTower(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,xp:m.xp}; },
+  forceUpgrade:function(gx,gy,path,times){ var tw=towers.filter(function(t){return t.gx===gx&&t.gy===gy;})[0]; if(!tw)return "no tower"; var owner=tw.owner||"solo",m=towerMastery(tw.id); for(var i=0;i<(times||1);i++){ m.xp=(m.xp||0)+99999; playerCash[owner]=(playerCash[owner]||0)+99999; unlockTowerTier(tw.id,path); buyTowerTier(tw,path); } return {t1:tw.t1,t2:tw.t2,t3:tw.t3,xp:m.xp}; },
   getTowerMastery:function(id){ return towerMastery(id); },
   forceHeroLvl:function(owner,lvl){ var h=heroes.filter(function(x){return x.owner===(owner||"solo");})[0]; if(!h)return "no hero"; while(h.lvl<lvl)giveHeroXp(h,heroXpNeeded(h.lvl)); return {lvl:h.lvl,xp:h.xp}; },
   gainAccountXp:function(n){ return gainAccountXp(n); },
