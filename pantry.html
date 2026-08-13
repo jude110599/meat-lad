@@ -453,6 +453,14 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .chip{display:inline-block;background:var(--bg3);border:1px solid var(--line);
   border-radius:12px;padding:3px 9px;font-size:10.5px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--dim);margin-right:5px}
+#waveInfoList{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.waveChip{display:flex;align-items:center;gap:6px;background:var(--bg2);
+  border:1px solid var(--line);border-radius:20px;padding:4px 11px 4px 4px}
+.waveChip canvas{width:26px;height:26px;flex:none}
+.waveChip b{font-size:11.5px;font-weight:800}
+.waveChip .wc-n{color:var(--gold);font-size:10.5px;font-weight:800;margin-left:1px}
+.waveChip.boss{border-color:var(--jam2)}
+.waveChip.boss .wc-n{color:var(--jam2)}
 .dot{width:10px;height:10px;border-radius:50%;background:#5a4a30;margin-left:auto}
 .dot.live{background:var(--mint)}
 .mem{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);
@@ -596,10 +604,10 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
       <svg class="pi" width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 20.5s-7.8-4.9-10-9.4C.4 7.6 2.3 4 6 4c2.2 0 3.7 1.3 4.8 2.9C11.9 5.4 13.4 4 15.6 4c3.7 0 5.6 3.6 4 7.1-2.2 4.5-10 9.4-10 9.4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="currentColor" fill-opacity=".18"/></svg>
       <b id="pLifeV">100</b>
     </span>
-    <span class="pill wave" id="pWave">
+    <button class="pill wave" id="pWave" title="What's coming next">
       <svg class="pi" width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 21V4l1.2.9c1.8 1.3 4.2 1.3 6 0 1.8-1.3 4.2-1.3 6 0 1.8 1.3 4.2 1.3 6 0V13c-1.8 1.3-4.2 1.3-6 0-1.8-1.3-4.2-1.3-6 0-1.8 1.3-4.2 1.3-6 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <b id="pWaveV">1/40</b>
-    </span>
+    </button>
     <button class="pill hero hide" id="pHeroBtn">
       <svg class="pi" width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8L12 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="currentColor" fill-opacity=".22"/></svg>
       <b id="pHeroV">Lv1</b>
@@ -962,6 +970,13 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
     <div id="towerInfoPaths"></div>
   </div></div>
 
+  <div class="ovl hide" id="o-waveInfo"><div class="ovlbox" style="max-width:420px;width:92%">
+    <button class="back" id="waveInfoClose" style="float:right">&times;</button>
+    <div class="disp" id="waveInfoTitle" style="font-size:17px"></div>
+    <div class="cd" style="font-size:11.5px;color:var(--dim);margin-top:3px">What's coming</div>
+    <div id="waveInfoList"></div>
+  </div></div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -969,9 +984,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.3";
+var VERSION="2.13.4";
 var CHANGELOG=[
-  {v:"2.13.3",d:"latest",items:[
+  {v:"2.13.4",d:"latest",items:[
+    "TAP THE WAVE COUNTER TO SEE WHAT'S COMING. A real QoL gap - there was no way to plan a purchase around the next wave without just eating it blind. Shows the upcoming wave's enemy mix (icons + counts), boss waves called out distinctly, no pausing required since it's meant to be a quick peek mid-round"
+  ]},
+  {v:"2.13.3",items:[
     "SELLING A TOWER LEAVES A PUFF OF SMOKE AND FLYING PARTS BEHIND NOW instead of just vanishing - the same \"something happened here\" beat placement already gets, in reverse"
   ]},
   {v:"2.13.2",items:[
@@ -4973,6 +4991,36 @@ function updateHud(){
   $("bEmote").classList.toggle("hide",party.on);
   $("bPlayers").classList.toggle("hide",!party.on);
 }
+/* the wave counter used to just be a number with nowhere to look ahead -
+   tapping it now previews what's actually coming (waveMix is pure, so
+   peeking at wave+1 costs nothing and can't desync the real spawn later),
+   so there's an actual reason to plan a purchase before the swarm shows
+   up instead of reacting to it blind. Doesn't pause - meant to be a
+   quick peek mid-round, same as the shop's tower-info popup. */
+function openWaveInfo(){
+  var nextW=wave+1;
+  if(nextW>waveMax){ toast("That was the last wave"); return; }
+  renderWaveInfo(nextW);
+  showOvl("o-waveInfo");
+}
+function renderWaveInfo(w){
+  var boss=w%10===0;
+  $("waveInfoTitle").textContent="Wave "+w+(boss?" — Boss Wave":"");
+  var mix=waveMix(w);
+  var counts={},order=[];
+  mix.forEach(function(k){ if(!counts[k]){ counts[k]=0; order.push(k); } counts[k]++; });
+  var wrap=$("waveInfoList"); wrap.innerHTML="";
+  order.forEach(function(k){
+    var B=BUGS[k];
+    var chip=document.createElement("div"); chip.className="waveChip"+(B.boss?" boss":"");
+    chip.appendChild(iconFor("b",k,26));
+    var lab=document.createElement("b"); lab.textContent=B.n; chip.appendChild(lab);
+    var n=document.createElement("span"); n.className="wc-n"; n.textContent="×"+counts[k]; chip.appendChild(n);
+    wrap.appendChild(chip);
+  });
+}
+$("waveInfoClose").onclick=function(){ sfx.click(); hideOvl(); };
+$("pWave").onclick=function(){ sfx.click(); openWaveInfo(); };
 function heroLevelCost(nextLvl){ return Math.round(60*Math.pow(1.3,nextLvl-2)); }
 function openHeroPanel(){
   if(!myHero())return;
