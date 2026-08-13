@@ -984,9 +984,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.5";
+var VERSION="2.13.6";
 var CHANGELOG=[
-  {v:"2.13.5",d:"latest",items:[
+  {v:"2.13.6",d:"latest",items:[
+    "EVERY TOWER AND BUG BLINKS NOW. One addition to the shared eyes() helper (not touching any of their ~30 individual draw functions) so the whole roster picks it up for free - each blinks on its own rhythm instead of the entire board blinking in unison"
+  ]},
+  {v:"2.13.5",items:[
     "BUGS HAVE FACES NOW. Every tower already had cute cartoon eyes (see the shop, the board, anywhere) - the whole enemy side of the board never did, reusing the exact same eyes so the art style stays one consistent language instead of a second bespoke look. A little side-to-side glance keeps a swarm of the same kind from all staring in lockstep",
     "SMOKE/POOF EFFECTS ARE A CARTOON CLOUD SHAPE NOW instead of one soft gradient blob - a cluster of flat-filled lobes, the same comic-book \"poof\" language, showing up everywhere a puff already did (placing, selling, splash hits, upgrades, hero level-ups) since it's all one shared effect",
     "TOWERS AND HEROES BREATHE NOW - the existing idle bob squashes a touch wider at the bottom and stretches a touch taller at the top, the same cheap squash-and-stretch cheat every bouncy cartoon mascot uses, riding on the bob animation that was already there"
@@ -2565,12 +2568,28 @@ function cyl(c,x,y,w,h,col){
 function eyes(c,x,y,r,look){
   look=look||0;
   var dx=Math.cos(look)*r*.1,dy=Math.sin(look)*r*.1;
+  /* a periodic blink - every tower and bug shares this one function, so
+     one addition here gives the whole roster a blink for free instead
+     of touching each of their ~30 draw functions. Phase comes from the
+     eye's own x/y (not a caller-supplied clock) so nothing extra needs
+     threading through every call site, and same-type characters blink
+     out of sync with other types instead of the whole board blinking
+     in unison. Reads performance.now() directly - purely cosmetic and
+     purely local to whichever client is rendering it, never anything
+     that needs to agree between host and guest in co-op. */
+  var blinkPhase=(Math.abs(x)*7.3+Math.abs(y)*3.1)%3.6;
+  var blinkDur=.12,blinkCyc=(performance.now()/1000+blinkPhase)%3.6;
+  var blinkSq=1;
+  if(blinkCyc<blinkDur){
+    var bp=blinkCyc/blinkDur;
+    blinkSq=bp<.5?1-bp*2:(bp-.5)*2;
+  }
   c.fillStyle="#fff";
-  c.beginPath(); c.ellipse(x-r*.3,y-r*.1,r*.2,r*.24,0,0,6.283); c.fill();
-  c.beginPath(); c.ellipse(x+r*.3,y-r*.1,r*.2,r*.24,0,0,6.283); c.fill();
+  c.beginPath(); c.ellipse(x-r*.3,y-r*.1,r*.2,Math.max(.01,r*.24*blinkSq),0,0,6.283); c.fill();
+  c.beginPath(); c.ellipse(x+r*.3,y-r*.1,r*.2,Math.max(.01,r*.24*blinkSq),0,0,6.283); c.fill();
   c.fillStyle="#141019";
-  c.beginPath(); c.arc(x-r*.3+dx,y-r*.1+dy,r*.11,0,6.283); c.fill();
-  c.beginPath(); c.arc(x+r*.3+dx,y-r*.1+dy,r*.11,0,6.283); c.fill();
+  c.beginPath(); c.arc(x-r*.3+dx,y-r*.1+dy,r*.11*blinkSq,0,6.283); c.fill();
+  c.beginPath(); c.arc(x+r*.3+dx,y-r*.1+dy,r*.11*blinkSq,0,6.283); c.fill();
 }
 
 /* ═════════════ TOWER ART ═════════════ */
