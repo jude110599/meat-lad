@@ -401,6 +401,16 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 .upgCell .upgDesc{color:var(--dim);font-size:9.5px;line-height:1.3;margin-bottom:3px}
 .upgCell .upgCost{font-weight:800;color:var(--gold);font-size:10px}
 .upgCell.owned{border-color:var(--mint);background:linear-gradient(160deg,rgba(95,240,192,.16),var(--bg2))}
+.upgCell.unlocked{border-color:var(--honey);border-style:dashed;background:linear-gradient(160deg,rgba(102,231,255,.1),var(--bg2))}
+.upgCell .upgCost.free{color:var(--mint)}
+.xpBig{display:flex;align-items:center;gap:6px;font-size:21px;font-weight:900;color:var(--mint);margin-top:8px;letter-spacing:.02em}
+.xpBig .xpIcon{font-size:19px;line-height:1}
+.xpline.xpBig{font-size:15px;margin-top:2px}
+.xpline.xpBig .xpIcon{font-size:14px}
+.upgBadge{position:absolute;top:3px;right:3px;width:15px;height:15px;border-radius:50%;
+  background:var(--mint);color:#07231a;font-size:8px;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 6px rgba(95,240,192,.8);animation:upgBadgePulse 1.6s ease-in-out infinite;z-index:1}
+@keyframes upgBadgePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
 .upgCell.ready{border-color:var(--honey);cursor:pointer;box-shadow:0 0 0 1px var(--honey) inset}
 .upgCell.ready:hover{background:var(--bg3);transform:translateY(-2px)}
 .upgCell.locked{opacity:.5}
@@ -928,6 +938,7 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
         <div class="disp" id="towerInfoName" style="font-size:19px"></div>
         <div class="cd" id="towerInfoDesc" style="font-size:12px;margin-top:3px"></div>
         <div id="towerInfoStats" style="font-size:11.5px;color:var(--dim);margin-top:8px"></div>
+        <div id="towerInfoXp" class="xpBig"></div>
       </div>
     </div>
     <div id="towerInfoPaths"></div>
@@ -952,9 +963,15 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.12.3";
+var VERSION="2.12.4";
 var CHANGELOG=[
-  {v:"2.12.3",d:"latest",items:[
+  {v:"2.12.4",d:"latest",items:[
+    "CORRECTED HOW ACCOUNT-WIDE UPGRADES ACTUALLY WORK. Unlocking a tier no longer auto-applies it to every placed tower of that type - it makes that tier AVAILABLE account-wide, and you still open each individual tower's own panel to apply it there (free, no extra cost, since it's already paid for - just not automatic). Crosspathing reverted to the classic shape: one path to tier 5, a second to tier 2, the third stays at its free tier 1",
+    "FIXED A REAL BUG the above surfaced: the upgrade screen could throw and silently fail to open at all for a tower with any path still below its next unlockable tier - a near-guaranteed situation for any lightly-upgraded tower - because of an empty CSS class being passed to a browser API that (unlike jQuery-style helpers) throws on that instead of ignoring it",
+    "Shop cards now show a small pulsing green arrow when that tower type has enough banked XP to unlock something right now",
+    "The tower info popup and the in-run upgrade panel both show XP as a big, bold, green number with a lightning icon now instead of a buried \"X tiers unlocked, Y XP\" sentence"
+  ]},
+  {v:"2.12.3",items:[
     "TOWER UPGRADES ARE PERMANENT AND ACCOUNT-WIDE NOW, PER TOWER TYPE - the way this was actually meant to work. Unlock an upgrade on a Cleaver Bot and it's not just that one Cleaver Bot any more: every Cleaver Bot you ever place, this run or any run after, already has it, forever, the same way a real BTD6 unlock works. Each tower TYPE has one shared, permanent XP pool now instead of every placed instance starting from zero",
     "EVERY PATH'S TIER 1 IS FREE FROM THE FIRST PLACEMENT - all three, not just one. The meaningful choice starts at tier 2; crosspathing shifted to match (two paths can go past tier 1, one of those two can go all the way to tier 5, the other caps at tier 3 once it does)",
     "XP EARN RATES CUT SIGNIFICANTLY (roughly to a sixth to an eighth of before) - this pool now compounds across every instance placed in every run forever instead of resetting each placement, so it has to build slowly or mastery would trivialise after a handful of runs",
@@ -3750,15 +3767,15 @@ function placeTower(id,gx,gy,owner){
   if((playerCash[ownerId]||0)<cost){ toast("Not enough"); return false; }
   if(!cellFree(gx,gy)){ toast("No room there"); return false; }
   playerCash[ownerId]=(playerCash[ownerId]||0)-cost;
-  /* tiers come from this tower TYPE's permanent, account-wide mastery
-     record (see giveTowerXp's comment) - every path's tier 1 is free
-     and active from the very first time this type is ever placed, and
-     anything unlocked since (on this instance or any other) is already
-     here too. There's no more per-instance xp/lvl on the tower object
-     at all - the shared mastery record is the only XP that exists now. */
-  var m=towerMastery(id);
+  /* every path's tier 1 is free the instant a tower is placed - beyond
+     that, this instance starts at baseline regardless of how much this
+     tower TYPE has unlocked account-wide (towerMastery). Unlocking a
+     tier account-wide makes it AVAILABLE to apply for free on any
+     instance, new or old - it doesn't apply itself automatically. You
+     still open this tower's own panel and apply (or unlock) each tier
+     yourself, same as any other instance of the type. */
   var tw={id:id,owner:owner||"solo",gx:gx,gy:gy,x:(gx+.5)*CELL,y:(gy+.5)*CELL,
-    t1:m.t1,t2:m.t2,t3:m.t3,cd:0,ang:0,spent:cost,pops:0,tgt:"first"};
+    t1:1,t2:1,t3:1,cd:0,ang:0,spent:cost,pops:0,tgt:"first"};
   recalcTower(tw);
   towers.push(tw);
   deployPuff(tw.x,tw.y,def.col);
@@ -3878,32 +3895,74 @@ function buildTgtRow(tw,onSet){
   });
   return row;
 }
-/* BTD6-style crosspathing, shifted by the free tier-1 baseline every path
-   already starts at: at most two of the three paths may ever go PAST
-   tier 1, and once one of those two passes tier 3, the other is capped
-   there - you commit to a "main" path early, same shape as before, just
-   relative to tier 1 being a given instead of tier 0. Spends from and
-   writes to this tower TYPE's shared, permanent mastery record (see
-   towerMastery/giveTowerXp) - not the placed instance - and then applies
-   the result to every currently-placed instance of this tower id at
-   once, since the whole point is "unlock it once, every one has it." */
+/* classic BTD6 crosspathing, unchanged shape: at most two of the three
+   paths may ever go past tier 1 (the free baseline), and once one of
+   those two passes tier 2, the other is capped there - one path to 5,
+   the other to 2, the third stays at its free 1. Checked against the
+   tower TYPE's shared, permanent unlock ceiling (towerMastery), not any
+   one instance - that ceiling is the only thing crosspathing actually
+   constrains, since it's the only thing ever paid for. */
+/* drives the little green arrow badge on a tower's shop card - true if
+   this tower TYPE has enough banked XP to unlock at least one more
+   tier right now (respecting crosspathing), regardless of whether any
+   instance of it is even on the board. Mirrors upgradeTower's own gate
+   checks so the badge never promises something a click can't do. */
+function towerHasAvailableUpgrade(id){
+  var m=save.towerMastery[id];
+  if(!m)return false;
+  var def=byId(TOWERS,id);
+  var paths=[def.p1,def.p2,def.p3], tiers=[m.t1,m.t2,m.t3];
+  var activePaths=tiers.filter(function(t){ return t>1; }).length;
+  var pastIdx=-1; tiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
+  for(var i=0;i<3;i++){
+    var tier=tiers[i];
+    if(tier>=5)continue;
+    var lockedNew=(tier===1&&activePaths>=2);
+    var lockedDeep=(pastIdx>=0&&pastIdx!==i&&tier>=2);
+    if(lockedNew||lockedDeep)continue;
+    if((m.xp||0)>=paths[i].u[tier].c)return true;
+  }
+  return false;
+}
+function applyTowerTier(tw,pathN){
+  if(pathN===1)tw.t1++; else if(pathN===2)tw.t2++; else tw.t3++;
+  recalcTower(tw);
+}
+/* two things can happen here depending on whether this instance has
+   already caught up to what's unlocked account-wide for this path:
+   - applied < ceiling: this tier is already unlocked (someone paid for
+     it, on this tower or any other) but never applied HERE - free,
+     instant, no XP spent. This is "every tower is available to get
+     that upgrade" - available, not automatic.
+   - applied === ceiling: this is actually the next tier to unlock,
+     spending the tower type's shared XP and raising the ceiling for
+     every instance, applied immediately to the one you're looking at
+     (not to any other already-placed instance - those catch up the
+     same free way, next time you open them). */
 function upgradeTower(tw,pathN){
   var def=byId(TOWERS,tw.id);
   var paths=[def.p1,def.p2,def.p3];
   var m=towerMastery(tw.id);
-  var tiers=[m.t1,m.t2,m.t3];
-  var idx=pathN-1, p=paths[idx], tier=tiers[idx];
-  if(tier>=5)return;
-  var activePaths=tiers.filter(function(t){ return t>1; }).length;
-  if(tier===1&&activePaths>=2){ toast("Only two paths can go past tier 1 at once"); return; }
-  var pastIdx=-1; tiers.forEach(function(t,i){ if(t>3)pastIdx=i; });
-  if(pastIdx>=0&&pastIdx!==idx&&tier>=3){ toast("Another path already went past tier 3"); return; }
-  var up=p.u[tier];
+  var ceilTiers=[m.t1,m.t2,m.t3];
+  var appliedTiers=[tw.t1,tw.t2,tw.t3];
+  var idx=pathN-1, p=paths[idx], ceil=ceilTiers[idx], applied=appliedTiers[idx];
+  if(applied<ceil){
+    applyTowerTier(tw,pathN);
+    sfx.click(); updateHud(); renderPanel(); renderShop();
+    if($("o-towerUpg").className.indexOf("hide")<0)renderTowerUpgScreen();
+    return;
+  }
+  if(ceil>=5)return;
+  var activePaths=ceilTiers.filter(function(t){ return t>1; }).length;
+  if(ceil===1&&activePaths>=2){ toast("Only two paths can go past tier 1 at once"); return; }
+  var pastIdx=-1; ceilTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
+  if(pastIdx>=0&&pastIdx!==idx&&ceil>=2){ toast("Another path already went past tier 2"); return; }
+  var up=p.u[ceil];
   if((m.xp||0)<up.c){ toast("Not enough XP"); return; }
   m.xp-=up.c;
   if(pathN===1)m.t1++; else if(pathN===2)m.t2++; else m.t3++;
   queueSave();
-  towers.forEach(function(t){ if(t.id===tw.id){ t.t1=m.t1; t.t2=m.t2; t.t3=m.t3; recalcTower(t); } });
+  applyTowerTier(tw,pathN);
   sfx.up(); updateHud(); renderPanel(); renderShop();
   if($("o-towerUpg").className.indexOf("hide")<0)renderTowerUpgScreen();
 }
@@ -4947,6 +5006,11 @@ function renderShop(){
     var wrap=document.createElement("div"); wrap.className="tcinfo";
     wrap.innerHTML='<div class="tp">$'+cost+'</div>';
     d.title=T.n;
+    if(towerHasAvailableUpgrade(T.id)){
+      var upgBadge=document.createElement("div"); upgBadge.className="upgBadge"; upgBadge.title="Upgrade available";
+      upgBadge.innerHTML="&#9650;";
+      d.appendChild(upgBadge);
+    }
     d.appendChild(wrap);
     d.ondblclick=function(){ sfx.click(); placing=false; buyId=null; markShopSel(null); openTowerInfo(T.id); };
     d.onclick=function(){
@@ -4983,8 +5047,15 @@ function refreshLiveUI(){
   if(list){
     var cards=list.querySelectorAll(".tcard[data-tid]");
     for(var i=0;i<cards.length;i++){
-      var T=byId(TOWERS,cards[i].getAttribute("data-tid"));
+      var tid=cards[i].getAttribute("data-tid");
+      if(tid==="__hero")continue;
+      var T=byId(TOWERS,tid);
       cards[i].classList.toggle("poor",myCash()<towerCost(T));
+      var hasUpg=towerHasAvailableUpgrade(tid), badge=cards[i].querySelector(".upgBadge");
+      if(hasUpg&&!badge){
+        badge=document.createElement("div"); badge.className="upgBadge"; badge.title="Upgrade available";
+        badge.innerHTML="&#9650;"; cards[i].appendChild(badge);
+      } else if(!hasUpg&&badge)badge.remove();
     }
   }
   if(selTower){
@@ -4997,7 +5068,7 @@ function refreshLiveUI(){
       else statEl.textContent=Math.round((s.dmg||0)+bf.dmg)+" dmg · "+Math.round((s.rng||0)*bf.rng)+" range · "+tw.pops+" popped";
     }
     var xpEl=$("panel").querySelector(".xpline");
-    if(xpEl)xpEl.textContent=Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP banked";
+    if(xpEl)xpEl.innerHTML='<span class="xpIcon">&#9889;</span>'+Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP";
   }
 }
 function renderPanel(){
@@ -5023,8 +5094,8 @@ function renderPanel(){
     econLine.textContent="Spent $"+tw.spent+" · Made $"+earned+" · "+(net>=0?"Net +$"+net:"Net -$"+(-net));
     p.appendChild(econLine);
   }
-  var xpLine=document.createElement("div"); xpLine.className="sub xpline"; xpLine.style.marginTop="-6px";
-  xpLine.textContent=Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP banked";
+  var xpLine=document.createElement("div"); xpLine.className="xpline xpBig";
+  xpLine.innerHTML='<span class="xpIcon">&#9889;</span>'+Math.floor(towerMastery(tw.id).xp||0).toLocaleString()+" XP";
   p.appendChild(xpLine);
   if(oName){
     var ownLine=document.createElement("div"); ownLine.className="sub"; ownLine.style.marginTop="-6px";
@@ -5088,13 +5159,20 @@ function closeTowerUpgrade(){
   hideOvl();
   if(state==="pause")state="play";
 }
-/* tier is 1-indexed now (every path has a free, permanent tier 1 - see
-   towerMastery), so slot ti (0-indexed, 0-4) represents tier ti+1
-   throughout: owned when tier>ti, "the one you'd buy next" when
-   tier===ti. Crosspathing shifts by that same +1 - "only two paths past
-   tier 1" and "the other's capped at tier 3 once one passes it" instead
-   of the old tier-0/tier-2 wording - matching upgradeTower's own checks
-   exactly so the UI never disagrees with what a click will actually do. */
+/* four states per cell now, not two - tier is 1-indexed (every path has
+   a free, permanent tier 1), slot ti (0-indexed 0-4) represents tier
+   ti+1:
+   - owned (applied>ti): active on THIS instance already.
+   - unlocked, not applied (ti<ceil): some tower of this type already
+     paid the XP for this tier account-wide - free to apply here, no
+     cost, just not automatic.
+   - next to unlock (ti===ceil): this instance's own XP-spending
+     purchase, gated by crosspathing against the shared ceiling.
+   - locked (ti>ceil): can't skip ahead of what's unlocked account-wide.
+   Tier 5 (ti===4) stays a mystery box specifically until APPLIED to
+   THIS instance - even if unlocked elsewhere, its actual identity was
+   only "unlocked", not "given away", so the free-apply state still
+   shows ❓ for it, just marked free instead of priced. */
 function renderTowerUpgScreen(){
   var tw=upgTarget; if(!tw)return;
   var def=byId(TOWERS,tw.id),mine=canControl(tw);
@@ -5104,12 +5182,12 @@ function renderTowerUpgScreen(){
   oldIc.parentNode.replaceChild(newIc,oldIc);
   $("towerUpgName").textContent=def.n;
   $("towerUpgXp").textContent=Math.floor(m.xp||0).toLocaleString()+" XP available";
-  var allPaths=[def.p1,def.p2,def.p3], tiers=[m.t1,m.t2,m.t3];
-  var activePaths=tiers.filter(function(t){ return t>1; }).length;
-  var pastIdx=-1; tiers.forEach(function(t,i){ if(t>3)pastIdx=i; });
+  var allPaths=[def.p1,def.p2,def.p3], ceilTiers=[m.t1,m.t2,m.t3], appliedTiers=[tw.t1,tw.t2,tw.t3];
+  var activePaths=ceilTiers.filter(function(t){ return t>1; }).length;
+  var pastIdx=-1; ceilTiers.forEach(function(t,i){ if(t>2)pastIdx=i; });
   var rowsEl=$("towerUpgRows"); rowsEl.innerHTML="";
   allPaths.forEach(function(pathDef,idx){
-    var tier=tiers[idx];
+    var ceil=ceilTiers[idx], applied=appliedTiers[idx];
     var row=document.createElement("div"); row.className="upgRow";
     var lbl=document.createElement("div"); lbl.className="upgRowLbl";
     lbl.style.color=UPGRADE_PATH_COL[idx];
@@ -5119,42 +5197,66 @@ function renderTowerUpgScreen(){
     for(var ti=0;ti<5;ti++){
       var up=pathDef.u[ti];
       var cell=document.createElement("div"); cell.className="upgCell";
-      var isNext=(tier===ti);
-      if(tier>ti){
-        cell.classList.add("owned");
-        var iconWrap=document.createElement("div"); iconWrap.className="upgIcon";
+      var addIcon=function(col){
+        var iw=document.createElement("div"); iw.className="upgIcon";
         var ic=document.createElement("canvas"); ic.width=36; ic.height=36;
         var ig=ic.getContext("2d"); ig.scale(2,2); ig.translate(9,9);
-        drawUpgradeIcon(ig,upgradeIconKind(up),7,"#5ff0c0");
-        iconWrap.appendChild(ic); cell.appendChild(iconWrap);
+        drawUpgradeIcon(ig,upgradeIconKind(up),7,col);
+        iw.appendChild(ic); cell.appendChild(iw);
+      };
+      if(applied>ti){
+        // owned - active on this instance
+        cell.classList.add("owned");
+        addIcon("#5ff0c0");
         var lab=document.createElement("b"); lab.textContent=(ti===4?"★ ":"✓ ")+up.n; cell.appendChild(lab);
         var desc=document.createElement("div"); desc.className="upgDesc"; desc.textContent=up.d; cell.appendChild(desc);
         cell.title=up.n+" - "+up.d;
-      } else if(ti===4){
-        cell.classList.add("mystery");
-        var afford4=isNext&&(m.xp||0)>=up.c;
-        cell.innerHTML="&#10067;"+(afford4?"<div class=\"upgCost\">"+up.c.toLocaleString()+" XP</div>":"");
-        cell.classList.add(afford4?"ready":"locked");
-        cell.title=isNext?"A hidden final upgrade - costs "+up.c.toLocaleString()+" XP":"Unlocks once tier 4 is bought";
-        if(afford4&&mine)cell.onclick=makeUpgClick(tw,idx+1);
+      } else if(ti<ceil){
+        // unlocked account-wide already, just needs a free apply here
+        cell.classList.add("unlocked");
+        if(ti===4){
+          addIcon("#8cecff");
+          var lab5=document.createElement("b"); lab5.textContent="★ "+up.n; cell.appendChild(lab5);
+          var desc5=document.createElement("div"); desc5.className="upgDesc"; desc5.textContent=up.d; cell.appendChild(desc5);
+        } else {
+          addIcon("#8cecff");
+          var lab2=document.createElement("b"); lab2.textContent=up.n; cell.appendChild(lab2);
+          var desc2=document.createElement("div"); desc2.className="upgDesc"; desc2.textContent=up.d; cell.appendChild(desc2);
+        }
+        var freeEl=document.createElement("div"); freeEl.className="upgCost free"; freeEl.textContent="FREE - apply"; cell.appendChild(freeEl);
+        cell.title="Already unlocked for this tower type - tap to apply it here for free";
+        if(mine){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
+      } else if(ti===ceil){
+        // the next tier to actually unlock account-wide, spending XP
+        var isNext=true;
+        if(ti===4){
+          cell.classList.add("mystery");
+          var afford4=(m.xp||0)>=up.c;
+          cell.innerHTML="&#10067;"+(afford4?"<div class=\"upgCost\">"+up.c.toLocaleString()+" XP</div>":"");
+          cell.classList.add(afford4?"ready":"locked");
+          cell.title="A hidden final upgrade - costs "+up.c.toLocaleString()+" XP to unlock account-wide";
+          if(afford4&&mine)cell.onclick=makeUpgClick(tw,idx+1);
+        } else {
+          var lockedNew=ceil===1&&activePaths>=2;
+          var lockedDeep=pastIdx>=0&&pastIdx!==idx&&ceil>=2;
+          var afford=(m.xp||0)>=up.c;
+          var ready=afford&&!lockedNew&&!lockedDeep&&mine;
+          addIcon(ready?"#66e7ff":"#7894af");
+          var lab3=document.createElement("b"); lab3.textContent=up.n; cell.appendChild(lab3);
+          var desc3=document.createElement("div"); desc3.className="upgDesc"; desc3.textContent=up.d; cell.appendChild(desc3);
+          var costEl=document.createElement("div"); costEl.className="upgCost"; costEl.textContent=up.c.toLocaleString()+" XP"; cell.appendChild(costEl);
+          if(lockedNew||lockedDeep)cell.classList.add("excluded");
+          else if(!afford||!mine)cell.classList.add("locked");
+          if(ready){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
+          cell.title=lockedNew?"Only two paths can go past tier 1 at once":lockedDeep?"Another path already went past tier 2":
+            !afford?"Not enough XP yet to unlock account-wide":up.n+" - "+up.d;
+        }
       } else {
-        var lockedNew=isNext&&tier===1&&activePaths>=2;
-        var lockedDeep=isNext&&pastIdx>=0&&pastIdx!==idx&&tier>=3;
-        var afford=isNext&&(m.xp||0)>=up.c;
-        var ready=isNext&&afford&&!lockedNew&&!lockedDeep&&mine;
-        var iconWrap2=document.createElement("div"); iconWrap2.className="upgIcon";
-        var ic2=document.createElement("canvas"); ic2.width=36; ic2.height=36;
-        var ig2=ic2.getContext("2d"); ig2.scale(2,2); ig2.translate(9,9);
-        drawUpgradeIcon(ig2,upgradeIconKind(up),7,ready?"#66e7ff":"#7894af");
-        iconWrap2.appendChild(ic2); cell.appendChild(iconWrap2);
-        var lab2=document.createElement("b"); lab2.textContent=up.n; cell.appendChild(lab2);
-        var desc2=document.createElement("div"); desc2.className="upgDesc"; desc2.textContent=up.d; cell.appendChild(desc2);
-        var costEl=document.createElement("div"); costEl.className="upgCost"; costEl.textContent=up.c.toLocaleString()+" XP"; cell.appendChild(costEl);
-        if(lockedNew||lockedDeep)cell.classList.add("excluded");
-        else if(!isNext||!afford||!mine)cell.classList.add("locked");
-        if(ready){ cell.classList.add("ready"); cell.onclick=makeUpgClick(tw,idx+1); }
-        cell.title=lockedNew?"Only two paths can go past tier 1 at once":lockedDeep?"Another path already went past tier 3":
-          !isNext?"Buy the earlier tiers in this path first":!afford?"Not enough XP yet":up.n+" - "+up.d;
+        // beyond even the next unlockable tier - can't skip ahead
+        if(ti===4)cell.classList.add("mystery");
+        cell.classList.add("locked");
+        cell.innerHTML=ti===4?"&#10067;":("<b>"+up.n+"</b><div class=\"upgDesc\">"+up.d+"</div>");
+        cell.title="Unlock the earlier tiers in this path first";
       }
       cellsWrap.appendChild(cell);
     }
@@ -5198,11 +5300,11 @@ function renderTowerInfo(towerId){
      this run. */
   var m=save.towerMastery[def.id];
   var tiers=m?[m.t1,m.t2,m.t3]:[0,0,0];
-  var totalTiers=m?(m.t1+m.t2+m.t3):0;
   var s0=baseStats(def);
   var baseTxt=(s0.income?"$"+s0.income+" a round":s0.support?"+"+(s0.buffDmg||0)+" damage nearby":
     Math.round(s0.dmg||0)+" dmg · "+Math.round(s0.rng||0)+" range")+" at base · $"+towerCost(def)+" to place";
-  $("towerInfoStats").textContent=baseTxt+(m?(" · "+totalTiers+" tiers unlocked so far, "+Math.floor(m.xp||0).toLocaleString()+" XP banked"):" · never placed yet - every path's tier 1 unlocks free the first time");
+  $("towerInfoStats").textContent=baseTxt+(m?"":" · never placed yet - every path's tier 1 unlocks free the first time");
+  $("towerInfoXp").innerHTML=m?('<span class="xpIcon">&#9889;</span>'+Math.floor(m.xp||0).toLocaleString()+" XP"):"";
 
   var wrap=$("towerInfoPaths"); wrap.innerHTML="";
   [def.p1,def.p2,def.p3].forEach(function(pathDef,idx){
