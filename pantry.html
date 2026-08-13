@@ -968,9 +968,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.0";
+var VERSION="2.13.1";
 var CHANGELOG=[
-  {v:"2.13.0",d:"latest",items:[
+  {v:"2.13.1",d:"latest",items:[
+    "HERO LEVEL-UPS ARE A REAL CELEBRATION NOW instead of a silent stat bump - a gold spark burst and ring hit the hero right where they're standing, a floating \"LEVEL UP\" pops up over their head, and there's a tiny freeze-frame for impact. Visible to everyone in co-op, not just whoever's hero it was"
+  ]},
+  {v:"2.13.0",items:[
     "MOBILE: THE SHOP NO LONGER PERMANENTLY EATS A THIRD OF THE SCREEN. It used to sit as a fixed sidebar, which on a narrow phone squeezed the whole (landscape-shaped) play area into a thin strip - it now docks to the bottom as a collapsible drawer instead: collapsed, it's just a slim handle, so the board gets almost the full screen; tap it to slide the same card list up as an overlay. Picking a tower auto-collapses it so you can immediately tap the board. The tower click panel moves to dock above the handle so nothing overlaps",
     "BUYING AN UPGRADE IS A REAL MOMENT ON THE BOARD NOW, not just a number changing in a panel - a burst and ring in the path's own colour hits the tower itself, with a tiny freeze-frame for impact",
     "Shortened some of the more cramped upgrade-panel button text (\"unlock this in the shop first\" -> \"unlock in shop first\", etc.) so it reads faster and fits tighter panels better"
@@ -3493,6 +3496,13 @@ var shakeT=0,shakeMag=0,hitStopT=0;
 function addShake(mag,dur){ shakeMag=Math.min(18,Math.max(shakeMag,mag)); shakeT=Math.max(shakeT,dur); }
 function addHitStop(dur){ hitStopT=Math.max(hitStopT,dur); }
 function dmgNum(x,y,n,crit){ fx.push({dmgText:true,x:x,y:y-6,n:Math.round(n),crit:crit,t:0,life:.55,vy:-38}); }
+/* a hero levelling up used to be silent on the board itself - one sfx
+   blip and, if a skill happened to unlock at that exact level, a toast.
+   Now it's a real beat right where the hero's standing: a gold spark
+   burst + ring (see giveHeroXp) plus this floating "LEVEL UP / N" text
+   that pops in and drifts up, so it reads the same for every player
+   watching, not just the one who leveled. */
+function heroLevelFx(x,y,lvl){ fx.push({heroLvl:true,x:x,y:y,lvl:lvl,t:0,life:1.15}); }
 function spawnEmote(x,y,glyph){ fx.push({emote:true,x:x,y:y-24,glyph:glyph,t:0,life:2}); }
 function sparkBurst(x,y,col,n,spd){
   fx.push({spark:true,x:x,y:y,col:col||"#e8dcc4",t:0,life:.22,
@@ -3871,6 +3881,10 @@ function giveHeroXp(h,n){
   while(h.xp>=heroXpNeeded(h.lvl)&&h.lvl<20){
     h.xp-=heroXpNeeded(h.lvl); h.lvl++;
     recalcHero(h); sfx.up();
+    sparkBurst(h.x,h.y,"#ffd75e",14,140);
+    shockRing(h.x,h.y,42,"#ffd75e");
+    heroLevelFx(h.x,h.y,h.lvl);
+    addHitStop(.06);
     var def=byId(HEROES,h.id);
     for(var i=0;i<def.skills.length;i++)
       if(def.skills[i].l===h.lvl&&h.owner===myOwner())toast(def.skills[i].n+" unlocked");
@@ -4868,6 +4882,19 @@ function render(t){
       ctx.font=(x2.crit?"bold 15px":"bold 11px")+" sans-serif"; ctx.textAlign="center";
       ctx.fillText(String(x2.n),x2.x,x2.y+x2.vy*k2);
       ctx.textAlign="left";
+    } else if(x2.heroLvl){
+      var lvK=x2.t/x2.life;
+      var lvPop=lvK<.15?lvK/.15:1;
+      var lvA=lvK>.7?1-(lvK-.7)/.3:1;
+      ctx.save();
+      ctx.globalAlpha=lvA; ctx.translate(x2.x,x2.y-34-lvK*20); ctx.scale(lvPop,lvPop);
+      ctx.textAlign="center";
+      ctx.font="bold 9px sans-serif"; ctx.fillStyle="#ffe27a";
+      ctx.fillText("LEVEL UP",0,-13);
+      ctx.font="bold 17px sans-serif"; ctx.fillStyle="#fff8e0";
+      ctx.fillText(String(x2.lvl),0,4);
+      ctx.textAlign="left";
+      ctx.restore();
     } else if(x2.emote){
       var eK=x2.t/x2.life;
       ctx.globalAlpha=eK<.12?eK/.12:(eK>.75?1-(eK-.75)/.25:1);
