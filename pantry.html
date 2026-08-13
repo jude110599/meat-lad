@@ -217,6 +217,7 @@ canvas.icon{display:block;width:46px;height:46px;margin-bottom:6px}
 @keyframes pillFlash{0%{transform:scale(1)}32%{transform:scale(1.14)}100%{transform:scale(1)}}
 .pill.cash.flash{box-shadow:0 0 0 2px rgba(240,193,75,.55),0 2px 5px rgba(0,0,0,.32)}
 .pill.life.flash{box-shadow:0 0 0 2px rgba(224,90,63,.6),0 2px 5px rgba(0,0,0,.32)}
+.pill.wave.flash{box-shadow:0 0 0 2px rgba(95,240,192,.6),0 2px 5px rgba(0,0,0,.32)}
 #hudBtns{margin-left:auto;display:flex;gap:6px;pointer-events:auto}
 .hbtn{background:rgba(20,15,10,.82);border:1px solid var(--line);color:var(--txt);
   width:38px;height:38px;border-radius:10px;font-size:15px;cursor:pointer;flex:none}
@@ -968,9 +969,15 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.1";
+var VERSION="2.13.3";
 var CHANGELOG=[
-  {v:"2.13.1",d:"latest",items:[
+  {v:"2.13.3",d:"latest",items:[
+    "SELLING A TOWER LEAVES A PUFF OF SMOKE AND FLYING PARTS BEHIND NOW instead of just vanishing - the same \"something happened here\" beat placement already gets, in reverse"
+  ]},
+  {v:"2.13.2",items:[
+    "THE WAVE COUNTER PILL NOW FLASHES WHEN YOU SEND OUT A NEW WAVE, matching the cash and life pills, which already flashed on a gain/hit and made the wave number the one pill in the HUD that just sat there"
+  ]},
+  {v:"2.13.1",items:[
     "HERO LEVEL-UPS ARE A REAL CELEBRATION NOW instead of a silent stat bump - a gold spark burst and ring hit the hero right where they're standing, a floating \"LEVEL UP\" pops up over their head, and there's a tiny freeze-frame for impact. Visible to everyone in co-op, not just whoever's hero it was"
   ]},
   {v:"2.13.0",items:[
@@ -3528,6 +3535,13 @@ function bigExplosion(x,y,col){
 function deployPuff(x,y,col){
   shockRing(x,y,26,col); smokePuff(x,y-4,15,col); sparkBurst(x,y,col,7,85);
 }
+/* selling used to just make a tower vanish with no acknowledgment at all
+   - a puff of smoke and a few flying parts gives it the same "something
+   happened here" beat deployPuff already gives placement, just read as
+   packing up and leaving instead of arriving. */
+function sellPuff(x,y,col){
+  smokePuff(x,y-4,18,col); debrisBurst(x,y,col,6);
+}
 /* co-op: each player gets their own hero on the shared board, tagged by
    owner ("solo" outside co-op, "host" for the host's own, or the guest's
    own PeerJS id). myOwner()/myHero() find "my" hero among everyone's. */
@@ -3597,7 +3611,7 @@ function startRun(mapIdx,diffIdx,heroId){
   wave=0; waveMax=MAPS[curMap].waves; inWave=false; waveQueue=[]; spawnT=0;
   totalPops=0; fastFwd=false; selTower=null; buyId=null; placing=false;
   runXpGained=0; runTokensGained=0; runStartLvl=save.playerLvl;
-  hudLastCash=null; hudLastLife=null;
+  hudLastCash=null; hudLastLife=null; hudLastWave=null;
   nextBugId=1;
   state="play";
   save.runs++; queueSave();
@@ -3920,6 +3934,7 @@ function giveTowerXp(tw,n){
 function sellTower(tw){
   var back=Math.round(tw.spent*.7);
   playerCash[tw.owner]=(playerCash[tw.owner]||0)+back;
+  sellPuff(tw.x,tw.y,byId(TOWERS,tw.id).col);
   var i=towers.indexOf(tw);
   if(i>=0)towers.splice(i,1);
   selTower=null; $("panel").classList.add("hide");
@@ -4932,19 +4947,20 @@ function render(t){
 }
 
 /* ═════════════ HUD / UI ═════════════ */
-var hudLastCash=null,hudLastLife=null;
+var hudLastCash=null,hudLastLife=null,hudLastWave=null;
 function flashPill(id){
   var el=$(id); if(!el)return;
   el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
 }
 function updateHud(){
-  var cashV=Math.floor(myCash()),lifeV=Math.max(0,Math.floor(lives));
+  var cashV=Math.floor(myCash()),lifeV=Math.max(0,Math.floor(lives)),waveV=Math.max(1,wave);
   $("pCashV").textContent="$"+cashV;
   $("pLifeV").textContent=lifeV;
-  $("pWaveV").textContent=Math.max(1,wave)+"/"+waveMax;
+  $("pWaveV").textContent=waveV+"/"+waveMax;
   if(hudLastCash!==null&&cashV>hudLastCash)flashPill("pCash");
   if(hudLastLife!==null&&lifeV<hudLastLife)flashPill("pLife");
-  hudLastCash=cashV; hudLastLife=lifeV;
+  if(hudLastWave!==null&&waveV>hudLastWave)flashPill("pWave");
+  hudLastCash=cashV; hudLastLife=lifeV; hudLastWave=waveV;
   $("bGo").textContent=inWave?(fastFwd?"▶▶":"▶"):"GO";
   $("bGo").className="hbtn go"+(fastFwd?" fast":"");
   var hb=$("pHeroBtn"),myH=myHero();
