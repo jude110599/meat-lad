@@ -984,9 +984,12 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.7";
+var VERSION="2.13.8";
 var CHANGELOG=[
-  {v:"2.13.7",d:"latest",items:[
+  {v:"2.13.8",d:"latest",items:[
+    "MAP DECORATIONS AREN'T 30 COPIES OF THE SAME ICON ANYMORE. Visible now (last update), but every larder was still scattering one single bespoke shape 30 times, which reads as repetitive no matter how solid it is. Mixed in two new theme-neutral filler shapes - a rock/debris cluster and soft glow motes - so each larder shows a few different things instead of one shape stamped everywhere, with its own bespoke icon still winning most of the rolls so the larder's identity still leads. Also threw in a few oversized copies of the main icon for some size variety instead of everything sitting in one narrow range"
+  ]},
+  {v:"2.13.7",items:[
     "EVERY LARDER LOOKS LIKE ITSELF NOW INSTEAD OF A FAINT TINT ON THE SAME GRADIENT. All 15 maps already had a real per-map theme underneath (a hand-drawn landmark, ~30 scattered props, a distinct surface texture pattern, unbuildable obstacles) - it just wasn't visible, sitting at a washed-out .5 alpha for props and roughly .07-.16 for the surface patterns. Props/landmarks/obstacles bumped to a solid .82 by default, surface textures roughly doubled, terrain shading darkened, prop count up from 20 to 30 and bigger, so each sector actually reads as its own place at a glance again",
     "Fixed the landmark's intended dimmer 'echo' outline actually being invisible - decoIcon used to force its own alpha internally no matter what the caller had already set, silently overriding it every time"
   ]},
@@ -3539,7 +3542,16 @@ function bakeMapDecos(){
     var tooClose=false;
     for(var i=0;i<mapDecos.length;i++)if(dist2(mapDecos[i].x,mapDecos[i].y,wx,wy)<(CELL*1.1)*(CELL*1.1)){ tooClose=true; break; }
     if(tooClose)continue;
-    mapDecos.push({x:wx,y:wy,r:CELL*(.26+drnd()*.18),flip:drnd()<.5?-1:1,kind:mapTh.deco});
+    /* every larder used to scatter 30 copies of its one bespoke icon -
+       visible now, but still repetitive at that count. Mixes in two
+       theme-neutral filler shapes (rock chunks, soft glow motes) so
+       each larder reads as a place with a few different things in it,
+       not one shape stamped everywhere - the bespoke icon still wins
+       the roll most of the time so the larder's own identity leads. */
+    var roll=drnd(),kind=mapTh.deco;
+    if(roll<.22)kind="rubble"; else if(roll<.36)kind="glowdust";
+    var big=kind===mapTh.deco&&drnd()<.3;
+    mapDecos.push({x:wx,y:wy,r:CELL*(big?.42+drnd()*.22:.24+drnd()*.16),flip:drnd()<.5?-1:1,kind:kind});
   }
 }
 function cellFree(gx,gy){
@@ -5798,6 +5810,35 @@ function decoIcon(g,kind,x,y,r,col,alpha){
     g.fillStyle="#254c70";g.save();g.rotate(-.3);g.fillRect(-r,-r*.55,r*2,r*1.1);g.strokeStyle="#85cfff";g.lineWidth=Math.max(1,r*.07);for(var sx=-.5;sx<=.5;sx+=.5){g.beginPath();g.moveTo(sx*r,-r*.55);g.lineTo(sx*r,r*.55);g.stroke();}g.restore();g.fillStyle="#ffc65b";g.beginPath();g.arc(0,0,r*.14,0,6.283);g.fill();
   } else if(kind==="ring"){
     g.strokeStyle="#a9c8e6";g.lineWidth=Math.max(1,r*.23);g.beginPath();g.arc(0,0,r*.74,0,6.283);g.stroke();g.fillStyle="#79d8ff";for(var rg=0;rg<4;rg++){var ra=rg*1.57;g.beginPath();g.arc(Math.cos(ra)*r*.74,Math.sin(ra)*r*.74,r*.12,0,6.283);g.fill();}
+  } else if(kind==="rubble"){
+    /* every map used to scatter ~30 copies of the exact same single icon
+       - visible now (see the alpha bump), but 30 identical silhouettes
+       still reads as repetitive rather than a real place. This generic
+       rock/debris cluster mixes into every larder's decorations (see
+       bakeMapDecos) alongside its own bespoke icon so there's a second
+       shape in the mix, tinted with whatever colour the caller passes
+       in rather than a fixed palette, so it still belongs to the theme. */
+    [[-r*.4,r*.12,r*.42,-8],[r*.3,r*.26,r*.34,26],[-r*.02,-r*.18,r*.3,-30]].forEach(function(ch,ci){
+      g.fillStyle=shade(col,ci===1?-35:-12);
+      g.save(); g.translate(ch[0],ch[1]); g.rotate(ch[3]*Math.PI/180);
+      var cr=ch[2];
+      g.beginPath();
+      g.moveTo(-cr,cr*.3); g.lineTo(-cr*.5,-cr*.8); g.lineTo(cr*.4,-cr*.9);
+      g.lineTo(cr,cr*.2); g.lineTo(cr*.3,cr*.9); g.lineTo(-cr*.4,cr*.8);
+      g.closePath(); g.fill();
+      g.restore();
+    });
+  } else if(kind==="glowdust"){
+    /* an even lighter secondary accent for larders where solid rock
+       chunks would fight the theme (jungle spores, reactor motes, ice
+       glints) - just soft dots, never dominates, still gives the eye a
+       second thing to notice besides the one big repeated icon. */
+    for(var gd=0;gd<4;gd++){
+      var gda=gd*1.571+.4;
+      g.globalAlpha=.55;
+      g.fillStyle=col;
+      g.beginPath(); g.arc(Math.cos(gda)*r*.55,Math.sin(gda)*r*.55,r*.13,0,6.283); g.fill();
+    }
   }
   g.restore();
 }
