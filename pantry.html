@@ -984,9 +984,13 @@ body{background:radial-gradient(circle at 40% 10%,#122943,#07111f 55%,#030811)}
 (function(){
 "use strict";
 
-var VERSION="2.13.6";
+var VERSION="2.13.7";
 var CHANGELOG=[
-  {v:"2.13.6",d:"latest",items:[
+  {v:"2.13.7",d:"latest",items:[
+    "EVERY LARDER LOOKS LIKE ITSELF NOW INSTEAD OF A FAINT TINT ON THE SAME GRADIENT. All 15 maps already had a real per-map theme underneath (a hand-drawn landmark, ~30 scattered props, a distinct surface texture pattern, unbuildable obstacles) - it just wasn't visible, sitting at a washed-out .5 alpha for props and roughly .07-.16 for the surface patterns. Props/landmarks/obstacles bumped to a solid .82 by default, surface textures roughly doubled, terrain shading darkened, prop count up from 20 to 30 and bigger, so each sector actually reads as its own place at a glance again",
+    "Fixed the landmark's intended dimmer 'echo' outline actually being invisible - decoIcon used to force its own alpha internally no matter what the caller had already set, silently overriding it every time"
+  ]},
+  {v:"2.13.6",items:[
     "EVERY TOWER AND BUG BLINKS NOW. One addition to the shared eyes() helper (not touching any of their ~30 individual draw functions) so the whole roster picks it up for free - each blinks on its own rhythm instead of the entire board blinking in unison"
   ]},
   {v:"2.13.5",items:[
@@ -3521,16 +3525,21 @@ function bakeMapDecos(){
   var mapTh=(MAPS[curMap]&&MAPS[curMap].theme)||{deco:"jar"};
   var seed=(curMap+1)*97531+17;
   function drnd(){ seed=(seed*1103515245+12345)&0x7fffffff; return (seed%10000)/10000; }
-  var tries=0,target=20;
-  while(mapDecos.length<target&&tries<400){
+  /* used to cap at 20 small (.2-.33 cell) props scattered across a
+     360-cell board at a faded .5 alpha - even with 15 hand-drawn icon
+     shapes per larder, that's sparse and pale enough to read as an
+     almost-empty gradient with a path on it. More props, bigger, and
+     (via decoIcon's own alpha bump) solid rather than washed out. */
+  var tries=0,target=30;
+  while(mapDecos.length<target&&tries<500){
     tries++;
     var gx=Math.floor(drnd()*GW),gy=Math.floor(drnd()*GH);
     if(blockedCells[gx+","+gy])continue;
     var wx=(gx+.5)*CELL,wy=(gy+.5)*CELL;
     var tooClose=false;
-    for(var i=0;i<mapDecos.length;i++)if(dist2(mapDecos[i].x,mapDecos[i].y,wx,wy)<(CELL*1.35)*(CELL*1.35)){ tooClose=true; break; }
+    for(var i=0;i<mapDecos.length;i++)if(dist2(mapDecos[i].x,mapDecos[i].y,wx,wy)<(CELL*1.1)*(CELL*1.1)){ tooClose=true; break; }
     if(tooClose)continue;
-    mapDecos.push({x:wx,y:wy,r:CELL*(.2+drnd()*.13),flip:drnd()<.5?-1:1,kind:mapTh.deco});
+    mapDecos.push({x:wx,y:wy,r:CELL*(.26+drnd()*.18),flip:drnd()<.5?-1:1,kind:mapTh.deco});
   }
 }
 function cellFree(gx,gy){
@@ -4617,21 +4626,27 @@ function drawMapSurface(g,th){
   var s=th.surface||"lunar",seed=(curMap+1)*24691;
   function rnd(){seed=(seed*1664525+1013904223)>>>0;return (seed%10000)/10000;}
   g.save();
-  if(s==="lunar"){for(var a=0;a<42;a++){var x=rnd()*VW,y=rnd()*VH,r=2+rnd()*10;g.fillStyle="rgba(220,235,255,"+(.025+rnd()*.05)+")";g.beginPath();g.arc(x,y,r,0,6.283);g.fill();}}
-  else if(s==="jungle"){g.strokeStyle="rgba(94,255,153,.13)";g.lineWidth=3;for(var b=0;b<18;b++){var x2=rnd()*VW;g.beginPath();g.moveTo(x2,0);g.bezierCurveTo(x2-30,VH*.3,x2+40,VH*.6,x2+Math.sin(b)*40,VH);g.stroke();}}
-  else if(s==="foundry"){g.strokeStyle="rgba(160,205,220,.09)";g.lineWidth=2;for(var c=0;c<VW;c+=CELL*2){g.beginPath();g.moveTo(c,0);g.lineTo(c,VH);g.stroke();}for(var d=0;d<VH;d+=CELL*2){g.beginPath();g.moveTo(0,d);g.lineTo(VW,d);g.stroke();}}
-  else if(s==="lab"){g.strokeStyle="rgba(166,230,255,.1)";g.lineWidth=1;for(var e=0;e<34;e++){var ex=rnd()*VW,ey=rnd()*VH;g.strokeRect(ex,ey,18+rnd()*34,12+rnd()*22);}}
-  else if(s==="dock"){g.fillStyle="rgba(210,240,255,.42)";for(var f=0;f<80;f++)g.fillRect(rnd()*VW,rnd()*VH,1+rnd()*2,1+rnd()*2);g.strokeStyle="rgba(120,210,255,.1)";g.lineWidth=4;for(var fg=0;fg<6;fg++){g.beginPath();g.moveTo(0,rnd()*VH);g.lineTo(VW,rnd()*VH);g.stroke();}}
-  else if(s==="crystal"){g.fillStyle="rgba(198,128,255,.12)";for(var h=0;h<28;h++){var hx=rnd()*VW,hy=rnd()*VH,hr=5+rnd()*14;g.beginPath();g.moveTo(hx,hy-hr);g.lineTo(hx+hr*.55,hy+hr);g.lineTo(hx-hr*.55,hy+hr);g.closePath();g.fill();}}
-  else if(s==="terra"){g.strokeStyle="rgba(137,209,128,.13)";g.lineWidth=3;for(var j=0;j<12;j++){var jy=rnd()*VH;g.beginPath();g.moveTo(0,jy);g.lineTo(VW,jy+rnd()*35-17);g.stroke();}}
-  else if(s==="city"){for(var k=0;k<34;k++){var kx=rnd()*VW,ky=rnd()*VH;g.fillStyle=k%2?"rgba(83,208,224,.08)":"rgba(255,125,107,.07)";g.fillRect(kx,ky,8+rnd()*24,5+rnd()*14);}}
-  else if(s==="bio"){g.strokeStyle="rgba(85,255,177,.13)";g.lineWidth=2;for(var l=0;l<20;l++){var lx=rnd()*VW,ly=rnd()*VH;g.beginPath();g.arc(lx,ly,10+rnd()*28,0,6.283);g.stroke();}}
-  else if(s==="crash"){g.strokeStyle="rgba(255,204,110,.1)";g.lineWidth=2;for(var m=0;m<35;m++){var mx=rnd()*VW,my=rnd()*VH;g.beginPath();g.moveTo(mx,my);g.lineTo(mx+18+rnd()*35,my+5+rnd()*12);g.stroke();}}
-  else if(s==="ice"){g.strokeStyle="rgba(190,247,255,.14)";g.lineWidth=1.5;for(var n=0;n<28;n++){var nx=rnd()*VW,ny=rnd()*VH;g.beginPath();g.moveTo(nx-12,ny);g.lineTo(nx+12,ny);g.moveTo(nx,ny-12);g.lineTo(nx,ny+12);g.stroke();}}
-  else if(s==="hive"){g.strokeStyle="rgba(163,255,107,.1)";g.lineWidth=2;for(var o=0;o<27;o++){var ox=rnd()*VW,oy=rnd()*VH;g.beginPath();g.arc(ox,oy,8+rnd()*17,0,6.283);g.stroke();}}
-  else if(s==="solar"){g.fillStyle="rgba(63,126,170,.16)";for(var p=0;p<24;p++){var px=rnd()*VW,py=rnd()*VH;g.save();g.translate(px,py);g.rotate(-.35);g.fillRect(-16,-8,32,16);g.restore();}}
-  else if(s==="ring"){g.strokeStyle="rgba(137,152,200,.13)";g.lineWidth=3;for(var q=0;q<7;q++){g.beginPath();g.arc(VW*.5,VH*.5,45+q*45,0,6.283);g.stroke();}}
-  else if(s==="core"){g.strokeStyle="rgba(243,108,255,.13)";g.lineWidth=3;for(var z=0;z<8;z++){g.beginPath();g.arc(VW*.5,VH*.5,24+z*32,z*.65,z*.65+4.8);g.stroke();}}
+  /* every one of these patterns used to sit at roughly .07-.16 alpha -
+     textured on paper, but next to invisible against the board's own
+     gradient once a game was actually running. Roughly doubled across
+     the board (and a couple of line widths bumped too) so each larder's
+     surface actually reads as itself at a glance, not just its path
+     colour. */
+  if(s==="lunar"){for(var a=0;a<42;a++){var x=rnd()*VW,y=rnd()*VH,r=2+rnd()*11;g.fillStyle="rgba(220,235,255,"+(.05+rnd()*.09)+")";g.beginPath();g.arc(x,y,r,0,6.283);g.fill();}}
+  else if(s==="jungle"){g.strokeStyle="rgba(94,255,153,.24)";g.lineWidth=3.5;for(var b=0;b<18;b++){var x2=rnd()*VW;g.beginPath();g.moveTo(x2,0);g.bezierCurveTo(x2-30,VH*.3,x2+40,VH*.6,x2+Math.sin(b)*40,VH);g.stroke();}}
+  else if(s==="foundry"){g.strokeStyle="rgba(160,205,220,.17)";g.lineWidth=2.4;for(var c=0;c<VW;c+=CELL*2){g.beginPath();g.moveTo(c,0);g.lineTo(c,VH);g.stroke();}for(var d=0;d<VH;d+=CELL*2){g.beginPath();g.moveTo(0,d);g.lineTo(VW,d);g.stroke();}}
+  else if(s==="lab"){g.strokeStyle="rgba(166,230,255,.19)";g.lineWidth=1.5;for(var e=0;e<34;e++){var ex=rnd()*VW,ey=rnd()*VH;g.strokeRect(ex,ey,18+rnd()*34,12+rnd()*22);}}
+  else if(s==="dock"){g.fillStyle="rgba(210,240,255,.55)";for(var f=0;f<80;f++)g.fillRect(rnd()*VW,rnd()*VH,1+rnd()*2,1+rnd()*2);g.strokeStyle="rgba(120,210,255,.19)";g.lineWidth=4;for(var fg=0;fg<6;fg++){g.beginPath();g.moveTo(0,rnd()*VH);g.lineTo(VW,rnd()*VH);g.stroke();}}
+  else if(s==="crystal"){g.fillStyle="rgba(198,128,255,.22)";for(var h=0;h<28;h++){var hx=rnd()*VW,hy=rnd()*VH,hr=5+rnd()*14;g.beginPath();g.moveTo(hx,hy-hr);g.lineTo(hx+hr*.55,hy+hr);g.lineTo(hx-hr*.55,hy+hr);g.closePath();g.fill();}}
+  else if(s==="terra"){g.strokeStyle="rgba(137,209,128,.24)";g.lineWidth=3.5;for(var j=0;j<12;j++){var jy=rnd()*VH;g.beginPath();g.moveTo(0,jy);g.lineTo(VW,jy+rnd()*35-17);g.stroke();}}
+  else if(s==="city"){for(var k=0;k<34;k++){var kx=rnd()*VW,ky=rnd()*VH;g.fillStyle=k%2?"rgba(83,208,224,.15)":"rgba(255,125,107,.13)";g.fillRect(kx,ky,8+rnd()*24,5+rnd()*14);}}
+  else if(s==="bio"){g.strokeStyle="rgba(85,255,177,.24)";g.lineWidth=2.4;for(var l=0;l<20;l++){var lx=rnd()*VW,ly=rnd()*VH;g.beginPath();g.arc(lx,ly,10+rnd()*28,0,6.283);g.stroke();}}
+  else if(s==="crash"){g.strokeStyle="rgba(255,204,110,.19)";g.lineWidth=2.4;for(var m=0;m<35;m++){var mx=rnd()*VW,my=rnd()*VH;g.beginPath();g.moveTo(mx,my);g.lineTo(mx+18+rnd()*35,my+5+rnd()*12);g.stroke();}}
+  else if(s==="ice"){g.strokeStyle="rgba(190,247,255,.26)";g.lineWidth=1.8;for(var n=0;n<28;n++){var nx=rnd()*VW,ny=rnd()*VH;g.beginPath();g.moveTo(nx-12,ny);g.lineTo(nx+12,ny);g.moveTo(nx,ny-12);g.lineTo(nx,ny+12);g.stroke();}}
+  else if(s==="hive"){g.strokeStyle="rgba(163,255,107,.19)";g.lineWidth=2.4;for(var o=0;o<27;o++){var ox=rnd()*VW,oy=rnd()*VH;g.beginPath();g.arc(ox,oy,8+rnd()*17,0,6.283);g.stroke();}}
+  else if(s==="solar"){g.fillStyle="rgba(63,126,170,.28)";for(var p=0;p<24;p++){var px=rnd()*VW,py=rnd()*VH;g.save();g.translate(px,py);g.rotate(-.35);g.fillRect(-16,-8,32,16);g.restore();}}
+  else if(s==="ring"){g.strokeStyle="rgba(137,152,200,.22)";g.lineWidth=3.5;for(var q=0;q<7;q++){g.beginPath();g.arc(VW*.5,VH*.5,45+q*45,0,6.283);g.stroke();}}
+  else if(s==="core"){g.strokeStyle="rgba(243,108,255,.22)";g.lineWidth=3.5;for(var z=0;z<8;z++){g.beginPath();g.arc(VW*.5,VH*.5,24+z*32,z*.65,z*.65+4.8);g.stroke();}}
   g.restore();
 }
 function render(t){
@@ -4654,7 +4669,7 @@ function render(t){
   for(var trI=0;trI<mapTerrain.length;trI++){
     var tp=mapTerrain[trI];
     var tg=ctx.createRadialGradient(tp.x,tp.y,0,tp.x,tp.y,tp.r);
-    tg.addColorStop(0,tp.dark?"rgba(0,0,0,.14)":"rgba(255,255,255,.05)");
+    tg.addColorStop(0,tp.dark?"rgba(0,0,0,.24)":"rgba(255,255,255,.09)");
     tg.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=tg;
     ctx.beginPath(); ctx.ellipse(tp.x,tp.y,tp.r,tp.r*tp.sq,tp.rot,0,6.283); ctx.fill();
@@ -4668,8 +4683,13 @@ function render(t){
     ctx.fillStyle=lmg;
     ctx.beginPath(); ctx.ellipse(lm.x,lm.y+lm.r*.7,lm.r*1.05,lm.r*.4,0,0,6.283); ctx.fill();
     decoIcon(ctx,lm.kind,lm.x,lm.y,lm.r,mapTh.accent);
-    ctx.save(); ctx.globalAlpha=.4; ctx.strokeStyle=mapTh.path||"#e8dcc4"; ctx.lineWidth=1.4;
-    decoIcon(ctx,lm.kind,lm.x-lm.r*.06,lm.y-lm.r*.06,lm.r*.97,mapTh.path||"#e8dcc4");
+    /* a slightly offset, dimmer echo in the path's own colour for a
+       cheap holographic/highlight edge - decoIcon used to force its own
+       alpha regardless of what got set here, so this never actually
+       showed up differently from the solid copy above it until decoIcon
+       took an explicit alpha argument. */
+    ctx.save(); ctx.strokeStyle=mapTh.path||"#e8dcc4"; ctx.lineWidth=1.4;
+    decoIcon(ctx,lm.kind,lm.x-lm.r*.06,lm.y-lm.r*.06,lm.r*.97,mapTh.path||"#e8dcc4",.35);
     ctx.restore();
   }
 
@@ -5681,8 +5701,14 @@ function renderDiffGrid(gridId,onPick){
 }
 /* small background icons that give each larder its own identity at a glance -
    drawn faint, behind the path, so the map reads as a place, not just a line */
-function decoIcon(g,kind,x,y,r,col){
-  g.save(); g.translate(x,y); g.globalAlpha=.5; g.fillStyle=col; g.strokeStyle=col;
+function decoIcon(g,kind,x,y,r,col,alpha){
+  /* used to sit at a flat .5 alpha no matter what - every prop, landmark
+     and obstacle across all 15 larders read as faded/washed-out instead
+     of a real, solid thing sitting on the board. Bumped to .82 by
+     default (still an optional param so a caller can go dimmer for a
+     genuine background-glow layer, unlike before when this internal
+     reset silently stomped whatever alpha the caller had already set). */
+  g.save(); g.translate(x,y); g.globalAlpha=alpha==null?.82:alpha; g.fillStyle=col; g.strokeStyle=col;
   if(kind==="loaf"){
     g.beginPath(); g.moveTo(-r,r*.6); g.quadraticCurveTo(-r,-r*.7,0,-r*.9);
     g.quadraticCurveTo(r,-r*.7,r,r*.6); g.closePath(); g.fill();
