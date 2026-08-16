@@ -227,7 +227,6 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="card">
       <h2>Build</h2>
       <div class="metalline" id="buildRes"></div>
-      <div id="craftStatus"></div>
       <div id="buildList"></div>
       <button class="btn sub" id="bBuildClose" style="margin-top:6px">Close</button>
     </div>
@@ -276,8 +275,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.6.0";
+var VERSION="1.7.0";
 var CHANGELOG=[
+  {v:"1.7.0",t:"Simpler building, menus don't freeze the factory",items:[
+    "Removed the fabrication queue — buildings, belts, and cables are placed directly again, paying their cost immediately instead of waiting on a timer",
+    "Removing a building now refunds half its materials straight to your stock",
+    "Opening the Build, Machine, Storage, or Shipyard menu no longer freezes the factory — power, belts, and production keep running behind the panel"
+  ]},
   {v:"1.6.0",t:"Real storage",items:[
     "Storage no longer silently drains into your stock — it holds real contents up to its capacity",
     "Walk up and interact with a Storage Container to open it: see your stock and its contents side by side, with Take/Store per resource or Take All/Store All",
@@ -777,40 +781,19 @@ function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 var GRID=8;
 function snapGrid(v){ return Math.round(v/GRID)*GRID; }
 var BUILD_DEFS={
-  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},craftTime:3,powerDraw:0,radius:4,produces:[],accepts:[]},
-  pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},craftTime:4,powerDraw:0,radius:1.6,produces:[],accepts:[]},
-  solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},craftTime:7,powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
-  cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},craftTime:2,tool:true,range:26},
-  miner:{nm:"Miner",cat:"Production",ds:"Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},craftTime:9,powerDraw:6,radius:3.0,produces:["iron_ore","copper_ore","coal"],accepts:[]},
-  smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},craftTime:11,powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
-  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},craftTime:11,powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
-  storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},craftTime:7,powerDraw:0,radius:2.4,
+  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},powerDraw:0,radius:4,produces:[],accepts:[]},
+  pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
+  solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
+  cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},tool:true,range:26},
+  miner:{nm:"Miner",cat:"Production",ds:"Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:6,radius:3.0,produces:["iron_ore","copper_ore","coal"],accepts:[]},
+  smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
+  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
+  storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
     produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
-  belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},craftTime:2,tool:true,range:240},
-  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},craftTime:18,powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
+  belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
+  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
 };
 var BUILD_ORDER=["foundation","pylon","solar","cable","miner","smelter","constructor","storage","belt","shipyard"];
-function defaultInventory(){ return {foundation:0,pylon:0,solar:0,cable:0,miner:0,smelter:0,constructor:0,storage:0,belt:0,shipyard:0}; }
-var inventory=defaultInventory();
-var craftQueue=[];
-function queueCraft(key){
-  var d=BUILD_DEFS[key];
-  if(d.uniq&&((inventory[key]||0)>0||buildings.some(function(b){return b.type===key;})))return "Already have one";
-  if(!canAfford(d.cost))return "Not enough resources";
-  payCost(d.cost);
-  craftQueue.push({key:key,timeLeft:d.craftTime,total:d.craftTime});
-  return null;
-}
-function updateCrafting(dt){
-  if(!craftQueue.length)return;
-  var job=craftQueue[0];
-  job.timeLeft-=dt;
-  if(job.timeLeft<=0){
-    inventory[job.key]=(inventory[job.key]||0)+1;
-    toast(BUILD_DEFS[job.key].nm+" crafted");
-    craftQueue.shift();
-  }
-}
 var RECIPES={
   smelter:[
     {key:"iron",nm:"Iron Ingot",in:{iron_ore:2},out:{iron:1},time:1.5},
@@ -1059,20 +1042,21 @@ function destCapFor(b,res){
   if(b.type==="storage")return 60;
   return 999;
 }
+function refundCost(cost){ for(var k in cost)stock[k]=(stock[k]||0)+cost[k]*0.5; }
 function removeBuilding(b){
   if(b.job){ toast("Can't remove — it's busy"); return; }
   belts.slice().forEach(function(bl){
     if(bl.from!==b&&bl.to!==b)return;
-    surfaceScene.remove(bl.mesh); belts.splice(belts.indexOf(bl),1); inventory.belt=(inventory.belt||0)+1;
+    surfaceScene.remove(bl.mesh); belts.splice(belts.indexOf(bl),1); refundCost(BUILD_DEFS.belt.cost);
   });
   cables.slice().forEach(function(c){
     if(c.from!==b&&c.to!==b)return;
-    surfaceScene.remove(c.mesh); cables.splice(cables.indexOf(c),1); inventory.cable=(inventory.cable||0)+1;
+    surfaceScene.remove(c.mesh); cables.splice(cables.indexOf(c),1); refundCost(BUILD_DEFS.cable.cost);
   });
   surfaceScene.remove(b.mesh);
   buildings.splice(buildings.indexOf(b),1);
-  inventory[b.type]=(inventory[b.type]||0)+1;
-  sfx.remove(); toast(BUILD_DEFS[b.type].nm+" removed — returned to inventory"); pulseInteractPose();
+  refundCost(BUILD_DEFS[b.type].cost);
+  sfx.remove(); toast(BUILD_DEFS[b.type].nm+" removed — half its materials refunded"); pulseInteractPose();
   computePowerNetworks();
 }
 
@@ -1207,7 +1191,7 @@ function tintGhost(ok){
 function canPlaceAt3D(type,x,z){
   var d=BUILD_DEFS[type];
   if(d.uniq&&buildings.some(function(b){return b.type===type;}))return "Already built";
-  if((inventory[type]||0)<=0)return "None in inventory";
+  if(!canAfford(d.cost))return "Not enough resources";
   if(Math.sqrt(x*x+z*z)>BUILD_ZONE_R-10)return "Too far from the colony — the ground gets rough past here";
   for(var i=0;i<buildings.length;i++){
     var b=buildings[i], dx=b.x-x,dz=b.z-z;
@@ -1225,12 +1209,12 @@ function tryPlaceAt3D(x,z){
   var reason=canPlaceAt3D(type,x,z);
   if(reason){
     toast(reason);
-    if(reason==="None in inventory"||reason==="Already built"){ placing=null; placeGhost.visible=false; }
+    if(reason==="Not enough resources"||reason==="Already built"){ placing=null; placeGhost.visible=false; }
     return;
   }
   var d=BUILD_DEFS[type];
   var node=type==="miner"?nearestNode(x,z,9):null;
-  inventory[type]--;
+  payCost(d.cost);
   var b=makeBuilding(type,x,z,placeRotY,node);
   buildings.push(b);
   sfx.build(); toast(d.nm+" built"); pulseInteractPose();
@@ -1330,8 +1314,8 @@ function tryPlaceBelt(from,to){
   if(Math.sqrt(dx*dx+dz*dz)>BUILD_DEFS.belt.range){ toast("Too far to connect"); return; }
   var res=beltCompatible(from,to);
   if(!res){ toast("These buildings can't be connected"); return; }
-  if((inventory.belt||0)<=0){ toast("No belts in inventory — craft one first"); return; }
-  inventory.belt--;
+  if(!canAfford(BUILD_DEFS.belt.cost)){ toast("Not enough iron ore for a belt"); return; }
+  payCost(BUILD_DEFS.belt.cost);
   var bl={from:from,to:to,res:res,rate:6,_flow:false};
   var vis=makeBeltMesh(bl);
   bl.mesh=vis.mesh; bl.items=vis.items; bl.p1=vis.p1; bl.p2=vis.p2; bl.len=vis.len;
@@ -1362,8 +1346,8 @@ function tryPlaceCable(from,to){
   if(Math.sqrt(dx*dx+dz*dz)>BUILD_DEFS.cable.range){ toast("Too far — run a Power Pole partway"); return; }
   var already=cables.some(function(c){return (c.from===from&&c.to===to)||(c.from===to&&c.to===from);});
   if(already){ toast("Already cabled together"); return; }
-  if((inventory.cable||0)<=0){ toast("No cables in inventory — craft one first"); return; }
-  inventory.cable--;
+  if(!canAfford(BUILD_DEFS.cable.cost)){ toast("Not enough copper ore for a cable"); return; }
+  payCost(BUILD_DEFS.cable.cost);
   var c={from:from,to:to};
   var vis=makeCableMesh(c);
   c.mesh=vis.mesh; c.mat=vis.mat;
@@ -1532,7 +1516,6 @@ function saveGame(){
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
-      inventory:inventory, craftQueue:craftQueue,
       shipBuilt:shipBuilt, shipModelKey:shipModelKey
     };
     localStorage.setItem(SKEY,JSON.stringify(data));
@@ -1543,7 +1526,6 @@ function saveGame(){
 function newColony(){
   clearWorld();
   stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
-  inventory=defaultInventory(); craftQueue=[];
   shipBuilt=false; shipModelKey=null;
   scatterNodes();
   try{ localStorage.removeItem(SKEY); }catch(e){}
@@ -1578,8 +1560,6 @@ function loadGame(){
     nc.mesh=vis.mesh; nc.mat=vis.mat;
     cables.push(nc);
   });
-  inventory=data.inventory||defaultInventory();
-  craftQueue=data.craftQueue||[];
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
   return true;
 }
@@ -2065,44 +2045,26 @@ function renderBuild(){
   $("buildRes").innerHTML=Object.keys(RES).map(function(k){
     return '<span><i style="background:'+hexStr(RES[k].col)+'"></i>'+Math.floor(stock[k])+'</span>';
   }).join('');
-  if(craftQueue.length){
-    var job=craftQueue[0];
-    $("craftStatus").innerHTML='<div class="upg" style="border-left:3px solid var(--amber)">'+
-      '<div class="top"><span class="nm">Fabricating '+BUILD_DEFS[job.key].nm+'</span><span class="stat">'+Math.ceil(job.timeLeft)+'s</span></div>'+
-      '<div style="height:6px;border-radius:3px;background:#1a2230;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+
-      Math.round((1-job.timeLeft/job.total)*100)+'%;background:var(--amber)"></div></div>'+
-      (craftQueue.length>1?'<div class="ds" style="margin-top:6px">+'+(craftQueue.length-1)+' more queued</div>':'')+'</div>';
-  } else $("craftStatus").innerHTML="";
   var html="", lastCat=null;
   BUILD_ORDER.forEach(function(key){
     var d=BUILD_DEFS[key];
-    var owned=inventory[key]||0;
-    var already=d.uniq&&(owned>0||buildings.some(function(b){return b.type===key;}));
+    var already=d.uniq&&buildings.some(function(b){return b.type===key;});
     var afford=canAfford(d.cost);
     if(d.cat!==lastCat){ html+='<div class="cat" style="margin:10px 2px 4px">'+d.cat+'</div>'; lastCat=d.cat; }
-    html+='<div class="upg"><div class="top"><span class="nm">'+d.nm+'</span><span class="stat">Owned: '+owned+'</span></div>'+
+    html+='<div class="upg"><div class="top"><span class="nm">'+d.nm+'</span></div>'+
       '<div class="ds">'+d.ds+'</div>'+
-      '<div class="ds">Cost: '+costStr(d.cost)+' &middot; fabricate '+d.craftTime+'s'+
+      '<div class="ds">Cost: '+costStr(d.cost)+
       (d.powerDraw?' &middot; '+d.powerDraw+' MW draw':'')+(d.generates?' &middot; generates '+d.generates+' MW':'')+'</div>'+
-      '<div style="display:flex;gap:6px;margin-top:8px">'+
-      '<button class="buy" style="margin-top:0" data-craft="'+key+'" '+((already||!afford)?"disabled":"")+'>Fabricate</button>'+
       (d.tool?
-        '<button class="buy" style="margin-top:0" data-tool="'+key+'" '+(owned<=0?"disabled":"")+'>Select Tool</button>'
-        :'<button class="buy" style="margin-top:0" data-place="'+key+'" '+((owned<=0||already)?"disabled":"")+'>'+(already?"Built":"Place")+'</button>'
-      )+'</div></div>';
+        '<button class="buy" data-tool="'+key+'" '+(afford?"":"disabled")+'>Select Tool</button>'
+        :'<button class="buy" data-place="'+key+'" '+((already||!afford)?"disabled":"")+'>'+(already?"Already built":"Place")+'</button>'
+      )+'</div>';
   });
   html+='<div class="cat" style="margin:10px 2px 4px">Tools</div>';
   html+='<div class="upg"><div class="top"><span class="nm">Remove Building</span></div>'+
-    '<div class="ds">Select, then click a building to deconstruct it. The item and any attached belts/cables are returned to your inventory.</div>'+
+    '<div class="ds">Select, then click a building to deconstruct it. Half its materials are refunded.</div>'+
     '<button class="buy" id="bRemoveTool">Select Tool</button></div>';
   $("buildList").innerHTML=html;
-  var craftBtns=$("buildList").querySelectorAll("[data-craft]");
-  for(var i=0;i<craftBtns.length;i++)craftBtns[i].onclick=function(){
-    var key=this.getAttribute("data-craft");
-    var reason=queueCraft(key);
-    if(reason)toast(reason); else sfx.click();
-    renderBuild();
-  };
   var placeBtns=$("buildList").querySelectorAll("[data-place]");
   for(var i=0;i<placeBtns.length;i++)placeBtns[i].onclick=function(){
     placing=this.getAttribute("data-place"); placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
@@ -2458,7 +2420,6 @@ function updateSurface(dt){
   }
 
   updateBuildings(dt);
-  updateCrafting(dt);
 
   /* mobile: keep the placement ghost tracking the screen-center reticle */
   if(placing&&!document.body.classList.contains("pc-mode"))updatePlacementGhost(innerWidth/2,innerHeight/2);
@@ -2480,7 +2441,7 @@ function updateHudSurface(){
 }
 
 /* ═════════════ FRAME LOOP ═════════════ */
-var last=performance.now(), autosaveT=0;
+var last=performance.now(), autosaveT=0, panelRefreshT=0;
 function frame(now){
   requestAnimationFrame(frame);
   var dt=(now-last)/1000; last=now;
@@ -2491,8 +2452,20 @@ function frame(now){
   }
   try{
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
-    var surfStates=state==="surface"||state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||(state==="pause"&&pausedFrom==="surface");
+    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy";
+    var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     if(state==="surface")updateSurface(dt);
+    else if(menuOpen)updateBuildings(dt);
+    if(menuOpen){
+      panelRefreshT-=dt;
+      if(panelRefreshT<=0){
+        panelRefreshT=0.4;
+        if(state==="machine"&&document.activeElement.id!=="mchTargetQty")renderMachine();
+        if(state==="storage")renderStorage();
+        if(state==="build")renderBuild();
+        if(state==="shipyard")renderShipyard();
+      }
+    }
     if(state==="space"||state==="launching")updateSpace(dt);
     if(surfStates)renderer.render(surfaceScene,camera);
     else if(spaceStates)renderer.render(spaceScene,camera);
@@ -2551,7 +2524,6 @@ window.__cq={
       cam:{yaw:camYaw,pitch:camPitch,pos:{x:camera.position.x,y:camera.position.y,z:camera.position.z}},
       deviceMode:document.body.classList.contains("pc-mode")?"pc":"mobile",
       stock:JSON.parse(JSON.stringify(stock)), powerGen:powerGen, powerDraw:powerDraw,
-      inventory:JSON.parse(JSON.stringify(inventory)), craftQueue:JSON.parse(JSON.stringify(craftQueue)),
       placing:placing, placeRotY:placeRotY, beltFrom:beltFrom?beltFrom.id:null,
       shipBuilt:shipBuilt, shipModelKey:shipModelKey,
       nodesList:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
@@ -2566,6 +2538,15 @@ window.__cq={
   },
   setKeys:function(o){ for(var k in o)keys[k]=o[k]; },
   tickN:function(n,dt){ dt=dt||1/60; for(var i=0;i<n;i++)updateSurface(dt); updateCameraTransform(); },
+  tickFrameLoop:function(n,dt){
+    dt=dt||1/60;
+    for(var i=0;i<n;i++){
+      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy";
+      if(state==="surface")updateSurface(dt);
+      else if(menuOpenT)updateBuildings(dt);
+      if(state==="space"||state==="launching")updateSpace(dt);
+    }
+  },
   dragCam:function(dx,dy){ camYaw-=dx*0.0055; camPitch=clamp(camPitch+dy*0.0045,CAM_PITCH_MIN,CAM_PITCH_MAX); },
   startGame:function(){ $("bStart").click(); },
   startPlacing:function(k){ placing=k; placeRotY=0; beltFrom=null; setGhost(isClickTool(k)?null:k); },
@@ -2573,8 +2554,6 @@ window.__cq={
   canPlaceAt:canPlaceAt3D,
   cancelPlacing:cancelPlacing,
   addStock:function(k,n){ stock[k]+=n; },
-  queueCraft:queueCraft,
-  addInventory:function(k,n){ inventory[k]=(inventory[k]||0)+n; },
   removeBuildingAt:function(id){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)removeBuilding(b); },
   doInteract:doInteract,
   openBuild:openBuild, closeBuild:closeBuild,
