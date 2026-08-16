@@ -1,0 +1,39 @@
+name: Apply v1.11.2 live
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'conquest.html'
+      - 'js/v112-flight-shipyard.js'
+      - 'css/v112-flight-shipyard.css'
+      - '.github/workflows/apply-v112-live.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci: apply v1.11.2') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wire v1.11.2 into the live game
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('conquest.html')
+          s=p.read_text(encoding='utf-8')
+          tags='''\n<link rel="stylesheet" href="css/v112-flight-shipyard.css">\n<script src="js/v112-flight-shipyard.js"></script>\n'''
+          if 'css/v112-flight-shipyard.css' not in s:
+              s=s.replace('</head>', tags+'</head>', 1)
+          # Remove the selected-card/detail pulsing that makes the build menu flicker.
+          extra='''\n<style id="v112-stability-fix">\n.bldItem.selected,.mchRecipe.selected,.bldDetail{animation:none!important;transition:none!important;}\n.bldItem:hover,.mchRecipe:hover{transform:none!important;}\n</style>\n'''
+          if 'id="v112-stability-fix"' not in s:
+              s=s.replace('</head>', extra+'</head>', 1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Record v1.11.2
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add conquest.html
+          git diff --cached --quiet || git commit -m 'ci: apply v1.11.2 live'
+          git push
