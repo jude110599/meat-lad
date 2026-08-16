@@ -227,6 +227,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="card">
       <h2>Build</h2>
       <div class="metalline" id="buildRes"></div>
+      <div id="craftStatus"></div>
       <div id="buildList"></div>
       <button class="btn sub" id="bBuildClose" style="margin-top:6px">Close</button>
     </div>
@@ -263,8 +264,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.4.0";
+var VERSION="1.5.0";
 var CHANGELOG=[
+  {v:"1.5.0",t:"Crafted economy & landing site",items:[
+    "Buildings, belts, and cables are now real inventory items — fabricate them from raw resources over time, then place them from what you own",
+    "Added a Remove Building tool that deconstructs a placed building and returns it (and any attached belts/cables) to your inventory",
+    "Smelter and Constructor can now target a specific production quantity with a progress/ETA readout, or run continuously",
+    "Added a landing pod, scorch marks, supply crates, and abandoned equipment around the starting area"
+  ]},
   {v:"1.4.0",t:"Menu overhaul",items:[
     "Reworked the pause screen into a real menu, including a Return to Title option that was missing entirely",
     "Added this changelog, readable from the title screen or the pause menu",
@@ -349,7 +356,8 @@ function noiz(dur,vol,filt){
 var sfx={
   click:function(){ tone(560,700,.03,"square",.028); },
   build:function(){ tone(340,520,.09,"square",.05); noiz(.05,.03,2600); },
-  step:function(){ noiz(.03,.015,900); }
+  step:function(){ noiz(.03,.015,900); },
+  remove:function(){ tone(300,140,.08,"square",.05); noiz(.07,.04,700); }
 };
 function setMuteLabels(){
   var t="Sound: "+(muted?"off":"on");
@@ -498,6 +506,109 @@ var landingRing=new THREE.Mesh(
 );
 landingRing.rotation.x=-Math.PI/2; landingRing.position.y=0.05;
 surfaceScene.add(landingRing);
+
+/* landing pod — the ship the player arrived in, dressing out the starting area */
+var landingPodBeacon=null;
+(function(){
+  var scorch=new THREE.Mesh(new THREE.CircleGeometry(8,32),new THREE.MeshBasicMaterial({color:0x0a0a0c,transparent:true,opacity:0.45}));
+  scorch.rotation.x=-Math.PI/2; scorch.position.y=0.03; surfaceScene.add(scorch);
+  for(var s=0;s<6;s++){
+    var streak=new THREE.Mesh(new THREE.PlaneGeometry(1.2,rnd(3,6)),new THREE.MeshBasicMaterial({color:0x0a0a0c,transparent:true,opacity:0.3}));
+    streak.rotation.x=-Math.PI/2; var sa=s/6*Math.PI*2;
+    streak.position.set(Math.cos(sa)*6,0.035,Math.sin(sa)*6); streak.rotation.z=sa;
+    surfaceScene.add(streak);
+  }
+  var g=new THREE.Group();
+  var hullMat=new THREE.MeshStandardMaterial({color:0xd8dde6,roughness:0.4,metalness:0.5});
+  var trimMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.4,metalness:0.4});
+  var darkMat=new THREE.MeshStandardMaterial({color:0x1a2230,roughness:0.5,metalness:0.5});
+  var glassMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.7,roughness:0.2,metalness:0.3});
+  for(var li=0;li<4;li++){
+    var la=li/4*Math.PI*2+Math.PI/4;
+    var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.22,4.6,6),darkMat);
+    leg.position.set(Math.cos(la)*3.6,2.3,Math.sin(la)*3.6);
+    leg.rotation.z=Math.cos(la)*0.35; leg.rotation.x=-Math.sin(la)*0.35;
+    g.add(leg);
+    var foot=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.85,0.4,8),darkMat);
+    foot.position.set(Math.cos(la)*4.3,0.2,Math.sin(la)*4.3); g.add(foot);
+    var brace=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,2.2,5),darkMat);
+    brace.position.set(Math.cos(la)*2.2,3.6,Math.sin(la)*2.2);
+    brace.rotation.z=Math.cos(la)*0.9; brace.rotation.x=-Math.sin(la)*0.9;
+    g.add(brace);
+  }
+  var hullLower=new THREE.Mesh(new THREE.CylinderGeometry(2.6,3.6,3.0,10),hullMat);
+  hullLower.position.y=6.0; g.add(hullLower);
+  var hullUpper=new THREE.Mesh(new THREE.SphereGeometry(2.6,10,8,0,Math.PI*2,0,Math.PI/2),hullMat);
+  hullUpper.position.y=7.5; g.add(hullUpper);
+  var band=new THREE.Mesh(new THREE.TorusGeometry(3.05,0.18,6,20),trimMat);
+  band.rotation.x=Math.PI/2; band.position.y=5.1; g.add(band);
+  var cockpit=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,8,0,Math.PI*2,0,Math.PI*0.55),glassMat);
+  cockpit.position.set(0,7.6,2.1); cockpit.rotation.x=-0.3; g.add(cockpit);
+  var nozzleMat=darkMat;
+  for(var ni=0;ni<3;ni++){
+    var na=ni/3*Math.PI*2;
+    var nozzle=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.75,1.1,8),nozzleMat);
+    nozzle.position.set(Math.cos(na)*1.6,4.0,Math.sin(na)*1.6); g.add(nozzle);
+    var glow=new THREE.Mesh(new THREE.CircleGeometry(0.45,8),new THREE.MeshStandardMaterial({color:0xff6a2a,emissive:0xff6a2a,emissiveIntensity:1}));
+    glow.rotation.x=Math.PI/2; glow.position.set(Math.cos(na)*1.6,3.46,Math.sin(na)*1.6); g.add(glow);
+  }
+  var ramp=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.14,4.4),darkMat);
+  ramp.position.set(0,2.6,4.6); ramp.rotation.x=-0.55; g.add(ramp);
+  var railMat=trimMat;
+  var railL=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.6,4.4),railMat);
+  railL.position.set(1.25,3.2,4.6); railL.rotation.x=-0.55; g.add(railL);
+  var railR=railL.clone(); railR.position.x=-1.25; g.add(railR);
+  boltRow(g,5.0,5.0,4.55,darkMat,5);
+  var beaconMat=new THREE.MeshStandardMaterial({color:0xff4a4a,emissive:0xff2a2a,emissiveIntensity:1.3});
+  var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),beaconMat);
+  beacon.position.set(0,8.9,0); g.add(beacon);
+  g.userData.beacon=beacon;
+  g.position.set(0,0,0);
+  surfaceScene.add(g);
+  landingPodBeacon=beacon;
+})();
+
+/* supply crates + abandoned equipment near the landing pod */
+(function(){
+  var crateMat=new THREE.MeshStandardMaterial({color:0x3a2c1c,roughness:0.7,metalness:0.2});
+  var bandMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.5,metalness:0.4});
+  var spots=[[7,6],[8.5,4.5],[-7,7],[-8,5]];
+  spots.forEach(function(p,i){
+    var g=new THREE.Group();
+    var size=0.9+((i%2)*0.3);
+    var crate=new THREE.Mesh(new THREE.BoxGeometry(size,size,size),crateMat);
+    crate.position.y=size/2; g.add(crate);
+    var b1=new THREE.Mesh(new THREE.BoxGeometry(size+0.05,0.08,size+0.05),bandMat);
+    b1.position.y=size*0.7; g.add(b1);
+    var y=terrainHeight(p[0],p[1]);
+    g.position.set(p[0],y,p[1]); g.rotation.y=rnd(0,6.28);
+    surfaceScene.add(g);
+  });
+  var stack=new THREE.Group();
+  var c1=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.1,1.1),crateMat); c1.position.y=0.55; stack.add(c1);
+  var c2=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9),crateMat); c2.position.set(0.15,1.55,0.1); c2.rotation.y=0.3; stack.add(c2);
+  var ys=terrainHeight(-6.5,-6);
+  stack.position.set(-6.5,ys,-6);
+  surfaceScene.add(stack);
+  var rustMat=new THREE.MeshStandardMaterial({color:0x6a3a20,roughness:0.85,metalness:0.3});
+  var poleMat=new THREE.MeshStandardMaterial({color:0x3a4a5e,roughness:0.7,metalness:0.4});
+  var brokenMat=new THREE.MeshStandardMaterial({color:0x1a2230,emissive:0x2a0505,emissiveIntensity:0.3,roughness:0.6});
+  var eq=new THREE.Group();
+  var base=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,0.4,8),rustMat);
+  base.position.y=0.2; eq.add(base);
+  var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,3.4,6),poleMat);
+  pole.position.set(0,1.7,0); pole.rotation.z=1.15; pole.position.x=1.2; pole.position.y=1.0; eq.add(pole);
+  var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.35,8,6),brokenMat);
+  lamp.position.set(2.6,1.7,0); eq.add(lamp);
+  for(var d=0;d<4;d++){
+    var chunk=new THREE.Mesh(new THREE.BoxGeometry(rnd(0.3,0.7),rnd(0.2,0.4),rnd(0.3,0.6)),rustMat);
+    chunk.position.set(rnd(-1.2,1.2),0.15,rnd(-1.2,1.2));
+    chunk.rotation.y=rnd(0,6.28); eq.add(chunk);
+  }
+  var ye=terrainHeight(9.5,-3);
+  eq.position.set(9.5,ye,-3); eq.rotation.y=rnd(0,6.28);
+  surfaceScene.add(eq);
+})();
 
 /* rocks + alien vegetation scattered in the wild terrain beyond the clearing */
 (function(){
@@ -649,17 +760,40 @@ function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 var GRID=8;
 function snapGrid(v){ return Math.round(v/GRID)*GRID; }
 var BUILD_DEFS={
-  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},powerDraw:0,radius:4,produces:[],accepts:[]},
-  pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
-  solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
-  miner:{nm:"Miner",cat:"Production",ds:"Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:6,radius:3.0,produces:["iron_ore","copper_ore","coal"],accepts:[]},
-  smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
-  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
-  storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
+  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},craftTime:3,powerDraw:0,radius:4,produces:[],accepts:[]},
+  pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},craftTime:4,powerDraw:0,radius:1.6,produces:[],accepts:[]},
+  solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},craftTime:7,powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
+  cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},craftTime:2,tool:true,range:26},
+  miner:{nm:"Miner",cat:"Production",ds:"Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},craftTime:9,powerDraw:6,radius:3.0,produces:["iron_ore","copper_ore","coal"],accepts:[]},
+  smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},craftTime:11,powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
+  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},craftTime:11,powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
+  storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},craftTime:7,powerDraw:0,radius:2.4,
     produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
-  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
+  belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},craftTime:2,tool:true,range:240},
+  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},craftTime:18,powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
 };
-var BUILD_ORDER=["foundation","pylon","solar","miner","smelter","constructor","storage","shipyard"];
+var BUILD_ORDER=["foundation","pylon","solar","cable","miner","smelter","constructor","storage","belt","shipyard"];
+function defaultInventory(){ return {foundation:0,pylon:0,solar:0,cable:0,miner:0,smelter:0,constructor:0,storage:0,belt:0,shipyard:0}; }
+var inventory=defaultInventory();
+var craftQueue=[];
+function queueCraft(key){
+  var d=BUILD_DEFS[key];
+  if(d.uniq&&((inventory[key]||0)>0||buildings.some(function(b){return b.type===key;})))return "Already have one";
+  if(!canAfford(d.cost))return "Not enough resources";
+  payCost(d.cost);
+  craftQueue.push({key:key,timeLeft:d.craftTime,total:d.craftTime});
+  return null;
+}
+function updateCrafting(dt){
+  if(!craftQueue.length)return;
+  var job=craftQueue[0];
+  job.timeLeft-=dt;
+  if(job.timeLeft<=0){
+    inventory[job.key]=(inventory[job.key]||0)+1;
+    toast(BUILD_DEFS[job.key].nm+" crafted");
+    craftQueue.shift();
+  }
+}
 var RECIPES={
   smelter:[
     {key:"iron",nm:"Iron Ingot",in:{iron_ore:2},out:{iron:1},time:1.5},
@@ -674,8 +808,6 @@ function activeRecipe(b){
   return list.filter(function(r){return r.key===b.recipe;})[0]||null;
 }
 function rateStr(amt,time){ return (amt/time*60).toFixed(1)+"/min"; }
-var BELT_MAX=240, BELT_COST={iron_ore:3};
-var CABLE_MAX=26, CABLE_COST={copper_ore:4};
 
 var buildIdSeq=1;
 var buildings=[], belts=[], nodes=[], cables=[];
@@ -891,7 +1023,7 @@ function buildBuildingMesh(type){
 function makeBuilding(type,x,z,rotY,node){
   var d=BUILD_DEFS[type];
   var b={id:buildIdSeq++,type:type,x:x,z:z,rotY:rotY||0,node:node||null,powered:false,netId:null,in:{},out:{},job:null,
-    recipe:null,recipeActive:false};
+    recipe:null,recipeActive:false,targetMode:"continuous",targetQty:100,producedCount:0};
   d.accepts.forEach(function(r){ b.in[r]=0; });
   d.produces.forEach(function(r){ b.out[r]=0; });
   if(type==="miner"&&node)b.out[node.restype]=0;
@@ -905,6 +1037,22 @@ function destCapFor(b,res){
   if(b.type==="smelter"||b.type==="constructor")return 30;
   if(b.type==="storage")return 60;
   return 999;
+}
+function removeBuilding(b){
+  if(b.job){ toast("Can't remove — it's busy"); return; }
+  belts.slice().forEach(function(bl){
+    if(bl.from!==b&&bl.to!==b)return;
+    surfaceScene.remove(bl.mesh); belts.splice(belts.indexOf(bl),1); inventory.belt=(inventory.belt||0)+1;
+  });
+  cables.slice().forEach(function(c){
+    if(c.from!==b&&c.to!==b)return;
+    surfaceScene.remove(c.mesh); cables.splice(cables.indexOf(c),1); inventory.cable=(inventory.cable||0)+1;
+  });
+  surfaceScene.remove(b.mesh);
+  buildings.splice(buildings.indexOf(b),1);
+  inventory[b.type]=(inventory[b.type]||0)+1;
+  sfx.remove(); toast(BUILD_DEFS[b.type].nm+" removed — returned to inventory"); pulseInteractPose();
+  computePowerNetworks();
 }
 
 /* ═════════════ RESOURCE NODES ═════════════ */
@@ -1019,7 +1167,7 @@ surfaceScene.add(placeGhost);
 placeGhost.visible=false;
 function setGhost(type){
   placeGhost.clear();
-  if(!type||type==="belt"||type==="cable")return;
+  if(!type||isClickTool(type))return;
   var mesh=buildBuildingMesh(type);
   mesh.traverse(function(o){
     if(o.isMesh){
@@ -1038,7 +1186,7 @@ function tintGhost(ok){
 function canPlaceAt3D(type,x,z){
   var d=BUILD_DEFS[type];
   if(d.uniq&&buildings.some(function(b){return b.type===type;}))return "Already built";
-  if(!canAfford(d.cost))return "Not enough resources";
+  if((inventory[type]||0)<=0)return "None in inventory";
   if(Math.sqrt(x*x+z*z)>BUILD_ZONE_R-10)return "Too far from the colony — the ground gets rough past here";
   for(var i=0;i<buildings.length;i++){
     var b=buildings[i], dx=b.x-x,dz=b.z-z;
@@ -1051,17 +1199,17 @@ function canPlaceAt3D(type,x,z){
   return null;
 }
 function tryPlaceAt3D(x,z){
-  var type=placing; if(!type||type==="belt"||type==="cable")return;
+  var type=placing; if(!type||isClickTool(type))return;
   x=snapGrid(x); z=snapGrid(z);
   var reason=canPlaceAt3D(type,x,z);
   if(reason){
     toast(reason);
-    if(reason==="Not enough resources"||reason==="Already built"){ placing=null; placeGhost.visible=false; }
+    if(reason==="None in inventory"||reason==="Already built"){ placing=null; placeGhost.visible=false; }
     return;
   }
   var d=BUILD_DEFS[type];
   var node=type==="miner"?nearestNode(x,z,9):null;
-  payCost(d.cost);
+  inventory[type]--;
   var b=makeBuilding(type,x,z,placeRotY,node);
   buildings.push(b);
   sfx.build(); toast(d.nm+" built"); pulseInteractPose();
@@ -1086,6 +1234,7 @@ function machineStatus(b){
   if(!RECIPES[b.type])return null;
   if(!b.recipe)return "no_recipe";
   if(d.powerDraw>0&&!b.powered)return b.overload?"overload":"no_power";
+  if(b.targetMode==="target"&&(b.producedCount||0)>=(b.targetQty||0))return "target_reached";
   if(b.recipeActive)return "working";
   var r=activeRecipe(b);
   if(r){
@@ -1097,8 +1246,10 @@ function machineStatus(b){
 var MACHINE_STATUS_LABEL={
   working:{txt:"WORKING",col:"#7bd94a"}, no_recipe:{txt:"NO RECIPE SELECTED",col:"#8a92a5"},
   no_power:{txt:"NO POWER",col:"#ff9d3c"}, overload:{txt:"GRID OVERLOAD",col:"#ff4d5e"},
-  output_full:{txt:"OUTPUT FULL",col:"#4fd3ff"}, no_input:{txt:"WAITING FOR INPUT",col:"#8a92a5"}
+  output_full:{txt:"OUTPUT FULL",col:"#4fd3ff"}, no_input:{txt:"WAITING FOR INPUT",col:"#8a92a5"},
+  target_reached:{txt:"TARGET REACHED",col:"#4fd3ff"}
 };
+function fmtEta(s){ s=Math.max(0,Math.ceil(s)); var m=Math.floor(s/60),sec=s%60; return m>0?(m+"m "+sec+"s"):(sec+"s"); }
 function beltCompatible(from,to){
   var outs=buildingProduces(from), ins=BUILD_DEFS[to.type].accepts;
   for(var i=0;i<outs.length;i++){
@@ -1155,11 +1306,11 @@ function makeBeltMesh(bl){
 }
 function tryPlaceBelt(from,to){
   var dx=from.x-to.x,dz=from.z-to.z;
-  if(Math.sqrt(dx*dx+dz*dz)>BELT_MAX){ toast("Too far to connect"); return; }
+  if(Math.sqrt(dx*dx+dz*dz)>BUILD_DEFS.belt.range){ toast("Too far to connect"); return; }
   var res=beltCompatible(from,to);
   if(!res){ toast("These buildings can't be connected"); return; }
-  if(!canAfford(BELT_COST)){ toast("Not enough iron ore for a belt"); return; }
-  payCost(BELT_COST);
+  if((inventory.belt||0)<=0){ toast("No belts in inventory — craft one first"); return; }
+  inventory.belt--;
   var bl={from:from,to:to,res:res,rate:6,_flow:false};
   var vis=makeBeltMesh(bl);
   bl.mesh=vis.mesh; bl.items=vis.items; bl.p1=vis.p1; bl.p2=vis.p2; bl.len=vis.len;
@@ -1187,19 +1338,26 @@ function makeCableMesh(c){
 function tryPlaceCable(from,to){
   if(!powerCapable(from)||!powerCapable(to)){ toast("That doesn't carry power"); return; }
   var dx=from.x-to.x,dz=from.z-to.z;
-  if(Math.sqrt(dx*dx+dz*dz)>CABLE_MAX){ toast("Too far — run a Power Pole partway"); return; }
+  if(Math.sqrt(dx*dx+dz*dz)>BUILD_DEFS.cable.range){ toast("Too far — run a Power Pole partway"); return; }
   var already=cables.some(function(c){return (c.from===from&&c.to===to)||(c.from===to&&c.to===from);});
   if(already){ toast("Already cabled together"); return; }
-  if(!canAfford(CABLE_COST)){ toast("Not enough copper ore for cable"); return; }
-  payCost(CABLE_COST);
+  if((inventory.cable||0)<=0){ toast("No cables in inventory — craft one first"); return; }
+  inventory.cable--;
   var c={from:from,to:to};
   var vis=makeCableMesh(c);
   c.mesh=vis.mesh; c.mat=vis.mat;
   cables.push(c);
   sfx.click(); toast("Power cable connected"); pulseInteractPose();
 }
+function isClickTool(p){ return p==="belt"||p==="cable"||p==="remove"; }
 function surfaceClick3D(x,z){
   if(!placing)return;
+  if(placing==="remove"){
+    var rb=findBuildingNear(x,z,2.5);
+    if(!rb){ toast("Aim at a building to remove"); return; }
+    removeBuilding(rb);
+    return;
+  }
   if(placing==="belt"||placing==="cable"){
     var b=findBuildingNear(x,z,2.5);
     if(!b){ toast("Aim at a building to connect"); return; }
@@ -1227,13 +1385,16 @@ function updateBuildings(dt){
     } else if(b.type==="smelter"&&powOk){
       var r=activeRecipe(b);
       b.recipeActive=false;
-      if(r){
+      if(r&&!(b.targetMode==="target"&&(b.producedCount||0)>=(b.targetQty||0))){
+        var pk=Object.keys(r.out)[0];
         var mb=dt/r.time;
         for(var k in r.in)mb=Math.min(mb,(b.in[k]||0)/r.in[k]);
         for(var k2 in r.out)mb=Math.min(mb,Math.max(0,destCapFor(b,k2)-(b.out[k2]||0))/r.out[k2]);
+        if(b.targetMode==="target")mb=Math.min(mb,Math.max(0,(b.targetQty||0)-(b.producedCount||0))/r.out[pk]);
         if(mb>0){
           for(var k in r.in)b.in[k]-=r.in[k]*mb;
           for(var k2 in r.out)b.out[k2]=(b.out[k2]||0)+r.out[k2]*mb;
+          if(b.targetMode==="target")b.producedCount=(b.producedCount||0)+r.out[pk]*mb;
           b.recipeActive=true;
           b.cycleT=((b.cycleT||0)+dt)%r.time;
         }
@@ -1241,12 +1402,15 @@ function updateBuildings(dt){
     } else if(b.type==="constructor"&&powOk){
       var r=activeRecipe(b);
       b.recipeActive=false;
-      if(r){
+      if(r&&!(b.targetMode==="target"&&(b.producedCount||0)>=(b.targetQty||0))){
+        var pk=Object.keys(r.out)[0];
         var mb=dt/r.time;
         for(var k in r.in)mb=Math.min(mb,(b.in[k]||0)/r.in[k]);
+        if(b.targetMode==="target")mb=Math.min(mb,Math.max(0,(b.targetQty||0)-(b.producedCount||0))/r.out[pk]);
         if(mb>0){
           for(var k in r.in)b.in[k]-=r.in[k]*mb;
           stock.parts+=(r.out.parts||0)*mb;
+          if(b.targetMode==="target")b.producedCount=(b.producedCount||0)+r.out[pk]*mb;
           b.recipeActive=true;
           b.cycleT=((b.cycleT||0)+dt)%r.time;
         }
@@ -1342,10 +1506,12 @@ function saveGame(){
       stock:stock,
       nodes:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){
-        return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe};
+        return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
+          targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
+      inventory:inventory, craftQueue:craftQueue,
       shipBuilt:shipBuilt, shipModelKey:shipModelKey
     };
     localStorage.setItem(SKEY,JSON.stringify(data));
@@ -1356,6 +1522,7 @@ function saveGame(){
 function newColony(){
   clearWorld();
   stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
+  inventory=defaultInventory(); craftQueue=[];
   shipBuilt=false; shipModelKey=null;
   scatterNodes();
   try{ localStorage.removeItem(SKEY); }catch(e){}
@@ -1371,6 +1538,7 @@ function loadGame(){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
     var b=makeBuilding(bd.type,bd.x,bd.z,bd.rotY,node);
     if(bd.in)b.in=bd.in; if(bd.out)b.out=bd.out; if(bd.recipe)b.recipe=bd.recipe;
+    if(bd.targetMode)b.targetMode=bd.targetMode; if(bd.targetQty)b.targetQty=bd.targetQty; if(bd.producedCount)b.producedCount=bd.producedCount;
     buildings.push(b);
   });
   (data.belts||[]).forEach(function(bl){
@@ -1389,6 +1557,8 @@ function loadGame(){
     nc.mesh=vis.mesh; nc.mat=vis.mat;
     cables.push(nc);
   });
+  inventory=data.inventory||defaultInventory();
+  craftQueue=data.craftQueue||[];
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
   return true;
 }
@@ -1798,7 +1968,7 @@ function groundPointFromScreen(sx,sy){
   return hit?{x:hit.point.x,z:hit.point.z}:null;
 }
 function updatePlacementGhost(sx,sy){
-  if(!placing||placing==="belt"||placing==="cable"){ placeGhost.visible=false; return; }
+  if(!placing||isClickTool(placing)){ placeGhost.visible=false; return; }
   var p=groundPointFromScreen(sx,sy);
   if(!p){ placeGhost.visible=false; return; }
   var gx=snapGrid(p.x), gz=snapGrid(p.z);
@@ -1815,7 +1985,7 @@ cv.addEventListener("mousedown",function(e){
   if(placing){
     if(e.button===0){
       var p=groundPointFromScreen(e.clientX,e.clientY);
-      if(placing==="belt"||placing==="cable"){ if(p)surfaceClick3D(p.x,p.z); }
+      if(isClickTool(placing)){ if(p)surfaceClick3D(p.x,p.z); }
       else if(p)tryPlaceAt3D(p.x,p.z);
     } else if(e.button===2){ cancelPlacing(); toast("Placement cancelled"); }
     return;
@@ -1873,34 +2043,57 @@ function renderBuild(){
   $("buildRes").innerHTML=Object.keys(RES).map(function(k){
     return '<span><i style="background:'+hexStr(RES[k].col)+'"></i>'+Math.floor(stock[k])+'</span>';
   }).join('');
+  if(craftQueue.length){
+    var job=craftQueue[0];
+    $("craftStatus").innerHTML='<div class="upg" style="border-left:3px solid var(--amber)">'+
+      '<div class="top"><span class="nm">Fabricating '+BUILD_DEFS[job.key].nm+'</span><span class="stat">'+Math.ceil(job.timeLeft)+'s</span></div>'+
+      '<div style="height:6px;border-radius:3px;background:#1a2230;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+
+      Math.round((1-job.timeLeft/job.total)*100)+'%;background:var(--amber)"></div></div>'+
+      (craftQueue.length>1?'<div class="ds" style="margin-top:6px">+'+(craftQueue.length-1)+' more queued</div>':'')+'</div>';
+  } else $("craftStatus").innerHTML="";
   var html="", lastCat=null;
   BUILD_ORDER.forEach(function(key){
     var d=BUILD_DEFS[key];
-    var already=d.uniq&&buildings.some(function(b){return b.type===key;});
+    var owned=inventory[key]||0;
+    var already=d.uniq&&(owned>0||buildings.some(function(b){return b.type===key;}));
     var afford=canAfford(d.cost);
     if(d.cat!==lastCat){ html+='<div class="cat" style="margin:10px 2px 4px">'+d.cat+'</div>'; lastCat=d.cat; }
-    html+='<div class="upg"><div class="top"><span class="nm">'+d.nm+'</span></div>'+
+    html+='<div class="upg"><div class="top"><span class="nm">'+d.nm+'</span><span class="stat">Owned: '+owned+'</span></div>'+
       '<div class="ds">'+d.ds+'</div>'+
-      '<button class="buy" data-k="'+key+'" '+((already||!afford)?"disabled":"")+'>'+
-      (already?"Already built":("Place — "+costStr(d.cost)))+'</button></div>';
+      '<div class="ds">Cost: '+costStr(d.cost)+' &middot; fabricate '+d.craftTime+'s'+
+      (d.powerDraw?' &middot; '+d.powerDraw+' MW draw':'')+(d.generates?' &middot; generates '+d.generates+' MW':'')+'</div>'+
+      '<div style="display:flex;gap:6px;margin-top:8px">'+
+      '<button class="buy" style="margin-top:0" data-craft="'+key+'" '+((already||!afford)?"disabled":"")+'>Fabricate</button>'+
+      (d.tool?
+        '<button class="buy" style="margin-top:0" data-tool="'+key+'" '+(owned<=0?"disabled":"")+'>Select Tool</button>'
+        :'<button class="buy" style="margin-top:0" data-place="'+key+'" '+((owned<=0||already)?"disabled":"")+'>'+(already?"Built":"Place")+'</button>'
+      )+'</div></div>';
   });
-  html+='<div class="cat" style="margin:10px 2px 4px">Logistics</div>';
-  html+='<div class="upg"><div class="top"><span class="nm">Conveyor Belt</span></div>'+
-    '<div class="ds">Connect a source building to a destination. Aim at one, confirm, then the other.</div>'+
-    '<button class="buy" id="bBeltTool" '+(canAfford(BELT_COST)?"":"disabled")+'>Select — '+costStr(BELT_COST)+' each</button></div>';
-  html+='<div class="upg"><div class="top"><span class="nm">Power Cable</span></div>'+
-    '<div class="ds">Physically wire two machines/poles together. Nothing gets power without a cable run to it. Max range '+CABLE_MAX+'m — chain Power Poles for longer runs.</div>'+
-    '<button class="buy" id="bCableTool" '+(canAfford(CABLE_COST)?"":"disabled")+'>Select — '+costStr(CABLE_COST)+' each</button></div>';
+  html+='<div class="cat" style="margin:10px 2px 4px">Tools</div>';
+  html+='<div class="upg"><div class="top"><span class="nm">Remove Building</span></div>'+
+    '<div class="ds">Select, then click a building to deconstruct it. The item and any attached belts/cables are returned to your inventory.</div>'+
+    '<button class="buy" id="bRemoveTool">Select Tool</button></div>';
   $("buildList").innerHTML=html;
-  var btns=$("buildList").querySelectorAll(".buy");
-  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){
-    placing=this.getAttribute("data-k"); placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
+  var craftBtns=$("buildList").querySelectorAll("[data-craft]");
+  for(var i=0;i<craftBtns.length;i++)craftBtns[i].onclick=function(){
+    var key=this.getAttribute("data-craft");
+    var reason=queueCraft(key);
+    if(reason)toast(reason); else sfx.click();
+    renderBuild();
+  };
+  var placeBtns=$("buildList").querySelectorAll("[data-place]");
+  for(var i=0;i<placeBtns.length;i++)placeBtns[i].onclick=function(){
+    placing=this.getAttribute("data-place"); placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
     toast("Aim and confirm to place it");
   };
-  var beltBtn=$("bBeltTool");
-  if(beltBtn)beltBtn.onclick=function(){ placing="belt"; beltFrom=null; setGhost(null); closeBuild(); toast("Select the source building"); };
-  var cableBtn=$("bCableTool");
-  if(cableBtn)cableBtn.onclick=function(){ placing="cable"; beltFrom=null; setGhost(null); closeBuild(); toast("Select the first machine or pole"); };
+  var toolBtns=$("buildList").querySelectorAll("[data-tool]");
+  for(var i=0;i<toolBtns.length;i++)toolBtns[i].onclick=function(){
+    var key=this.getAttribute("data-tool");
+    placing=key; beltFrom=null; setGhost(null); closeBuild();
+    toast(key==="belt"?"Select the source building":"Select the first machine or pole");
+  };
+  var removeBtn=$("bRemoveTool");
+  if(removeBtn)removeBtn.onclick=function(){ placing="remove"; beltFrom=null; setGhost(null); closeBuild(); toast("Click a building to remove it"); };
 }
 $("bBuildOpen").onclick=function(){ sfx.click(); openBuild(); };
 $("bBuildClose").onclick=function(){ sfx.click(); closeBuild(); };
@@ -1969,10 +2162,35 @@ function renderMachine(){
     html+='<div class="upg"><div class="top"><span class="nm">Cycle progress</span></div>'+
       '<div style="height:8px;border-radius:4px;background:#1a2230;overflow:hidden;margin-top:4px">'+
       '<div style="height:100%;width:'+(b.recipeActive?pc:0)+'%;background:'+lbl.col+'"></div></div></div>';
+    var pk=Object.keys(r.out)[0];
+    var perSec=r.out[pk]/r.time;
+    html+='<div class="upg"><div class="top"><span class="nm">Production Target</span></div>'+
+      '<div style="display:flex;gap:6px;margin-top:6px">'+
+      '<button class="buy" style="margin-top:0" data-mode="continuous" '+(b.targetMode==="continuous"?"disabled":"")+'>Continuous</button>'+
+      '<button class="buy" style="margin-top:0" data-mode="target" '+(b.targetMode==="target"?"disabled":"")+'>Set Target</button>'+
+      '</div>';
+    if(b.targetMode==="target"){
+      var remaining=Math.max(0,(b.targetQty||0)-(b.producedCount||0));
+      html+='<div style="display:flex;gap:6px;align-items:center;margin-top:8px">'+
+        '<input type="number" id="mchTargetQty" min="1" value="'+(b.targetQty||100)+'" style="flex:1;background:var(--panel);border:1px solid var(--line);color:var(--bone);padding:8px;border-radius:6px;font:inherit;font-size:12px">'+
+        '<button class="buy" style="margin-top:0;flex:none;width:auto;padding:8px 12px" id="mchTargetApply">Apply</button></div>'+
+        '<div class="ds" style="margin-top:6px">Progress: '+Math.floor(b.producedCount||0)+' / '+(b.targetQty||0)+
+        (remaining>0?(' &middot; ETA '+fmtEta(remaining/perSec)):' &middot; complete')+'</div>';
+    }
+    html+='</div>';
   }
   $("mchList").innerHTML=html;
   var btns=$("mchList").querySelectorAll(".buy[data-k]");
-  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ b.recipe=this.getAttribute("data-k"); b.cycleT=0; sfx.click(); renderMachine(); };
+  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ b.recipe=this.getAttribute("data-k"); b.cycleT=0; b.producedCount=0; sfx.click(); renderMachine(); };
+  var modeBtns=$("mchList").querySelectorAll("[data-mode]");
+  for(var i=0;i<modeBtns.length;i++)modeBtns[i].onclick=function(){
+    b.targetMode=this.getAttribute("data-mode"); b.producedCount=0; sfx.click(); renderMachine();
+  };
+  var applyBtn=$("mchTargetApply");
+  if(applyBtn)applyBtn.onclick=function(){
+    var v=parseInt($("mchTargetQty").value,10);
+    b.targetQty=isFinite(v)&&v>0?v:100; b.producedCount=0; sfx.click(); renderMachine();
+  };
 }
 $("bMachineClose").onclick=function(){ sfx.click(); closeMachine(); };
 
@@ -2087,7 +2305,7 @@ $("bGalaxyClose").onclick=function(){ sfx.click(); closeGalaxy(); };
 $("mbInteract").addEventListener("click",function(){
   if(placing){
     var p=groundPointFromScreen(innerWidth/2,innerHeight/2);
-    if(p){ if(placing==="belt"||placing==="cable")surfaceClick3D(p.x,p.z); else tryPlaceAt3D(p.x,p.z); }
+    if(p){ if(isClickTool(placing))surfaceClick3D(p.x,p.z); else tryPlaceAt3D(p.x,p.z); }
     return;
   }
   doInteract();
@@ -2137,6 +2355,7 @@ function updateSurface(dt){
   player.userData.arms[0].rotation.x=moving?-Math.sin(walkT)*swing*0.8:interactPose;
   player.userData.arms[1].rotation.x=moving?Math.sin(walkT)*swing*0.8:0;
   if(player.userData.beacon)player.userData.beacon.material.emissiveIntensity=1.2+Math.sin(performance.now()/260)*0.5;
+  if(landingPodBeacon)landingPodBeacon.material.emissiveIntensity=1.0+Math.sin(performance.now()/420)*0.4;
 
   playerShadow.position.x=player.position.x; playerShadow.position.z=player.position.z;
   playerShadow.position.y=player.position.y+0.03;
@@ -2159,6 +2378,7 @@ function updateSurface(dt){
   }
 
   updateBuildings(dt);
+  updateCrafting(dt);
 
   /* mobile: keep the placement ghost tracking the screen-center reticle */
   if(placing&&!document.body.classList.contains("pc-mode"))updatePlacementGhost(innerWidth/2,innerHeight/2);
@@ -2251,12 +2471,14 @@ window.__cq={
       cam:{yaw:camYaw,pitch:camPitch,pos:{x:camera.position.x,y:camera.position.y,z:camera.position.z}},
       deviceMode:document.body.classList.contains("pc-mode")?"pc":"mobile",
       stock:JSON.parse(JSON.stringify(stock)), powerGen:powerGen, powerDraw:powerDraw,
+      inventory:JSON.parse(JSON.stringify(inventory)), craftQueue:JSON.parse(JSON.stringify(craftQueue)),
       placing:placing, placeRotY:placeRotY, beltFrom:beltFrom?beltFrom.id:null,
       shipBuilt:shipBuilt, shipModelKey:shipModelKey,
       nodesList:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){return {id:b.id,type:b.type,x:b.x,z:b.z,powered:b.powered,
         overload:b.overload,cableConnected:b.cableConnected,netGen:b.netGen,netDraw:b.netDraw,
         recipe:b.recipe,recipeActive:b.recipeActive,cycleT:b.cycleT,status:machineStatus(b),
+        targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
         in:JSON.parse(JSON.stringify(b.in)),out:JSON.parse(JSON.stringify(b.out)),job:b.job,
         node:b.node?b.node.restype:null};}),
       belts:belts.map(function(bl){return {from:bl.from.id,to:bl.to.id,res:bl.res,flow:bl._flow};}),
@@ -2266,17 +2488,21 @@ window.__cq={
   tickN:function(n,dt){ dt=dt||1/60; for(var i=0;i<n;i++)updateSurface(dt); updateCameraTransform(); },
   dragCam:function(dx,dy){ camYaw-=dx*0.0055; camPitch=clamp(camPitch+dy*0.0045,CAM_PITCH_MIN,CAM_PITCH_MAX); },
   startGame:function(){ $("bStart").click(); },
-  startPlacing:function(k){ placing=k; placeRotY=0; beltFrom=null; setGhost((k==="belt"||k==="cable")?null:k); },
-  placeAt:function(x,z){ if(placing==="belt"||placing==="cable")surfaceClick3D(x,z); else tryPlaceAt3D(x,z); },
+  startPlacing:function(k){ placing=k; placeRotY=0; beltFrom=null; setGhost(isClickTool(k)?null:k); },
+  placeAt:function(x,z){ if(isClickTool(placing))surfaceClick3D(x,z); else tryPlaceAt3D(x,z); },
   canPlaceAt:canPlaceAt3D,
   cancelPlacing:cancelPlacing,
   addStock:function(k,n){ stock[k]+=n; },
+  queueCraft:queueCraft,
+  addInventory:function(k,n){ inventory[k]=(inventory[k]||0)+n; },
+  removeBuildingAt:function(id){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)removeBuilding(b); },
   doInteract:doInteract,
   openBuild:openBuild, closeBuild:closeBuild,
   openShipyard:openShipyard, closeShipyard:closeShipyard, commissionShip:commissionShip,
   openMachine:function(id){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)openMachine(b); },
   closeMachine:closeMachine,
-  setRecipe:function(id,key){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.recipe=key; b.cycleT=0; } },
+  setRecipe:function(id,key){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.recipe=key; b.cycleT=0; b.producedCount=0; } },
+  setTarget:function(id,mode,qty){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.targetMode=mode; if(qty)b.targetQty=qty; b.producedCount=0; } },
   buildingAt:function(id){ return buildings.filter(function(b){return b.id===id;})[0]||null; },
   playerTeleport:function(x,z){ player.position.x=x; player.position.z=z; },
   launchShip:launchShip, returnToColony:returnToColony,
