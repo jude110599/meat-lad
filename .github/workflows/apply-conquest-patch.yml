@@ -1,0 +1,42 @@
+name: Apply Conquest Patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/patch_conquest.py'
+      - 'conquest.html'
+      - 'js/conquest-polish.js'
+      - 'css/conquest-polish.css'
+      - '.github/workflows/apply-conquest-patch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Apply safe conquest patch
+        run: python tools/patch_conquest.py
+
+      - name: Commit patched conquest.html
+        run: |
+          if git diff --quiet -- conquest.html; then
+            echo 'No patch needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add conquest.html
+          git commit -m 'Fix shipyard construction and build placement UI'
+          git push
