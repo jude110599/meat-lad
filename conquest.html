@@ -149,6 +149,32 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .costrow.short .have{color:var(--red)}
 .costrow.short{color:var(--red)}
 
+/* ── machine panel ── */
+.mchRecipeGrid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.mchRecipe{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px 6px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-width:66px;
+  font-family:inherit;transition:border-color .15s,background .15s,transform .12s}
+.mchRecipe:active{transform:scale(.95)}
+.mchRecipe svg{width:26px;height:26px;flex:none}
+.mchRecipe .nm{font-size:8px;text-transform:uppercase;letter-spacing:.03em;font-weight:800;color:var(--dim);text-align:center}
+.mchRecipe.selected{border-color:var(--amber);background:var(--panel2);animation:bldPop .2s ease}
+.mchRecipe.selected .nm{color:var(--amber2)}
+.slotFlow{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.slot{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;
+  display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.slot svg{width:22px;height:22px;flex:none}
+.slot .info{display:flex;flex-direction:column;min-width:0}
+.slot .info .nm{font-size:8.5px;text-transform:uppercase;color:var(--dim);font-weight:700;letter-spacing:.03em;white-space:nowrap}
+.slot .info .qty{font-size:12.5px;font-weight:800;color:var(--bone)}
+.slotArrow{color:var(--dim);font-size:15px;flex:none}
+.stepper{display:flex;align-items:center;gap:5px;margin-top:8px}
+.stepBtn{background:var(--panel);border:1px solid var(--line);color:var(--bone);width:32px;height:32px;
+  border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;flex:none}
+.stepBtn:active{background:var(--panel2)}
+.stepBtn[disabled]{opacity:.35;pointer-events:none}
+.stepVal{flex:1;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:7px;font-size:13px;font-weight:800;color:var(--bone);font-family:inherit;min-width:0}
+
 /* ── touch controls ── */
 .stickzone{position:absolute;bottom:0;width:42%;height:50%;pointer-events:none;z-index:6}
 #zoneL{left:0}
@@ -313,8 +339,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.9.0";
+var VERSION="1.10.0";
 var CHANGELOG=[
+  {v:"1.10.0",t:"Icon-based machine and storage panels",items:[
+    "Recipe selection in the Smelter/Constructor now uses icon cards instead of a text list, with icon-based input/output slots showing exactly what's flowing where",
+    "Production targets got a real +/- stepper (with -10/-1/+1/+10 and direct entry) instead of a plain number box, and changing the target no longer wipes your progress",
+    "The Storage panel now shows every resource with a proper item icon instead of a plain color dot"
+  ]},
   {v:"1.9.0",t:"Fixed stuck movement, redesigned Build menu",items:[
     "Fixed a real bug where the player could keep moving on their own after releasing every key — a missed keyup (losing window focus, switching tabs) could leave a direction stuck on. Movement now resets on blur, tab-hide, and whenever a menu opens",
     "Completely redesigned the Build menu: a compact icon grid with category tabs (Structure/Power/Production/Logistics/Ship) instead of one long scrolling list",
@@ -815,6 +846,14 @@ surfaceScene.add(playerShadow);
 var RES={
   iron_ore:{nm:"Iron Ore",col:0xb5b5c2}, copper_ore:{nm:"Copper Ore",col:0xff9d5c}, coal:{nm:"Coal",col:0x8a8a92},
   iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545}
+};
+var RES_ICONS={
+  iron_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#b5b5c2" stroke="#5a5a62" stroke-width="1"/></svg>',
+  copper_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#ff9d5c" stroke="#7a3810" stroke-width="1"/></svg>',
+  coal:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#8a8a92" stroke="#1c1c20" stroke-width="1"/></svg>',
+  iron:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#e8eaf0" stroke="#9a9aa5" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#c8cad2"/></svg>',
+  copper:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#ff8a4c" stroke="#a84c14" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#ffb27a"/></svg>',
+  parts:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="#1a2233" stroke="#ffb545" stroke-width="1.4"/><path d="M12 6v2.4M12 15.6V18M6 12h2.4M15.6 12H18M7.8 7.8l1.7 1.7M14.5 14.5l1.7 1.7M7.8 16.2l1.7-1.7M14.5 9.5l1.7-1.7" stroke="#ffb545" stroke-width="1.2"/><circle cx="12" cy="12" r="2.6" fill="#ffb545"/></svg>'
 };
 function hexStr(n){ return "#"+("000000"+n.toString(16)).slice(-6); }
 function costStr(cost){
@@ -2326,51 +2365,71 @@ function renderMachine(){
   $("mchTitle").textContent=d.nm;
   var st=machineStatus(b), lbl=MACHINE_STATUS_LABEL[st]||{txt:"—",col:"#8a92a5"};
   $("mchStatus").innerHTML='<span style="color:'+lbl.col+';font-weight:700;letter-spacing:.06em">&#9679; '+lbl.txt+'</span>'+
-    '<span style="margin-left:auto">'+Math.round(b.netDraw||0)+' MW drawn on grid &middot; '+Math.round(b.netGen||0)+' MW available</span>';
-  var html="";
+    '<span style="margin-left:auto">'+Math.round(b.netDraw||0)+' MW drawn &middot; '+Math.round(b.netGen||0)+' MW available</span>';
+  var html='<div class="cat" style="margin:0 2px 6px">Recipe</div><div class="mchRecipeGrid">';
   RECIPES[b.type].forEach(function(r){
     var active=b.recipe===r.key;
-    var inStr=Object.keys(r.in).map(function(k){return rateStr(r.in[k],r.time)+" "+RES[k].nm;}).join(" + ");
-    var outStr=Object.keys(r.out).map(function(k){return rateStr(r.out[k],r.time)+" "+RES[k].nm;}).join(" + ");
-    html+='<div class="upg"><div class="top"><span class="nm">'+r.nm+(active?" — selected":"")+'</span></div>'+
-      '<div class="ds">In: '+inStr+' &nbsp;→&nbsp; Out: '+outStr+'</div>'+
-      '<button class="buy" data-k="'+r.key+'" '+(active?"disabled":"")+'>'+(active?"Selected":"Select recipe")+'</button></div>';
+    var pk=Object.keys(r.out)[0];
+    html+='<div class="mchRecipe'+(active?" selected":"")+'" data-k="'+r.key+'">'+RES_ICONS[pk]+'<span class="nm">'+r.nm+'</span></div>';
   });
+  html+='</div>';
   if(b.recipe){
     var r=activeRecipe(b);
-    var pc=Math.round(((b.cycleT||0)/r.time)*100);
-    html+='<div class="upg"><div class="top"><span class="nm">Cycle progress</span></div>'+
-      '<div style="height:8px;border-radius:4px;background:#1a2230;overflow:hidden;margin-top:4px">'+
-      '<div style="height:100%;width:'+(b.recipeActive?pc:0)+'%;background:'+lbl.col+'"></div></div></div>';
     var pk=Object.keys(r.out)[0];
+    html+='<div class="cat" style="margin:0 2px 6px">'+r.nm+'</div>'+
+      '<div class="slotFlow">'+
+      Object.keys(r.in).map(function(k){
+        var cap=destCapFor(b,k);
+        return '<div class="slot">'+RES_ICONS[k]+'<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(b.in[k]||0)+' / '+cap+'</span></div></div>';
+      }).join('')+
+      '<span class="slotArrow">&rarr;</span>'+
+      (d.produces.indexOf(pk)>=0?
+        '<div class="slot">'+RES_ICONS[pk]+'<div class="info"><span class="nm">'+RES[pk].nm+'</span><span class="qty">'+Math.floor(b.out[pk]||0)+' / '+destCapFor(b,pk)+'</span></div></div>'
+        :'<div class="slot">'+RES_ICONS[pk]+'<div class="info"><span class="nm">'+RES[pk].nm+'</span><span class="qty">&rarr; Stock</span></div></div>'
+      )+
+      '</div>';
+    var pc=Math.round(((b.cycleT||0)/r.time)*100);
+    html+='<div class="cat" style="margin:0 2px 6px">Cycle Progress</div>'+
+      '<div style="height:9px;border-radius:5px;background:#1a2230;overflow:hidden;margin-bottom:12px">'+
+      '<div style="height:100%;width:'+(b.recipeActive?pc:0)+'%;background:'+lbl.col+';transition:width .15s linear"></div></div>';
     var perSec=r.out[pk]/r.time;
-    html+='<div class="upg"><div class="top"><span class="nm">Production Target</span></div>'+
-      '<div style="display:flex;gap:6px;margin-top:6px">'+
+    html+='<div class="cat" style="margin:0 2px 6px">Production Target</div>'+
+      '<div style="display:flex;gap:6px">'+
       '<button class="buy" style="margin-top:0" data-mode="continuous" '+(b.targetMode==="continuous"?"disabled":"")+'>Continuous</button>'+
       '<button class="buy" style="margin-top:0" data-mode="target" '+(b.targetMode==="target"?"disabled":"")+'>Set Target</button>'+
       '</div>';
     if(b.targetMode==="target"){
       var remaining=Math.max(0,(b.targetQty||0)-(b.producedCount||0));
-      html+='<div style="display:flex;gap:6px;align-items:center;margin-top:8px">'+
-        '<input type="number" id="mchTargetQty" min="1" value="'+(b.targetQty||100)+'" style="flex:1;background:var(--panel);border:1px solid var(--line);color:var(--bone);padding:8px;border-radius:6px;font:inherit;font-size:12px">'+
-        '<button class="buy" style="margin-top:0;flex:none;width:auto;padding:8px 12px" id="mchTargetApply">Apply</button></div>'+
-        '<div class="ds" style="margin-top:6px">Progress: '+Math.floor(b.producedCount||0)+' / '+(b.targetQty||0)+
+      html+='<div class="stepper">'+
+        '<button class="stepBtn" data-step="-10">-10</button><button class="stepBtn" data-step="-1">-1</button>'+
+        '<input type="number" id="mchTargetQty" class="stepVal" min="1" value="'+(b.targetQty||100)+'">'+
+        '<button class="stepBtn" data-step="1">+1</button><button class="stepBtn" data-step="10">+10</button>'+
+        '</div>'+
+        '<div class="ds" style="margin-top:8px">Progress: '+Math.floor(b.producedCount||0)+' / '+(b.targetQty||0)+
         (remaining>0?(' &middot; ETA '+fmtEta(remaining/perSec)):' &middot; complete')+'</div>';
     }
-    html+='</div>';
   }
   $("mchList").innerHTML=html;
-  var btns=$("mchList").querySelectorAll(".buy[data-k]");
-  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ b.recipe=this.getAttribute("data-k"); b.cycleT=0; b.producedCount=0; sfx.click(); renderMachine(); };
+  var recBtns=$("mchList").querySelectorAll(".mchRecipe");
+  for(var i=0;i<recBtns.length;i++)recBtns[i].onclick=function(){ b.recipe=this.getAttribute("data-k"); b.cycleT=0; b.producedCount=0; sfx.click(); renderMachine(); };
   var modeBtns=$("mchList").querySelectorAll("[data-mode]");
   for(var i=0;i<modeBtns.length;i++)modeBtns[i].onclick=function(){
-    b.targetMode=this.getAttribute("data-mode"); b.producedCount=0; sfx.click(); renderMachine();
+    var mode=this.getAttribute("data-mode");
+    if(mode!==b.targetMode&&mode==="target")b.producedCount=0;
+    b.targetMode=mode; sfx.click(); renderMachine();
   };
-  var applyBtn=$("mchTargetApply");
-  if(applyBtn)applyBtn.onclick=function(){
-    var v=parseInt($("mchTargetQty").value,10);
-    b.targetQty=isFinite(v)&&v>0?v:100; b.producedCount=0; sfx.click(); renderMachine();
+  function applyTargetQty(v){
+    b.targetQty=Math.max(1,isFinite(v)?Math.round(v):100); renderMachine();
+  }
+  var stepBtns=$("mchList").querySelectorAll("[data-step]");
+  for(var i=0;i<stepBtns.length;i++)stepBtns[i].onclick=function(){
+    sfx.click(); applyTargetQty((b.targetQty||100)+parseInt(this.getAttribute("data-step"),10));
   };
+  var qtyInput=$("mchTargetQty");
+  if(qtyInput){
+    qtyInput.onchange=function(){ applyTargetQty(parseInt(this.value,10)); };
+    qtyInput.onkeydown=function(e){ if(e.key==="Enter")applyTargetQty(parseInt(this.value,10)); };
+  }
 }
 $("bMachineClose").onclick=function(){ sfx.click(); closeMachine(); };
 
@@ -2412,15 +2471,17 @@ function renderStorage(){
   var pHtml="";
   Object.keys(RES).forEach(function(k){
     var canStore=accepts.indexOf(k)>=0;
-    pHtml+='<div class="upg"><div class="top"><span class="nm"><i style="background:'+hexStr(RES[k].col)+';width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:middle"></i>'+RES[k].nm+'</span><span class="stat">'+Math.floor(stock[k]||0)+'</span></div>'+
-      (canStore?'<button class="buy" style="margin-top:8px" data-store="'+k+'" '+((stock[k]||0)<=0?"disabled":"")+'>Store &rarr;</button>':'<div class="ds">Can\'t be stored here</div>')+
+    pHtml+='<div class="slot" style="margin-bottom:6px">'+RES_ICONS[k]+
+      '<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(stock[k]||0)+'</span></div>'+
+      (canStore?'<button class="stepBtn" style="width:auto;padding:0 10px" data-store="'+k+'" '+((stock[k]||0)<=0?"disabled":"")+'>&rarr;</button>':'')+
       '</div>';
   });
   $("stgPlayerList").innerHTML=pHtml;
   var sHtml="";
   accepts.forEach(function(k){
-    sHtml+='<div class="upg"><div class="top"><span class="nm"><i style="background:'+hexStr(RES[k].col)+';width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:middle"></i>'+RES[k].nm+'</span><span class="stat">'+Math.floor(b.in[k]||0)+' / '+cap+'</span></div>'+
-      '<button class="buy" style="margin-top:8px" data-take="'+k+'" '+((b.in[k]||0)<=0?"disabled":"")+'>&larr; Take</button></div>';
+    sHtml+='<div class="slot" style="margin-bottom:6px">'+RES_ICONS[k]+
+      '<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(b.in[k]||0)+' / '+cap+'</span></div>'+
+      '<button class="stepBtn" style="width:auto;padding:0 10px" data-take="'+k+'" '+((b.in[k]||0)<=0?"disabled":"")+'>&larr;</button></div>';
   });
   $("stgStoreList").innerHTML=sHtml;
   var storeBtns=$("stgPlayerList").querySelectorAll("[data-store]");
