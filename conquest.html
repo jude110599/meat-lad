@@ -78,6 +78,21 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .btn small{display:block;font-size:9px;letter-spacing:.08em;color:var(--dim);margin-top:4px;text-transform:none;font-weight:400}
 .hint{font-size:10.5px;color:var(--dim);line-height:1.7;margin-top:16px;text-align:center;letter-spacing:.02em}
 .ver{position:absolute;bottom:calc(10px + env(safe-area-inset-bottom,0px));font-size:9px;color:var(--dim);letter-spacing:.1em}
+.homebtn{position:absolute;left:calc(11px + env(safe-area-inset-left,0px));top:calc(11px + env(safe-area-inset-top,0px));
+  display:flex;align-items:center;gap:7px;background:linear-gradient(160deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-radius:20px;padding:8px 14px 8px 10px;color:var(--bone);font:inherit;
+  font-weight:800;font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .15s}
+.homebtn svg{display:block;flex:none}
+.homebtn:hover{transform:translateX(-3px);border-color:var(--amber)}
+.homebtn:active{transform:translateX(-1px) scale(.94)}
+.chlog{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px}
+.chlog:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.chlog .top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.chlog .v{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--amber2)}
+.chlog .t{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
+.chlog ul{margin:6px 0 0 16px;padding:0;font-size:11px;color:var(--dim);line-height:1.6}
+.chlog li{margin-bottom:2px}
 
 .ovl{position:absolute;inset:0;pointer-events:auto;background:rgba(5,8,14,.9);z-index:7;
   display:flex;align-items:center;justify-content:center;
@@ -168,12 +183,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   </div>
 
   <div class="screen" id="s-title">
+    <button class="homebtn" id="bHome" title="Back to the Meat Lad site">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#ffb545" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Meat Lad
+    </button>
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
+        <button class="btn sub" id="bChangelogTitle">Changelog</button>
         <button class="btn sub" id="bMuteTitle">Sound: on</button>
       </div>
       <div class="hint">PC: WASD move &middot; drag to look &middot; click to place/fire &middot; R rotate &middot; E interact<br>
@@ -184,12 +204,22 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 
   <div class="ovl hide" id="o-pause">
     <div class="card">
-      <h2>Paused</h2>
+      <h2>Menu</h2>
       <div class="stack">
         <button class="btn" id="bResume">Resume</button>
+        <button class="btn sub" id="bChangelogPause">Changelog</button>
         <button class="btn sub" id="bMute">Sound: on</button>
         <button class="btn sub" id="bDevice">Switch Device Mode</button>
+        <button class="btn sub" id="bReturnTitle">Return to Title</button>
       </div>
+    </div>
+  </div>
+
+  <div class="ovl hide" id="o-changelog">
+    <div class="card">
+      <h2>Changelog</h2>
+      <div id="changelogList"></div>
+      <button class="btn sub" id="bChangelogClose" style="margin-top:12px">Close</button>
     </div>
   </div>
 
@@ -211,6 +241,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     </div>
   </div>
 
+  <div class="ovl hide" id="o-machine">
+    <div class="card">
+      <h2 id="mchTitle">Machine</h2>
+      <div id="mchStatus" class="metalline"></div>
+      <div id="mchList"></div>
+      <button class="btn sub" id="bMachineClose" style="margin-top:6px">Close</button>
+    </div>
+  </div>
+
   <div class="ovl hide" id="o-galaxy">
     <div class="card" style="max-width:520px">
       <h2>Galaxy Map</h2>
@@ -224,7 +263,33 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.0.0-3d";
+var VERSION="1.4.0";
+var CHANGELOG=[
+  {v:"1.4.0",t:"Menu overhaul",items:[
+    "Reworked the pause screen into a real menu, including a Return to Title option that was missing entirely",
+    "Added this changelog, readable from the title screen or the pause menu",
+    "Added a link back to the Meat Lad site from the title screen"
+  ]},
+  {v:"1.3.0",t:"Recipes & machine status",items:[
+    "The Smelter and Constructor now require you to pick a recipe by hand — nothing runs automatically anymore",
+    "Added a machine panel showing exact input/output rates in units per minute, power draw, a live status light, and cycle progress",
+    "Added Foundation floor tiles that snap edge-to-edge into a factory floor"
+  ]},
+  {v:"1.2.0",t:"Power cables",items:[
+    "Removed automatic range-based power — a machine only gets power if you physically cable it to a generator",
+    "Cables sag like real power lines and glow blue when powered, red when the grid is overloaded"
+  ]},
+  {v:"1.1.0",t:"Bigger, better factory",items:[
+    "Doubled the build grid and rebuilt every machine bigger with more mechanical detail",
+    "Resource deposits are now large, distinct mineral formations instead of tiny rocks, and the Miner visibly drills into them",
+    "Conveyor belts got real frames with rollers and support legs",
+    "Rebuilt the terrain, skybox, lighting, and the player's spacesuit and animations"
+  ]},
+  {v:"1.0.0",t:"3D rework",items:[
+    "Rebuilt the game in 3D from the ground up",
+    "Land on your planet, gather resources by hand, build a factory, then launch a ship into space combat"
+  ]}
+];
 function $(id){ return document.getElementById(id); }
 
 /* ═════════════ DEVICE MODE ═════════════ */
@@ -318,49 +383,112 @@ window.addEventListener("orientationchange",function(){ setTimeout(resize,60); }
 if(window.visualViewport)window.visualViewport.addEventListener("resize",resize);
 
 /* ═════════════ SURFACE SCENE ═════════════ */
-var SURFACE_SIZE=480;
+var SURFACE_SIZE=900;
+var BUILD_ZONE_R=170; /* flat, buildable clearing around the landing site */
+var TERRAIN_BLEND_R=260; /* beyond this, full hill/valley noise */
 var surfaceScene=new THREE.Scene();
-surfaceScene.background=new THREE.Color(0x0a0806);
-surfaceScene.fog=new THREE.Fog(0x0a0806,120,420);
+var SKY_LOW=0x2a2418, SKY_HIGH=0x0a1428;
+surfaceScene.background=new THREE.Color(SKY_LOW);
+surfaceScene.fog=new THREE.Fog(SKY_LOW,140,620);
 
-var ambient=new THREE.AmbientLight(0x8899bb,0.55);
+var ambient=new THREE.AmbientLight(0x8899bb,0.6);
 surfaceScene.add(ambient);
-var sun=new THREE.DirectionalLight(0xffe0b0,1.15);
-sun.position.set(60,90,40);
+var sun=new THREE.DirectionalLight(0xffdcae,1.25);
+sun.position.set(120,160,70);
 surfaceScene.add(sun);
-var fillLight=new THREE.HemisphereLight(0x3a4a6a,0x2a1c12,0.5);
+var fillLight=new THREE.HemisphereLight(0x4a5a8a,0x2a1c12,0.55);
 surfaceScene.add(fillLight);
 
-function makeGroundTexture(){
-  var cvs=document.createElement("canvas"); cvs.width=512; cvs.height=512;
-  var g=cvs.getContext("2d");
-  g.fillStyle="#4a3c2c"; g.fillRect(0,0,512,512);
-  for(var i=0;i<9000;i++){
-    var x=Math.random()*512,y=Math.random()*512,r=rnd(0.5,2.2);
-    var v=rnd(-22,26);
-    g.fillStyle="rgba("+(74+v)+","+(60+v)+","+(44+v)+","+rnd(.3,.75)+")";
-    g.beginPath(); g.arc(x,y,r,0,6.283); g.fill();
-  }
-  for(var j=0;j<70;j++){
-    var cx=Math.random()*512,cy=Math.random()*512,cr=rnd(6,22);
-    g.fillStyle="rgba(30,22,14,"+rnd(.15,.35)+")";
-    g.beginPath(); g.arc(cx,cy,cr,0,6.283); g.fill();
-  }
-  var tex=new THREE.CanvasTexture(cvs);
-  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
-  tex.repeat.set(SURFACE_SIZE/12,SURFACE_SIZE/12);
-  tex.colorSpace=THREE.SRGBColorSpace;
-  return tex;
+/* cheap deterministic pseudo-noise (layered sine waves) — no external noise lib needed */
+function terrainRaw(x,z){
+  return Math.sin(x*0.008+1.7)*Math.cos(z*0.007-0.4)*16
+       + Math.sin(x*0.021-0.9)*Math.sin(z*0.018+2.1)*7
+       + Math.sin(x*0.05+3.1)*Math.cos(z*0.047)*2.5;
 }
-var groundMat=new THREE.MeshStandardMaterial({map:makeGroundTexture(),color:0xffffff,roughness:0.95,metalness:0});
-var groundMesh=new THREE.Mesh(new THREE.PlaneGeometry(SURFACE_SIZE,SURFACE_SIZE),groundMat);
-groundMesh.rotation.x=-Math.PI/2;
+function terrainHeight(x,z){
+  var d=Math.sqrt(x*x+z*z);
+  var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  var smooth=t*t*(3-2*t);
+  return terrainRaw(x,z)*smooth;
+}
+
+/* skybox: large inverted sphere with a vertical gradient, no external texture */
+(function(){
+  var geo=new THREE.SphereGeometry(1400,24,16);
+  var g=geo.attributes.position, col=new Float32Array(g.count*3);
+  var top=new THREE.Color(SKY_HIGH), bot=new THREE.Color(0x4a3420), horizon=new THREE.Color(0x6a4a2a);
+  for(var i=0;i<g.count;i++){
+    var y=g.getY(i)/1400;
+    var c=new THREE.Color();
+    if(y>0.02)c.lerpColors(horizon,top,clamp(y*2.2,0,1));
+    else c.lerpColors(bot,horizon,clamp((y+0.15)/0.15,0,1));
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+  var mat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false});
+  surfaceScene.add(new THREE.Mesh(geo,mat));
+})();
+
+/* clouds: soft alpha sprites drifting overhead */
+var clouds=[];
+(function(){
+  var cvs=document.createElement("canvas"); cvs.width=128; cvs.height=64;
+  var g=cvs.getContext("2d");
+  var grad=g.createRadialGradient(64,32,0,64,32,60);
+  grad.addColorStop(0,"rgba(255,255,255,.9)"); grad.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=grad; g.fillRect(0,0,128,64);
+  var tex=new THREE.CanvasTexture(cvs);
+  var mat=new THREE.SpriteMaterial({map:tex,transparent:true,opacity:0.4,depthWrite:false,fog:true});
+  for(var i=0;i<14;i++){
+    var s=new THREE.Sprite(mat.clone());
+    var sc=rnd(50,110);
+    s.scale.set(sc,sc*0.5,1);
+    s.position.set(rnd(-500,500),rnd(90,150),rnd(-500,500));
+    surfaceScene.add(s);
+    clouds.push(s);
+  }
+})();
+
+/* ground: height-displaced terrain with a flat buildable clearing, vertex-colored by height/slope */
+var groundSeg=140;
+var groundGeo=new THREE.PlaneGeometry(SURFACE_SIZE,SURFACE_SIZE,groundSeg,groundSeg);
+groundGeo.rotateX(-Math.PI/2);
+(function(){
+  var pos=groundGeo.attributes.position;
+  var colArr=new Float32Array(pos.count*3);
+  var dirt=new THREE.Color(0x4a3c2c), grass=new THREE.Color(0x3d4a28), rock=new THREE.Color(0x5c5650), snow=new THREE.Color(0x8a8478);
+  for(var i=0;i<pos.count;i++){
+    var x=pos.getX(i), z=pos.getZ(i);
+    var h=terrainHeight(x,z);
+    pos.setY(i,h);
+    var c=new THREE.Color();
+    if(h<2)c.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
+    else if(h<12)c.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
+    else c.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
+    var speck=rnd(-0.04,0.04);
+    c.r=clamp(c.r+speck,0,1); c.g=clamp(c.g+speck,0,1); c.b=clamp(c.b+speck,0,1);
+    colArr[i*3]=c.r; colArr[i*3+1]=c.g; colArr[i*3+2]=c.b;
+  }
+  groundGeo.setAttribute("color",new THREE.BufferAttribute(colArr,3));
+  groundGeo.computeVertexNormals();
+})();
+var groundMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.97,metalness:0});
+var groundMesh=new THREE.Mesh(groundGeo,groundMat);
 groundMesh.name="ground";
 surfaceScene.add(groundMesh);
 
-var grid=new THREE.GridHelper(SURFACE_SIZE,SURFACE_SIZE/4,0xffc978,0x6b5636);
-grid.material.opacity=0.4; grid.material.transparent=true;
-grid.position.y=0.02;
+/* a flat invisible plane covering just the buildable clearing, used for placement raycasts
+   (keeps ray math simple/robust — the real terrain is within a hair of y=0 there anyway) */
+var buildPlaneMesh=new THREE.Mesh(
+  new THREE.PlaneGeometry(BUILD_ZONE_R*2.4,BUILD_ZONE_R*2.4),
+  new THREE.MeshBasicMaterial({visible:false})
+);
+buildPlaneMesh.rotation.x=-Math.PI/2;
+surfaceScene.add(buildPlaneMesh);
+
+var grid=new THREE.GridHelper(BUILD_ZONE_R*2,BUILD_ZONE_R/2,0xffc978,0x6b5636);
+grid.material.opacity=0.32; grid.material.transparent=true;
+grid.position.y=0.03;
 surfaceScene.add(grid);
 
 // landing-zone marker ring
@@ -371,19 +499,35 @@ var landingRing=new THREE.Mesh(
 landingRing.rotation.x=-Math.PI/2; landingRing.position.y=0.05;
 surfaceScene.add(landingRing);
 
-// distant "mountains" ring for horizon interest (simple cones)
+/* rocks + alien vegetation scattered in the wild terrain beyond the clearing */
 (function(){
-  var mtGroup=new THREE.Group();
-  var mtMat=new THREE.MeshStandardMaterial({color:0x2e2216,roughness:1});
-  for(var i=0;i<26;i++){
-    var a=i/26*Math.PI*2, rr=SURFACE_SIZE*0.62+rnd(-20,20);
-    var h=rnd(30,70), rad=rnd(20,45);
-    var cone=new THREE.Mesh(new THREE.ConeGeometry(rad,h,6),mtMat);
-    cone.position.set(Math.cos(a)*rr,h/2-2,Math.sin(a)*rr);
-    cone.rotation.y=rnd(0,6.283);
-    mtGroup.add(cone);
+  var rockMat=new THREE.MeshStandardMaterial({color:0x5c5650,roughness:0.95,flatShading:true});
+  for(var i=0;i<60;i++){
+    var a=rnd(0,Math.PI*2), r=rnd(BUILD_ZONE_R*0.85,SURFACE_SIZE*0.46);
+    var x=Math.cos(a)*r, z=Math.sin(a)*r;
+    var y=terrainHeight(x,z);
+    var rock=new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(2,7),0),rockMat);
+    rock.position.set(x,y+rnd(0.5,2),z);
+    rock.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
+    rock.scale.set(1,rnd(0.6,1.3),1);
+    surfaceScene.add(rock);
   }
-  surfaceScene.add(mtGroup);
+  var stalkMat=new THREE.MeshStandardMaterial({color:0x2a4030,roughness:0.7});
+  var capMat=new THREE.MeshStandardMaterial({color:0x7a4ac0,emissive:0x2a1050,emissiveIntensity:0.4,roughness:0.5});
+  for(var j=0;j<45;j++){
+    var a2=rnd(0,Math.PI*2), r2=rnd(BUILD_ZONE_R*0.75,SURFACE_SIZE*0.42);
+    var x2=Math.cos(a2)*r2, z2=Math.sin(a2)*r2;
+    var y2=terrainHeight(x2,z2);
+    var g=new THREE.Group();
+    var h=rnd(2.5,6);
+    var stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.3,h,6),stalkMat);
+    stalk.position.y=h/2; g.add(stalk);
+    var cap=new THREE.Mesh(new THREE.SphereGeometry(rnd(0.6,1.3),8,6),capMat);
+    cap.position.y=h; cap.scale.y=0.6; g.add(cap);
+    g.position.set(x2,y2,z2);
+    g.rotation.y=rnd(0,6.28);
+    surfaceScene.add(g);
+  }
 })();
 
 /* stars visible above the horizon, cheap points */
@@ -398,42 +542,80 @@ surfaceScene.add(landingRing);
   }
   var geo=new THREE.BufferGeometry();
   geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
-  var mat=new THREE.PointsMaterial({color:0xbfe0ff,size:1.6,sizeAttenuation:false});
+  var mat=new THREE.PointsMaterial({color:0xbfe0ff,size:1.6,sizeAttenuation:false,transparent:true,opacity:0.5});
   surfaceScene.add(new THREE.Points(geo,mat));
 })();
 
 /* ═════════════ PLAYER ═════════════ */
 function buildPlayerMesh(){
   var g=new THREE.Group();
-  var bodyMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.55,metalness:0.15});
+  var suitMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.5,metalness:0.2});
+  var plateMat=new THREE.MeshStandardMaterial({color:0xd9903a,roughness:0.45,metalness:0.3});
   var darkMat=new THREE.MeshStandardMaterial({color:0x0b0f18,roughness:0.4,metalness:0.3});
+  var trimMat=new THREE.MeshStandardMaterial({color:0x233a56,roughness:0.5,metalness:0.4});
+  var gloveMat=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:0.6});
   var visorMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.8,roughness:0.3});
+  var lightMat=new THREE.MeshStandardMaterial({color:0xffe08a,emissive:0xffaa33,emissiveIntensity:1.4});
 
-  var body=new THREE.Mesh(new THREE.CapsuleGeometry(0.42,0.7,4,10),bodyMat);
-  body.position.y=1.0;
-  g.add(body);
+  var hip=new THREE.Group(); hip.position.y=0.86; g.add(hip);
 
-  var pack=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.6,0.28),darkMat);
-  pack.position.set(0,1.05,-0.42);
-  g.add(pack);
+  var torso=new THREE.Mesh(new THREE.CapsuleGeometry(0.46,0.62,4,10),suitMat);
+  torso.position.y=0.5; hip.add(torso);
+  var chest=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.42,0.22),plateMat);
+  chest.position.set(0,0.62,0.32); hip.add(chest);
+  var belt=new THREE.Mesh(new THREE.BoxGeometry(0.64,0.14,0.5),trimMat);
+  belt.position.y=0.16; hip.add(belt);
+  var pouch=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.16,0.12),darkMat);
+  pouch.position.set(0.28,0.1,0.32); hip.add(pouch);
 
-  var head=new THREE.Mesh(new THREE.SphereGeometry(0.34,14,10),darkMat);
-  head.position.y=1.78;
-  g.add(head);
+  var pack=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.62,0.26),darkMat);
+  pack.position.set(0,0.55,-0.4); hip.add(pack);
+  [-0.18,0.18].forEach(function(tx){
+    var tank=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.58,8),trimMat);
+    tank.position.set(tx,0.55,-0.58); hip.add(tank);
+  });
+  var hose=new THREE.Mesh(new THREE.TorusGeometry(0.14,0.03,6,10,Math.PI),trimMat);
+  hose.position.set(0,0.92,-0.28); hose.rotation.set(Math.PI/2,0,0); hip.add(hose);
 
-  var visor=new THREE.Mesh(new THREE.SphereGeometry(0.2,12,8),visorMat);
-  visor.position.set(0,1.78,0.24);
-  visor.scale.set(1,0.7,0.6);
-  g.add(visor);
+  var neck=new THREE.Group(); neck.position.y=0.86; hip.add(neck);
+  var head=new THREE.Mesh(new THREE.SphereGeometry(0.36,16,12),darkMat);
+  neck.add(head);
+  var jaw=new THREE.Mesh(new THREE.SphereGeometry(0.3,14,10),darkMat);
+  jaw.position.y=-0.12; jaw.scale.set(1,0.75,0.95); neck.add(jaw);
+  var visor=new THREE.Mesh(new THREE.SphereGeometry(0.22,14,10),visorMat);
+  visor.position.set(0,0,0.26); visor.scale.set(1,0.72,0.62); neck.add(visor);
+  var antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.3,5),trimMat);
+  antenna.position.set(0.22,0.32,-0.05); antenna.rotation.z=0.3; neck.add(antenna);
+  var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.045,6,6),lightMat);
+  beacon.position.set(0.29,0.46,-0.06); neck.add(beacon);
+  var lamp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,0.07,8),lightMat);
+  lamp.position.set(0,0.14,0.34); lamp.rotation.x=Math.PI/2; neck.add(lamp);
+  g.userData.beacon=beacon;
 
-  var legMat=new THREE.MeshStandardMaterial({color:0x132038,roughness:0.6});
-  var legL=new THREE.Mesh(new THREE.CapsuleGeometry(0.14,0.55,3,6),legMat);
-  legL.position.set(-0.19,0.4,0);
-  var legR=legL.clone(); legR.position.x=0.19;
-  g.add(legL); g.add(legR);
+  function buildArm(side){
+    var shoulder=new THREE.Group(); shoulder.position.set(side*0.5,0.78,0); hip.add(shoulder);
+    var pad=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),plateMat);
+    shoulder.add(pad);
+    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.11,0.32,3,6),suitMat);
+    upper.position.y=-0.2; shoulder.add(upper);
+    var glove=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),gloveMat);
+    glove.position.y=-0.42; shoulder.add(glove);
+    return shoulder;
+  }
+  var armL=buildArm(-1), armR=buildArm(1);
 
-  g.userData.legs=[legL,legR];
-  g.userData.body=body;
+  function buildLeg(side){
+    var socket=new THREE.Group(); socket.position.set(side*0.2,-0.02,0); hip.add(socket);
+    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.15,0.34,3,6),suitMat);
+    upper.position.y=-0.2; socket.add(upper);
+    var boot=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.2,0.34),trimMat);
+    boot.position.set(0,-0.42,0.05); socket.add(boot);
+    return socket;
+  }
+  var legL=buildLeg(-1), legR=buildLeg(1);
+
+  g.userData.hip=hip; g.userData.body=torso;
+  g.userData.legs=[legL,legR]; g.userData.arms=[armL,armR];
   return g;
 }
 var player=buildPlayerMesh();
@@ -464,100 +646,252 @@ function canAfford(cost){ for(var k in cost)if((stock[k]||0)<cost[k])return fals
 function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 
 /* ═════════════ BUILDINGS ═════════════ */
-var GRID=4;
+var GRID=8;
 function snapGrid(v){ return Math.round(v/GRID)*GRID; }
 var BUILD_DEFS={
-  pylon:{nm:"Power Pole",cat:"Power",ds:"Extends the power network's reach.",cost:{iron_ore:8},powerDraw:0,range:70,radius:1,produces:[],accepts:[]},
-  solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 power. No fuel needed.",cost:{iron_ore:15},powerDraw:0,range:26,radius:1.3,produces:[],accepts:[],generates:22},
-  miner:{nm:"Miner",cat:"Production",ds:"Extracts ore from the deposit it's built on.",cost:{iron_ore:20},powerDraw:6,range:26,radius:1.3,produces:["iron_ore","copper_ore","coal"],accepts:[]},
-  smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal.",cost:{iron_ore:25},powerDraw:10,range:26,radius:1.4,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
-  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,range:26,radius:1.4,produces:[],accepts:["iron","copper"]},
-  storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,range:22,radius:1.2,
+  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},powerDraw:0,radius:4,produces:[],accepts:[]},
+  pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
+  solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
+  miner:{nm:"Miner",cat:"Production",ds:"Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:6,radius:3.0,produces:["iron_ore","copper_ore","coal"],accepts:[]},
+  smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
+  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
+  storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
     produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
-  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,range:30,radius:3.6,uniq:true,produces:[],accepts:[]}
+  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
 };
-var BUILD_ORDER=["pylon","solar","miner","smelter","constructor","storage","shipyard"];
+var BUILD_ORDER=["foundation","pylon","solar","miner","smelter","constructor","storage","shipyard"];
+var RECIPES={
+  smelter:[
+    {key:"iron",nm:"Iron Ingot",in:{iron_ore:2},out:{iron:1},time:1.5},
+    {key:"copper",nm:"Copper Ingot",in:{copper_ore:2},out:{copper:1},time:1.5}
+  ],
+  constructor:[
+    {key:"parts",nm:"Ship Parts",in:{iron:2,copper:1},out:{parts:1},time:2}
+  ]
+};
+function activeRecipe(b){
+  var list=RECIPES[b.type]; if(!list)return null;
+  return list.filter(function(r){return r.key===b.recipe;})[0]||null;
+}
+function rateStr(amt,time){ return (amt/time*60).toFixed(1)+"/min"; }
 var BELT_MAX=240, BELT_COST={iron_ore:3};
+var CABLE_MAX=26, CABLE_COST={copper_ore:4};
 
 var buildIdSeq=1;
-var buildings=[], belts=[], nodes=[];
-var powerGen=0, powerDraw=0, powerEdges=[];
+var buildings=[], belts=[], nodes=[], cables=[];
+var powerGen=0, powerDraw=0;
+function powerCapable(b){ var d=BUILD_DEFS[b.type]; return b.type==="pylon"||d.powerDraw>0||!!d.generates; }
+function cableAnchorWorld(b){
+  var a=b.mesh&&b.mesh.userData.cableAnchor;
+  if(!a)return {x:b.x,y:1.2,z:b.z};
+  var c=Math.cos(b.rotY||0), s=Math.sin(b.rotY||0);
+  return {x:b.x+a.x*c+a.z*s, y:a.y, z:b.z-a.x*s+a.z*c};
+}
 
 function matStd(color,rough,metal){ return new THREE.MeshStandardMaterial({color:color,roughness:rough==null?0.6:rough,metalness:metal==null?0.2:metal}); }
+function boltRow(g,w,d,y,mat,n){
+  n=n||4; mat=mat||matStd(0x1a2230,0.5,0.7);
+  for(var i=0;i<n;i++){
+    for(var j=0;j<2;j++){
+      var bx=(i/(n-1)-0.5)*w, bz=(j-0.5)*d;
+      var bolt=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.06,6),mat);
+      bolt.position.set(bx,y,bz); g.add(bolt);
+    }
+  }
+}
 function buildBuildingMesh(type){
   var g=new THREE.Group();
+  if(type==="foundation"){
+    var plateMat=matStd(0x384454,0.65,0.45);
+    var plate=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,0.3,GRID-0.15),plateMat);
+    plate.position.y=0.15; g.add(plate);
+    var trimMat=matStd(0x1c2430,0.6,0.5);
+    var trimN=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,0.34,0.16),trimMat);
+    trimN.position.set(0,0.15,(GRID-0.15)/2); g.add(trimN);
+    var trimS=trimN.clone(); trimS.position.z=-(GRID-0.15)/2; g.add(trimS);
+    var trimE=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.34,GRID-0.15),trimMat);
+    trimE.position.set((GRID-0.15)/2,0.15,0); g.add(trimE);
+    var trimW=trimE.clone(); trimW.position.x=-(GRID-0.15)/2; g.add(trimW);
+    var panelMat=matStd(0x2e3846,0.7,0.35);
+    for(var pi=-1;pi<=1;pi+=2){
+      for(var pj=-1;pj<=1;pj+=2){
+        var seam=new THREE.Mesh(new THREE.BoxGeometry(GRID*0.42,0.02,0.05),panelMat);
+        seam.position.set(pi*GRID*0.2,0.31,pj*GRID*0.2); g.add(seam);
+        var seam2=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.02,GRID*0.42),panelMat);
+        seam2.position.set(pi*GRID*0.2,0.31,pj*GRID*0.2); g.add(seam2);
+      }
+    }
+    boltRow(g,GRID-0.6,GRID-0.6,0.32,null,4);
+    return g;
+  }
   if(type==="pylon"){
-    var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.11,3,6),matStd(0x5b7089));
-    pole.position.y=1.5; g.add(pole);
-    var arm=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.09,0.09),matStd(0x9fc6ff));
-    arm.position.y=2.55; g.add(arm);
+    var footMat=matStd(0x2a3542,0.7,0.6);
+    var foot=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.62,0.22,8),footMat);
+    foot.position.y=0.11; g.add(foot);
+    var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.19,4.6,7),matStd(0x5b7089,0.55,0.5));
+    pole.position.y=2.42; g.add(pole);
+    var collar=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.16,7),matStd(0x2a3542));
+    collar.position.y=3.9; g.add(collar);
+    var arm=new THREE.Mesh(new THREE.BoxGeometry(2.1,0.13,0.13),matStd(0x9fc6ff,0.4,0.6));
+    arm.position.y=4.15; g.add(arm);
+    var arm2=arm.clone(); arm2.position.y=3.6; arm2.scale.set(0.7,1,1); g.add(arm2);
+    var insA=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.22,6),matStd(0x1a2230));
+    insA.position.set(0.95,4.05,0); g.add(insA);
+    var insB=insA.clone(); insB.position.set(-0.95,4.05,0); g.add(insB);
     var orbMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x0d2a38,emissiveIntensity:1});
-    var orb=new THREE.Mesh(new THREE.SphereGeometry(0.18,10,8),orbMat);
-    orb.position.y=3.05; g.add(orb);
+    var orb=new THREE.Mesh(new THREE.SphereGeometry(0.24,10,8),orbMat);
+    orb.position.y=4.55; g.add(orb);
+    boltRow(g,0.7,0.7,0.24,null,4);
     g.userData.statusMesh=orb; g.userData.statusMat=orbMat; g.userData.onCol=0x4fd3ff; g.userData.onEm=0x2a7a9a;
+    g.userData.cableAnchor=new THREE.Vector3(0,4.15,0);
   } else if(type==="solar"){
-    var base=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,1.1,6),matStd(0x233a56));
-    base.position.y=0.55; g.add(base);
-    var panelMat=new THREE.MeshStandardMaterial({color:0x14243a,emissive:0x0a3a55,emissiveIntensity:0.4,roughness:0.3,metalness:0.4});
-    var panel=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.08,1.5),panelMat);
-    panel.position.y=1.25; panel.rotation.x=-0.35;
+    var footMat=matStd(0x2a3542,0.7,0.6);
+    var foot=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.85,0.25,8),footMat);
+    foot.position.y=0.12; g.add(foot);
+    var base=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.3,1.9,8),matStd(0x233a56,0.55,0.5));
+    base.position.y=1.1; g.add(base);
+    var hinge=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.5),matStd(0x1a2230));
+    hinge.position.y=2.05; g.add(hinge);
+    var frameMat=matStd(0x101c2e,0.6,0.4);
+    var frame=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.16,3.0),frameMat);
+    frame.position.y=2.3; frame.rotation.x=-0.32; g.add(frame);
+    var panelMat=new THREE.MeshStandardMaterial({color:0x14243a,emissive:0x0a3a55,emissiveIntensity:0.4,roughness:0.25,metalness:0.5});
+    var panel=new THREE.Mesh(new THREE.BoxGeometry(4.1,0.06,2.7),panelMat);
+    panel.position.copy(frame.position); panel.position.y+=0.09; panel.rotation.x=-0.32;
     g.add(panel);
+    var grid1=new THREE.Mesh(new THREE.BoxGeometry(4.1,0.07,0.05),matStd(0x0a1626));
+    for(var gi=-2;gi<=2;gi++){ var gl=grid1.clone(); gl.position.set(0,2.3+0.1,gi*0.5); gl.rotation.x=-0.32; g.add(gl); }
+    var strut=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.4,5),matStd(0x2a3542));
+    strut.position.set(0,1.55,1.0); strut.rotation.x=0.55; g.add(strut);
+    boltRow(g,1.0,1.0,0.25,null,4);
     g.userData.statusMesh=panel; g.userData.statusMat=panelMat; g.userData.onCol=0x14243a; g.userData.onEm=0x1a6a95;
+    g.userData.cableAnchor=new THREE.Vector3(0,1.1,0.4);
   } else if(type==="miner"){
-    var base=new THREE.Mesh(new THREE.CylinderGeometry(1,1.1,0.5,8),matStd(0x3a4a5e));
-    base.position.y=0.25; g.add(base);
-    var body=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.7,1.3,8),matStd(0x3a4a5e));
-    body.position.y=1.15; g.add(body);
-    var bit=new THREE.Mesh(new THREE.ConeGeometry(0.35,0.9,8),matStd(0xffb545,0.4,0.6));
-    bit.position.y=0.1; bit.rotation.x=Math.PI;
+    var padMat=matStd(0x2a3542,0.7,0.6);
+    var pad=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.4,0.5,10),padMat);
+    pad.position.y=0.25; g.add(pad);
+    var legMat=matStd(0x1a2230,0.6,0.6);
+    for(var li=0;li<4;li++){
+      var ang=li/4*Math.PI*2+Math.PI/4;
+      var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.14,0.9,6),legMat);
+      leg.position.set(Math.cos(ang)*1.9,0.45,Math.sin(ang)*1.9); g.add(leg);
+    }
+    var body=new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.45,2.6,10),matStd(0x3a4a5e,0.55,0.5));
+    body.position.y=1.9; g.add(body);
+    var band=new THREE.Mesh(new THREE.TorusGeometry(1.2,0.08,6,16),matStd(0xffb545,0.5,0.5));
+    band.rotation.x=Math.PI/2; band.position.y=2.6; g.add(band);
+    var hopper=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.85,1.0,8),matStd(0x2a3542,0.6,0.5));
+    hopper.position.y=3.5; g.add(hopper);
+    var pipe=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,1.6,6),matStd(0x3a4a5e));
+    pipe.position.set(1.3,2.4,0); pipe.rotation.z=0.5; g.add(pipe);
+    var drillShaft=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.4,1.7,8),matStd(0x2a3542,0.5,0.6));
+    drillShaft.position.y=0.55; g.add(drillShaft);
+    var bit=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.3,8),matStd(0xffb545,0.35,0.65));
+    bit.position.y=-0.35; bit.rotation.x=Math.PI;
     g.add(bit);
     g.userData.spinPart=bit;
     var eyeMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x0d2a38,emissiveIntensity:1});
-    var eye=new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6),eyeMat);
-    eye.position.set(0,1.7,0.5); g.add(eye);
+    var eye=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6),eyeMat);
+    eye.position.set(0,3.05,1.05); g.add(eye);
+    boltRow(g,3.6,3.6,0.5,null,5);
     g.userData.statusMesh=eye; g.userData.statusMat=eyeMat; g.userData.onCol=0x233a56; g.userData.onEm=0xff8a2a;
+    g.userData.cableAnchor=new THREE.Vector3(1.5,2.4,0);
   } else if(type==="smelter"){
-    var box=new THREE.Mesh(new THREE.BoxGeometry(1.8,1.5,1.6),matStd(0x2a2018));
-    box.position.y=0.75; g.add(box);
+    var baseMat=matStd(0x1a1410,0.75,0.4);
+    var base=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.4,3.0),baseMat);
+    base.position.y=0.2; g.add(base);
+    var box=new THREE.Mesh(new THREE.BoxGeometry(3.2,2.6,2.8),matStd(0x2a2018,0.6,0.4));
+    box.position.y=1.6; g.add(box);
+    var doorMat=matStd(0x14100c,0.5,0.5);
+    var door=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.3,0.1),doorMat);
+    door.position.set(0,1.15,1.46); g.add(door);
+    var glowMat=new THREE.MeshStandardMaterial({color:0xff5a1a,emissive:0xff5a1a,emissiveIntensity:1.4});
+    var glow=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.03),glowMat);
+    glow.position.set(0,1.15,1.51); g.add(glow);
+    g.userData.glowMesh=glow;
     var ventMat=new THREE.MeshStandardMaterial({color:0x5b4630,emissive:0x1a0d00,emissiveIntensity:0.6});
-    var vent=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.4,0.12),ventMat);
-    vent.position.set(0,0.65,0.82); g.add(vent);
-    var chim=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.28,1,8),matStd(0x3a3028));
-    chim.position.set(0.5,1.9,0); g.add(chim);
+    var vent=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.7,0.14),ventMat);
+    vent.position.set(0,2.4,1.48); g.add(vent);
+    var chim=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.55,2.0,8),matStd(0x3a3028,0.7,0.4));
+    chim.position.set(1.0,3.8,0); g.add(chim);
+    var chimTop=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.42,0.3,8),matStd(0x2a2018));
+    chimTop.position.set(1.0,4.85,0); g.add(chimTop);
+    var pipes=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,2.9,6),matStd(0x3a4a5e));
+    pipes.position.set(-1.4,1.6,1.2); g.add(pipes);
+    boltRow(g,3.0,2.6,0.42,null,5);
     g.userData.statusMesh=vent; g.userData.statusMat=ventMat; g.userData.onCol=0xff9d3c; g.userData.onEm=0xff6a1a;
+    g.userData.cableAnchor=new THREE.Vector3(-1.4,1.4,1.4);
   } else if(type==="constructor"){
-    var b=new THREE.Mesh(new THREE.BoxGeometry(2,1.1,1.4),matStd(0x1a2233));
-    b.position.y=0.55; g.add(b);
-    var arm=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.22,1.7),matStd(0xffb545,0.4,0.6));
-    arm.position.set(0,1.2,0); g.add(arm);
-    g.userData.spinPart=arm;
+    var baseMat=matStd(0x141b28,0.7,0.5);
+    var base=new THREE.Mesh(new THREE.BoxGeometry(3.8,0.4,2.8),baseMat);
+    base.position.y=0.2; g.add(base);
+    var b=new THREE.Mesh(new THREE.BoxGeometry(3.6,2.0,2.6),matStd(0x1a2233,0.55,0.5));
+    b.position.y=1.4; g.add(b);
+    var slotMat=matStd(0x0c1420,0.4,0.6);
+    var slot=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.9,0.1),slotMat);
+    slot.position.set(0,1.3,1.36); g.add(slot);
+    var rail=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,3.2),matStd(0x3a4a5e,0.5,0.6));
+    rail.position.set(0,2.5,0); g.add(rail);
+    var head=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),matStd(0xffb545,0.4,0.6));
+    head.position.set(0,2.5,0.9); g.add(head);
+    g.userData.spinPart=head;
+    var arm=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.7,6),matStd(0x2a3542));
+    arm.position.set(0,2.1,0.9); g.add(arm);
     var lightMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x0d2a38,emissiveIntensity:1});
-    var light=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.08,0.08),lightMat);
-    light.position.set(0,1.05,0.72); g.add(light);
+    var light=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.14,0.1),lightMat);
+    light.position.set(0,2.05,1.36); g.add(light);
+    boltRow(g,3.4,2.6,0.42,null,5);
     g.userData.statusMesh=light; g.userData.statusMat=lightMat; g.userData.onCol=0x233a56; g.userData.onEm=0x7bd94a;
+    g.userData.cableAnchor=new THREE.Vector3(-1.6,1.4,1.2);
   } else if(type==="storage"){
-    var crate=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.2,1.6),matStd(0x3a2c1c));
-    crate.position.y=0.6; g.add(crate);
-    var band=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.14,1.7),matStd(0x9fc6ff,0.4,0.5));
-    band.position.y=0.6; g.add(band);
-    var band2=band.clone(); band2.position.y=0.15; g.add(band2);
-  } else if(type==="shipyard"){
-    var pad=new THREE.Mesh(new THREE.CylinderGeometry(3.3,3.3,0.3,10),matStd(0x101c2e));
+    var padMat=matStd(0x2a2016,0.7,0.5);
+    var pad=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.3,3.4),padMat);
     pad.position.y=0.15; g.add(pad);
+    var crate=new THREE.Mesh(new THREE.BoxGeometry(2.8,2.3,2.8),matStd(0x3a2c1c,0.65,0.35));
+    crate.position.y=1.45; g.add(crate);
+    var band=new THREE.Mesh(new THREE.BoxGeometry(3.0,0.2,3.0),matStd(0x9fc6ff,0.4,0.5));
+    band.position.y=2.15; g.add(band);
+    var band2=band.clone(); band2.position.y=1.4; g.add(band2);
+    var band3=band.clone(); band3.position.y=0.65; g.add(band3);
+    var doorMat=matStd(0x241a10,0.6,0.4);
+    var door=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.7,0.1),doorMat);
+    door.position.set(0,1.2,1.41); g.add(door);
+    var handle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,6),matStd(0x9fc6ff,0.3,0.6));
+    handle.rotation.z=Math.PI/2; handle.position.set(0,1.2,1.5); g.add(handle);
+    boltRow(g,2.8,2.8,0.3,null,4);
+    g.userData.cableAnchor=null;
+  } else if(type==="shipyard"){
+    var padMat=matStd(0x101c2e,0.65,0.4);
+    var pad=new THREE.Mesh(new THREE.CylinderGeometry(6.6,6.6,0.4,14),padMat);
+    pad.position.y=0.2; g.add(pad);
+    var padInner=new THREE.Mesh(new THREE.CylinderGeometry(5.6,5.6,0.44,14),matStd(0x0a1420,0.5,0.5));
+    padInner.position.y=0.22; g.add(padInner);
     var ringMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0x3a1c00,emissiveIntensity:0.6});
-    var ring=new THREE.Mesh(new THREE.TorusGeometry(3,0.12,8,28),ringMat);
-    ring.rotation.x=Math.PI/2; ring.position.y=0.32; g.add(ring);
-    var t1=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.26,4,6),matStd(0x3a4a5e));
-    t1.position.set(2.7,2,0); g.add(t1);
-    var t2=t1.clone(); t2.position.set(-2.7,2,1.6); g.add(t2);
+    var ring=new THREE.Mesh(new THREE.TorusGeometry(6.0,0.2,8,32),ringMat);
+    ring.rotation.x=Math.PI/2; ring.position.y=0.46; g.add(ring);
+    var ring2=new THREE.Mesh(new THREE.TorusGeometry(4.4,0.12,8,28),matStd(0x2a3542,0.5,0.6));
+    ring2.rotation.x=Math.PI/2; ring2.position.y=0.44; g.add(ring2);
+    var towerMat=matStd(0x3a4a5e,0.55,0.5);
+    var t1=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.45,7.5,7),towerMat);
+    t1.position.set(5.2,3.9,0); g.add(t1);
+    var t2=t1.clone(); t2.position.set(-5.2,3.9,3.0); g.add(t2);
+    var t3=t1.clone(); t3.scale.set(0.7,0.7,0.7); t3.position.set(0,2.7,-5.4); g.add(t3);
+    var crossMat=matStd(0x2a3542);
+    var cross=new THREE.Mesh(new THREE.BoxGeometry(10.6,0.24,0.24),crossMat);
+    cross.position.set(0,6.3,1.5); g.add(cross);
+    var beacon1=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),new THREE.MeshStandardMaterial({color:0xff4a4a,emissive:0xff2a2a,emissiveIntensity:1.2}));
+    beacon1.position.set(5.2,7.7,0); g.add(beacon1);
+    var beacon2=beacon1.clone(); beacon2.position.set(-5.2,7.7,3.0); g.add(beacon2);
     g.userData.statusMesh=ring; g.userData.statusMat=ringMat; g.userData.onCol=0xffb545; g.userData.onEm=0xff6a1a;
+    g.userData.cableAnchor=new THREE.Vector3(5.2,1.0,0);
   }
   return g;
 }
 
 function makeBuilding(type,x,z,rotY,node){
   var d=BUILD_DEFS[type];
-  var b={id:buildIdSeq++,type:type,x:x,z:z,rotY:rotY||0,node:node||null,powered:false,netId:null,in:{},out:{},job:null};
+  var b={id:buildIdSeq++,type:type,x:x,z:z,rotY:rotY||0,node:node||null,powered:false,netId:null,in:{},out:{},job:null,
+    recipe:null,recipeActive:false};
   d.accepts.forEach(function(r){ b.in[r]=0; });
   d.produces.forEach(function(r){ b.out[r]=0; });
   if(type==="miner"&&node)b.out[node.restype]=0;
@@ -574,30 +908,59 @@ function destCapFor(b,res){
 }
 
 /* ═════════════ RESOURCE NODES ═════════════ */
+var NODE_STYLE={
+  iron_ore:{rockCol:0x5a5a62,crystalCol:0xd8dbe6,emit:0x3a4048,shape:"shard"},
+  copper_ore:{rockCol:0x4a3a2c,crystalCol:0xff9d5c,emit:0x7a3810,shape:"blob"},
+  coal:{rockCol:0x1c1c20,crystalCol:0x38383e,emit:0x000000,shape:"chunk"}
+};
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
-  var geo=new THREE.IcosahedronGeometry(0.7,0);
-  var mat=new THREE.MeshStandardMaterial({color:RES[restype].col,roughness:0.7,metalness:0.25,flatShading:true});
-  var mesh=new THREE.Mesh(geo,mat);
-  mesh.scale.set(1,rnd(0.7,1.1),1);
-  mesh.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
-  g.add(mesh);
-  for(var i=0;i<2;i++){
-    var chip=new THREE.Mesh(new THREE.IcosahedronGeometry(0.28,0),mat);
-    chip.position.set(rnd(-0.6,0.6),rnd(-0.1,0.2),rnd(-0.6,0.6));
-    g.add(chip);
+  var style=NODE_STYLE[restype];
+  var rockMat=new THREE.MeshStandardMaterial({color:style.rockCol,roughness:0.95,metalness:0.05,flatShading:true});
+  var crystalMat=new THREE.MeshStandardMaterial({color:style.crystalCol,roughness:0.35,metalness:0.4,flatShading:true,emissive:style.emit,emissiveIntensity:0.35});
+  var moundGeo=new THREE.DodecahedronGeometry(2.3,0);
+  var mound=new THREE.Mesh(moundGeo,rockMat);
+  mound.scale.set(1.25,0.55,1.1);
+  mound.rotation.y=rnd(0,6.28);
+  mound.position.y=0.65;
+  g.add(mound);
+  var mound2=new THREE.Mesh(new THREE.DodecahedronGeometry(1.5,0),rockMat);
+  mound2.scale.set(1,0.5,1);
+  mound2.position.set(rnd(-1.2,1.2),0.45,rnd(-1.2,1.2));
+  mound2.rotation.y=rnd(0,6.28);
+  g.add(mound2);
+  var nShards=style.shape==="shard"?6:(style.shape==="blob"?5:4);
+  for(var i=0;i<nShards;i++){
+    var ang=(i/nShards)*Math.PI*2+rnd(-0.3,0.3);
+    var dist=rnd(0.3,1.5);
+    var h=rnd(1.1,2.6);
+    var geo=style.shape==="shard"?new THREE.ConeGeometry(rnd(0.35,0.6),h,5)
+      :style.shape==="blob"?new THREE.IcosahedronGeometry(rnd(0.55,0.9),0)
+      :new THREE.BoxGeometry(rnd(0.6,1.0),rnd(0.5,0.9),rnd(0.6,1.0));
+    var shard=new THREE.Mesh(geo,crystalMat);
+    shard.position.set(Math.cos(ang)*dist,h*0.35+0.4,Math.sin(ang)*dist);
+    shard.rotation.set(rnd(-0.25,0.25),rnd(0,6.28),style.shape==="shard"?rnd(-0.3,0.3):rnd(0,6.28));
+    g.add(shard);
   }
-  g.position.set(x,0.5,z);
+  var glintMat=new THREE.MeshStandardMaterial({color:style.crystalCol,emissive:style.crystalCol,emissiveIntensity:0.8,roughness:0.2,metalness:0.6});
+  var glint=new THREE.Mesh(new THREE.OctahedronGeometry(0.22,0),glintMat);
+  glint.position.set(0,2.0,0);
+  g.add(glint);
+  g.position.set(x,0.4,z);
+  g.userData.footprint=2.6;
   surfaceScene.add(g);
   nodes.push({x:x,z:z,restype:restype,mesh:g});
 }
 function scatterNodes(){
   var types=["iron_ore","iron_ore","iron_ore","iron_ore","copper_ore","copper_ore","copper_ore","copper_ore","coal","coal","coal","coal"];
-  var half=SURFACE_SIZE/2-30;
+  var maxR=BUILD_ZONE_R-25;
   types.forEach(function(t){
-    var x,z,tries=0;
-    do{ x=snapGrid(rnd(-half,half)); z=snapGrid(rnd(-half,half)); tries++; }
-    while(Math.sqrt(x*x+z*z)<24 && tries<30);
+    var x,z,tries=0,d,clash;
+    do{
+      x=snapGrid(rnd(-maxR,maxR)); z=snapGrid(rnd(-maxR,maxR)); d=Math.sqrt(x*x+z*z); tries++;
+      clash=nodes.some(function(n){ var dx=n.x-x,dz=n.z-z; return Math.sqrt(dx*dx+dz*dz)<14; });
+    }
+    while((d<24||d>maxR||clash)&&tries<60);
     spawnNode(x,z,t);
   });
 }
@@ -607,25 +970,24 @@ function nearestNode(x,z,radius){
   return best;
 }
 
-/* ═════════════ POWER NETWORK ═════════════ */
+/* ═════════════ POWER NETWORK (explicit cables only — nothing auto-connects) ═════════════ */
 function computePowerNetworks(){
   buildings.forEach(function(b){ b.netId=null; });
-  var netId=0; powerEdges=[];
+  var adj={};
+  buildings.forEach(function(b){ adj[b.id]=[]; });
+  cables.forEach(function(c){
+    if(!adj[c.from.id]||!adj[c.to.id])return;
+    adj[c.from.id].push(c.to); adj[c.to.id].push(c.from);
+  });
+  var netId=0;
   buildings.forEach(function(b){
     if(b.netId!=null)return;
     var thisNet=netId++;
     var stack=[b]; b.netId=thisNet;
     while(stack.length){
       var cur=stack.pop();
-      var curRange=BUILD_DEFS[cur.type].range;
-      buildings.forEach(function(o){
-        if(o===cur||(o.netId!=null&&o.netId!==thisNet))return;
-        var r=Math.max(curRange,BUILD_DEFS[o.type].range);
-        var dx=cur.x-o.x,dz=cur.z-o.z;
-        if(Math.sqrt(dx*dx+dz*dz)<=r){
-          if(cur.id<o.id)powerEdges.push([cur,o]); else powerEdges.push([o,cur]);
-          if(o.netId==null){ o.netId=thisNet; stack.push(o); }
-        }
+      adj[cur.id].forEach(function(o){
+        if(o.netId==null){ o.netId=thisNet; stack.push(o); }
       });
     }
   });
@@ -637,7 +999,15 @@ function computePowerNetworks(){
     if(d.powerDraw)nets[b.netId].draw+=d.powerDraw;
   });
   powerGen=0; powerDraw=0;
-  buildings.forEach(function(b){ var n=nets[b.netId]; b.powered=n.gen>=n.draw; });
+  buildings.forEach(function(b){
+    var d=BUILD_DEFS[b.type];
+    var n=nets[b.netId];
+    var connected=adj[b.id].length>0;
+    b.powered=d.powerDraw>0?(connected&&n.gen>=n.draw):true;
+    b.overload=d.powerDraw>0&&connected&&n.gen<n.draw;
+    b.cableConnected=connected;
+    b.netGen=n.gen; b.netDraw=n.draw;
+  });
   Object.keys(nets).forEach(function(k){ powerGen+=nets[k].gen; powerDraw+=nets[k].draw; });
 }
 
@@ -649,7 +1019,7 @@ surfaceScene.add(placeGhost);
 placeGhost.visible=false;
 function setGhost(type){
   placeGhost.clear();
-  if(!type||type==="belt")return;
+  if(!type||type==="belt"||type==="cable")return;
   var mesh=buildBuildingMesh(type);
   mesh.traverse(function(o){
     if(o.isMesh){
@@ -669,17 +1039,19 @@ function canPlaceAt3D(type,x,z){
   var d=BUILD_DEFS[type];
   if(d.uniq&&buildings.some(function(b){return b.type===type;}))return "Already built";
   if(!canAfford(d.cost))return "Not enough resources";
-  var half=SURFACE_SIZE/2-16;
-  if(Math.abs(x)>half||Math.abs(z)>half)return "Too far from the colony";
+  if(Math.sqrt(x*x+z*z)>BUILD_ZONE_R-10)return "Too far from the colony — the ground gets rough past here";
   for(var i=0;i<buildings.length;i++){
     var b=buildings[i], dx=b.x-x,dz=b.z-z;
-    if(Math.sqrt(dx*dx+dz*dz)<(d.radius+BUILD_DEFS[b.type].radius+0.6))return "Too close to another structure";
+    if(type==="foundation"&&b.type!=="foundation")continue;
+    if(type!=="foundation"&&b.type==="foundation")continue;
+    var minD=(type==="foundation")?(GRID-1):(d.radius+BUILD_DEFS[b.type].radius+0.6);
+    if(Math.sqrt(dx*dx+dz*dz)<minD)return "Too close to another structure";
   }
-  if(type==="miner"&&!nearestNode(x,z,7))return "Too far from an ore deposit";
+  if(type==="miner"&&!nearestNode(x,z,9))return "Too far from an ore deposit";
   return null;
 }
 function tryPlaceAt3D(x,z){
-  var type=placing; if(!type||type==="belt")return;
+  var type=placing; if(!type||type==="belt"||type==="cable")return;
   x=snapGrid(x); z=snapGrid(z);
   var reason=canPlaceAt3D(type,x,z);
   if(reason){
@@ -688,22 +1060,45 @@ function tryPlaceAt3D(x,z){
     return;
   }
   var d=BUILD_DEFS[type];
-  var node=type==="miner"?nearestNode(x,z,7):null;
+  var node=type==="miner"?nearestNode(x,z,9):null;
   payCost(d.cost);
   var b=makeBuilding(type,x,z,placeRotY,node);
   buildings.push(b);
-  sfx.build(); toast(d.nm+" built");
+  sfx.build(); toast(d.nm+" built"); pulseInteractPose();
   placing=null; placeGhost.visible=false;
 }
-function findBuildingNear(x,z,radius){
-  var best=null,bd=radius;
-  buildings.forEach(function(b){ var dx=b.x-x,dz=b.z-z,dd=Math.sqrt(dx*dx+dz*dz); if(dd<bd){bd=dd;best=b;} });
+function findBuildingNear(x,z,margin){
+  var best=null,bd=Infinity;
+  buildings.forEach(function(b){
+    var dx=b.x-x,dz=b.z-z,dd=Math.sqrt(dx*dx+dz*dz);
+    var r=BUILD_DEFS[b.type].radius+(margin==null?2.2:margin);
+    if(dd<r&&dd<bd){bd=dd;best=b;}
+  });
   return best;
 }
 function buildingProduces(b){
   if(b.type==="miner")return b.node?[b.node.restype]:[];
+  if(b.type==="smelter"){ var r=activeRecipe(b); return r?Object.keys(r.out):[]; }
   return BUILD_DEFS[b.type].produces;
 }
+function machineStatus(b){
+  var d=BUILD_DEFS[b.type];
+  if(!RECIPES[b.type])return null;
+  if(!b.recipe)return "no_recipe";
+  if(d.powerDraw>0&&!b.powered)return b.overload?"overload":"no_power";
+  if(b.recipeActive)return "working";
+  var r=activeRecipe(b);
+  if(r){
+    for(var k in r.in){ if((b.in[k]||0)<r.in[k]-0.001)return "no_input"; }
+    for(var k2 in r.out){ var cap=destCapFor(b,k2); if((b.out[k2]||0)>=cap-0.01)return "output_full"; }
+  }
+  return "no_input";
+}
+var MACHINE_STATUS_LABEL={
+  working:{txt:"WORKING",col:"#7bd94a"}, no_recipe:{txt:"NO RECIPE SELECTED",col:"#8a92a5"},
+  no_power:{txt:"NO POWER",col:"#ff9d3c"}, overload:{txt:"GRID OVERLOAD",col:"#ff4d5e"},
+  output_full:{txt:"OUTPUT FULL",col:"#4fd3ff"}, no_input:{txt:"WAITING FOR INPUT",col:"#8a92a5"}
+};
 function beltCompatible(from,to){
   var outs=buildingProduces(from), ins=BUILD_DEFS[to.type].accepts;
   for(var i=0;i<outs.length;i++){
@@ -724,19 +1119,39 @@ function makeBeltMesh(bl){
   var g=new THREE.Group();
   var len=Math.sqrt((p2.x-p1.x)*(p2.x-p1.x)+(p2.z-p1.z)*(p2.z-p1.z));
   var ang=Math.atan2(p2.z-p1.z,p2.x-p1.x);
-  var bed=new THREE.Mesh(new THREE.BoxGeometry(len,0.12,0.5),matStd(0x241c14,0.9,0.1));
-  bed.position.set((p1.x+p2.x)/2,0.08,(p1.z+p2.z)/2);
-  bed.rotation.y=-ang;
-  g.add(bed);
+  var midX=(p1.x+p2.x)/2, midZ=(p1.z+p2.z)/2;
+  var frameMat=matStd(0x2a3542,0.6,0.6);
+  var beltMat=new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15});
+  var railMat=matStd(0x3a4a5e,0.5,0.6);
+  var beltH=0.55;
+  var frame=new THREE.Group();
+  var sideRailL=new THREE.Mesh(new THREE.BoxGeometry(len,0.16,0.1),railMat);
+  sideRailL.position.set(0,0.14,0.34); frame.add(sideRailL);
+  var sideRailR=sideRailL.clone(); sideRailR.position.z=-0.34; frame.add(sideRailR);
+  var bed=new THREE.Mesh(new THREE.BoxGeometry(len,0.1,0.62),beltMat);
+  bed.position.set(0,0.02,0); frame.add(bed);
+  var nLegs=Math.max(2,Math.floor(len/6));
+  for(var li=0;li<=nLegs;li++){
+    var lx=-len/2+(len*li/nLegs);
+    var leg=new THREE.Mesh(new THREE.BoxGeometry(0.14,beltH,0.14),frameMat);
+    leg.position.set(lx,-beltH/2,0.28); frame.add(leg);
+    var leg2=leg.clone(); leg2.position.z=-0.28; frame.add(leg2);
+    var brace=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.62),frameMat);
+    brace.position.set(lx,-beltH+0.08,0); frame.add(brace);
+  }
+  frame.position.set(midX,beltH,midZ);
+  frame.rotation.y=-ang;
+  g.add(frame);
   var items=[];
   var n=Math.max(2,Math.floor(len/2.2));
   var itemMat=new THREE.MeshStandardMaterial({color:RES[bl.res]?RES[bl.res].col:0xffb545,roughness:0.5,metalness:0.3});
   for(var i=0;i<n;i++){
     var cube=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.26,0.26),itemMat);
+    cube.position.y=beltH+0.18;
     g.add(cube); items.push(cube);
   }
   surfaceScene.add(g);
-  return {mesh:g,items:items,p1:p1,p2:p2,len:len};
+  return {mesh:g,items:items,p1:p1,p2:p2,len:len,beltH:beltH};
 }
 function tryPlaceBelt(from,to){
   var dx=from.x-to.x,dz=from.z-to.z;
@@ -749,16 +1164,48 @@ function tryPlaceBelt(from,to){
   var vis=makeBeltMesh(bl);
   bl.mesh=vis.mesh; bl.items=vis.items; bl.p1=vis.p1; bl.p2=vis.p2; bl.len=vis.len;
   belts.push(bl);
-  sfx.click(); toast("Belt connected — "+RES[res].nm);
+  sfx.click(); toast("Belt connected — "+RES[res].nm); pulseInteractPose();
+}
+function makeCableMesh(c){
+  var a=cableAnchorWorld(c.from), b=cableAnchorWorld(c.to);
+  var p1=new THREE.Vector3(a.x,a.y,a.z), p2=new THREE.Vector3(b.x,b.y,b.z);
+  var len=p1.distanceTo(p2);
+  var mid=p1.clone().add(p2).multiplyScalar(0.5);
+  var sag=Math.min(2.2,0.18*len);
+  mid.y-=sag;
+  var curve=new THREE.QuadraticBezierCurve3(p1,mid,p2);
+  var mat=new THREE.MeshStandardMaterial({color:0x14181e,roughness:0.55,metalness:0.3,emissive:0x0a1018,emissiveIntensity:0.15});
+  var segs=Math.max(6,Math.floor(len));
+  var tube=new THREE.Mesh(new THREE.TubeGeometry(curve,segs,0.055,6,false),mat);
+  var g=new THREE.Group(); g.add(tube);
+  var capMat=matStd(0x2a3542,0.5,0.6);
+  var cap1=new THREE.Mesh(new THREE.SphereGeometry(0.09,6,6),capMat); cap1.position.copy(p1); g.add(cap1);
+  var cap2=cap1.clone(); cap2.position.copy(p2); g.add(cap2);
+  surfaceScene.add(g);
+  return {mesh:g,mat:mat};
+}
+function tryPlaceCable(from,to){
+  if(!powerCapable(from)||!powerCapable(to)){ toast("That doesn't carry power"); return; }
+  var dx=from.x-to.x,dz=from.z-to.z;
+  if(Math.sqrt(dx*dx+dz*dz)>CABLE_MAX){ toast("Too far — run a Power Pole partway"); return; }
+  var already=cables.some(function(c){return (c.from===from&&c.to===to)||(c.from===to&&c.to===from);});
+  if(already){ toast("Already cabled together"); return; }
+  if(!canAfford(CABLE_COST)){ toast("Not enough copper ore for cable"); return; }
+  payCost(CABLE_COST);
+  var c={from:from,to:to};
+  var vis=makeCableMesh(c);
+  c.mesh=vis.mesh; c.mat=vis.mat;
+  cables.push(c);
+  sfx.click(); toast("Power cable connected"); pulseInteractPose();
 }
 function surfaceClick3D(x,z){
   if(!placing)return;
-  if(placing==="belt"){
-    var b=findBuildingNear(x,z,3.2);
+  if(placing==="belt"||placing==="cable"){
+    var b=findBuildingNear(x,z,2.5);
     if(!b){ toast("Aim at a building to connect"); return; }
     if(!beltFrom){ beltFrom=b; toast("Now select the destination building"); return; }
     if(beltFrom===b){ toast("Pick a different building"); return; }
-    tryPlaceBelt(beltFrom,b);
+    if(placing==="belt")tryPlaceBelt(beltFrom,b); else tryPlaceCable(beltFrom,b);
     beltFrom=null;
     return;
   }
@@ -773,18 +1220,37 @@ function updateBuildings(dt){
     var d=BUILD_DEFS[b.type];
     var powOk=d.powerDraw<=0||b.powered;
     if(b.userData)return;
+    if(b.type==="smelter"||b.type==="constructor")b.recipeActive=false;
     if(b.type==="miner"&&b.node&&powOk){
       var cap=40,r=b.node.restype;
       b.out[r]=Math.min(cap,(b.out[r]||0)+6*dt);
     } else if(b.type==="smelter"&&powOk){
-      var capO=30;
-      var bi=Math.min(dt*1.5,b.in.iron_ore/2,(capO-b.out.iron)/1);
-      if(bi>0){ b.in.iron_ore-=bi*2; b.out.iron+=bi; }
-      var bc=Math.min(dt*1.5,b.in.copper_ore/2,(capO-b.out.copper)/1);
-      if(bc>0){ b.in.copper_ore-=bc*2; b.out.copper+=bc; }
+      var r=activeRecipe(b);
+      b.recipeActive=false;
+      if(r){
+        var mb=dt/r.time;
+        for(var k in r.in)mb=Math.min(mb,(b.in[k]||0)/r.in[k]);
+        for(var k2 in r.out)mb=Math.min(mb,Math.max(0,destCapFor(b,k2)-(b.out[k2]||0))/r.out[k2]);
+        if(mb>0){
+          for(var k in r.in)b.in[k]-=r.in[k]*mb;
+          for(var k2 in r.out)b.out[k2]=(b.out[k2]||0)+r.out[k2]*mb;
+          b.recipeActive=true;
+          b.cycleT=((b.cycleT||0)+dt)%r.time;
+        }
+      }
     } else if(b.type==="constructor"&&powOk){
-      var batches=Math.min(dt*1,b.in.iron/2,b.in.copper/1);
-      if(batches>0){ b.in.iron-=batches*2; b.in.copper-=batches*1; stock.parts+=batches; }
+      var r=activeRecipe(b);
+      b.recipeActive=false;
+      if(r){
+        var mb=dt/r.time;
+        for(var k in r.in)mb=Math.min(mb,(b.in[k]||0)/r.in[k]);
+        if(mb>0){
+          for(var k in r.in)b.in[k]-=r.in[k]*mb;
+          stock.parts+=(r.out.parts||0)*mb;
+          b.recipeActive=true;
+          b.cycleT=((b.cycleT||0)+dt)%r.time;
+        }
+      }
     } else if(b.type==="storage"){
       Object.keys(b.in).forEach(function(k){
         var drain=Math.min(15*dt,b.in[k]);
@@ -798,10 +1264,23 @@ function updateBuildings(dt){
     if(status){
       var active=powOk&&(d.generates||b.type==="storage"||b.type==="shipyard"&&b.job||
         (b.type==="miner"&&b.node)||b.type==="smelter"||b.type==="constructor"||b.type==="pylon");
-      status.color.set(active?b.mesh.userData.onCol:0x222222);
-      status.emissive.set(active?b.mesh.userData.onEm:0x000000);
+      if(b.overload){
+        status.color.set(0xff4d3a); status.emissive.set(0xff2a1a);
+      } else {
+        status.color.set(active?b.mesh.userData.onCol:0x222222);
+        status.emissive.set(active?b.mesh.userData.onEm:0x000000);
+      }
+    }
+    if(b.mesh&&b.mesh.userData.glowMesh){
+      b.mesh.userData.glowMesh.material.emissiveIntensity=powOk?1.4:0.05;
     }
     if(b.mesh&&b.mesh.userData.spinPart&&b.powered)b.mesh.userData.spinPart.rotation.y+=dt*3;
+  });
+  cables.forEach(function(c){
+    var powered=c.from.cableConnected&&c.to.cableConnected&&c.from.netId===c.to.netId&&c.from.netGen>=c.from.netDraw;
+    var overloaded=c.from.cableConnected&&c.to.cableConnected&&c.from.netId===c.to.netId&&c.from.netGen<c.from.netDraw;
+    c.mat.emissive.set(overloaded?0xff2a1a:(powered?0x2a8ad8:0x0a1018));
+    c.mat.emissiveIntensity=overloaded?0.9:(powered?0.7:0.15);
   });
 
   belts.forEach(function(bl){
@@ -815,7 +1294,7 @@ function updateBuildings(dt){
     var t0=(performance.now()/1000*0.4)%1;
     for(var i=0;i<bl.items.length;i++){
       var t=bl._flow?((t0+i/bl.items.length)%1):(i/bl.items.length);
-      bl.items[i].position.set(lerp(bl.p1.x,bl.p2.x,t),0.24,lerp(bl.p1.z,bl.p2.z,t));
+      bl.items[i].position.set(lerp(bl.p1.x,bl.p2.x,t),(bl.beltH||0.55)+0.18,lerp(bl.p1.z,bl.p2.z,t));
       bl.items[i].visible=bl._flow;
     }
   });
@@ -855,6 +1334,7 @@ function clearWorld(){
   nodes.forEach(function(n){ surfaceScene.remove(n.mesh); }); nodes=[];
   buildings.forEach(function(b){ surfaceScene.remove(b.mesh); }); buildings=[];
   belts.forEach(function(bl){ surfaceScene.remove(bl.mesh); }); belts=[];
+  cables.forEach(function(c){ surfaceScene.remove(c.mesh); }); cables=[];
 }
 function saveGame(){
   try{
@@ -862,9 +1342,10 @@ function saveGame(){
       stock:stock,
       nodes:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){
-        return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out};
+        return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res};}),
+      cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
       shipBuilt:shipBuilt, shipModelKey:shipModelKey
     };
     localStorage.setItem(SKEY,JSON.stringify(data));
@@ -889,7 +1370,7 @@ function loadGame(){
   (data.buildings||[]).forEach(function(bd){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
     var b=makeBuilding(bd.type,bd.x,bd.z,bd.rotY,node);
-    if(bd.in)b.in=bd.in; if(bd.out)b.out=bd.out;
+    if(bd.in)b.in=bd.in; if(bd.out)b.out=bd.out; if(bd.recipe)b.recipe=bd.recipe;
     buildings.push(b);
   });
   (data.belts||[]).forEach(function(bl){
@@ -899,6 +1380,14 @@ function loadGame(){
     var vis=makeBeltMesh(nb);
     nb.mesh=vis.mesh; nb.items=vis.items; nb.p1=vis.p1; nb.p2=vis.p2; nb.len=vis.len;
     belts.push(nb);
+  });
+  (data.cables||[]).forEach(function(cd){
+    var from=buildings[cd.fromIdx], to=buildings[cd.toIdx];
+    if(!from||!to)return;
+    var nc={from:from,to:to};
+    var vis=makeCableMesh(nc);
+    nc.mesh=vis.mesh; nc.mat=vis.mat;
+    cables.push(nc);
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
   return true;
@@ -1215,8 +1704,10 @@ window.addEventListener("keydown",function(e){
   var k=e.key.toLowerCase();
   keys[k]=1;
   if(k==="escape"){
-    if(placing)cancelPlacing();
+    if(!$("o-changelog").classList.contains("hide"))closeChangelog();
+    else if(placing)cancelPlacing();
     else if(state==="shipyard")closeShipyard();
+    else if(state==="machine")closeMachine();
     else if(state==="build")closeBuild();
     else if(state==="galaxy")closeGalaxy();
     else togglePause();
@@ -1303,11 +1794,11 @@ var raycaster=new THREE.Raycaster();
 function groundPointFromScreen(sx,sy){
   var ndc=new THREE.Vector2((sx/W)*2-1,-(sy/H)*2+1);
   raycaster.setFromCamera(ndc,camera);
-  var hit=raycaster.intersectObject(groundMesh)[0];
+  var hit=raycaster.intersectObject(buildPlaneMesh)[0];
   return hit?{x:hit.point.x,z:hit.point.z}:null;
 }
 function updatePlacementGhost(sx,sy){
-  if(!placing||placing==="belt"){ placeGhost.visible=false; return; }
+  if(!placing||placing==="belt"||placing==="cable"){ placeGhost.visible=false; return; }
   var p=groundPointFromScreen(sx,sy);
   if(!p){ placeGhost.visible=false; return; }
   var gx=snapGrid(p.x), gz=snapGrid(p.z);
@@ -1324,7 +1815,7 @@ cv.addEventListener("mousedown",function(e){
   if(placing){
     if(e.button===0){
       var p=groundPointFromScreen(e.clientX,e.clientY);
-      if(placing==="belt"){ if(p)surfaceClick3D(p.x,p.z); }
+      if(placing==="belt"||placing==="cable"){ if(p)surfaceClick3D(p.x,p.z); }
       else if(p)tryPlaceAt3D(p.x,p.z);
     } else if(e.button===2){ cancelPlacing(); toast("Placement cancelled"); }
     return;
@@ -1393,9 +1884,13 @@ function renderBuild(){
       '<button class="buy" data-k="'+key+'" '+((already||!afford)?"disabled":"")+'>'+
       (already?"Already built":("Place — "+costStr(d.cost)))+'</button></div>';
   });
+  html+='<div class="cat" style="margin:10px 2px 4px">Logistics</div>';
   html+='<div class="upg"><div class="top"><span class="nm">Conveyor Belt</span></div>'+
     '<div class="ds">Connect a source building to a destination. Aim at one, confirm, then the other.</div>'+
     '<button class="buy" id="bBeltTool" '+(canAfford(BELT_COST)?"":"disabled")+'>Select — '+costStr(BELT_COST)+' each</button></div>';
+  html+='<div class="upg"><div class="top"><span class="nm">Power Cable</span></div>'+
+    '<div class="ds">Physically wire two machines/poles together. Nothing gets power without a cable run to it. Max range '+CABLE_MAX+'m — chain Power Poles for longer runs.</div>'+
+    '<button class="buy" id="bCableTool" '+(canAfford(CABLE_COST)?"":"disabled")+'>Select — '+costStr(CABLE_COST)+' each</button></div>';
   $("buildList").innerHTML=html;
   var btns=$("buildList").querySelectorAll(".buy");
   for(var i=0;i<btns.length;i++)btns[i].onclick=function(){
@@ -1404,6 +1899,8 @@ function renderBuild(){
   };
   var beltBtn=$("bBeltTool");
   if(beltBtn)beltBtn.onclick=function(){ placing="belt"; beltFrom=null; setGhost(null); closeBuild(); toast("Select the source building"); };
+  var cableBtn=$("bCableTool");
+  if(cableBtn)cableBtn.onclick=function(){ placing="cable"; beltFrom=null; setGhost(null); closeBuild(); toast("Select the first machine or pole"); };
 }
 $("bBuildOpen").onclick=function(){ sfx.click(); openBuild(); };
 $("bBuildClose").onclick=function(){ sfx.click(); closeBuild(); };
@@ -1443,18 +1940,57 @@ function renderShipyard(){
 }
 $("bShipyardClose").onclick=function(){ sfx.click(); closeShipyard(); };
 
+/* ═════════════ MACHINE PANEL (recipe select, status, rates) ═════════════ */
+var machineTarget=null;
+function openMachine(b){
+  if(state!=="surface")return;
+  machineTarget=b; state="machine"; $("o-machine").classList.remove("hide"); renderMachine();
+}
+function closeMachine(){ if(state!=="machine")return; state="surface"; $("o-machine").classList.add("hide"); machineTarget=null; }
+function renderMachine(){
+  var b=machineTarget; if(!b||buildings.indexOf(b)<0){ closeMachine(); return; }
+  var d=BUILD_DEFS[b.type];
+  $("mchTitle").textContent=d.nm;
+  var st=machineStatus(b), lbl=MACHINE_STATUS_LABEL[st]||{txt:"—",col:"#8a92a5"};
+  $("mchStatus").innerHTML='<span style="color:'+lbl.col+';font-weight:700;letter-spacing:.06em">&#9679; '+lbl.txt+'</span>'+
+    '<span style="margin-left:auto">'+Math.round(b.netDraw||0)+' MW drawn on grid &middot; '+Math.round(b.netGen||0)+' MW available</span>';
+  var html="";
+  RECIPES[b.type].forEach(function(r){
+    var active=b.recipe===r.key;
+    var inStr=Object.keys(r.in).map(function(k){return rateStr(r.in[k],r.time)+" "+RES[k].nm;}).join(" + ");
+    var outStr=Object.keys(r.out).map(function(k){return rateStr(r.out[k],r.time)+" "+RES[k].nm;}).join(" + ");
+    html+='<div class="upg"><div class="top"><span class="nm">'+r.nm+(active?" — selected":"")+'</span></div>'+
+      '<div class="ds">In: '+inStr+' &nbsp;→&nbsp; Out: '+outStr+'</div>'+
+      '<button class="buy" data-k="'+r.key+'" '+(active?"disabled":"")+'>'+(active?"Selected":"Select recipe")+'</button></div>';
+  });
+  if(b.recipe){
+    var r=activeRecipe(b);
+    var pc=Math.round(((b.cycleT||0)/r.time)*100);
+    html+='<div class="upg"><div class="top"><span class="nm">Cycle progress</span></div>'+
+      '<div style="height:8px;border-radius:4px;background:#1a2230;overflow:hidden;margin-top:4px">'+
+      '<div style="height:100%;width:'+(b.recipeActive?pc:0)+'%;background:'+lbl.col+'"></div></div></div>';
+  }
+  $("mchList").innerHTML=html;
+  var btns=$("mchList").querySelectorAll(".buy[data-k]");
+  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ b.recipe=this.getAttribute("data-k"); b.cycleT=0; sfx.click(); renderMachine(); };
+}
+$("bMachineClose").onclick=function(){ sfx.click(); closeMachine(); };
+
 /* ═════════════ INTERACT ═════════════ */
 function interactTarget(){
-  var sy=shipyard();
-  if(sy){
-    var dx=sy.x-player.position.x,dz=sy.z-player.position.z;
-    if(Math.sqrt(dx*dx+dz*dz)<6)return sy;
-  }
-  return null;
+  var best=null,bd=Infinity;
+  buildings.forEach(function(b){
+    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor")return;
+    var dx=b.x-player.position.x,dz=b.z-player.position.z,dd=Math.sqrt(dx*dx+dz*dz);
+    var r=BUILD_DEFS[b.type].radius+3;
+    if(dd<r&&dd<bd){bd=dd;best=b;}
+  });
+  return best;
 }
 function doInteract(){
   var t=interactTarget();
-  if(t&&t.type==="shipyard"){ openShipyard(); return; }
+  if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
+  if(t&&(t.type==="smelter"||t.type==="constructor")){ openMachine(t); pulseInteractPose(); return; }
   toast("Nothing to interact with here");
 }
 
@@ -1469,6 +2005,40 @@ $("bPause").onclick=function(){ sfx.click(); togglePause(); };
 $("bPauseSpace").onclick=function(){ sfx.click(); togglePause(); };
 $("bResume").onclick=function(){ sfx.click(); togglePause(); };
 $("bReturnColony").onclick=function(){ sfx.click(); returnToColony(); };
+function returnToTitle(){
+  cancelPlacing();
+  if(pausedFrom==="space"){
+    if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
+    enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
+    pBolts=[]; eBolts=[];
+  }
+  saveGame();
+  state="title";
+  $("hud").classList.remove("show");
+  $("hudSpace").classList.remove("show");
+  $("mobActions").classList.remove("show");
+  $("o-pause").classList.add("hide");
+  show("s-title");
+  if(hasSave()){
+    $("bStart").innerHTML='Continue<small>Resume your colony</small>';
+    $("bNewColony").classList.remove("hide");
+  }
+}
+$("bReturnTitle").onclick=function(){ sfx.click(); returnToTitle(); };
+function renderChangelog(){
+  var html="";
+  CHANGELOG.forEach(function(e){
+    html+='<div class="chlog"><div class="top"><span class="v">v'+e.v+'</span><span class="t">'+e.t+'</span></div>'+
+      '<ul>'+e.items.map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul></div>';
+  });
+  $("changelogList").innerHTML=html;
+}
+function openChangelog(){ renderChangelog(); $("o-changelog").classList.remove("hide"); }
+function closeChangelog(){ $("o-changelog").classList.add("hide"); }
+$("bHome").onclick=function(){ sfx.click(); location.href="index.html"; };
+$("bChangelogTitle").onclick=function(){ sfx.click(); openChangelog(); };
+$("bChangelogPause").onclick=function(){ sfx.click(); openChangelog(); };
+$("bChangelogClose").onclick=function(){ sfx.click(); closeChangelog(); };
 /* ═════════════ GALAXY MAP (stub: home system + scouted-but-locked worlds) ═════════════ */
 var GALAXY_PLANETS=[
   {id:"home",nm:"Your Colony",status:"owned",x:50,y:52,ds:"Your home world. Fully colonized — Drills, Smelters and a Shipyard are already running here."},
@@ -1517,7 +2087,7 @@ $("bGalaxyClose").onclick=function(){ sfx.click(); closeGalaxy(); };
 $("mbInteract").addEventListener("click",function(){
   if(placing){
     var p=groundPointFromScreen(innerWidth/2,innerHeight/2);
-    if(p){ if(placing==="belt")surfaceClick3D(p.x,p.z); else tryPlaceAt3D(p.x,p.z); }
+    if(p){ if(placing==="belt"||placing==="cable")surfaceClick3D(p.x,p.z); else tryPlaceAt3D(p.x,p.z); }
     return;
   }
   doInteract();
@@ -1530,6 +2100,8 @@ $("mbCancel").addEventListener("click",function(){
 
 /* ═════════════ SURFACE UPDATE ═════════════ */
 var PLAYER_SPD=7.2;
+var interactPose=0, interactPoseT=0;
+function pulseInteractPose(){ interactPoseT=0.35; }
 var walkT=0;
 function updateSurface(dt){
   var ax=moveAxis();
@@ -1538,26 +2110,38 @@ function updateSurface(dt){
   var mz=vec.fwd.z*ax.fwd+vec.right.z*ax.right;
   var m=Math.sqrt(mx*mx+mz*mz);
   var moving=m>0.05;
+  var sprinting=moving&&!!keys.shift;
+  var spd=PLAYER_SPD*(sprinting?1.6:1);
   if(moving){
     mx/=m; mz/=m;
-    player.position.x+=mx*PLAYER_SPD*dt;
-    player.position.z+=mz*PLAYER_SPD*dt;
+    player.position.x+=mx*spd*dt;
+    player.position.z+=mz*spd*dt;
     var targetAngle=Math.atan2(mx,mz);
     var da=targetAngle-player.rotation.y;
     while(da>Math.PI)da-=Math.PI*2; while(da<-Math.PI)da+=Math.PI*2;
     player.rotation.y+=da*Math.min(1,dt*10);
-    walkT+=dt*9;
+    walkT+=dt*(sprinting?15:9);
   }
   var half=SURFACE_SIZE/2-4;
   player.position.x=clamp(player.position.x,-half,half);
   player.position.z=clamp(player.position.z,-half,half);
+  player.position.y=terrainHeight(player.position.x,player.position.z);
 
-  var bob=moving?Math.abs(Math.sin(walkT))*0.06:0;
-  player.userData.body.position.y=1.0+bob;
-  player.userData.legs[0].rotation.x=moving?Math.sin(walkT)*0.5:0;
-  player.userData.legs[1].rotation.x=moving?-Math.sin(walkT)*0.5:0;
+  if(interactPoseT>0){ interactPoseT-=dt; interactPose=-1.3*clamp(interactPoseT/0.35,0,1); } else interactPose=0;
+
+  var bob=moving?Math.abs(Math.sin(walkT))*(sprinting?0.1:0.06):0;
+  player.userData.hip.position.y=0.86+bob;
+  var swing=sprinting?0.9:0.5;
+  player.userData.legs[0].rotation.x=moving?Math.sin(walkT)*swing:0;
+  player.userData.legs[1].rotation.x=moving?-Math.sin(walkT)*swing:0;
+  player.userData.arms[0].rotation.x=moving?-Math.sin(walkT)*swing*0.8:interactPose;
+  player.userData.arms[1].rotation.x=moving?Math.sin(walkT)*swing*0.8:0;
+  if(player.userData.beacon)player.userData.beacon.material.emissiveIntensity=1.2+Math.sin(performance.now()/260)*0.5;
 
   playerShadow.position.x=player.position.x; playerShadow.position.z=player.position.z;
+  playerShadow.position.y=player.position.y+0.03;
+
+  clouds.forEach(function(c){ c.position.x+=dt*1.4; if(c.position.x>560)c.position.x=-560; });
 
   updateCameraTransform();
 
@@ -1607,7 +2191,7 @@ function frame(now){
   }
   try{
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
-    var surfStates=state==="surface"||state==="build"||state==="shipyard"||state==="galaxy"||(state==="pause"&&pausedFrom==="surface");
+    var surfStates=state==="surface"||state==="build"||state==="shipyard"||state==="machine"||state==="galaxy"||(state==="pause"&&pausedFrom==="surface");
     if(state==="surface")updateSurface(dt);
     if(state==="space"||state==="launching")updateSpace(dt);
     if(surfStates)renderer.render(surfaceScene,camera);
@@ -1671,22 +2255,28 @@ window.__cq={
       shipBuilt:shipBuilt, shipModelKey:shipModelKey,
       nodesList:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){return {id:b.id,type:b.type,x:b.x,z:b.z,powered:b.powered,
+        overload:b.overload,cableConnected:b.cableConnected,netGen:b.netGen,netDraw:b.netDraw,
+        recipe:b.recipe,recipeActive:b.recipeActive,cycleT:b.cycleT,status:machineStatus(b),
         in:JSON.parse(JSON.stringify(b.in)),out:JSON.parse(JSON.stringify(b.out)),job:b.job,
         node:b.node?b.node.restype:null};}),
-      belts:belts.map(function(bl){return {from:bl.from.id,to:bl.to.id,res:bl.res,flow:bl._flow};})};
+      belts:belts.map(function(bl){return {from:bl.from.id,to:bl.to.id,res:bl.res,flow:bl._flow};}),
+      cables:cables.map(function(c){return {from:c.from.id,to:c.to.id};})};
   },
   setKeys:function(o){ for(var k in o)keys[k]=o[k]; },
   tickN:function(n,dt){ dt=dt||1/60; for(var i=0;i<n;i++)updateSurface(dt); updateCameraTransform(); },
   dragCam:function(dx,dy){ camYaw-=dx*0.0055; camPitch=clamp(camPitch+dy*0.0045,CAM_PITCH_MIN,CAM_PITCH_MAX); },
   startGame:function(){ $("bStart").click(); },
-  startPlacing:function(k){ placing=k; placeRotY=0; beltFrom=null; setGhost(k==="belt"?null:k); },
-  placeAt:function(x,z){ if(placing==="belt")surfaceClick3D(x,z); else tryPlaceAt3D(x,z); },
+  startPlacing:function(k){ placing=k; placeRotY=0; beltFrom=null; setGhost((k==="belt"||k==="cable")?null:k); },
+  placeAt:function(x,z){ if(placing==="belt"||placing==="cable")surfaceClick3D(x,z); else tryPlaceAt3D(x,z); },
   canPlaceAt:canPlaceAt3D,
   cancelPlacing:cancelPlacing,
   addStock:function(k,n){ stock[k]+=n; },
   doInteract:doInteract,
   openBuild:openBuild, closeBuild:closeBuild,
   openShipyard:openShipyard, closeShipyard:closeShipyard, commissionShip:commissionShip,
+  openMachine:function(id){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)openMachine(b); },
+  closeMachine:closeMachine,
+  setRecipe:function(id,key){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.recipe=key; b.cycleT=0; } },
   buildingAt:function(id){ return buildings.filter(function(b){return b.id===id;})[0]||null; },
   playerTeleport:function(x,z){ player.position.x=x; player.position.z=z; },
   launchShip:launchShip, returnToColony:returnToColony,
