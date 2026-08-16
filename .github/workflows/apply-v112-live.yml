@@ -1,12 +1,8 @@
 name: Apply v1.11.2 live
 on:
   push:
-    branches: [main]
-    paths:
-      - 'conquest.html'
-      - 'js/v112-flight-shipyard.js'
-      - 'css/v112-flight-shipyard.css'
-      - '.github/workflows/apply-v112-live.yml'
+    branches:
+      - main
 permissions:
   contents: write
 jobs:
@@ -14,29 +10,28 @@ jobs:
     if: ${{ !startsWith(github.event.head_commit.message, 'ci: apply v1.11.2') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Wire v1.11.2 into the live game
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Wire assets
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path('conquest.html')
           s=p.read_text(encoding='utf-8')
-          css='<link rel="stylesheet" href="css/v112-flight-shipyard.css?v=1.11.2">'
-          js='<script src="js/v112-flight-shipyard.js?v=1.11.2"></script>'
-          if 'css/v112-flight-shipyard.css?v=1.11.2' not in s:
-              s=s.replace('<!-- V1.11.2-LIVE -->','',1)
-              s=s.replace('</head>', '\n'+css+'\n'+js+'\n<!-- V1.11.2-LIVE -->\n</head>', 1)
-          extra='''<style id="v112-stability-fix">\n.bldItem.selected,.mchRecipe.selected,.bldDetail{animation:none!important;transition:none!important;}\n.bldItem:hover,.mchRecipe:hover{transform:none!important;}\n</style>'''
-          if 'id="v112-stability-fix"' not in s:
+          tags='\n<link rel="stylesheet" href="css/v112-flight-shipyard.css?v=1.11.2">\n<script src="js/v112-flight-shipyard.js?v=1.11.2"></script>\n<!-- V1.11.2-LIVE -->\n'
+          if 'V1.11.2-LIVE' not in s:
+              s=s.replace('</head>', tags+'</head>', 1)
+          extra='<style id="v112-stability-fix">.bldItem.selected,.mchRecipe.selected,.bldDetail{animation:none!important;transition:none!important}.bldItem:hover,.mchRecipe:hover{transform:none!important}</style>'
+          if 'v112-stability-fix' not in s:
               s=s.replace('</head>', extra+'\n</head>', 1)
-          s=s.replace('1.11</span>', '1.11.2</span>')
-          s=s.replace('1.11</div>', '1.11.2</div>')
           p.write_text(s,encoding='utf-8')
           PY
-      - name: Record v1.11.2
+      - name: Commit live patch
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add conquest.html
-          git diff --cached --quiet || git commit -m 'ci: apply v1.11.2 live'
+          git diff --cached --quiet && exit 0
+          git commit -m 'ci: apply v1.11.2'
           git push
