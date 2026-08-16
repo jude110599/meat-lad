@@ -13,19 +13,26 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     steps:
       - uses: actions/checkout@v4
-      - name: Patch live version and load v1.11.2 assets
+      - name: Patch actual live version and load v1.11.2 assets
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           p = Path('conquest.html')
           s = p.read_text(encoding='utf-8')
-          s = s.replace('v1.11.0', 'v1.11.2')
-          s = s.replace('v1.11', 'v1.11.2')
+          # The game stores its version as 1.11.0, not v1.11.0.
+          s = re.sub(r'(?<![0-9.])1\.11(?:\.0)?(?![0-9.])', '1.11.2', s)
           if 'css/v112-flight-shipyard.css' not in s:
-              s = s.replace('</head>', '  <link rel="stylesheet" href="css/v112-flight-shipyard.css">\n  <script src="js/v112-flight-shipyard.js"></script>\n</head>', 1)
+              s = s.replace('</head>', '  <link rel="stylesheet" href="css/v112-flight-shipyard.css?v=1.11.2">\n  <script src="js/v112-flight-shipyard.js?v=1.11.2"></script>\n</head>', 1)
+          if 'V1.11.2-LIVE' not in s:
+              s = s.replace('<body', '<!-- V1.11.2-LIVE -->\n<body', 1)
           p.write_text(s, encoding='utf-8')
           PY
+      - name: Verify patch before commit
+        run: |
+          grep -n 'VERSION=' conquest.html | head -5
+          grep -q '1.11.2' conquest.html
       - name: Commit live fix
         shell: bash
         run: |
@@ -33,5 +40,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add conquest.html
           git diff --cached --quiet && exit 0
-          git commit -m 'fix: make v1.11.2 visible in live Conquest build'
+          git commit -m 'fix: patch actual Conquest version to 1.11.2'
           git push
