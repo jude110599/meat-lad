@@ -251,6 +251,18 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     </div>
   </div>
 
+  <div class="ovl hide" id="o-storage">
+    <div class="card">
+      <h2>Storage Container</h2>
+      <div id="stgCap" class="metalline"></div>
+      <div class="cat" style="margin:2px 2px 4px">Your Stock</div>
+      <div id="stgPlayerList"></div>
+      <div class="cat" style="margin:14px 2px 4px">Container Contents</div>
+      <div id="stgStoreList"></div>
+      <button class="btn sub" id="bStorageClose" style="margin-top:6px">Close</button>
+    </div>
+  </div>
+
   <div class="ovl hide" id="o-galaxy">
     <div class="card" style="max-width:520px">
       <h2>Galaxy Map</h2>
@@ -264,8 +276,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.5.0";
+var VERSION="1.6.0";
 var CHANGELOG=[
+  {v:"1.6.0",t:"Real storage",items:[
+    "Storage no longer silently drains into your stock — it holds real contents up to its capacity",
+    "Walk up and interact with a Storage Container to open it: see your stock and its contents side by side, with Take/Store per resource or Take All/Store All",
+    "The storage door physically swings open and shut when you open and close the panel"
+  ]},
   {v:"1.5.0",t:"Crafted economy & landing site",items:[
     "Buildings, belts, and cables are now real inventory items — fabricate them from raw resources over time, then place them from what you own",
     "Added a Remove Building tool that deconstructs a placed building and returns it (and any attached belts/cables) to your inventory",
@@ -986,10 +1003,14 @@ function buildBuildingMesh(type){
     var band2=band.clone(); band2.position.y=1.4; g.add(band2);
     var band3=band.clone(); band3.position.y=0.65; g.add(band3);
     var doorMat=matStd(0x241a10,0.6,0.4);
+    var doorPivot=new THREE.Group();
+    doorPivot.position.set(-0.7,1.2,1.41);
     var door=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.7,0.1),doorMat);
-    door.position.set(0,1.2,1.41); g.add(door);
+    door.position.set(0.7,0,0); doorPivot.add(door);
     var handle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,6),matStd(0x9fc6ff,0.3,0.6));
-    handle.rotation.z=Math.PI/2; handle.position.set(0,1.2,1.5); g.add(handle);
+    handle.rotation.z=Math.PI/2; handle.position.set(1.3,0,0.12); doorPivot.add(handle);
+    g.add(doorPivot);
+    g.userData.door=doorPivot;
     boltRow(g,2.8,2.8,0.3,null,4);
     g.userData.cableAnchor=null;
   } else if(type==="shipyard"){
@@ -1023,7 +1044,7 @@ function buildBuildingMesh(type){
 function makeBuilding(type,x,z,rotY,node){
   var d=BUILD_DEFS[type];
   var b={id:buildIdSeq++,type:type,x:x,z:z,rotY:rotY||0,node:node||null,powered:false,netId:null,in:{},out:{},job:null,
-    recipe:null,recipeActive:false,targetMode:"continuous",targetQty:100,producedCount:0};
+    recipe:null,recipeActive:false,targetMode:"continuous",targetQty:100,producedCount:0,doorTarget:0};
   d.accepts.forEach(function(r){ b.in[r]=0; });
   d.produces.forEach(function(r){ b.out[r]=0; });
   if(type==="miner"&&node)b.out[node.restype]=0;
@@ -1415,11 +1436,6 @@ function updateBuildings(dt){
           b.cycleT=((b.cycleT||0)+dt)%r.time;
         }
       }
-    } else if(b.type==="storage"){
-      Object.keys(b.in).forEach(function(k){
-        var drain=Math.min(15*dt,b.in[k]);
-        if(drain>0){ b.in[k]-=drain; stock[k]+=drain; }
-      });
     } else if(b.type==="shipyard"&&b.job&&b.powered){
       b.job.timeLeft-=dt;
       if(b.job.timeLeft<=0)completeShip(b);
@@ -1439,6 +1455,11 @@ function updateBuildings(dt){
       b.mesh.userData.glowMesh.material.emissiveIntensity=powOk?1.4:0.05;
     }
     if(b.mesh&&b.mesh.userData.spinPart&&b.powered)b.mesh.userData.spinPart.rotation.y+=dt*3;
+    if(b.mesh&&b.mesh.userData.door){
+      var doorTarget=(b.doorTarget||0)*(-Math.PI/2);
+      var door=b.mesh.userData.door;
+      door.rotation.y+=(doorTarget-door.rotation.y)*Math.min(1,dt*4);
+    }
   });
   cables.forEach(function(c){
     var powered=c.from.cableConnected&&c.to.cableConnected&&c.from.netId===c.to.netId&&c.from.netGen>=c.from.netDraw;
@@ -1878,6 +1899,7 @@ window.addEventListener("keydown",function(e){
     else if(placing)cancelPlacing();
     else if(state==="shipyard")closeShipyard();
     else if(state==="machine")closeMachine();
+    else if(state==="storage")closeStorage();
     else if(state==="build")closeBuild();
     else if(state==="galaxy")closeGalaxy();
     else togglePause();
@@ -2194,11 +2216,68 @@ function renderMachine(){
 }
 $("bMachineClose").onclick=function(){ sfx.click(); closeMachine(); };
 
+/* ═════════════ STORAGE PANEL (real contents, take/store) ═════════════ */
+var storageTarget=null;
+function storageTakeAll(b){
+  BUILD_DEFS.storage.accepts.forEach(function(k){ var amt=b.in[k]||0; if(amt>0){ stock[k]+=amt; b.in[k]=0; } });
+}
+function storageStoreAll(b){
+  var accepts=BUILD_DEFS.storage.accepts;
+  accepts.forEach(function(k){
+    var cap=destCapFor(b,k), room=Math.max(0,cap-(b.in[k]||0)), amt=Math.min(room,stock[k]||0);
+    if(amt>0){ b.in[k]=(b.in[k]||0)+amt; stock[k]-=amt; }
+  });
+}
+function storageTake(b,k){ var amt=b.in[k]||0; if(amt>0){ stock[k]+=amt; b.in[k]=0; } }
+function storageStore(b,k){
+  var cap=destCapFor(b,k), room=Math.max(0,cap-(b.in[k]||0)), amt=Math.min(room,stock[k]||0);
+  if(amt>0){ b.in[k]=(b.in[k]||0)+amt; stock[k]-=amt; }
+}
+function openStorage(b){
+  if(state!=="surface")return;
+  storageTarget=b; b.doorTarget=1; state="storage"; $("o-storage").classList.remove("hide"); renderStorage();
+}
+function closeStorage(){
+  if(state!=="storage")return;
+  if(storageTarget)storageTarget.doorTarget=0;
+  state="surface"; $("o-storage").classList.add("hide"); storageTarget=null;
+}
+function renderStorage(){
+  var b=storageTarget; if(!b||buildings.indexOf(b)<0){ closeStorage(); return; }
+  var accepts=BUILD_DEFS.storage.accepts;
+  var cap=destCapFor(b,accepts[0]);
+  var used=accepts.reduce(function(s,k){return s+(b.in[k]||0);},0);
+  $("stgCap").innerHTML='<span>'+Math.floor(used)+' / '+(cap*accepts.length)+' stored</span>'+
+    '<button class="hudbtn" id="bStoreAll">Store All</button>'+
+    '<button class="hudbtn accent" id="bTakeAll">Take All</button>';
+  var pHtml="";
+  Object.keys(RES).forEach(function(k){
+    var canStore=accepts.indexOf(k)>=0;
+    pHtml+='<div class="upg"><div class="top"><span class="nm"><i style="background:'+hexStr(RES[k].col)+';width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:middle"></i>'+RES[k].nm+'</span><span class="stat">'+Math.floor(stock[k]||0)+'</span></div>'+
+      (canStore?'<button class="buy" style="margin-top:8px" data-store="'+k+'" '+((stock[k]||0)<=0?"disabled":"")+'>Store &rarr;</button>':'<div class="ds">Can\'t be stored here</div>')+
+      '</div>';
+  });
+  $("stgPlayerList").innerHTML=pHtml;
+  var sHtml="";
+  accepts.forEach(function(k){
+    sHtml+='<div class="upg"><div class="top"><span class="nm"><i style="background:'+hexStr(RES[k].col)+';width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:middle"></i>'+RES[k].nm+'</span><span class="stat">'+Math.floor(b.in[k]||0)+' / '+cap+'</span></div>'+
+      '<button class="buy" style="margin-top:8px" data-take="'+k+'" '+((b.in[k]||0)<=0?"disabled":"")+'>&larr; Take</button></div>';
+  });
+  $("stgStoreList").innerHTML=sHtml;
+  var storeBtns=$("stgPlayerList").querySelectorAll("[data-store]");
+  for(var i=0;i<storeBtns.length;i++)storeBtns[i].onclick=function(){ storageStore(b,this.getAttribute("data-store")); sfx.click(); renderStorage(); };
+  var takeBtns=$("stgStoreList").querySelectorAll("[data-take]");
+  for(var i=0;i<takeBtns.length;i++)takeBtns[i].onclick=function(){ storageTake(b,this.getAttribute("data-take")); sfx.click(); renderStorage(); };
+  $("bStoreAll").onclick=function(){ storageStoreAll(b); sfx.click(); renderStorage(); };
+  $("bTakeAll").onclick=function(){ storageTakeAll(b); sfx.click(); renderStorage(); };
+}
+$("bStorageClose").onclick=function(){ sfx.click(); closeStorage(); };
+
 /* ═════════════ INTERACT ═════════════ */
 function interactTarget(){
   var best=null,bd=Infinity;
   buildings.forEach(function(b){
-    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor")return;
+    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="storage")return;
     var dx=b.x-player.position.x,dz=b.z-player.position.z,dd=Math.sqrt(dx*dx+dz*dz);
     var r=BUILD_DEFS[b.type].radius+3;
     if(dd<r&&dd<bd){bd=dd;best=b;}
@@ -2209,6 +2288,7 @@ function doInteract(){
   var t=interactTarget();
   if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
   if(t&&(t.type==="smelter"||t.type==="constructor")){ openMachine(t); pulseInteractPose(); return; }
+  if(t&&t.type==="storage"){ openStorage(t); pulseInteractPose(); return; }
   toast("Nothing to interact with here");
 }
 
@@ -2411,7 +2491,7 @@ function frame(now){
   }
   try{
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
-    var surfStates=state==="surface"||state==="build"||state==="shipyard"||state==="machine"||state==="galaxy"||(state==="pause"&&pausedFrom==="surface");
+    var surfStates=state==="surface"||state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||(state==="pause"&&pausedFrom==="surface");
     if(state==="surface")updateSurface(dt);
     if(state==="space"||state==="launching")updateSpace(dt);
     if(surfStates)renderer.render(surfaceScene,camera);
@@ -2501,6 +2581,10 @@ window.__cq={
   openShipyard:openShipyard, closeShipyard:closeShipyard, commissionShip:commissionShip,
   openMachine:function(id){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)openMachine(b); },
   closeMachine:closeMachine,
+  openStorage:function(id){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)openStorage(b); },
+  closeStorage:closeStorage,
+  storageTake:function(id,k){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)storageTake(b,k); },
+  storageStore:function(id,k){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b)storageStore(b,k); },
   setRecipe:function(id,key){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.recipe=key; b.cycleT=0; b.producedCount=0; } },
   setTarget:function(id,mode,qty){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.targetMode=mode; if(qty)b.targetQty=qty; b.producedCount=0; } },
   buildingAt:function(id){ return buildings.filter(function(b){return b.id===id;})[0]||null; },
