@@ -116,6 +116,39 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .metalline span{display:inline-flex;align-items:center;gap:4px}
 .metalline i{width:8px;height:8px;border-radius:2px;display:inline-block}
 
+/* ── build menu: icon grid ── */
+.bldTabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.bldTab{background:var(--panel);border:1px solid var(--line);color:var(--dim);padding:7px 12px;
+  border-radius:20px;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;
+  cursor:pointer;font-family:inherit;transition:border-color .15s,color .15s,background .15s}
+.bldTab.active{border-color:var(--amber);color:var(--amber2);background:var(--panel2)}
+.bldGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+@media(min-width:480px){.bldGrid{grid-template-columns:repeat(5,1fr)}}
+.bldItem{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:10px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;
+  font-family:inherit;transition:border-color .15s,transform .12s,background .15s;min-height:74px}
+.bldItem:active{transform:scale(.94)}
+.bldItem svg{width:30px;height:30px;flex:none}
+.bldItem .nm{font-size:8px;letter-spacing:.03em;text-transform:uppercase;color:var(--dim);text-align:center;
+  font-weight:800;line-height:1.2}
+.bldItem.selected{border-color:var(--amber);background:var(--panel2);animation:bldPop .2s ease}
+.bldItem.selected .nm{color:var(--amber2)}
+.bldItem .owned{position:absolute;top:3px;right:5px;font-size:8px;font-weight:800;color:var(--steel)}
+@keyframes bldPop{0%{transform:scale(.9)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
+.bldDetail{border:1px solid var(--line);border-radius:12px;padding:14px;background:rgba(0,0,0,.25);
+  animation:bldSlide .18s ease}
+@keyframes bldSlide{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.bldDetail .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px}
+.bldDetail .nm{font-size:14px;font-weight:800;letter-spacing:.06em;color:var(--amber2);text-transform:uppercase}
+.bldDetail .ds{font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:10px}
+.bldDetail .stats{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:10.5px;color:var(--steel);margin-bottom:10px}
+.costgrid{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.costrow{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;color:var(--bone)}
+.costrow i{width:9px;height:9px;border-radius:2px;flex:none}
+.costrow .have{margin-left:auto;color:var(--dim);font-weight:800}
+.costrow.short .have{color:var(--red)}
+.costrow.short{color:var(--red)}
+
 /* ── touch controls ── */
 .stickzone{position:absolute;bottom:0;width:42%;height:50%;pointer-events:none;z-index:6}
 #zoneL{left:0}
@@ -224,11 +257,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   </div>
 
   <div class="ovl hide" id="o-build">
-    <div class="card">
+    <div class="card" style="max-width:560px">
       <h2>Build</h2>
       <div class="metalline" id="buildRes"></div>
-      <div id="buildList"></div>
-      <button class="btn sub" id="bBuildClose" style="margin-top:6px">Close</button>
+      <div class="bldTabs" id="buildTabs"></div>
+      <div class="bldGrid" id="buildGrid"></div>
+      <div id="buildDetail"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn sub" id="bRemoveTool" style="flex:1;margin:0">Remove</button>
+        <button class="btn sub" id="bBuildClose" style="flex:1;margin:0">Close</button>
+      </div>
     </div>
   </div>
 
@@ -275,8 +313,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.8.0";
+var VERSION="1.9.0";
 var CHANGELOG=[
+  {v:"1.9.0",t:"Fixed stuck movement, redesigned Build menu",items:[
+    "Fixed a real bug where the player could keep moving on their own after releasing every key — a missed keyup (losing window focus, switching tabs) could leave a direction stuck on. Movement now resets on blur, tab-hide, and whenever a menu opens",
+    "Completely redesigned the Build menu: a compact icon grid with category tabs (Structure/Power/Production/Logistics/Ship) instead of one long scrolling list",
+    "Selecting an item shows a detail panel with description, power info, and a cost breakdown that turns red on anything you're short on",
+    "The Build button now reads INSUFFICIENT MATERIALS when you can't afford something, instead of just going gray"
+  ]},
   {v:"1.8.0",t:"Walls, windows, doors, and railings",items:[
     "Added Wall, Window Wall, Door, and Railing — the first structural pieces beyond Foundation",
     "They snap to the edge of a grid cell instead of the center, with automatic orientation based on where you aim",
@@ -809,6 +853,22 @@ var BUILD_DEFS={
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
 };
 var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","smelter","constructor","storage","belt","shipyard"];
+var BUILD_ICONS={
+  foundation:'<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="2" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="4" y1="16" x2="28" y2="16" stroke="#1c2430" stroke-width="1"/><line x1="16" y1="4" x2="16" y2="28" stroke="#1c2430" stroke-width="1"/></svg>',
+  wall:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="9" y1="11" x2="23" y2="11" stroke="#1c2430" stroke-width="1"/><line x1="9" y1="21" x2="23" y2="21" stroke="#1c2430" stroke-width="1"/></svg>',
+  window:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><rect x="12" y="11" width="8" height="10" fill="#4fd3ff" opacity="0.75"/></svg>',
+  door:'<svg viewBox="0 0 32 32"><path d="M9 28V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v22" fill="none" stroke="#1c2430" stroke-width="2.2"/><rect x="16" y="10" width="7" height="17" rx="1" fill="#2a3542" stroke="#1c2430" stroke-width="1.2" transform="rotate(-28 16 27)"/></svg>',
+  railing:'<svg viewBox="0 0 32 32"><line x1="6" y1="24" x2="26" y2="24" stroke="#2a3542" stroke-width="2"/><line x1="6" y1="14" x2="26" y2="14" stroke="#2a3542" stroke-width="2"/><line x1="8" y1="10" x2="8" y2="24" stroke="#2a3542" stroke-width="2"/><line x1="16" y1="10" x2="16" y2="24" stroke="#2a3542" stroke-width="2"/><line x1="24" y1="10" x2="24" y2="24" stroke="#2a3542" stroke-width="2"/></svg>',
+  pylon:'<svg viewBox="0 0 32 32"><line x1="16" y1="6" x2="16" y2="27" stroke="#5b7089" stroke-width="2.5"/><line x1="8" y1="11" x2="24" y2="11" stroke="#9fc6ff" stroke-width="2"/><circle cx="16" cy="6" r="2.6" fill="#4fd3ff"/><rect x="10" y="27" width="12" height="3" fill="#2a3542"/></svg>',
+  solar:'<svg viewBox="0 0 32 32"><line x1="16" y1="30" x2="16" y2="18" stroke="#233a56" stroke-width="2.5"/><g transform="rotate(-8 16 12)"><rect x="4" y="6" width="24" height="12" rx="1" fill="#14243a" stroke="#0a1626" stroke-width="1.5"/><line x1="7" y1="10" x2="27" y2="6" stroke="#4fd3ff" stroke-width="1"/><line x1="7" y1="14" x2="27" y2="10" stroke="#4fd3ff" stroke-width="1"/></g></svg>',
+  cable:'<svg viewBox="0 0 32 32"><circle cx="6" cy="10" r="2.4" fill="#2a3542"/><circle cx="26" cy="10" r="2.4" fill="#2a3542"/><path d="M6 10 Q16 24 26 10" fill="none" stroke="#4fd3ff" stroke-width="2"/></svg>',
+  miner:'<svg viewBox="0 0 32 32"><rect x="9" y="6" width="14" height="12" rx="2" fill="#3a4a5e" stroke="#1c2430" stroke-width="1.5"/><path d="M13 18 L19 18 L16 27 Z" fill="#ffb545"/><circle cx="21" cy="10" r="1.6" fill="#4fd3ff"/></svg>',
+  smelter:'<svg viewBox="0 0 32 32"><rect x="6" y="8" width="20" height="18" rx="2" fill="#2a2018" stroke="#1a1410" stroke-width="1.5"/><path d="M16 12c3 3 3 5 0 7c-3-2-3-4 0-7Z" fill="#ff6a1a"/><rect x="20" y="3" width="4" height="7" fill="#3a3028"/></svg>',
+  constructor:'<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11" fill="#1a2233" stroke="#1c2430" stroke-width="1.4"/><path d="M16 8v3M16 21v3M8 16h3M21 16h3M10.3 10.3l2.1 2.1M19.6 19.6l2.1 2.1M10.3 21.7l2.1-2.1M19.6 12.4l2.1-2.1" stroke="#5b7089" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="16" r="4.2" fill="#ffb545"/></svg>',
+  storage:'<svg viewBox="0 0 32 32"><rect x="6" y="9" width="20" height="17" rx="2" fill="#3a2c1c" stroke="#1a1410" stroke-width="1.5"/><line x1="6" y1="15" x2="26" y2="15" stroke="#9fc6ff" stroke-width="1.6"/><line x1="6" y1="20" x2="26" y2="20" stroke="#9fc6ff" stroke-width="1.6"/></svg>',
+  belt:'<svg viewBox="0 0 32 32"><rect x="4" y="13" width="24" height="6" rx="2" fill="#241c14" stroke="#1c2430" stroke-width="1.2"/><path d="M12 8l7 8-7 8" fill="none" stroke="#ffb545" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  shipyard:'<svg viewBox="0 0 32 32"><path d="M16 3c3 5 4 12 4 18 0 3-1.5 5-4 7-2.5-2-4-4-4-7 0-6 1-13 4-18Z" fill="#d8dde6" stroke="#1c2430" stroke-width="1.2"/><circle cx="16" cy="14" r="2.4" fill="#4fd3ff"/><path d="M12 22l-4 5M20 22l4 5" stroke="#ff6a1a" stroke-width="2" stroke-linecap="round"/></svg>'
+};
 var RECIPES={
   smelter:[
     {key:"iron",nm:"Iron Ingot",in:{iron_ore:2},out:{iron:1},time:1.5},
@@ -1981,6 +2041,14 @@ window.addEventListener("keydown",function(e){
 });
 window.addEventListener("keyup",function(e){ keys[e.key.toLowerCase()]=0; });
 
+var MOVE_KEYS=["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"];
+function resetMovementKeys(){
+  MOVE_KEYS.forEach(function(k){ keys[k]=0; });
+  if(typeof moveStick!=="undefined"&&moveStick){ moveStick.on=false; moveStick.dx=0; moveStick.dy=0; $("artL").style.display="none"; }
+}
+window.addEventListener("blur",resetMovementKeys);
+document.addEventListener("visibilitychange",function(){ if(document.hidden)resetMovementKeys(); });
+
 function moveAxis(){
   var fwd=0,right=0;
   if(keys.w||keys.arrowup)fwd+=1;
@@ -2132,52 +2200,86 @@ $("zoneCam").addEventListener("touchend",function(e){
 $("zoneCam").style.pointerEvents="auto";
 
 /* ═════════════ BUILD MENU ═════════════ */
-function openBuild(){ if(state!=="surface")return; state="build"; $("o-build").classList.remove("hide"); renderBuild(); }
+var BUILD_CATS=["ALL","Structure","Power","Production","Logistics","Ship Production"];
+var BUILD_CAT_LABEL={ALL:"All",Structure:"Structure",Power:"Power",Production:"Production",Logistics:"Logistics","Ship Production":"Ship"};
+var buildActiveTab="ALL", buildSelectedKey=null;
+function openBuild(){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  if(!buildSelectedKey)buildSelectedKey=BUILD_ORDER[0];
+  state="build"; $("o-build").classList.remove("hide"); renderBuild();
+}
 function closeBuild(){ if(state!=="build")return; state="surface"; $("o-build").classList.add("hide"); }
+function ownedCount(key){ return buildings.filter(function(b){return b.type===key;}).length; }
 function renderBuild(){
   $("buildRes").innerHTML=Object.keys(RES).map(function(k){
     return '<span><i style="background:'+hexStr(RES[k].col)+'"></i>'+Math.floor(stock[k])+'</span>';
   }).join('');
-  var html="", lastCat=null;
-  BUILD_ORDER.forEach(function(key){
-    var d=BUILD_DEFS[key];
-    var already=d.uniq&&buildings.some(function(b){return b.type===key;});
-    var afford=canAfford(d.cost);
-    if(d.cat!==lastCat){ html+='<div class="cat" style="margin:10px 2px 4px">'+d.cat+'</div>'; lastCat=d.cat; }
-    html+='<div class="upg"><div class="top"><span class="nm">'+d.nm+'</span></div>'+
-      '<div class="ds">'+d.ds+'</div>'+
-      '<div class="ds">Cost: '+costStr(d.cost)+
-      (d.powerDraw?' &middot; '+d.powerDraw+' MW draw':'')+(d.generates?' &middot; generates '+d.generates+' MW':'')+'</div>'+
-      (d.tool?
-        '<button class="buy" data-tool="'+key+'" '+(afford?"":"disabled")+'>Select Tool</button>'
-        :'<button class="buy" data-place="'+key+'" '+((already||!afford)?"disabled":"")+'>'+(already?"Already built":"Place")+'</button>'
-      )+'</div>';
-  });
-  html+='<div class="cat" style="margin:10px 2px 4px">Tools</div>';
-  html+='<div class="upg"><div class="top"><span class="nm">Remove Building</span></div>'+
-    '<div class="ds">Select, then click a building to deconstruct it. Half its materials are refunded.</div>'+
-    '<button class="buy" id="bRemoveTool">Select Tool</button></div>';
-  $("buildList").innerHTML=html;
-  var placeBtns=$("buildList").querySelectorAll("[data-place]");
-  for(var i=0;i<placeBtns.length;i++)placeBtns[i].onclick=function(){
-    placing=this.getAttribute("data-place"); placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
-    toast("Aim and confirm to place it");
+  $("buildTabs").innerHTML=BUILD_CATS.map(function(c){
+    return '<button class="bldTab'+(buildActiveTab===c?" active":"")+'" data-tab="'+c+'">'+BUILD_CAT_LABEL[c]+'</button>';
+  }).join('');
+  var tabBtns=$("buildTabs").querySelectorAll(".bldTab");
+  for(var i=0;i<tabBtns.length;i++)tabBtns[i].onclick=function(){
+    buildActiveTab=this.getAttribute("data-tab"); sfx.click(); renderBuild();
   };
-  var toolBtns=$("buildList").querySelectorAll("[data-tool]");
-  for(var i=0;i<toolBtns.length;i++)toolBtns[i].onclick=function(){
-    var key=this.getAttribute("data-tool");
-    placing=key; beltFrom=null; setGhost(null); closeBuild();
-    toast(key==="belt"?"Select the source building":"Select the first machine or pole");
+  var visible=BUILD_ORDER.filter(function(k){ return buildActiveTab==="ALL"||BUILD_DEFS[k].cat===buildActiveTab; });
+  if(visible.indexOf(buildSelectedKey)<0)buildSelectedKey=visible[0]||null;
+  $("buildGrid").innerHTML=visible.map(function(k){
+    var owned=ownedCount(k);
+    return '<div class="bldItem'+(buildSelectedKey===k?" selected":"")+'" data-k="'+k+'">'+
+      (owned>0?'<span class="owned">'+owned+'</span>':'')+
+      BUILD_ICONS[k]+'<span class="nm">'+BUILD_DEFS[k].nm+'</span></div>';
+  }).join('');
+  var items=$("buildGrid").querySelectorAll(".bldItem");
+  for(var i=0;i<items.length;i++)items[i].onclick=function(){
+    buildSelectedKey=this.getAttribute("data-k"); sfx.click(); renderBuild();
   };
-  var removeBtn=$("bRemoveTool");
-  if(removeBtn)removeBtn.onclick=function(){ placing="remove"; beltFrom=null; setGhost(null); closeBuild(); toast("Click a building to remove it"); };
+  renderBuildDetail();
 }
+function renderBuildDetail(){
+  var key=buildSelectedKey;
+  if(!key){ $("buildDetail").innerHTML=""; return; }
+  var d=BUILD_DEFS[key];
+  var owned=ownedCount(key);
+  var already=d.uniq&&owned>0;
+  var afford=canAfford(d.cost);
+  var costHtml=Object.keys(d.cost).map(function(k){
+    var have=Math.floor(stock[k]||0), need=d.cost[k], short=have<need;
+    return '<div class="costrow'+(short?" short":"")+'"><i style="background:'+hexStr(RES[k].col)+'"></i>'+RES[k].nm+
+      '<span class="have">'+have+' / '+need+'</span></div>';
+  }).join('');
+  var statsHtml="";
+  if(d.powerDraw)statsHtml+='<span>Power draw '+d.powerDraw+' MW</span>';
+  if(d.generates)statsHtml+='<span>Generates '+d.generates+' MW</span>';
+  if(d.range)statsHtml+='<span>Range '+d.range+'m</span>';
+  var btnLabel=already?"ALREADY BUILT":(d.tool?"SELECT TOOL":(afford?"BUILD":"INSUFFICIENT MATERIALS"));
+  var btnDisabled=already||(!d.tool&&!afford);
+  $("buildDetail").innerHTML='<div class="bldDetail"><div class="top"><span class="nm">'+d.nm+'</span><span class="stat">Owned: '+owned+'</span></div>'+
+    '<div class="ds">'+d.ds+'</div>'+
+    (statsHtml?'<div class="stats">'+statsHtml+'</div>':'')+
+    '<div class="costgrid">'+costHtml+'</div>'+
+    '<button class="buy" id="bBuildConfirm" style="margin-top:0" '+(btnDisabled?"disabled":"")+'>'+btnLabel+'</button></div>';
+  var btn=$("bBuildConfirm");
+  if(btn)btn.onclick=function(){
+    if(d.tool){
+      placing=key; placeRotY=0; beltFrom=null; setGhost(null); closeBuild();
+      toast(key==="belt"?"Select the source building":"Select the first machine or pole");
+    } else {
+      placing=key; placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
+      toast("Aim and confirm to place it");
+    }
+  };
+}
+$("bRemoveTool").onclick=function(){
+  sfx.click(); placing="remove"; beltFrom=null; setGhost(null); closeBuild(); toast("Click a building to remove it");
+};
 $("bBuildOpen").onclick=function(){ sfx.click(); openBuild(); };
 $("bBuildClose").onclick=function(){ sfx.click(); closeBuild(); };
 
 /* ═════════════ SHIPYARD UI ═════════════ */
 function openShipyard(){
   if(state!=="surface"||!shipyard())return;
+  resetMovementKeys();
   state="shipyard"; $("o-shipyard").classList.remove("hide"); renderShipyard();
 }
 function closeShipyard(){ if(state!=="shipyard")return; state="surface"; $("o-shipyard").classList.add("hide"); }
@@ -2214,6 +2316,7 @@ $("bShipyardClose").onclick=function(){ sfx.click(); closeShipyard(); };
 var machineTarget=null;
 function openMachine(b){
   if(state!=="surface")return;
+  resetMovementKeys();
   machineTarget=b; state="machine"; $("o-machine").classList.remove("hide"); renderMachine();
 }
 function closeMachine(){ if(state!=="machine")return; state="surface"; $("o-machine").classList.add("hide"); machineTarget=null; }
@@ -2290,6 +2393,7 @@ function storageStore(b,k){
 }
 function openStorage(b){
   if(state!=="surface")return;
+  resetMovementKeys();
   storageTarget=b; b.doorTarget=1; state="storage"; $("o-storage").classList.remove("hide"); renderStorage();
 }
 function closeStorage(){
@@ -2351,7 +2455,7 @@ function doInteract(){
 var state="title";
 var pausedFrom="surface";
 function togglePause(){
-  if(state==="surface"||state==="space"){ pausedFrom=state; state="pause"; $("o-pause").classList.remove("hide"); }
+  if(state==="surface"||state==="space"){ resetMovementKeys(); pausedFrom=state; state="pause"; $("o-pause").classList.remove("hide"); }
   else if(state==="pause"){ state=pausedFrom; $("o-pause").classList.add("hide"); }
 }
 $("bPause").onclick=function(){ sfx.click(); togglePause(); };
@@ -2427,6 +2531,7 @@ function renderGalaxy(){
 }
 function openGalaxy(){
   if(state!=="surface")return;
+  resetMovementKeys();
   pausedFrom=state; state="galaxy";
   $("galaxyInfo").style.display="none";
   renderGalaxy();
