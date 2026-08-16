@@ -275,8 +275,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.7.0";
+var VERSION="1.8.0";
 var CHANGELOG=[
+  {v:"1.8.0",t:"Walls, windows, doors, and railings",items:[
+    "Added Wall, Window Wall, Door, and Railing — the first structural pieces beyond Foundation",
+    "They snap to the edge of a grid cell instead of the center, with automatic orientation based on where you aim",
+    "The Door has a real open-frame look with a swung-open leaf; the Window has a glass viewport you can see through"
+  ]},
   {v:"1.7.0",t:"Simpler building, menus don't freeze the factory",items:[
     "Removed the fabrication queue — buildings, belts, and cables are placed directly again, paying their cost immediately instead of waiting on a timer",
     "Removing a building now refunds half its materials straight to your stock",
@@ -780,8 +785,18 @@ function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 /* ═════════════ BUILDINGS ═════════════ */
 var GRID=8;
 function snapGrid(v){ return Math.round(v/GRID)*GRID; }
+function snapWallEdge(x,z){
+  var cx=snapGrid(x), cz=snapGrid(z);
+  var lx=x-cx, lz=z-cz;
+  if(Math.abs(lx)>Math.abs(lz))return {x:cx+(lx>=0?GRID/2:-GRID/2),z:cz,rotY:Math.PI/2};
+  return {x:cx,z:cz+(lz>=0?GRID/2:-GRID/2),rotY:0};
+}
 var BUILD_DEFS={
   foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},powerDraw:0,radius:4,produces:[],accepts:[]},
+  wall:{nm:"Wall",cat:"Structure",ds:"A solid wall panel. Snaps to the edge of a grid cell.",cost:{iron_ore:8},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
+  window:{nm:"Window Wall",cat:"Structure",ds:"A wall panel with a viewport. Snaps to the edge of a grid cell.",cost:{iron_ore:8,copper_ore:2},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
+  door:{nm:"Door",cat:"Structure",ds:"An open doorway frame you can walk straight through. Snaps to the edge of a grid cell.",cost:{iron_ore:10},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
+  railing:{nm:"Railing",cat:"Structure",ds:"A low safety railing. Snaps to the edge of a grid cell.",cost:{iron_ore:5},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
   pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
   solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
   cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},tool:true,range:26},
@@ -793,7 +808,7 @@ var BUILD_DEFS={
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
 };
-var BUILD_ORDER=["foundation","pylon","solar","cable","miner","smelter","constructor","storage","belt","shipyard"];
+var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","smelter","constructor","storage","belt","shipyard"];
 var RECIPES={
   smelter:[
     {key:"iron",nm:"Iron Ingot",in:{iron_ore:2},out:{iron:1},time:1.5},
@@ -854,6 +869,67 @@ function buildBuildingMesh(type){
       }
     }
     boltRow(g,GRID-0.6,GRID-0.6,0.32,null,4);
+    return g;
+  }
+  if(type==="wall"){
+    var wallMat=matStd(0x384454,0.65,0.45);
+    var panel=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,4,0.25),wallMat);
+    panel.position.y=2; g.add(panel);
+    var frameMat=matStd(0x1c2430,0.6,0.5);
+    var top=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.1,0.2,0.3),frameMat);
+    top.position.y=3.95; g.add(top);
+    var bot=top.clone(); bot.position.y=0.05; g.add(bot);
+    boltRow(g,GRID-0.8,0.2,0.4,null,6);
+    boltRow(g,GRID-0.8,0.2,3.6,null,6);
+    return g;
+  }
+  if(type==="window"){
+    var wallMat=matStd(0x384454,0.65,0.45);
+    var bandB=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,1.3,0.25),wallMat);
+    bandB.position.y=0.65; g.add(bandB);
+    var bandT=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,1.1,0.25),wallMat);
+    bandT.position.y=3.45; g.add(bandT);
+    var frameMat=matStd(0x1c2430,0.6,0.5);
+    var frameL=new THREE.Mesh(new THREE.BoxGeometry(0.22,1.6,0.3),frameMat);
+    frameL.position.set(-(GRID-0.4)/2,2.1,0); g.add(frameL);
+    var frameR=frameL.clone(); frameR.position.x=(GRID-0.4)/2; g.add(frameR);
+    var glassMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.5,roughness:0.15,metalness:0.3,transparent:true,opacity:0.55});
+    var glass=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.9,1.55,0.1),glassMat);
+    glass.position.y=2.1; g.add(glass);
+    var mullion=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.9,0.08,0.14),frameMat);
+    mullion.position.y=2.1; g.add(mullion);
+    boltRow(g,GRID-0.8,0.2,0.15,null,6);
+    return g;
+  }
+  if(type==="door"){
+    var wallMat=matStd(0x384454,0.65,0.45);
+    var lintel=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,1.0,0.25),wallMat);
+    lintel.position.y=3.5; g.add(lintel);
+    var frameMat=matStd(0x1c2430,0.6,0.5);
+    var postL=new THREE.Mesh(new THREE.BoxGeometry(0.3,3.0,0.3),frameMat);
+    postL.position.set(-1.55,1.5,0); g.add(postL);
+    var postR=postL.clone(); postR.position.x=1.55; g.add(postR);
+    var thresh=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.1,0.3),frameMat);
+    thresh.position.y=0.05; g.add(thresh);
+    var leafMat=matStd(0x2a3542,0.5,0.5);
+    var leaf=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.85,0.12),leafMat);
+    leaf.position.set(-2.55,1.5,0.35); leaf.rotation.y=1.15; g.add(leaf);
+    var lightMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x7bd94a,emissiveIntensity:0.9});
+    var light=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.1,0.08),lightMat);
+    light.position.set(0,3.15,0.14); g.add(light);
+    return g;
+  }
+  if(type==="railing"){
+    var frameMat=matStd(0x2a3542,0.55,0.5);
+    var post0=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.05,6),frameMat);
+    for(var pr=-1;pr<=1;pr++){
+      var post=post0.clone(); post.position.set(pr*(GRID-0.3)/2,0.52,0); g.add(post);
+    }
+    var top=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,GRID-0.15,8),frameMat);
+    top.rotation.z=Math.PI/2; top.position.y=1.0; g.add(top);
+    var mid=top.clone(); mid.position.y=0.55; g.add(mid);
+    var base=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.15,0.06,0.12),frameMat);
+    base.position.y=0.03; g.add(base);
     return g;
   }
   if(type==="pylon"){
@@ -1188,13 +1264,25 @@ function tintGhost(ok){
     if(o.isMesh)o.material.color.set(ok?0x7bd94a:0xff4d5e);
   });
 }
-function canPlaceAt3D(type,x,z){
+function canPlaceAt3D(type,x,z,rotY){
   var d=BUILD_DEFS[type];
   if(d.uniq&&buildings.some(function(b){return b.type===type;}))return "Already built";
   if(!canAfford(d.cost))return "Not enough resources";
   if(Math.sqrt(x*x+z*z)>BUILD_ZONE_R-10)return "Too far from the colony — the ground gets rough past here";
+  if(d.edge){
+    var dupe=buildings.some(function(b){
+      if(!BUILD_DEFS[b.type].edge)return false;
+      var dx=b.x-x,dz=b.z-z;
+      if(Math.sqrt(dx*dx+dz*dz)>0.5)return false;
+      var da=Math.abs(((b.rotY-(rotY||0))%Math.PI+Math.PI)%Math.PI);
+      return da<0.1||da>Math.PI-0.1;
+    });
+    if(dupe)return "Already something on that edge";
+    return null;
+  }
   for(var i=0;i<buildings.length;i++){
     var b=buildings[i], dx=b.x-x,dz=b.z-z;
+    if(BUILD_DEFS[b.type].edge)continue;
     if(type==="foundation"&&b.type!=="foundation")continue;
     if(type!=="foundation"&&b.type==="foundation")continue;
     var minD=(type==="foundation")?(GRID-1):(d.radius+BUILD_DEFS[b.type].radius+0.6);
@@ -1205,17 +1293,19 @@ function canPlaceAt3D(type,x,z){
 }
 function tryPlaceAt3D(x,z){
   var type=placing; if(!type||isClickTool(type))return;
-  x=snapGrid(x); z=snapGrid(z);
-  var reason=canPlaceAt3D(type,x,z);
+  var d=BUILD_DEFS[type];
+  var rotY=placeRotY;
+  if(d.edge){ var edge=snapWallEdge(x,z); x=edge.x; z=edge.z; rotY=edge.rotY; }
+  else { x=snapGrid(x); z=snapGrid(z); }
+  var reason=canPlaceAt3D(type,x,z,rotY);
   if(reason){
     toast(reason);
     if(reason==="Not enough resources"||reason==="Already built"){ placing=null; placeGhost.visible=false; }
     return;
   }
-  var d=BUILD_DEFS[type];
   var node=type==="miner"?nearestNode(x,z,9):null;
   payCost(d.cost);
-  var b=makeBuilding(type,x,z,placeRotY,node);
+  var b=makeBuilding(type,x,z,rotY,node);
   buildings.push(b);
   sfx.build(); toast(d.nm+" built"); pulseInteractPose();
   placing=null; placeGhost.visible=false;
@@ -1973,11 +2063,14 @@ function updatePlacementGhost(sx,sy){
   if(!placing||isClickTool(placing)){ placeGhost.visible=false; return; }
   var p=groundPointFromScreen(sx,sy);
   if(!p){ placeGhost.visible=false; return; }
-  var gx=snapGrid(p.x), gz=snapGrid(p.z);
+  var d=BUILD_DEFS[placing];
+  var gx,gz,rotY;
+  if(d.edge){ var edge=snapWallEdge(p.x,p.z); gx=edge.x; gz=edge.z; rotY=edge.rotY; }
+  else { gx=snapGrid(p.x); gz=snapGrid(p.z); rotY=placeRotY; }
   placeGhost.position.set(gx,0,gz);
-  placeGhost.rotation.y=placeRotY;
+  placeGhost.rotation.y=rotY;
   placeGhost.visible=true;
-  tintGhost(!canPlaceAt3D(placing,gx,gz));
+  tintGhost(!canPlaceAt3D(placing,gx,gz,rotY));
 }
 
 /* PC: drag with left mouse anywhere on the canvas (when not placing something that wants a click-to-place) */
