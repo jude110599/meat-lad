@@ -393,8 +393,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.14.1";
+var VERSION="1.15.0";
 var CHANGELOG=[
+  {v:"1.15.0",t:"Rebuilt Smelter, Constructor and Storage from scratch",items:[
+    "The Smelter is now an asymmetric blast furnace: a tapered tank leaning under an offset main chimney, a smaller secondary flue, an angled ore hopper on one side, and a slow-spinning induction fan on its flank that keeps turning whenever it's powered",
+    "The Constructor is now a cantilevered stamping rig: an angled discharge chute juts out to one side instead of a centered slot, and the stamp head is a real piston that physically slides down and back up each time it actually completes a part - not just a spinning cube",
+    "Storage is now a squat fuel-tank silo with corrugated rib bands, a domed cap, a working pressure gauge, a side ladder, and an offset sliding hatch instead of a plain crate with a centered door",
+    "FIXED: the Constructor's own recipe needs Iron and Copper at the same time, but 1.14.0 only gave it one belt input port - it could never actually receive both at once. It now has two input ports on its input side, matching the Merger's layout",
+    "Miner, Miner Mk.2, Splitter, Merger, Pylon, Solar and the Shipyard already used non-boxy silhouettes before this pass and are unchanged here - next up if you want the same full rebuild treatment applied to those too"
+  ]},
   {v:"1.14.1",t:"Bigger buildings, port direction arrows",items:[
     "Buildings are noticeably bigger again (about 23% more on top of 1.14.0's bump) - more room to actually see the detail already on each model",
     "Every belt port on every building, Splitter and Merger now shows a small floating arrow: green pointing in for inputs, red pointing out for outputs, right at the exact spot a belt will connect to",
@@ -1306,73 +1313,130 @@ function buildBuildingMesh(type){
     g.userData.statusMesh=eye; g.userData.statusMat=eyeMat; g.userData.onCol=0x233a56; g.userData.onEm=0xff8a2a;
     g.userData.cableAnchor=new THREE.Vector3(2.0,3.2,0);
   } else if(type==="smelter"){
+    /* an asymmetric blast furnace: a tapered tank leaning into a tall main stack, with a smaller
+       secondary flue, an angled ore hopper feeding in from one side, and a slow spinning induction
+       fan for a bit of constant motion even between smelt cycles */
     var baseMat=matStd(0x1a1410,0.75,0.4);
-    var base=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.4,3.0),baseMat);
+    var base=new THREE.Mesh(new THREE.CylinderGeometry(2.0,2.2,0.4,10),baseMat);
     base.position.y=0.2; g.add(base);
-    var box=new THREE.Mesh(new THREE.BoxGeometry(3.2,2.6,2.8),matStd(0x2a2018,0.6,0.4));
-    box.position.y=1.6; g.add(box);
+    var tank=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.65,2.9,10),matStd(0x2a2018,0.6,0.4));
+    tank.position.set(-0.2,1.85,0); g.add(tank);
+    var collar=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,0.22,10),matStd(0x3a3028,0.55,0.5));
+    collar.position.set(-0.2,3.05,0); g.add(collar);
     var doorMat=matStd(0x14100c,0.5,0.5);
-    var door=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.3,0.1),doorMat);
-    door.position.set(0,1.15,1.46); g.add(door);
+    var door=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.3,0.14),doorMat);
+    door.position.set(-0.2,1.2,1.36); g.add(door);
     var glowMat=new THREE.MeshStandardMaterial({color:0xff5a1a,emissive:0xff5a1a,emissiveIntensity:1.4});
     var glow=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.03),glowMat);
-    glow.position.set(0,1.15,1.51); g.add(glow);
+    glow.position.set(-0.2,1.2,1.44); g.add(glow);
     g.userData.glowMesh=glow;
     var ventMat=new THREE.MeshStandardMaterial({color:0x5b4630,emissive:0x1a0d00,emissiveIntensity:0.6});
-    var vent=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.7,0.14),ventMat);
-    vent.position.set(0,2.4,1.48); g.add(vent);
-    var chim=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.55,2.0,8),matStd(0x3a3028,0.7,0.4));
-    chim.position.set(1.0,3.8,0); g.add(chim);
-    var chimTop=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.42,0.3,8),matStd(0x2a2018));
-    chimTop.position.set(1.0,4.85,0); g.add(chimTop);
-    g.userData.smokeAnchor=new THREE.Vector3(1.0,4.95,0);
-    var pipes=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,2.9,6),matStd(0x3a4a5e));
-    pipes.position.set(-1.4,1.6,1.2); g.add(pipes);
-    boltRow(g,3.0,2.6,0.42,null,5);
+    var vent=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.6,0.14),ventMat);
+    vent.position.set(-0.2,2.35,1.4); g.add(vent);
+    /* angled ore hopper, offset to one side for an asymmetric silhouette */
+    var hopMat=matStd(0x3a3028,0.65,0.4);
+    var hopper=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.75,1.3,8),hopMat);
+    hopper.position.set(1.35,3.1,-0.9); hopper.rotation.z=-0.3; g.add(hopper);
+    var chute=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,1.1,6),matStd(0x2a3542,0.5,0.6));
+    chute.position.set(0.65,2.55,-0.55); chute.rotation.z=1.0; chute.rotation.y=0.3; g.add(chute);
+    var chim=new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.5,2.3,8),matStd(0x3a3028,0.7,0.4));
+    chim.position.set(-0.9,4.15,0.3); g.add(chim);
+    var chimTop=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.38,0.3,8),matStd(0x2a2018));
+    chimTop.position.set(-0.9,5.35,0.3); g.add(chimTop);
+    g.userData.smokeAnchor=new THREE.Vector3(-0.9,5.45,0.3);
+    var flue=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,1.1,6),matStd(0x3a3028,0.7,0.4));
+    flue.position.set(0.75,3.7,0.85); g.add(flue);
+    var flueTop=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.16,0.18,6),matStd(0x2a2018));
+    flueTop.position.set(0.75,4.27,0.85); g.add(flueTop);
+    var pipes=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,2.4,6),matStd(0x3a4a5e));
+    pipes.position.set(-1.5,1.3,-1.0); pipes.rotation.z=0.18; g.add(pipes);
+    var pipeElbow=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6),matStd(0x3a4a5e));
+    pipeElbow.position.set(-1.5,2.45,-1.0); g.add(pipeElbow);
+    /* a slow-spinning induction fan on the tank's flank, visible even when idle */
+    var fanHub=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.1,16),matStd(0x1a2230,0.5,0.6));
+    fanHub.rotation.z=Math.PI/2; fanHub.position.set(-1.55,1.9,0.9); g.add(fanHub);
+    var fan=new THREE.Group();
+    for(var fi=0;fi<5;fi++){
+      var blade=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.14,0.05),matStd(0xffb545,0.4,0.6));
+      blade.position.set(Math.cos(fi/5*6.283)*0.28,Math.sin(fi/5*6.283)*0.28,0);
+      blade.rotation.z=fi/5*6.283; fan.add(blade);
+    }
+    fan.rotation.y=Math.PI/2; fan.position.set(-1.56,1.9,0.9); g.add(fan);
+    g.userData.spinPart=fan;
+    boltRow(g,2.4,2.4,0.42,null,5);
     g.userData.statusMesh=vent; g.userData.statusMat=ventMat; g.userData.onCol=0xff9d3c; g.userData.onEm=0xff6a1a;
-    g.userData.cableAnchor=new THREE.Vector3(-1.4,1.4,1.4);
+    g.userData.cableAnchor=new THREE.Vector3(-1.5,1.05,-1.0);
   } else if(type==="constructor"){
+    /* an asymmetric stamping rig: a tall cantilevered arm swings a stamp head down over an angled
+       output chute, offset to one side of the main cabinet rather than sitting dead-center */
     var baseMat=matStd(0x141b28,0.7,0.5);
-    var base=new THREE.Mesh(new THREE.BoxGeometry(3.8,0.4,2.8),baseMat);
+    var base=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.4,2.6),baseMat);
     base.position.y=0.2; g.add(base);
-    var b=new THREE.Mesh(new THREE.BoxGeometry(3.6,2.0,2.6),matStd(0x1a2233,0.55,0.5));
-    b.position.y=1.4; g.add(b);
+    var cab=new THREE.Mesh(new THREE.BoxGeometry(2.6,2.2,2.4),matStd(0x1a2233,0.55,0.5));
+    cab.position.set(-0.7,1.5,0); g.add(cab);
+    var cabTop=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,0.5,4),matStd(0x141b28,0.6,0.5));
+    cabTop.rotation.y=Math.PI/4; cabTop.position.set(-0.7,2.85,0); g.add(cabTop);
     var slotMat=matStd(0x0c1420,0.4,0.6);
-    var slot=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.9,0.1),slotMat);
-    slot.position.set(0,1.3,1.36); g.add(slot);
-    var rail=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.16,3.2),matStd(0x3a4a5e,0.5,0.6));
-    rail.position.set(0,2.5,0); g.add(rail);
-    var head=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),matStd(0xffb545,0.4,0.6));
-    head.position.set(0,2.5,0.9); g.add(head);
-    g.userData.spinPart=head;
-    var arm=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.7,6),matStd(0x2a3542));
-    arm.position.set(0,2.1,0.9); g.add(arm);
+    var slot=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.9,0.1),slotMat);
+    slot.position.set(-0.7,1.2,1.26); g.add(slot);
+    /* angled discharge chute jutting out to the side, breaking the box silhouette */
+    var chute=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.7,0.9),matStd(0x2a3542,0.55,0.5));
+    chute.position.set(1.5,0.75,0); chute.rotation.z=-0.22; g.add(chute);
+    var chuteLip=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.9,1.0),matStd(0x1a2230,0.5,0.6));
+    chuteLip.position.set(2.2,0.75,0); g.add(chuteLip);
+    /* the cantilevered stamping arm: fixed post, then a piston that actually slides up/down */
+    var post=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.16,2.0,8),matStd(0x2a3542,0.5,0.6));
+    post.position.set(-1.75,2.4,1.0); g.add(post);
+    var boom=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.22,0.3),matStd(0x2a3542,0.5,0.6));
+    boom.position.set(-0.5,3.3,1.0); g.add(boom);
+    var pistonHousing=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.6,8),matStd(0x1a2230,0.45,0.6));
+    pistonHousing.position.set(0.7,3.0,1.0); g.add(pistonHousing);
+    var stampGroup=new THREE.Group();
+    var stampRod=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.7,6),matStd(0x9fc6ff,0.3,0.7));
+    stampRod.position.y=-0.35; stampGroup.add(stampRod);
+    var stampHead=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.3,0.55),matStd(0xffb545,0.4,0.6));
+    stampHead.position.y=-0.75; stampGroup.add(stampHead);
+    stampGroup.position.set(0.7,2.7,1.0);
+    g.add(stampGroup);
+    g.userData.pistonPart=stampGroup; g.userData.pistonBase=2.7; g.userData.pistonRange=0.55;
     var lightMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x0d2a38,emissiveIntensity:1});
-    var light=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.14,0.1),lightMat);
-    light.position.set(0,2.05,1.36); g.add(light);
-    boltRow(g,3.4,2.6,0.42,null,5);
+    var light=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.14,0.1),lightMat);
+    light.position.set(-0.7,2.15,1.26); g.add(light);
+    boltRow(g,2.4,2.0,0.42,null,4);
     g.userData.statusMesh=light; g.userData.statusMat=lightMat; g.userData.onCol=0x233a56; g.userData.onEm=0x7bd94a;
-    g.userData.cableAnchor=new THREE.Vector3(-1.6,1.4,1.2);
+    g.userData.cableAnchor=new THREE.Vector3(-1.9,1.2,-1.1);
   } else if(type==="storage"){
+    /* a squat fuel-tank silo instead of a crate: tapered cylinder, corrugated rib bands, a domed
+       cap with a pressure gauge, and an offset sliding hatch instead of a centered door */
     var padMat=matStd(0x2a2016,0.7,0.5);
-    var pad=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.3,3.4),padMat);
+    var pad=new THREE.Mesh(new THREE.CylinderGeometry(1.95,2.1,0.3,12),padMat);
     pad.position.y=0.15; g.add(pad);
-    var crate=new THREE.Mesh(new THREE.BoxGeometry(2.8,2.3,2.8),matStd(0x3a2c1c,0.65,0.35));
-    crate.position.y=1.45; g.add(crate);
-    var band=new THREE.Mesh(new THREE.BoxGeometry(3.0,0.2,3.0),matStd(0x9fc6ff,0.4,0.5));
-    band.position.y=2.15; g.add(band);
-    var band2=band.clone(); band2.position.y=1.4; g.add(band2);
-    var band3=band.clone(); band3.position.y=0.65; g.add(band3);
+    var tank=new THREE.Mesh(new THREE.CylinderGeometry(1.55,1.75,2.5,12),matStd(0x3a2c1c,0.65,0.35));
+    tank.position.y=1.55; g.add(tank);
+    var ribMat=matStd(0x9fc6ff,0.4,0.5);
+    [0.55,1.15,1.75,2.35].forEach(function(ry){
+      var rib=new THREE.Mesh(new THREE.TorusGeometry(1.65,0.07,6,20),ribMat);
+      rib.rotation.x=Math.PI/2; rib.position.y=ry; g.add(rib);
+    });
+    var dome=new THREE.Mesh(new THREE.SphereGeometry(1.5,12,8,0,Math.PI*2,0,Math.PI/2),matStd(0x2a2016,0.6,0.4));
+    dome.position.y=2.8; g.add(dome);
+    var gaugeMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x7bd94a,emissiveIntensity:0.8});
+    var gauge=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.1,12),gaugeMat);
+    gauge.rotation.x=Math.PI/2; gauge.position.set(0,3.55,0); g.add(gauge);
+    var needle=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.03,0.03),matStd(0xff4d5e,0.3,0.7));
+    needle.position.set(0.06,3.55,0.14); needle.rotation.y=0.5; g.add(needle);
     var doorMat=matStd(0x241a10,0.6,0.4);
     var doorPivot=new THREE.Group();
-    doorPivot.position.set(-0.7,1.2,1.41);
-    var door=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.7,0.1),doorMat);
-    door.position.set(0.7,0,0); doorPivot.add(door);
-    var handle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,6),matStd(0x9fc6ff,0.3,0.6));
-    handle.rotation.z=Math.PI/2; handle.position.set(1.3,0,0.12); doorPivot.add(handle);
+    doorPivot.position.set(0.95,1.15,1.28);
+    var door=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.5,0.1),doorMat);
+    door.position.set(0.55,0,0); doorPivot.add(door);
+    var handle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.4,6),matStd(0x9fc6ff,0.3,0.6));
+    handle.rotation.z=Math.PI/2; handle.position.set(1.0,0,0.11); doorPivot.add(handle);
     g.add(doorPivot);
     g.userData.door=doorPivot;
-    boltRow(g,2.8,2.8,0.3,null,4);
+    var ladder=new THREE.Mesh(new THREE.BoxGeometry(0.06,2.2,0.5),matStd(0x2a3542,0.5,0.6));
+    ladder.position.set(-1.7,1.3,0); g.add(ladder);
+    boltRow(g,2.2,2.2,0.3,null,4);
     g.userData.cableAnchor=null;
   } else if(type==="splitter"||type==="merger"){
     var isSplit=type==="splitter";
@@ -1798,7 +1862,7 @@ var PORT_SIDES={
   miner:{out:[{dir:{x:1,z:0},off:0}]},
   miner2:{out:[{dir:{x:1,z:0},off:0}]},
   smelter:{in:[{dir:{x:-1,z:0},off:0}],out:[{dir:{x:1,z:0},off:0}]},
-  constructor:{in:[{dir:{x:-1,z:0},off:0}]},
+  constructor:{in:[{dir:{x:-1,z:0},off:-0.5},{dir:{x:-1,z:0},off:0.5}]},
   storage:{in:[{dir:{x:-1,z:0},off:0}]},
   splitter:{in:[{dir:{x:-1,z:0},off:0}],out:[{dir:{x:1,z:0},off:-0.55},{dir:{x:1,z:0},off:0.55}]},
   merger:{in:[{dir:{x:-1,z:0},off:-0.55},{dir:{x:-1,z:0},off:0.55}],out:[{dir:{x:1,z:0},off:0}]}
@@ -2130,6 +2194,11 @@ function updateBuildings(dt){
     }
     if(b.mesh&&b.mesh.userData.spinPart&&b.powered)b.mesh.userData.spinPart.rotation.y+=dt*3;
     if(b.mesh&&b.mesh.userData.spinParts&&b.powered)b.mesh.userData.spinParts.forEach(function(sp){ sp.rotation.y+=dt*3; });
+    if(b.mesh&&b.mesh.userData.pistonPart){
+      b._pistonT=(b._pistonT||0)+(b.recipeActive?dt*4:0);
+      var pp=b.mesh.userData.pistonPart;
+      pp.position.y=b.mesh.userData.pistonBase-Math.max(0,Math.sin(b._pistonT))*b.mesh.userData.pistonRange;
+    }
     if(b.mesh&&b.mesh.userData.door){
       var doorTarget=(b.doorTarget||0)*(-Math.PI/2);
       var door=b.mesh.userData.door;
