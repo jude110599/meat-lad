@@ -297,9 +297,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   </div>
   <div class="landedPanel hide" id="landedPanel">
     <div class="lpName">LANDED</div>
-    <div class="lpDs">Your ship is parked here. Launch when you're ready to fly back.</div>
+    <div class="lpDs">Your ship is parked here. Step out to explore and gather, or launch when you're ready to fly back.</div>
+    <button class="btn accent" id="bDisembark" style="margin-bottom:8px">Disembark</button>
     <button class="btn" id="bLaunchFromPlanet">Launch</button>
   </div>
+  <button class="hudbtn accent hide" id="bBoardShip" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Board Ship &amp; Launch</button>
 
   <div class="stickzone" id="zoneL"></div>
   <div id="zoneCam"></div>
@@ -425,14 +427,46 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div id="bpCarrying"></div>
     </div>
   </div>
+
+  <div class="ovl hide" id="o-shiplauncher">
+    <div class="card">
+      <h2>Shipment Launcher</h2>
+      <div class="metalline" id="slStatus">Buffers belted materials, then launches to your chosen Shipment Hub.</div>
+      <div class="cat" style="margin:10px 2px 4px">Loaded</div>
+      <div id="slContents"></div>
+      <div class="cat" style="margin:10px 2px 4px">Destination</div>
+      <div id="slHubList"></div>
+      <button class="btn sub" id="bShipLauncherClose" style="margin-top:10px">Close</button>
+    </div>
+  </div>
+
+  <div class="ovl hide" id="o-shiphub">
+    <div class="card">
+      <h2>Shipment Hub</h2>
+      <div style="display:flex;gap:6px;margin:6px 0 10px">
+        <input type="text" id="shName" maxlength="24" placeholder="Name this hub" style="flex:1;background:#0b1220;border:1px solid #2a3a55;border-radius:8px;color:#e8eef7;padding:8px 10px;font:inherit">
+        <button class="btn accent" id="bShipHubSaveName">Save</button>
+      </div>
+      <div class="cat" style="margin:4px 2px 4px">Received</div>
+      <div id="shContents"></div>
+      <button class="btn accent" id="bShipHubCollect" style="margin-top:10px">Collect All to Backpack</button>
+      <button class="btn sub" id="bShipHubClose" style="margin-top:6px">Close</button>
+    </div>
+  </div>
 </div>
 
 <script type="module">
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.17.3";
+var VERSION="1.18.0";
 var CHANGELOG=[
+  {v:"1.18.0",t:"Land on Vesta Outpost, and ship goods between planets",items:[
+    "You can now disembark from your ship after landing on Vesta Outpost — step out onto its surface, gather from resource deposits scattered around the landing site, and place buildings there exactly like at home. Board Ship & Launch returns you to space when you're ready",
+    "New building: the Shipment Launcher. Belt materials into it, pick a Shipment Hub as its destination, and every 14 seconds it launches its whole buffered load over — open it (E) to see what's loaded and choose or change the target Hub",
+    "New building: the Shipment Hub. Receives everything launched at it from any Shipment Launcher aimed its way. Open it (E) to see what's arrived, rename it, collect its contents straight to your backpack, or belt its output into your factory",
+    "Both new buildings are under a new Shipping category in the Build menu"
+  ]},
   {v:"1.17.3",t:"Belt arrows only while placing belts, chain-place structural pieces",items:[
     "The green/red input/output arrows on every building now only show up while the Conveyor Belt tool is actually selected, instead of being visible all the time",
     "Placing a Foundation, Wall, Window, Door or Railing now keeps that tool equipped afterward so you can keep placing more without reopening the Build menu each time — machines and ships still clear back to nothing after one placement, since those are normally a one-off decision"
@@ -709,11 +743,24 @@ function craterDip(x,z){
   }
   return dip;
 }
+/* a second small buildable clearing, far from home, standing in for the outpost on Vesta —
+   reachable by landing there in space and disembarking. Flattened with the exact same
+   smoothstep technique as the home clearing, just centered somewhere else and smaller. */
+var VESTA_CENTER={x:300,z:300}, VESTA_ZONE_R=55, VESTA_BLEND_R=95;
 function terrainHeight(x,z){
   var d=Math.sqrt(x*x+z*z);
-  var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  var t1=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  var dvx=x-VESTA_CENTER.x, dvz=z-VESTA_CENTER.z;
+  var dv=Math.sqrt(dvx*dvx+dvz*dvz);
+  var t2=clamp((dv-VESTA_ZONE_R)/(VESTA_BLEND_R-VESTA_ZONE_R),0,1);
+  var t=Math.min(t1,t2);
   var smooth=t*t*(3-2*t);
   return (terrainRaw(x,z)+craterDip(x,z))*smooth;
+}
+function inAnyBuildZone(x,z){
+  if(Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10)return true;
+  var dx=x-VESTA_CENTER.x, dz=z-VESTA_CENTER.z;
+  return Math.sqrt(dx*dx+dz*dz)<=VESTA_ZONE_R-10;
 }
 
 /* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
@@ -1424,9 +1471,11 @@ var BUILD_DEFS={
     produces:["iron_ore","copper_ore","coal","iron","copper"],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
-  workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]}
+  workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
+  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:3.2,produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper","parts"]},
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:3.4,produces:["iron_ore","copper_ore","coal","iron","copper","parts"],accepts:[]}
 };
-var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop"];
+var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
   foundation:'<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="2" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="4" y1="16" x2="28" y2="16" stroke="#1c2430" stroke-width="1"/><line x1="16" y1="4" x2="16" y2="28" stroke="#1c2430" stroke-width="1"/></svg>',
   wall:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="9" y1="11" x2="23" y2="11" stroke="#1c2430" stroke-width="1"/><line x1="9" y1="21" x2="23" y2="21" stroke="#1c2430" stroke-width="1"/></svg>',
@@ -1946,6 +1995,64 @@ function buildBuildingMesh(type){
     g.userData.statusMesh=lamp; g.userData.statusMat=lightMat; g.userData.onCol=0xffe08a; g.userData.onEm=0xffaa33;
     boltRow(g,4.0,3.4,0.4,null,5);
     g.userData.cableAnchor=null;
+  } else if(type==="shiplauncher"){
+    /* an angled electromagnetic catapult: a squat base, a charge coil that pulses while loaded,
+       and a long launch ramp tilted skyward so it visually reads as "outgoing" */
+    var padMat=matStd(0x1c2430,0.7,0.4);
+    var pad=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.4,0.4,10),padMat);
+    pad.position.y=0.2; g.add(pad);
+    var hopper=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.1,2.0),matStd(0x2a3542,0.6,0.4));
+    hopper.position.set(-0.6,0.85,0); g.add(hopper);
+    var hopperLid=new THREE.Mesh(new THREE.BoxGeometry(2.5,0.14,2.1),matStd(0x1a2230,0.5,0.5));
+    hopperLid.position.set(-0.6,1.42,0); g.add(hopperLid);
+    var ramp=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.35,1.6),matStd(0x3a4a5e,0.5,0.55));
+    ramp.position.set(1.1,1.6,0); ramp.rotation.z=-0.32; g.add(ramp);
+    var rampRailMat=matStd(0x1a2230,0.5,0.6);
+    [0.7,-0.7].forEach(function(rz){
+      var rail=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.2,0.1),rampRailMat);
+      rail.position.set(1.1,1.85,rz); rail.rotation.z=-0.32; g.add(rail);
+    });
+    var coilMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.5,roughness:0.35,metalness:0.5});
+    var coil=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.1,8,16),coilMat);
+    coil.rotation.y=Math.PI/2; coil.position.set(-1.6,0.85,0); g.add(coil);
+    g.userData.glowMesh=coil;
+    var strut=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.18,1.1,6),matStd(0x2a3542,0.5,0.6));
+    strut.position.set(2.6,1.0,0); strut.rotation.z=-0.32; g.add(strut);
+    var beaconMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x0d3a55,emissiveIntensity:1});
+    var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),beaconMat);
+    beacon.position.set(-0.6,1.65,0.9); g.add(beacon);
+    g.userData.statusMesh=beacon; g.userData.statusMat=beaconMat; g.userData.onCol=0x4fd3ff; g.userData.onEm=0x2a7a9a;
+    boltRow(g,2.0,1.8,0.42,null,4);
+    g.userData.cableAnchor=new THREE.Vector3(-1.6,0.5,-1.1);
+  } else if(type==="shiphub"){
+    /* a receiving dish: a wide dome with a docking cone and a ring of blinking marker lights,
+       clearly reads as "things arrive here" from a distance */
+    var padMat2=matStd(0x1c2430,0.7,0.4);
+    var pad2=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.8,0.4,12),padMat2);
+    pad2.position.y=0.2; g.add(pad2);
+    var dome=new THREE.Mesh(new THREE.SphereGeometry(2.1,14,10,0,Math.PI*2,0,Math.PI/2.1),matStd(0x2a3542,0.55,0.5));
+    dome.position.y=0.4; g.add(dome);
+    var cone=new THREE.Mesh(new THREE.ConeGeometry(0.9,1.4,10,1,true),matStd(0x1a2230,0.45,0.55));
+    cone.position.y=1.8; g.add(cone);
+    var lip=new THREE.Mesh(new THREE.TorusGeometry(0.9,0.09,8,16),matStd(0x9fc6ff,0.4,0.55));
+    lip.rotation.x=Math.PI/2; lip.position.y=1.15; g.add(lip);
+    var markerMat=new THREE.MeshStandardMaterial({color:0xff9d3c,emissive:0xff6a1a,emissiveIntensity:1});
+    g.userData.spinParts=[];
+    for(var mi=0;mi<5;mi++){
+      var mang=mi/5*Math.PI*2;
+      var marker=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),markerMat.clone());
+      marker.position.set(Math.cos(mang)*2.35,0.5,Math.sin(mang)*2.35);
+      g.add(marker);
+    }
+    var chute=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.6,0.9),matStd(0x2a3542,0.55,0.5));
+    chute.position.set(2.0,0.55,0); g.add(chute);
+    var lightMat2=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x0d2a38,emissiveIntensity:1});
+    var eye2=new THREE.Mesh(new THREE.SphereGeometry(0.2,10,8),lightMat2);
+    eye2.position.set(0,2.55,0); g.add(eye2);
+    g.userData.statusMesh=eye2; g.userData.statusMat=lightMat2; g.userData.onCol=0x233a56; g.userData.onEm=0xff8a2a;
+    g.userData.spinPart=eye2;
+    boltRow(g,2.2,2.2,0.42,null,5);
+    g.userData.cableAnchor=null;
   }
   return g;
 }
@@ -2060,6 +2167,8 @@ function destCapFor(b,res){
   if(b.type==="smelter"||b.type==="constructor")return 30;
   if(b.type==="storage")return 60;
   if(b.type==="splitter"||b.type==="merger")return 16;
+  if(b.type==="shiplauncher")return 40;
+  if(b.type==="shiphub")return 200;
   return 999;
 }
 function refundCost(cost){ for(var k in cost)stock[k]=(stock[k]||0)+cost[k]*0.5; }
@@ -2134,6 +2243,20 @@ function scatterNodes(){
       clash=nodes.some(function(n){ var dx=n.x-x,dz=n.z-z; return Math.sqrt(dx*dx+dz*dz)<14; });
     }
     while((d<24||d>maxR||clash)&&tries<60);
+    spawnNode(x,z,t);
+  });
+  /* a smaller deposit of every resource around the Vesta outpost clearing, so there's actually
+     something worth setting up shop for once you land there */
+  var vestaTypes=["iron_ore","iron_ore","copper_ore","copper_ore","coal"];
+  var vMaxR=VESTA_ZONE_R-15;
+  vestaTypes.forEach(function(t){
+    var x,z,tries=0,d,clash;
+    do{
+      x=snapGrid(VESTA_CENTER.x+rnd(-vMaxR,vMaxR)); z=snapGrid(VESTA_CENTER.z+rnd(-vMaxR,vMaxR));
+      var dx=x-VESTA_CENTER.x, dz=z-VESTA_CENTER.z; d=Math.sqrt(dx*dx+dz*dz); tries++;
+      clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
+    }
+    while((d<14||d>vMaxR||clash)&&tries<60);
     spawnNode(x,z,t);
   });
 }
@@ -2271,7 +2394,7 @@ function canPlaceAt3D(type,x,z,rotY){
   var d=BUILD_DEFS[type];
   if(d.uniq&&buildings.some(function(b){return b.type===type;}))return "Already built";
   if(!canAfford(d.cost))return "Not enough resources";
-  if(Math.sqrt(x*x+z*z)>BUILD_ZONE_R-10)return "Too far from the colony — the ground gets rough past here";
+  if(!inAnyBuildZone(x,z))return "Too far from the colony — the ground gets rough past here";
   if(d.edge){
     var dupe=buildings.some(function(b){
       if(!BUILD_DEFS[b.type].edge)return false;
@@ -2379,7 +2502,9 @@ var PORT_SIDES={
   constructor:{in:[{dir:{x:-1,z:0},off:-0.5},{dir:{x:-1,z:0},off:0.5}]},
   storage:{in:[{dir:{x:-1,z:0},off:0}]},
   splitter:{in:[{dir:{x:-1,z:0},off:0}],out:[{dir:{x:1,z:0},off:-0.55},{dir:{x:1,z:0},off:0.55}]},
-  merger:{in:[{dir:{x:-1,z:0},off:-0.55},{dir:{x:-1,z:0},off:0.55}],out:[{dir:{x:1,z:0},off:0}]}
+  merger:{in:[{dir:{x:-1,z:0},off:-0.55},{dir:{x:-1,z:0},off:0.55}],out:[{dir:{x:1,z:0},off:0}]},
+  shiplauncher:{in:[{dir:{x:-1,z:0},off:0}]},
+  shiphub:{out:[{dir:{x:1,z:0},off:0}]}
 };
 function portCapacity(b,side){ var d=PORT_SIDES[b.type]; return (d&&d[side])?d[side].length:0; }
 function usedPortSlots(b,side){
@@ -2644,6 +2769,7 @@ function updateSmoke(dt){
     p.mesh.scale.setScalar(lerp(0.5,1.6,t));
   }
 }
+var SHIP_INTERVAL=14; /* seconds between a loaded Shipment Launcher's automatic launches */
 function updateBuildings(dt){
   updatePortArrowVisibility();
   /* jump physics live here (not in updateSurface) specifically so they keep resolving while a
@@ -2716,12 +2842,36 @@ function updateBuildings(dt){
         var move=Math.min(amt,room);
         if(move>0){ b.in[k]-=move; b.out[k]=(b.out[k]||0)+move; }
       });
+    } else if(b.type==="shiplauncher"){
+      var hasCargo=Object.keys(b.in).some(function(k){return (b.in[k]||0)>0.01;});
+      if(powOk&&b.targetHub&&hasCargo&&buildings.indexOf(b.targetHub)>=0){
+        b._shipT=b._shipT==null?SHIP_INTERVAL:b._shipT-dt;
+        if(b._shipT<=0){
+          var hub=b.targetHub, shippedAny=false;
+          Object.keys(b.in).forEach(function(k){
+            var amt=b.in[k]||0; if(amt<=0.01)return;
+            var cap=destCapFor(hub,k), room=Math.max(0,cap-(hub.out[k]||0));
+            var move=Math.min(amt,room);
+            if(move>0){ hub.out[k]=(hub.out[k]||0)+move; b.in[k]-=move; shippedAny=true; }
+          });
+          b._shipT=SHIP_INTERVAL;
+          if(shippedAny){ toast("Shipment launched to "+(hub.name||BUILD_DEFS.shiphub.nm)); sfx.build(); b._launchFlashT=0.6; }
+        }
+      } else {
+        b._shipT=SHIP_INTERVAL;
+      }
+      if(b._launchFlashT>0){
+        b._launchFlashT-=dt;
+        if(b.mesh&&b.mesh.userData.glowMesh)b.mesh.userData.glowMesh.material.emissiveIntensity=2.2;
+      } else if(b.mesh&&b.mesh.userData.glowMesh){
+        b.mesh.userData.glowMesh.material.emissiveIntensity=powOk?0.5:0.1;
+      }
     }
     var status=b.mesh&&b.mesh.userData.statusMat;
     if(status){
       var active=powOk&&(d.generates||b.type==="storage"||b.type==="shipyard"&&b.job||
         ((b.type==="miner"||b.type==="miner2")&&b.node)||b.type==="smelter"||b.type==="constructor"||b.type==="pylon"||
-        b.type==="splitter"||b.type==="merger"||b.type==="workshop");
+        b.type==="splitter"||b.type==="merger"||b.type==="workshop"||b.type==="shiplauncher"||b.type==="shiphub");
       if(b.overload){
         status.color.set(0xff4d3a); status.emissive.set(0xff2a1a);
       } else {
@@ -2857,11 +3007,12 @@ function saveGame(){
       buildings:buildings.map(function(b){
         return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
           targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
-          job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null};
+          job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null,
+          name:b.name,targetHubIdx:b.targetHub?buildings.indexOf(b.targetHub):-1};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
-      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment
+      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atVesta:atVesta
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -2898,7 +3049,13 @@ function applySaveData(data){
     if(bd.in)b.in=bd.in; if(bd.out)b.out=bd.out; if(bd.recipe)b.recipe=bd.recipe;
     if(bd.targetMode)b.targetMode=bd.targetMode; if(bd.targetQty)b.targetQty=bd.targetQty; if(bd.producedCount)b.producedCount=bd.producedCount;
     if(bd.job)b.job=bd.job;
+    if(bd.name)b.name=bd.name;
+    b._targetHubIdx=bd.targetHubIdx!=null?bd.targetHubIdx:-1;
     buildings.push(b);
+  });
+  buildings.forEach(function(b){
+    if(b.type==="shiplauncher"&&b._targetHubIdx>=0)b.targetHub=buildings[b._targetHubIdx]||null;
+    delete b._targetHubIdx;
   });
   (data.belts||[]).forEach(function(bl){
     var from=buildings[bl.fromIdx], to=buildings[bl.toIdx];
@@ -2928,6 +3085,8 @@ function applySaveData(data){
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
+  atVesta=!!data.atVesta;
+  if(atVesta){ showVestaShip(); $("bBoardShip").classList.remove("hide"); }
 }
 function loadGame(){
   var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
@@ -3070,6 +3229,53 @@ function launchFromPlanet(){
   toast("Launching back into space");
   sfx.click();
 }
+/* stepping out of a landed ship onto Vesta's own small buildable clearing (see VESTA_CENTER) —
+   reuses the entire home-colony surface/building system as-is, just at a different spot on the
+   same ground plane, so miners/belts/the Build menu/Backpack all work exactly the same there */
+var atVesta=false, vestaShipMesh=null;
+function showVestaShip(){
+  if(!vestaShipMesh){
+    vestaShipMesh=buildShipMesh(shipModelKey||"scout");
+    vestaShipMesh.scale.setScalar(0.62);
+    surfaceScene.add(vestaShipMesh);
+  }
+  vestaShipMesh.position.set(VESTA_CENTER.x,3.2,VESTA_CENTER.z);
+  vestaShipMesh.rotation.y=0;
+  vestaShipMesh.visible=true;
+}
+function disembark(){
+  if(!landedPlanet)return;
+  resetMovementKeys();
+  $("landedPanel").classList.add("hide");
+  $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
+  $("mobActions").classList.add("show");
+  $("bBoardShip").classList.remove("hide");
+  atVesta=true; state="surface";
+  player.position.set(VESTA_CENTER.x,0,VESTA_CENTER.z+8);
+  player.rotation.y=Math.PI;
+  camYaw=0; camPitch=0.55;
+  updateCameraTransform();
+  showVestaShip();
+  toast("Disembarked at "+PLANET.name+" — gather what you can and set up a Shipment Launcher");
+  sfx.build();
+}
+function boardShip(){
+  if(!atVesta)return;
+  resetMovementKeys();
+  atVesta=false;
+  if(vestaShipMesh)vestaShipMesh.visible=false;
+  $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
+  $("bBoardShip").classList.add("hide");
+  $("hudSpace").classList.add("show");
+  state="space";
+  $("landedPanel").querySelector(".lpName").textContent="LANDED ON "+PLANET.name.toUpperCase();
+  $("landedPanel").classList.remove("hide");
+  toast("Back aboard ship");
+  sfx.click();
+  saveGame();
+}
+$("bDisembark").onclick=function(){ disembark(); };
+$("bBoardShip").onclick=function(){ boardShip(); };
 
 function buildShipMesh(model){
   var g=new THREE.Group();
@@ -3351,6 +3557,8 @@ window.addEventListener("keydown",function(e){
     else if(state==="storage")closeStorage();
     else if(state==="workshop")closeWorkshop();
     else if(state==="backpack")closeBackpack();
+    else if(state==="shiplauncher")closeShipLauncher();
+    else if(state==="shiphub")closeShipHub();
     else if(state==="build")closeBuild();
     else if(state==="galaxy")closeGalaxy();
     else togglePause();
@@ -3532,8 +3740,8 @@ $("zoneCam").addEventListener("touchend",function(e){
 $("zoneCam").style.pointerEvents="auto";
 
 /* ═════════════ BUILD MENU ═════════════ */
-var BUILD_CATS=["ALL","Structure","Power","Production","Logistics","Ship Production","Crafting"];
-var BUILD_CAT_LABEL={ALL:"All",Structure:"Structure",Power:"Power",Production:"Production",Logistics:"Logistics","Ship Production":"Ship",Crafting:"Crafting"};
+var BUILD_CATS=["ALL","Structure","Power","Production","Logistics","Ship Production","Crafting","Shipping"];
+var BUILD_CAT_LABEL={ALL:"All",Structure:"Structure",Power:"Power",Production:"Production",Logistics:"Logistics","Ship Production":"Ship",Crafting:"Crafting",Shipping:"Shipping"};
 var buildActiveTab="ALL", buildSelectedKey=null, buildGridTab=null;
 function openBuild(){
   if(state!=="surface")return;
@@ -3768,6 +3976,7 @@ $("bMachineClose").onclick=function(){ sfx.click(); closeMachine(); };
 
 /* ═════════════ STORAGE PANEL (real contents, take/store) ═════════════ */
 var storageTarget=null;
+var shipLauncherTarget=null, shipHubTarget=null;
 function storageTakeAll(b){
   BUILD_DEFS.storage.accepts.forEach(function(k){ var amt=b.in[k]||0; if(amt>0){ stock[k]+=amt; b.in[k]=0; } });
 }
@@ -3881,6 +4090,74 @@ function renderBackpack(){
 $("bBackpackClose").onclick=function(){ sfx.click(); closeBackpack(); };
 $("bBackpackOpen").onclick=function(){ sfx.click(); toggleBackpack(); };
 
+/* ═════════════ SHIPMENT LAUNCHER ═════════════ */
+function openShipLauncher(b){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  shipLauncherTarget=b; state="shiplauncher"; $("o-shiplauncher").classList.remove("hide"); renderShipLauncher();
+}
+function closeShipLauncher(){ if(state!=="shiplauncher")return; state="surface"; $("o-shiplauncher").classList.add("hide"); shipLauncherTarget=null; }
+function renderShipLauncher(){
+  var b=shipLauncherTarget; if(!b||buildings.indexOf(b)<0){ closeShipLauncher(); return; }
+  var contentKeys=Object.keys(b.in).filter(function(k){return (b.in[k]||0)>0.01;});
+  $("slContents").innerHTML=contentKeys.length?contentKeys.map(function(k){
+    return '<div class="slot" style="margin-bottom:6px">'+RES_ICONS[k]+
+      '<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(b.in[k])+'</span></div></div>';
+  }).join(''):'<div class="ds" style="padding:4px 2px">Nothing loaded yet — belt materials in.</div>';
+  var hubs=buildings.filter(function(x){return x.type==="shiphub";});
+  if(!hubs.length){
+    $("slHubList").innerHTML='<div class="ds" style="padding:4px 2px">No Shipment Hubs built yet.</div>';
+  } else {
+    $("slHubList").innerHTML=hubs.map(function(h,i){
+      var sel=b.targetHub===h;
+      return '<div class="slot" style="margin-bottom:6px;cursor:pointer" data-hub="'+i+'">'+
+        '<div class="info"><span class="nm">'+(h.name||("Shipment Hub #"+(i+1)))+'</span>'+
+        '<span class="qty" style="color:'+(sel?'var(--green)':'var(--dim)')+'">'+(sel?"SELECTED":"")+'</span></div></div>';
+    }).join('');
+    var rows=$("slHubList").querySelectorAll("[data-hub]");
+    for(var i=0;i<rows.length;i++)rows[i].onclick=function(){
+      b.targetHub=hubs[parseInt(this.getAttribute("data-hub"),10)];
+      sfx.click(); renderShipLauncher();
+    };
+  }
+  var next=b._shipT!=null?Math.max(0,Math.ceil(b._shipT)):SHIP_INTERVAL;
+  $("slStatus").textContent=b.targetHub?("Next shipment in "+next+"s to "+(b.targetHub.name||"Shipment Hub")):"Pick a destination Shipment Hub below.";
+}
+$("bShipLauncherClose").onclick=function(){ sfx.click(); closeShipLauncher(); };
+
+/* ═════════════ SHIPMENT HUB ═════════════ */
+function openShipHub(b){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  shipHubTarget=b; state="shiphub"; $("o-shiphub").classList.remove("hide"); renderShipHub();
+}
+function closeShipHub(){ if(state!=="shiphub")return; state="surface"; $("o-shiphub").classList.add("hide"); shipHubTarget=null; }
+function renderShipHub(){
+  var b=shipHubTarget; if(!b||buildings.indexOf(b)<0){ closeShipHub(); return; }
+  $("shName").value=b.name||"";
+  var contentKeys=Object.keys(b.out).filter(function(k){return (b.out[k]||0)>0.01;});
+  $("shContents").innerHTML=contentKeys.length?contentKeys.map(function(k){
+    return '<div class="slot" style="margin-bottom:6px">'+RES_ICONS[k]+
+      '<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(b.out[k])+'</span></div></div>';
+  }).join(''):'<div class="ds" style="padding:4px 2px">No shipments received yet.</div>';
+}
+$("bShipHubSaveName").onclick=function(){
+  var b=shipHubTarget; if(!b)return;
+  b.name=$("shName").value.trim().slice(0,24);
+  sfx.click(); toast("Hub renamed"); renderShipHub();
+};
+$("bShipHubCollect").onclick=function(){
+  var b=shipHubTarget; if(!b)return;
+  var any=false;
+  Object.keys(b.out).forEach(function(k){
+    var amt=b.out[k]||0; if(amt<=0.01)return;
+    stock[k]=(stock[k]||0)+amt; b.out[k]=0; any=true;
+  });
+  if(any){ sfx.click(); toast("Collected shipment into your backpack"); } else toast("Nothing to collect");
+  renderShipHub();
+};
+$("bShipHubClose").onclick=function(){ sfx.click(); closeShipHub(); };
+
 /* ═════════════ INTERACT ═════════════ */
 function distToSegment(px,pz,x1,z1,x2,z2){
   var dx=x2-x1,dz=z2-z1;
@@ -3921,7 +4198,7 @@ function placeOnBelt(bl){
 function interactTarget(){
   var best=null,bd=Infinity;
   buildings.forEach(function(b){
-    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="storage"&&b.type!=="workshop")return;
+    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="storage"&&b.type!=="workshop"&&b.type!=="shiplauncher"&&b.type!=="shiphub")return;
     var dx=b.x-player.position.x,dz=b.z-player.position.z,dd=Math.sqrt(dx*dx+dz*dz);
     var r=BUILD_DEFS[b.type].radius+3;
     if(dd<r&&dd<bd){bd=dd;best=b;}
@@ -3934,6 +4211,8 @@ function doInteract(){
   if(t&&(t.type==="smelter"||t.type==="constructor")){ openMachine(t); pulseInteractPose(); return; }
   if(t&&t.type==="storage"){ openStorage(t); pulseInteractPose(); return; }
   if(t&&t.type==="workshop"){ openWorkshop(); pulseInteractPose(); return; }
+  if(t&&t.type==="shiplauncher"){ openShipLauncher(t); pulseInteractPose(); return; }
+  if(t&&t.type==="shiphub"){ openShipHub(t); pulseInteractPose(); return; }
   var bl=nearestBelt(player.position.x,player.position.z,2.5);
   if(bl){ takeFromBelt(bl); return; }
   toast("Nothing to interact with here");
@@ -4167,7 +4446,7 @@ function frame(now){
   }
   try{
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
-    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack";
+    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
        keeps running whenever a menu is open on top of the surface — only WASD movement itself
@@ -4266,7 +4545,7 @@ window.__cq={
   tickFrameLoop:function(n,dt){
     dt=dt||1/60;
     for(var i=0;i<n;i++){
-      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack";
+      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub";
       if(state==="surface"||menuOpenT)updateSurface(dt);
       if(state==="space"||state==="launching")updateSpace(dt);
     }
