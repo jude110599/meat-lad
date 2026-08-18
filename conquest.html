@@ -31,6 +31,20 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
   background:#0b0f18ee;border:1px solid var(--line);border-radius:10px;padding:9px 16px;
   font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2);font-weight:800;
   opacity:0;transition:opacity .25s;max-width:80vw;text-align:center}
+.aimLabel{position:absolute;left:50%;top:22%;transform:translateX(-50%);z-index:9;pointer-events:none;
+  background:#0b0f18ee;border-radius:10px;padding:9px 16px;font-size:11px;letter-spacing:.05em;
+  color:var(--bone);font-weight:800;max-width:80vw;text-align:center;line-height:1.6}
+.aimLabel.hide{display:none}
+.aimLabel .nm{text-transform:uppercase;letter-spacing:.1em;display:block;font-size:12px}
+.aimLabel .sub{font-size:9.5px;color:var(--dim);font-weight:700;text-transform:none;letter-spacing:.02em}
+.saveInd{position:absolute;right:14px;bottom:14px;z-index:9;pointer-events:none;
+  background:#0b0f18ee;border:1px solid var(--line);border-radius:8px;padding:6px 12px;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:700;
+  opacity:0;transition:opacity .3s;display:flex;align-items:center;gap:6px}
+.saveInd.show{opacity:1}
+.saveInd .dot{width:6px;height:6px;border-radius:50%;background:var(--amber2);flex:none}
+.saveInd.done .dot{background:var(--green)}
+.saveInd.fail .dot{background:var(--red)}
 
 /* ── HUD ── */
 #hud,#hudSpace{position:absolute;top:0;left:0;right:0;pointer-events:none;z-index:6;
@@ -128,7 +142,7 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   padding:10px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;
   font-family:inherit;transition:border-color .15s,transform .12s,background .15s;min-height:74px}
 .bldItem:active{transform:scale(.94)}
-.bldItem svg{width:30px;height:30px;flex:none}
+.bldItem svg,.bldItem img{width:40px;height:40px;flex:none;object-fit:contain}
 .bldItem .nm{font-size:8px;letter-spacing:.03em;text-transform:uppercase;color:var(--dim);text-align:center;
   font-weight:800;line-height:1.2}
 .bldItem.selected{border-color:var(--amber);background:var(--panel2);animation:bldPop .2s ease}
@@ -202,6 +216,8 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <div id="ui">
   <div id="loading"><div class="spin"></div><div class="lbl">Loading Space Conquest</div></div>
   <div class="toast" id="toastEl"></div>
+  <div class="aimLabel hide" id="aimLabel"></div>
+  <div class="saveInd" id="saveInd"><span class="dot"></span><span id="saveIndTxt">Saved</span></div>
   <div id="vig"></div>
 
   <div id="hud">
@@ -339,8 +355,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <script type="module">
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.11.0";
+var VERSION="1.12.0";
 var CHANGELOG=[
+  {v:"1.12.0",t:"Movement/input fixes, Remove tool feedback, hardened saves",items:[
+    "Fixed right-click opening the browser's native context menu — it now only ever cancels placement/tools",
+    "Fixed the Build menu flickering while hovering items — icons and tabs now update in place instead of being torn down and rebuilt on every timer tick",
+    "The Remove tool now shows the targeted building's name and exactly what materials it will refund before you click",
+    "Saves now remember exactly where you were standing and facing, keep a backup copy so a corrupted save can't wipe your colony, and show a small Saving.../Saved indicator",
+    "Starting a new colony over an existing save now asks for confirmation first"
+  ]},
   {v:"1.11.0",t:"Splitters, mergers, Miner Mk.2, and better logistics",items:[
     "Added a Splitter (one belt in, up to two out) and a Merger (up to two belts in, one out) as real industrial Y-junction devices",
     "Added Miner Mk.2 — a much larger, multi-drill rig with 4x the output of Mk.1 at triple the power cost. Rebalanced Mk.1 to its intended 30 Iron Ore/min at 20 MW",
@@ -1294,6 +1317,38 @@ function buildBuildingMesh(type){
   return g;
 }
 
+/* ═════════════ RENDERED BUILD ICONS (offscreen model thumbnails) ═════════════ */
+function renderBuildIcons(){
+  var W=128,H=128;
+  var cv2=document.createElement("canvas"); cv2.width=W; cv2.height=H;
+  var r2; try{ r2=new THREE.WebGLRenderer({canvas:cv2,alpha:true,antialias:true,preserveDrawingBuffer:true}); }catch(e){ return; }
+  r2.setPixelRatio(1); r2.setSize(W,H,false); r2.setClearColor(0x000000,0);
+  var scn=new THREE.Scene();
+  scn.add(new THREE.AmbientLight(0xffffff,1.0));
+  var key1=new THREE.DirectionalLight(0xfff4e0,1.7); key1.position.set(3.2,5.5,4.2); scn.add(key1);
+  var key2=new THREE.DirectionalLight(0x8fb8ff,0.7); key2.position.set(-3.5,2.2,-2.8); scn.add(key2);
+  var cam=new THREE.PerspectiveCamera(28,1,0.05,200);
+  var dir3=new THREE.Vector3(1,0.82,1.35).normalize();
+  BUILD_ORDER.forEach(function(key){
+    var g; try{ g=buildBuildingMesh(key); }catch(e){ return; }
+    scn.add(g);
+    var box=new THREE.Box3().setFromObject(g);
+    if(box.isEmpty()){ scn.remove(g); return; }
+    var center=box.getCenter(new THREE.Vector3());
+    var size=box.getSize(new THREE.Vector3());
+    var radius=Math.max(size.length()*0.5,0.5);
+    var dist=radius/Math.sin((cam.fov*Math.PI/180)/2)*1.5;
+    cam.position.copy(center).addScaledVector(dir3,dist);
+    cam.lookAt(center);
+    cam.updateProjectionMatrix();
+    r2.clear();
+    r2.render(scn,cam);
+    try{ BUILD_ICONS[key]='<img src="'+cv2.toDataURL("image/png")+'" draggable="false" alt="">'; }catch(e){}
+    scn.remove(g);
+  });
+  r2.dispose();
+}
+
 function makeBuilding(type,x,z,rotY,node){
   var d=BUILD_DEFS[type];
   var b={id:buildIdSeq++,type:type,x:x,z:z,rotY:rotY||0,node:node||null,powered:false,netId:null,in:{},out:{},job:null,
@@ -1472,11 +1527,17 @@ function buildingUnderScreen(sx,sy){
   if(!o)return null;
   return buildings.filter(function(b){return b.mesh===o;})[0]||null;
 }
+function refundPreviewStr(type){
+  var cost=BUILD_DEFS[type].cost;
+  return Object.keys(cost).map(function(k){
+    return Math.round(cost[k]*0.5)+" "+RES[k].nm;
+  }).join(" + ");
+}
 function updateConnectHighlight(sx,sy,worldPt){
-  if(!isClickTool(placing)){ connectHighlight.visible=false; return; }
+  if(!isClickTool(placing)){ connectHighlight.visible=false; $("aimLabel").classList.add("hide"); return; }
   var cand=buildingUnderScreen(sx,sy);
   if(!cand&&worldPt)cand=findBuildingNear(worldPt.x,worldPt.z,2.5);
-  if(!cand){ connectHighlight.visible=false; return; }
+  if(!cand){ connectHighlight.visible=false; $("aimLabel").classList.add("hide"); return; }
   var ok=connectTargetValid(cand);
   connectHighlightMat.color.set(ok?0x7bd94a:0xff4d5e);
   var r=(BUILD_DEFS[cand.type].radius||1)+0.7;
@@ -1484,6 +1545,15 @@ function updateConnectHighlight(sx,sy,worldPt){
   connectHighlight.geometry=new THREE.RingGeometry(r,r+0.35,28);
   connectHighlight.position.set(cand.x,0.12,cand.z);
   connectHighlight.visible=true;
+  var lbl=$("aimLabel");
+  if(placing==="remove"){
+    lbl.innerHTML='<span class="nm" style="color:'+(ok?"var(--red)":"var(--dim)")+'">'+BUILD_DEFS[cand.type].nm+'</span>'+
+      '<span class="sub">'+(ok?"Remove — returns "+refundPreviewStr(cand.type):"Busy — can't remove right now")+'</span>';
+    lbl.classList.remove("hide");
+  } else {
+    lbl.innerHTML='<span class="nm" style="color:'+(ok?"var(--green)":"var(--red)")+'">'+BUILD_DEFS[cand.type].nm+'</span>';
+    lbl.classList.remove("hide");
+  }
 }
 function setGhost(type){
   placeGhost.clear();
@@ -1729,7 +1799,7 @@ function surfaceClick3D(x,z,sx,sy){
   }
   tryPlaceAt3D(x,z);
 }
-function cancelPlacing(){ placing=null; beltFrom=null; placeGhost.visible=false; connectHighlight.visible=false; }
+function cancelPlacing(){ placing=null; beltFrom=null; placeGhost.visible=false; connectHighlight.visible=false; $("aimLabel").classList.add("hide"); }
 
 /* ═════════════ SURFACE PRODUCTION TICK ═════════════ */
 function updateBuildings(dt){
@@ -1859,6 +1929,7 @@ function completeShip(b){
 
 /* ═════════════ SAVE / LOAD (persistent colony) ═════════════ */
 var SKEY="conquest3d-save-v1";
+var SAVE_VERSION=2;
 var save={bestWave:0};
 function loadMeta(){
   try{ var r=localStorage.getItem(SKEY+"-meta"); if(r){ var o=JSON.parse(r); for(var k in save)if(o[k]!=null)save[k]=o[k]; } }catch(e){}
@@ -1870,9 +1941,21 @@ function clearWorld(){
   belts.forEach(function(bl){ surfaceScene.remove(bl.mesh); }); belts=[];
   cables.forEach(function(c){ surfaceScene.remove(c.mesh); }); cables=[];
 }
+var saveIndT=null;
+function showSaveIndicator(text,cls){
+  var el=$("saveInd"); if(!el)return;
+  $("saveIndTxt").textContent=text;
+  el.classList.remove("done","fail","pending"); if(cls)el.classList.add(cls);
+  el.classList.add("show");
+  clearTimeout(saveIndT);
+  if(cls!=="pending")saveIndT=setTimeout(function(){ el.classList.remove("show"); },1400);
+}
 function saveGame(){
+  showSaveIndicator("Saving…","pending");
   try{
     var data={
+      saveVersion:SAVE_VERSION,
+      player:{x:player.position.x,z:player.position.z,rotY:player.rotation.y},
       stock:stock,
       nodes:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){
@@ -1883,22 +1966,29 @@ function saveGame(){
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
       shipBuilt:shipBuilt, shipModelKey:shipModelKey
     };
-    localStorage.setItem(SKEY,JSON.stringify(data));
+    var json=JSON.stringify(data);
+    var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
+    if(prev){ try{ localStorage.setItem(SKEY+"-backup",prev); }catch(e){} }
+    localStorage.setItem(SKEY,json);
     save.bestWave=Math.max(save.bestWave,wave);
     localStorage.setItem(SKEY+"-meta",JSON.stringify(save));
-  }catch(e){}
+    showSaveIndicator("Saved ✓","done");
+  }catch(e){
+    showSaveIndicator("Save failed","fail");
+  }
 }
 function newColony(){
   clearWorld();
   stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
   scatterNodes();
-  try{ localStorage.removeItem(SKEY); }catch(e){}
+  try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
 }
-function loadGame(){
-  var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
-  if(!raw)return false;
-  var data; try{ data=JSON.parse(raw); }catch(e){ return false; }
+function validSpawn(p){
+  return p&&isFinite(p.x)&&isFinite(p.z)&&Math.abs(p.x)<2000&&Math.abs(p.z)<2000;
+}
+var loadedPlayerPos=null;
+function applySaveData(data){
   clearWorld();
   stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
   (data.nodes||[]).forEach(function(n){ spawnNode(n.x,n.z,n.restype); });
@@ -1926,6 +2016,20 @@ function loadGame(){
     cables.push(nc);
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
+  loadedPlayerPos=validSpawn(data.player)?data.player:null;
+}
+function loadGame(){
+  var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
+  var data=null;
+  if(raw){ try{ data=JSON.parse(raw); }catch(e){ data=null; } }
+  var usedBackup=false;
+  if(!data){
+    var bak=null; try{ bak=localStorage.getItem(SKEY+"-backup"); }catch(e){}
+    if(bak){ try{ data=JSON.parse(bak); usedBackup=true; }catch(e){ data=null; } }
+  }
+  if(!data)return false;
+  applySaveData(data);
+  if(usedBackup)toast("Main save was corrupted — restored from backup");
   return true;
 }
 
@@ -2344,13 +2448,14 @@ function groundPointFromScreen(sx,sy){
   return hit?{x:hit.point.x,z:hit.point.z}:null;
 }
 function updatePlacementGhost(sx,sy){
-  if(!placing){ placeGhost.visible=false; connectHighlight.visible=false; return; }
+  if(!placing){ placeGhost.visible=false; connectHighlight.visible=false; $("aimLabel").classList.add("hide"); return; }
   if(isClickTool(placing)){
     placeGhost.visible=false;
     updateConnectHighlight(sx,sy,groundPointFromScreen(sx,sy));
     return;
   }
   connectHighlight.visible=false;
+  $("aimLabel").classList.add("hide");
   var p=groundPointFromScreen(sx,sy);
   if(!p){ placeGhost.visible=false; return; }
   var d=BUILD_DEFS[placing];
@@ -2383,7 +2488,7 @@ window.addEventListener("mousemove",function(e){
   if(placing)updatePlacementGhost(e.clientX,e.clientY);
 });
 window.addEventListener("mouseup",function(e){ mouse.downBtn=-1; camDragEnd(); });
-cv.addEventListener("contextmenu",function(e){ e.preventDefault(); });
+window.addEventListener("contextmenu",function(e){ e.preventDefault(); });
 
 /* Mobile: the right-side zone is camera-drag on the surface, and an aim+fire stick in space */
 var aimStick={on:false,id:null,ox:0,oy:0,dx:0,dy:0};
@@ -2424,7 +2529,7 @@ $("zoneCam").style.pointerEvents="auto";
 /* ═════════════ BUILD MENU ═════════════ */
 var BUILD_CATS=["ALL","Structure","Power","Production","Logistics","Ship Production"];
 var BUILD_CAT_LABEL={ALL:"All",Structure:"Structure",Power:"Power",Production:"Production",Logistics:"Logistics","Ship Production":"Ship"};
-var buildActiveTab="ALL", buildSelectedKey=null;
+var buildActiveTab="ALL", buildSelectedKey=null, buildGridTab=null;
 function openBuild(){
   if(state!=="surface")return;
   resetMovementKeys();
@@ -2433,29 +2538,67 @@ function openBuild(){
 }
 function closeBuild(){ if(state!=="build")return; state="surface"; $("o-build").classList.add("hide"); }
 function ownedCount(key){ return buildings.filter(function(b){return b.type===key;}).length; }
-function renderBuild(){
+function renderBuildResources(){
   $("buildRes").innerHTML=Object.keys(RES).map(function(k){
     return '<span><i style="background:'+hexStr(RES[k].col)+'"></i>'+Math.floor(stock[k])+'</span>';
   }).join('');
-  $("buildTabs").innerHTML=BUILD_CATS.map(function(c){
-    return '<button class="bldTab'+(buildActiveTab===c?" active":"")+'" data-tab="'+c+'">'+BUILD_CAT_LABEL[c]+'</button>';
-  }).join('');
-  var tabBtns=$("buildTabs").querySelectorAll(".bldTab");
-  for(var i=0;i<tabBtns.length;i++)tabBtns[i].onclick=function(){
-    buildActiveTab=this.getAttribute("data-tab"); sfx.click(); renderBuild();
-  };
-  var visible=BUILD_ORDER.filter(function(k){ return buildActiveTab==="ALL"||BUILD_DEFS[k].cat===buildActiveTab; });
+}
+function renderBuildTabs(){
+  var tabsEl=$("buildTabs");
+  if(!tabsEl.childElementCount){
+    tabsEl.innerHTML=BUILD_CATS.map(function(c){
+      return '<button class="bldTab" data-tab="'+c+'">'+BUILD_CAT_LABEL[c]+'</button>';
+    }).join('');
+    var tabBtns=tabsEl.querySelectorAll(".bldTab");
+    for(var i=0;i<tabBtns.length;i++)tabBtns[i].onclick=function(){ selectBuildTab(this.getAttribute("data-tab")); };
+  }
+  var tabBtns=tabsEl.querySelectorAll(".bldTab");
+  for(var i=0;i<tabBtns.length;i++)tabBtns[i].classList.toggle("active",tabBtns[i].getAttribute("data-tab")===buildActiveTab);
+}
+function selectBuildTab(tab){
+  if(tab===buildActiveTab)return;
+  buildActiveTab=tab; sfx.click();
+  renderBuildTabs();
+  renderBuildGrid();
+  renderBuildDetail();
+}
+function buildVisibleKeys(){
+  return BUILD_ORDER.filter(function(k){ return buildActiveTab==="ALL"||BUILD_DEFS[k].cat===buildActiveTab; });
+}
+function renderBuildGrid(){
+  var visible=buildVisibleKeys();
   if(visible.indexOf(buildSelectedKey)<0)buildSelectedKey=visible[0]||null;
+  buildGridTab=buildActiveTab;
   $("buildGrid").innerHTML=visible.map(function(k){
     var owned=ownedCount(k);
     return '<div class="bldItem'+(buildSelectedKey===k?" selected":"")+'" data-k="'+k+'">'+
-      (owned>0?'<span class="owned">'+owned+'</span>':'')+
+      '<span class="owned"'+(owned>0?"":' style="display:none"')+'>'+owned+'</span>'+
       BUILD_ICONS[k]+'<span class="nm">'+BUILD_DEFS[k].nm+'</span></div>';
   }).join('');
   var items=$("buildGrid").querySelectorAll(".bldItem");
-  for(var i=0;i<items.length;i++)items[i].onclick=function(){
-    buildSelectedKey=this.getAttribute("data-k"); sfx.click(); renderBuild();
-  };
+  for(var i=0;i<items.length;i++)items[i].onclick=function(){ selectBuildItem(this.getAttribute("data-k")); };
+}
+function refreshBuildGridLive(){
+  if(buildGridTab!==buildActiveTab)return;
+  var items=$("buildGrid").querySelectorAll(".bldItem");
+  for(var i=0;i<items.length;i++){
+    var k=items[i].getAttribute("data-k");
+    var owned=ownedCount(k);
+    var ownedEl=items[i].querySelector(".owned");
+    if(ownedEl){ ownedEl.textContent=owned; ownedEl.style.display=owned>0?"":"none"; }
+  }
+}
+function selectBuildItem(key){
+  if(key===buildSelectedKey)return;
+  buildSelectedKey=key; sfx.click();
+  var items=$("buildGrid").querySelectorAll(".bldItem");
+  for(var i=0;i<items.length;i++)items[i].classList.toggle("selected",items[i].getAttribute("data-k")===buildSelectedKey);
+  renderBuildDetail();
+}
+function renderBuild(){
+  renderBuildResources();
+  renderBuildTabs();
+  renderBuildGrid();
   renderBuildDetail();
 }
 function renderBuildDetail(){
@@ -2948,7 +3091,7 @@ function frame(now){
         panelRefreshT=0.4;
         if(state==="machine"&&document.activeElement.id!=="mchTargetQty")renderMachine();
         if(state==="storage")renderStorage();
-        if(state==="build")renderBuild();
+        if(state==="build"){ renderBuildResources(); refreshBuildGridLive(); renderBuildDetail(); }
         if(state==="shipyard")renderShipyard();
       }
     }
@@ -2969,12 +3112,16 @@ function show(id){
 function enterGame(loaded){
   audioOn();
   resize();
-  if(loaded){
+  if(loaded&&loadedPlayerPos){
+    player.position.set(loadedPlayerPos.x,0,loadedPlayerPos.z);
+    player.rotation.y=loadedPlayerPos.rotY||0;
+  } else if(loaded){
     var sy=shipyard();
     if(sy){ player.position.set(sy.x+6,0,sy.z); } else player.position.set(0,0,14);
   } else {
     player.position.set(0,0,14);
   }
+  loadedPlayerPos=null;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
   state="surface";
@@ -2987,6 +3134,7 @@ $("bStart").onclick=function(){
   else { newColony(); enterGame(false); }
 };
 $("bNewColony").onclick=function(){
+  if(hasSave()&&!confirm("Abandon your current colony and start a brand new one? This cannot be undone."))return;
   newColony(); enterGame(false); toast("New colony — previous save cleared");
 };
 if(hasSave()){
@@ -2995,6 +3143,7 @@ if(hasSave()){
 }
 
 loadMeta();
+renderBuildIcons();
 resize();
 updateCameraTransform();
 renderer.render(surfaceScene,camera);
