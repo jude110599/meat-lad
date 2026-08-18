@@ -201,7 +201,7 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .slotFlow{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .slot{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;
   display:flex;align-items:center;gap:8px;flex:1;min-width:0}
-.slot svg,.slot img{width:26px;height:26px;flex:none;object-fit:contain}
+.slot svg,.slot img{width:36px;height:36px;flex:none;object-fit:contain}
 .slot .info{display:flex;flex-direction:column;min-width:0}
 .slot .info .nm{font-size:8.5px;text-transform:uppercase;color:var(--dim);font-weight:700;letter-spacing:.03em;white-space:nowrap}
 .slot .info .qty{font-size:12.5px;font-weight:800;color:var(--bone)}
@@ -210,13 +210,13 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .bpPreview{width:100%;background:radial-gradient(ellipse at 50% 30%,rgba(255,181,69,.1),transparent 70%),var(--panel);
   border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;
   padding:6px;margin-bottom:12px}
-.bpPreview img{width:140px;height:170px;image-rendering:pixelated;image-rendering:crisp-edges}
+.bpPreview img{width:84px;height:102px;image-rendering:pixelated;image-rendering:crisp-edges}
 .gearSlots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px}
 .gearSlot{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 6px;
-  display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;min-height:86px}
+  display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;min-height:104px}
 .gearSlot .slotLabel{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-weight:800}
-.gearSlot img{width:40px;height:40px;object-fit:contain}
-.gearSlot .empty{width:40px;height:40px;border:1.5px dashed var(--line);border-radius:8px}
+.gearSlot img{width:58px;height:58px;object-fit:contain}
+.gearSlot .empty{width:58px;height:58px;border:1.5px dashed var(--line);border-radius:8px}
 .gearSlot .itemNm{font-size:8.5px;font-weight:700;color:var(--amber2);line-height:1.2}
 .gearSlot.filled{border-color:var(--amber2)}
 .stepper{display:flex;align-items:center;gap:5px;margin-top:8px}
@@ -431,8 +431,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.17.1";
+var VERSION="1.17.2";
 var CHANGELOG=[
+  {v:"1.17.2",t:"The game no longer pauses when a menu is open, and better item sizing",items:[
+    "Opening any menu used to stop the whole world, not just your own movement - clouds, spores and pools stopped animating, and hand-gathering stopped even while standing right on a deposit. The camera, world animation, hand-gathering and building/jump simulation now all keep running the moment a panel is open; only your own WASD movement is still locked while a fullscreen panel like Build or Workshop is up, so you can't wander around blind underneath it",
+    "Shrank the character preview in the Backpack and enlarged every item icon (Carrying, Equipped slots, and the Workshop's craft list) so the actual items read clearly instead of the character render dominating the panel"
+  ]},
   {v:"1.17.1",t:"Real gear slots, 3D item models, a character preview, and a real jump-freeze fix",items:[
     "FIXED: jumping and opening any menu (Build, Backpack, anything) used to freeze you suspended in mid-air until you closed it — gravity only ran in the surface update loop, which stops while a panel is open. Jump physics now live in the loop that always runs, so you keep falling normally with a menu open",
     "Every resource and every craftable now renders as an actual small 3D model (the same ore-chunk/ingot/gear shapes used elsewhere in the game) instead of a flat icon, in both the Backpack and the Workshop",
@@ -3822,7 +3826,7 @@ function renderWorkshop(){
   });
   $("wkList").innerHTML=html;
   var icons=$("wkList").querySelectorAll(".upg > .top > img");
-  for(var j=0;j<icons.length;j++){ icons[j].style.width="44px"; icons[j].style.height="44px"; icons[j].style.flex="none"; }
+  for(var j=0;j<icons.length;j++){ icons[j].style.width="64px"; icons[j].style.height="64px"; icons[j].style.flex="none"; }
   var btns=$("wkList").querySelectorAll("[data-craft]");
   for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ craftItem(this.getAttribute("data-craft")); };
 }
@@ -4031,28 +4035,36 @@ var interactPose=0, interactPoseT=0;
 function pulseInteractPose(){ interactPoseT=0.35; }
 var walkT=0;
 function updateSurface(dt){
-  var ax=moveAxis();
-  var vec=forwardRightVectors();
-  var mx=vec.fwd.x*ax.fwd+vec.right.x*ax.right;
-  var mz=vec.fwd.z*ax.fwd+vec.right.z*ax.right;
-  var m=Math.sqrt(mx*mx+mz*mz);
-  var moving=m>0.05;
-  var sprinting=moving&&!!keys.shift;
   var eq=equipStats();
-  var spd=PLAYER_SPD*(sprinting?1.6:1)*eq.spdMult;
-  if(moving){
-    mx/=m; mz/=m;
-    player.position.x+=mx*spd*dt;
-    player.position.z+=mz*spd*dt;
-    var targetAngle=Math.atan2(mx,mz);
-    var da=targetAngle-player.rotation.y;
-    while(da>Math.PI)da-=Math.PI*2; while(da<-Math.PI)da+=Math.PI*2;
-    player.rotation.y+=da*Math.min(1,dt*10);
-    walkT+=dt*(sprinting?15:9);
+  var moving=false, sprinting=false;
+  /* movement input itself is the one thing still gated to state==="surface" — you shouldn't be
+     able to walk the character around blind underneath a fullscreen Build/Machine/Workshop panel.
+     Everything else below (camera, world animation, hand-gathering, building simulation, jump
+     physics via updateBuildings) keeps running no matter which panel is open, so opening a menu
+     no longer pauses the game — it only stops you from moving while you're looking at it. */
+  if(state==="surface"){
+    var ax=moveAxis();
+    var vec=forwardRightVectors();
+    var mx=vec.fwd.x*ax.fwd+vec.right.x*ax.right;
+    var mz=vec.fwd.z*ax.fwd+vec.right.z*ax.right;
+    var m=Math.sqrt(mx*mx+mz*mz);
+    moving=m>0.05;
+    sprinting=moving&&!!keys.shift;
+    var spd=PLAYER_SPD*(sprinting?1.6:1)*eq.spdMult;
+    if(moving){
+      mx/=m; mz/=m;
+      player.position.x+=mx*spd*dt;
+      player.position.z+=mz*spd*dt;
+      var targetAngle=Math.atan2(mx,mz);
+      var da=targetAngle-player.rotation.y;
+      while(da>Math.PI)da-=Math.PI*2; while(da<-Math.PI)da+=Math.PI*2;
+      player.rotation.y+=da*Math.min(1,dt*10);
+      walkT+=dt*(sprinting?15:9);
+    }
+    var half=SURFACE_SIZE/2-4;
+    player.position.x=clamp(player.position.x,-half,half);
+    player.position.z=clamp(player.position.z,-half,half);
   }
-  var half=SURFACE_SIZE/2-4;
-  player.position.x=clamp(player.position.x,-half,half);
-  player.position.z=clamp(player.position.z,-half,half);
 
   if(interactPoseT>0){ interactPoseT-=dt; interactPose=-1.3*clamp(interactPoseT/0.35,0,1); } else interactPose=0;
 
@@ -4134,8 +4146,11 @@ function frame(now){
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
     var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
-    if(state==="surface")updateSurface(dt);
-    else if(menuOpen)updateBuildings(dt);
+    /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
+       keeps running whenever a menu is open on top of the surface — only WASD movement itself
+       is gated to state==="surface" inside updateSurface, so you can't walk around blind under
+       a fullscreen panel, but nothing about the world actually stops */
+    if(state==="surface"||menuOpen)updateSurface(dt);
     if(menuOpen){
       panelRefreshT-=dt;
       if(panelRefreshT<=0){
@@ -4229,8 +4244,7 @@ window.__cq={
     dt=dt||1/60;
     for(var i=0;i<n;i++){
       var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack";
-      if(state==="surface")updateSurface(dt);
-      else if(menuOpenT)updateBuildings(dt);
+      if(state==="surface"||menuOpenT)updateSurface(dt);
       if(state==="space"||state==="launching")updateSpace(dt);
     }
   },
