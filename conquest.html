@@ -59,11 +59,9 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 .ptRingInner{width:100%;height:100%;border-radius:50%;border:2px solid rgba(255,255,255,.5)}
 .ptName{background:#0b0f18ee;border-radius:8px;padding:5px 12px;font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;font-weight:800;color:var(--bone);white-space:nowrap}
-.landedPanel{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);z-index:9;
-  background:#0b0f18ee;border:1px solid var(--line);border-radius:12px;padding:16px 20px;text-align:center;max-width:340px}
-.landedPanel.hide{display:none}
-.landedPanel .lpName{font-size:13px;letter-spacing:.1em;font-weight:900;color:var(--amber2);margin-bottom:6px}
-.landedPanel .lpDs{font-size:11px;color:var(--dim);margin-bottom:12px;line-height:1.4}
+.sceneFade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:15;
+  transition:opacity .42s ease}
+.sceneFade.show{opacity:1}
 
 /* ── HUD ── */
 #hud,#hudSpace{position:absolute;top:0;left:0;right:0;pointer-events:none;z-index:6;
@@ -89,6 +87,7 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
   cursor:pointer;flex:none;font-family:inherit;pointer-events:auto}
 .hudbtn:active{background:var(--panel)}
 .hudbtn.accent{border-color:var(--amber);color:var(--amber2)}
+.hudbtn.hide{display:none}
 .spacer{flex:1;min-width:8px}
 
 /* ── screens / overlays ── */
@@ -201,7 +200,7 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .slotFlow{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .slot{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;
   display:flex;align-items:center;gap:8px;flex:1;min-width:0}
-.slot svg,.slot img{width:36px;height:36px;flex:none;object-fit:contain}
+.slot svg,.slot img{width:44px;height:44px;flex:none;object-fit:contain}
 .slot .info{display:flex;flex-direction:column;min-width:0}
 .slot .info .nm{font-size:8.5px;text-transform:uppercase;color:var(--dim);font-weight:700;letter-spacing:.03em;white-space:nowrap}
 .slot .info .qty{font-size:12.5px;font-weight:800;color:var(--bone)}
@@ -210,13 +209,13 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .bpPreview{width:100%;background:radial-gradient(ellipse at 50% 30%,rgba(255,181,69,.1),transparent 70%),var(--panel);
   border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;
   padding:6px;margin-bottom:12px}
-.bpPreview img{width:84px;height:102px;image-rendering:pixelated;image-rendering:crisp-edges}
+.bpPreview img{width:58px;height:71px;image-rendering:pixelated;image-rendering:crisp-edges}
 .gearSlots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px}
 .gearSlot{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 6px;
-  display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;min-height:104px}
+  display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;min-height:118px}
 .gearSlot .slotLabel{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-weight:800}
-.gearSlot img{width:58px;height:58px;object-fit:contain}
-.gearSlot .empty{width:58px;height:58px;border:1.5px dashed var(--line);border-radius:8px}
+.gearSlot img{width:68px;height:68px;object-fit:contain}
+.gearSlot .empty{width:68px;height:68px;border:1.5px dashed var(--line);border-radius:8px}
 .gearSlot .itemNm{font-size:8.5px;font-weight:700;color:var(--amber2);line-height:1.2}
 .gearSlot.filled{border-color:var(--amber2)}
 .stepper{display:flex;align-items:center;gap:5px;margin-top:8px}
@@ -295,13 +294,8 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="ptRing"><div class="ptRingInner"></div></div>
     <div class="ptName"></div>
   </div>
-  <div class="landedPanel hide" id="landedPanel">
-    <div class="lpName">LANDED</div>
-    <div class="lpDs">Your ship is parked here. Step out to explore and gather, or launch when you're ready to fly back.</div>
-    <button class="btn accent" id="bDisembark" style="margin-bottom:8px">Disembark</button>
-    <button class="btn" id="bLaunchFromPlanet">Launch</button>
-  </div>
   <button class="hudbtn accent hide" id="bBoardShip" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Board Ship &amp; Launch</button>
+  <div class="sceneFade" id="sceneFade"></div>
 
   <div class="stickzone" id="zoneL"></div>
   <div id="zoneCam"></div>
@@ -459,8 +453,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.18.0";
+var VERSION="1.19.0";
 var CHANGELOG=[
+  {v:"1.19.0",t:"Real launch/landing cinematics, bigger ships and shipping buildings",items:[
+    "Landing on Vesta Outpost now happens automatically the moment the lock-on circle fills — no more confirmation panel, the screen just fades and you're standing on the surface",
+    "Boarding your ship at Vesta now launches you straight back into space in one action — press Board Ship & Launch and watch it happen, no extra menu",
+    "Every launch (from the home Shipyard or from Vesta) now plays a real liftoff: the ship visibly rises and accelerates, engines flare and trail sparks, and the camera pulls back and chases behind it",
+    "Rebuilt all three ship models (Scout, Fighter, Frigate) from scratch with far more detail — proper hulls, cockpit canopies, wings, engine nacelles, and blinking red/green nav lights — and made them noticeably bigger",
+    "Flying feels more alive: the chase camera now smoothly follows instead of snapping, your ship banks into turns, and a thrust particle trail streams out the engines while flying or boosting",
+    "The Shipment Launcher and Shipment Hub are both dramatically bigger and easier to tell apart, and each now has a permanent glowing marker baked into the model — green intake funnel on the Launcher's input side, red spout on the Hub's output side — visible all the time, not just while placing a belt",
+    "Shrank the Backpack's character preview further and enlarged every item icon again for easier reading"
+  ]},
   {v:"1.18.0",t:"Land on Vesta Outpost, and ship goods between planets",items:[
     "You can now disembark from your ship after landing on Vesta Outpost — step out onto its surface, gather from resource deposits scattered around the landing site, and place buildings there exactly like at home. Board Ship & Launch returns you to space when you're ready",
     "New building: the Shipment Launcher. Belt materials into it, pick a Shipment Hub as its destination, and every 14 seconds it launches its whole buffered load over — open it (E) to see what's loaded and choose or change the target Hub",
@@ -1472,8 +1475,8 @@ var BUILD_DEFS={
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
-  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:3.2,produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper","parts"]},
-  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:3.4,produces:["iron_ore","copper_ore","coal","iron","copper","parts"],accepts:[]}
+  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper","parts"]},
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","iron","copper","parts"],accepts:[]}
 };
 var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
@@ -1996,62 +1999,77 @@ function buildBuildingMesh(type){
     boltRow(g,4.0,3.4,0.4,null,5);
     g.userData.cableAnchor=null;
   } else if(type==="shiplauncher"){
-    /* an angled electromagnetic catapult: a squat base, a charge coil that pulses while loaded,
-       and a long launch ramp tilted skyward so it visually reads as "outgoing" */
+    /* a big angular electromagnetic catapult: a wide base, a charge coil that pulses while loaded,
+       a long launch ramp tilted skyward so it visually reads as "outgoing", and a permanent glowing
+       green intake funnel on its -X face marking exactly where belts feed in */
     var padMat=matStd(0x1c2430,0.7,0.4);
-    var pad=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.4,0.4,10),padMat);
-    pad.position.y=0.2; g.add(pad);
-    var hopper=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.1,2.0),matStd(0x2a3542,0.6,0.4));
-    hopper.position.set(-0.6,0.85,0); g.add(hopper);
-    var hopperLid=new THREE.Mesh(new THREE.BoxGeometry(2.5,0.14,2.1),matStd(0x1a2230,0.5,0.5));
-    hopperLid.position.set(-0.6,1.42,0); g.add(hopperLid);
-    var ramp=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.35,1.6),matStd(0x3a4a5e,0.5,0.55));
-    ramp.position.set(1.1,1.6,0); ramp.rotation.z=-0.32; g.add(ramp);
+    var pad=new THREE.Mesh(new THREE.CylinderGeometry(3.5,3.8,0.55,10),padMat);
+    pad.position.y=0.28; g.add(pad);
+    var hopper=new THREE.Mesh(new THREE.BoxGeometry(3.8,1.8,3.2),matStd(0x2a3542,0.6,0.4));
+    hopper.position.set(-1.0,1.35,0); g.add(hopper);
+    var hopperLid=new THREE.Mesh(new THREE.BoxGeometry(4.0,0.22,3.35),matStd(0x1a2230,0.5,0.5));
+    hopperLid.position.set(-1.0,2.28,0); g.add(hopperLid);
+    var ramp=new THREE.Mesh(new THREE.BoxGeometry(7.0,0.55,2.6),matStd(0x3a4a5e,0.5,0.55));
+    ramp.position.set(1.8,2.55,0); ramp.rotation.z=-0.32; g.add(ramp);
     var rampRailMat=matStd(0x1a2230,0.5,0.6);
-    [0.7,-0.7].forEach(function(rz){
-      var rail=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.2,0.1),rampRailMat);
-      rail.position.set(1.1,1.85,rz); rail.rotation.z=-0.32; g.add(rail);
+    [1.15,-1.15].forEach(function(rz){
+      var rail=new THREE.Mesh(new THREE.BoxGeometry(7.0,0.32,0.16),rampRailMat);
+      rail.position.set(1.8,2.95,rz); rail.rotation.z=-0.32; g.add(rail);
     });
     var coilMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.5,roughness:0.35,metalness:0.5});
-    var coil=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.1,8,16),coilMat);
-    coil.rotation.y=Math.PI/2; coil.position.set(-1.6,0.85,0); g.add(coil);
+    var coil=new THREE.Mesh(new THREE.TorusGeometry(0.9,0.16,8,16),coilMat);
+    coil.rotation.y=Math.PI/2; coil.position.set(-2.6,1.35,0); g.add(coil);
     g.userData.glowMesh=coil;
-    var strut=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.18,1.1,6),matStd(0x2a3542,0.5,0.6));
-    strut.position.set(2.6,1.0,0); strut.rotation.z=-0.32; g.add(strut);
+    var strut=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.28,1.8,6),matStd(0x2a3542,0.5,0.6));
+    strut.position.set(4.2,1.6,0); strut.rotation.z=-0.32; g.add(strut);
     var beaconMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x0d3a55,emissiveIntensity:1});
-    var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),beaconMat);
-    beacon.position.set(-0.6,1.65,0.9); g.add(beacon);
+    var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.26,8,6),beaconMat);
+    beacon.position.set(-1.0,2.65,1.5); g.add(beacon);
     g.userData.statusMesh=beacon; g.userData.statusMat=beaconMat; g.userData.onCol=0x4fd3ff; g.userData.onEm=0x2a7a9a;
-    boltRow(g,2.0,1.8,0.42,null,4);
-    g.userData.cableAnchor=new THREE.Vector3(-1.6,0.5,-1.1);
+    /* permanent input marker: a glowing green intake funnel on the -X (input) face */
+    var inMat=new THREE.MeshStandardMaterial({color:0x7bd94a,emissive:0x2f8a1a,emissiveIntensity:1.1,roughness:0.4,metalness:0.3});
+    var intake=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.95,0.9,10,1,true),inMat);
+    intake.rotation.z=Math.PI/2; intake.position.set(-3.05,1.0,0); g.add(intake);
+    var intakeRing=new THREE.Mesh(new THREE.TorusGeometry(0.95,0.1,8,16),inMat);
+    intakeRing.rotation.y=Math.PI/2; intakeRing.position.set(-3.5,1.0,0); g.add(intakeRing);
+    g.userData.ioGlow=[inMat];
+    boltRow(g,3.4,3.0,0.5,null,5);
+    g.userData.cableAnchor=new THREE.Vector3(-2.6,0.7,-1.6);
   } else if(type==="shiphub"){
-    /* a receiving dish: a wide dome with a docking cone and a ring of blinking marker lights,
-       clearly reads as "things arrive here" from a distance */
+    /* a large receiving dish: a wide dome with a docking cone and a ring of blinking marker lights,
+       clearly reads as "things arrive here" from a distance, plus a permanent glowing red output
+       chute on its +X face marking exactly where belts can draw from */
     var padMat2=matStd(0x1c2430,0.7,0.4);
-    var pad2=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.8,0.4,12),padMat2);
-    pad2.position.y=0.2; g.add(pad2);
-    var dome=new THREE.Mesh(new THREE.SphereGeometry(2.1,14,10,0,Math.PI*2,0,Math.PI/2.1),matStd(0x2a3542,0.55,0.5));
-    dome.position.y=0.4; g.add(dome);
-    var cone=new THREE.Mesh(new THREE.ConeGeometry(0.9,1.4,10,1,true),matStd(0x1a2230,0.45,0.55));
-    cone.position.y=1.8; g.add(cone);
-    var lip=new THREE.Mesh(new THREE.TorusGeometry(0.9,0.09,8,16),matStd(0x9fc6ff,0.4,0.55));
-    lip.rotation.x=Math.PI/2; lip.position.y=1.15; g.add(lip);
+    var pad2=new THREE.Mesh(new THREE.CylinderGeometry(4.1,4.4,0.55,14),padMat2);
+    pad2.position.y=0.28; g.add(pad2);
+    var dome=new THREE.Mesh(new THREE.SphereGeometry(3.3,16,11,0,Math.PI*2,0,Math.PI/2.1),matStd(0x2a3542,0.55,0.5));
+    dome.position.y=0.58; g.add(dome);
+    var cone=new THREE.Mesh(new THREE.ConeGeometry(1.4,2.2,12,1,true),matStd(0x1a2230,0.45,0.55));
+    cone.position.y=2.8; g.add(cone);
+    var lip=new THREE.Mesh(new THREE.TorusGeometry(1.4,0.14,8,18),matStd(0x9fc6ff,0.4,0.55));
+    lip.rotation.x=Math.PI/2; lip.position.y=1.8; g.add(lip);
     var markerMat=new THREE.MeshStandardMaterial({color:0xff9d3c,emissive:0xff6a1a,emissiveIntensity:1});
     g.userData.spinParts=[];
-    for(var mi=0;mi<5;mi++){
-      var mang=mi/5*Math.PI*2;
-      var marker=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),markerMat.clone());
-      marker.position.set(Math.cos(mang)*2.35,0.5,Math.sin(mang)*2.35);
+    for(var mi=0;mi<6;mi++){
+      var mang=mi/6*Math.PI*2;
+      var marker=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6),markerMat.clone());
+      marker.position.set(Math.cos(mang)*3.7,0.75,Math.sin(mang)*3.7);
       g.add(marker);
     }
-    var chute=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.6,0.9),matStd(0x2a3542,0.55,0.5));
-    chute.position.set(2.0,0.55,0); g.add(chute);
+    /* permanent output marker: a glowing red spout on the +X (output) face */
+    var outMat=new THREE.MeshStandardMaterial({color:0xff4d5e,emissive:0xa61e2a,emissiveIntensity:1.1,roughness:0.4,metalness:0.3});
+    var chute=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.9,1.4),matStd(0x2a3542,0.55,0.5));
+    chute.position.set(3.1,0.85,0); g.add(chute);
+    var spout=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.7,0.8,10,1,true),outMat);
+    spout.rotation.z=Math.PI/2; spout.position.set(4.55,0.85,0); g.add(spout);
+    var spoutRing=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.09,8,16),outMat);
+    spoutRing.rotation.y=Math.PI/2; spoutRing.position.set(4.9,0.85,0); g.add(spoutRing);
+    g.userData.ioGlow=[outMat];
     var lightMat2=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x0d2a38,emissiveIntensity:1});
-    var eye2=new THREE.Mesh(new THREE.SphereGeometry(0.2,10,8),lightMat2);
-    eye2.position.set(0,2.55,0); g.add(eye2);
+    var eye2=new THREE.Mesh(new THREE.SphereGeometry(0.32,10,8),lightMat2);
+    eye2.position.set(0,4.0,0); g.add(eye2);
     g.userData.statusMesh=eye2; g.userData.statusMat=lightMat2; g.userData.onCol=0x233a56; g.userData.onEm=0xff8a2a;
-    g.userData.spinPart=eye2;
-    boltRow(g,2.2,2.2,0.42,null,5);
+    boltRow(g,3.5,3.5,0.5,null,6);
     g.userData.cableAnchor=null;
   }
   return g;
@@ -2791,6 +2809,10 @@ function updateBuildings(dt){
   buildings.forEach(function(b){
     var d=BUILD_DEFS[b.type];
     var powOk=d.powerDraw<=0||b.powered;
+    if(b.mesh&&b.mesh.userData.ioGlow){
+      var pulse=0.9+Math.sin(performance.now()/420)*0.35;
+      b.mesh.userData.ioGlow.forEach(function(m){ m.emissiveIntensity=1.1*pulse; });
+    }
     if(b.userData)return;
     if(b.type==="smelter"||b.type==="constructor")b.recipeActive=false;
     if((b.type==="miner"||b.type==="miner2")&&b.node&&powOk){
@@ -3032,6 +3054,9 @@ function newColony(){
   equipment={head:null,hands:null,legs:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
+  atVesta=false; landedPlanet=null; landProgress=0;
+  if(vestaShipMesh){ surfaceScene.remove(vestaShipMesh); vestaShipMesh=null; }
+  $("bBoardShip").classList.add("hide");
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
 }
@@ -3144,6 +3169,48 @@ spaceScene.add(spaceSun);
     spaceScene.add(s);
   }
 })();
+/* shared glow sprite texture for engine thrust particles */
+var sparkTex=(function(){
+  var cvs=document.createElement("canvas"); cvs.width=64; cvs.height=64;
+  var g=cvs.getContext("2d");
+  var grad=g.createRadialGradient(32,32,0,32,32,32);
+  grad.addColorStop(0,"rgba(255,255,255,1)");
+  grad.addColorStop(0.4,"rgba(255,220,150,0.9)");
+  grad.addColorStop(1,"rgba(255,150,50,0)");
+  g.fillStyle=grad; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(cvs);
+})();
+function spawnThrustParticle(pos,vel,scale,colorTint){
+  var mat=new THREE.SpriteMaterial({map:sparkTex,color:colorTint||0xffcc66,transparent:true,
+    opacity:0.9,depthWrite:false,blending:THREE.AdditiveBlending});
+  var s=new THREE.Sprite(mat);
+  s.scale.setScalar(scale||0.6);
+  s.position.copy(pos);
+  spaceScene.add(s);
+  spaceParts.push({mesh:s,vel:vel.clone(),life:0.5,max:0.5,baseScale:scale||0.6});
+}
+function updateSpaceParts(dt){
+  for(var i=spaceParts.length-1;i>=0;i--){
+    var p=spaceParts[i];
+    p.life-=dt;
+    if(p.life<=0){ spaceScene.remove(p.mesh); p.mesh.material.dispose(); spaceParts.splice(i,1); continue; }
+    p.mesh.position.addScaledVector(p.vel,dt);
+    p.vel.multiplyScalar(1-Math.min(1,dt*1.5));
+    var t=p.life/p.max;
+    p.mesh.material.opacity=t*0.9;
+    p.mesh.scale.setScalar(p.baseScale*(1.6-t*0.6));
+  }
+}
+function clearSpaceParts(){
+  spaceParts.forEach(function(p){ spaceScene.remove(p.mesh); p.mesh.material.dispose(); });
+  spaceParts=[];
+}
+function updateShipNavLights(mesh){
+  if(!mesh||!mesh.userData.navLights)return;
+  var blink=Math.sin(performance.now()/260)>0.3?1:0.15;
+  mesh.userData.navLights.forEach(function(nl){ nl.material.emissiveIntensity=nl.userData.baseIntensity*blink; });
+}
+
 /* home base station marker (defended objective) */
 var homeBase={hp:300,maxhp:300};
 var homeBaseMesh=(function(){
@@ -3208,6 +3275,14 @@ function updatePlanetTargeting(dt){
   }
   if(landProgress>=1)landOnPlanet();
 }
+function fadeTransition(midCallback,fadeMs){
+  fadeMs=fadeMs||420;
+  $("sceneFade").classList.add("show");
+  setTimeout(function(){
+    midCallback();
+    setTimeout(function(){ $("sceneFade").classList.remove("show"); },30);
+  },fadeMs);
+}
 function landOnPlanet(){
   landedPlanet=PLANET; landProgress=0;
   pShip.vel.set(0,0,0);
@@ -3216,18 +3291,9 @@ function landOnPlanet(){
   pShip.yaw=ang+Math.PI;
   pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
   $("planetTarget").classList.add("hide");
-  $("landedPanel").querySelector(".lpName").textContent="LANDED ON "+PLANET.name.toUpperCase();
-  $("landedPanel").classList.remove("hide");
-  toast("Landed on "+PLANET.name);
+  toast("Landed on "+PLANET.name+" — stepping out...");
   sfx.build();
-}
-function launchFromPlanet(){
-  if(!landedPlanet)return;
-  landedPlanet=null;
-  pShip.vel.set(Math.sin(pShip.yaw)*pShip.spd*0.6,0,Math.cos(pShip.yaw)*pShip.spd*0.6);
-  $("landedPanel").classList.add("hide");
-  toast("Launching back into space");
-  sfx.click();
+  fadeTransition(function(){ disembark(); });
 }
 /* stepping out of a landed ship onto Vesta's own small buildable clearing (see VESTA_CENTER) —
    reuses the entire home-colony surface/building system as-is, just at a different spot on the
@@ -3246,7 +3312,6 @@ function showVestaShip(){
 function disembark(){
   if(!landedPlanet)return;
   resetMovementKeys();
-  $("landedPanel").classList.add("hide");
   $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
   $("mobActions").classList.add("show");
   $("bBoardShip").classList.remove("hide");
@@ -3262,46 +3327,105 @@ function disembark(){
 function boardShip(){
   if(!atVesta)return;
   resetMovementKeys();
-  atVesta=false;
-  if(vestaShipMesh)vestaShipMesh.visible=false;
-  $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
-  $("bBoardShip").classList.add("hide");
-  $("hudSpace").classList.add("show");
-  state="space";
-  $("landedPanel").querySelector(".lpName").textContent="LANDED ON "+PLANET.name.toUpperCase();
-  $("landedPanel").classList.remove("hide");
-  toast("Back aboard ship");
+  toast("Boarding ship...");
   sfx.click();
-  saveGame();
+  fadeTransition(function(){
+    atVesta=false;
+    if(vestaShipMesh)vestaShipMesh.visible=false;
+    $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
+    $("bBoardShip").classList.add("hide");
+    $("hudSpace").classList.add("show");
+    landedPlanet=null; landProgress=0;
+    beginLaunchAnim();
+    saveGame();
+  });
 }
-$("bDisembark").onclick=function(){ disembark(); };
 $("bBoardShip").onclick=function(){ boardShip(); };
 
 function buildShipMesh(model){
   var g=new THREE.Group();
-  var hull=matStd(0xffb545,0.4,0.5);
   var accent=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x0d3a55,emissiveIntensity:1});
+  var canopyMat=new THREE.MeshStandardMaterial({color:0x0a1622,emissive:0x1a4a66,emissiveIntensity:0.7,
+    roughness:0.15,metalness:0.6,transparent:true,opacity:0.92});
+  function navLight(color){
+    var m=new THREE.MeshStandardMaterial({color:color,emissive:color,emissiveIntensity:1.6});
+    var s=new THREE.Mesh(new THREE.SphereGeometry(0.06,6,5),m);
+    s.userData.baseIntensity=1.6;
+    return s;
+  }
   if(model==="scout"){
-    var body=new THREE.Mesh(new THREE.ConeGeometry(0.55,2.6,6),hull);
-    body.rotation.x=Math.PI/2; g.add(body);
-    var finL=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.35,0.9),hull); finL.position.set(-0.55,0,0.4); g.add(finL);
-    var finR=finL.clone(); finR.position.x=0.55; g.add(finR);
-    var glow=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),accent); glow.position.z=1.3; g.add(glow);
+    var hull=matStd(0xe8a23d,0.4,0.5), trim=matStd(0x8a5a1e,0.5,0.4);
+    var nose=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.3,7),hull);
+    nose.rotation.x=Math.PI/2; nose.position.z=1.75; g.add(nose);
+    var body=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.36,1.9,7),hull);
+    body.rotation.x=Math.PI/2; body.position.z=0.5; g.add(body);
+    var tail=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.26,0.9,7),hull);
+    tail.rotation.x=Math.PI/2; tail.position.z=-0.85; g.add(tail);
+    var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,7),canopyMat);
+    canopy.scale.set(0.85,0.65,1.35); canopy.position.set(0,0.32,0.85); g.add(canopy);
+    var wingL=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.07,0.85),hull);
+    wingL.position.set(-1.05,-0.02,-0.05); wingL.rotation.y=0.32; g.add(wingL);
+    var wingR=wingL.clone(); wingR.position.x=1.05; wingR.rotation.y=-0.32; g.add(wingR);
+    var finTipL=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.4,0.5),trim);
+    finTipL.position.set(-1.75,0.18,-0.35); finTipL.rotation.y=0.32; g.add(finTipL);
+    var finTipR=finTipL.clone(); finTipR.position.x=1.75; finTipR.rotation.y=-0.32; g.add(finTipR);
+    var nozzle=new THREE.Mesh(new THREE.TorusGeometry(0.28,0.07,6,14),trim);
+    nozzle.rotation.x=Math.PI/2; nozzle.position.z=-1.3; g.add(nozzle);
+    var glow=new THREE.Mesh(new THREE.SphereGeometry(0.24,8,6),accent); glow.position.z=-1.4; g.add(glow);
+    var navL=navLight(0xff3040); navL.position.set(-1.75,0.18,-0.35); g.add(navL);
+    var navR=navLight(0x3fff70); navR.position.set(1.75,0.18,-0.35); g.add(navR);
     g.userData.engineGlow=[glow];
+    g.userData.navLights=[navL,navR];
   } else if(model==="frigate"){
-    var b1=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.9,3.6),hull); g.add(b1);
-    var b2=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.6,1.2),hull); b2.position.z=-1.6; g.add(b2);
-    var stripe=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.15,0.3),matStd(0x7a4a12,0.5,0.3)); stripe.position.z=0.3; g.add(stripe);
-    var g1=new THREE.Mesh(new THREE.SphereGeometry(0.3,8,6),accent); g1.position.set(-0.7,0,1.9); g.add(g1);
-    var g2=g1.clone(); g2.position.x=0.7; g.add(g2);
-    g.userData.engineGlow=[g1,g2];
+    var hull=matStd(0x54607a,0.5,0.55), plate=matStd(0x3a4353,0.6,0.4), trim=matStd(0xd98a2e,0.5,0.3);
+    var mainHull=new THREE.Mesh(new THREE.BoxGeometry(2.6,1.1,4.3),hull); g.add(mainHull);
+    var bow=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.9,1.1),hull); bow.position.z=2.5; g.add(bow);
+    var bowSlant=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.85,1.0),hull);
+    bowSlant.position.z=2.95; bowSlant.rotation.x=-0.35; g.add(bowSlant);
+    var bridge=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.7,1.4),hull); bridge.position.set(0,0.85,-1.1); g.add(bridge);
+    var bridgeGlass=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.3,0.15),canopyMat);
+    bridgeGlass.position.set(0,0.95,-0.42); g.add(bridgeGlass);
+    var stripe=new THREE.Mesh(new THREE.BoxGeometry(2.65,0.18,0.4),trim); stripe.position.set(0,0.15,0.6); g.add(stripe);
+    var plateL=new THREE.Mesh(new THREE.BoxGeometry(0.3,1.2,3.6),plate); plateL.position.set(-1.4,0,-0.1); g.add(plateL);
+    var plateR=plateL.clone(); plateR.position.x=1.4; g.add(plateR);
+    var glows=[];
+    for(var i=-1;i<=1;i++){
+      var pod=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.8,8),plate);
+      pod.rotation.x=Math.PI/2; pod.position.set(i*0.85,-0.25,-2.35); g.add(pod);
+      var gl=new THREE.Mesh(new THREE.SphereGeometry(0.26,8,6),accent); gl.position.set(i*0.85,-0.25,-2.75); g.add(gl);
+      glows.push(gl);
+    }
+    var turretBaseL=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.3,8),plate); turretBaseL.position.set(-1.1,0.65,0.4); g.add(turretBaseL);
+    var turretBarrelL=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.7,6),trim);
+    turretBarrelL.rotation.x=Math.PI/2; turretBarrelL.position.set(-1.1,0.65,0.9); g.add(turretBarrelL);
+    var turretBaseR=turretBaseL.clone(); turretBaseR.position.x=1.1; g.add(turretBaseR);
+    var turretBarrelR=turretBarrelL.clone(); turretBarrelR.position.x=1.1; g.add(turretBarrelR);
+    var navL=navLight(0xff3040); navL.position.set(-1.55,0,1.5); g.add(navL);
+    var navR=navLight(0x3fff70); navR.position.set(1.55,0,1.5); g.add(navR);
+    g.userData.engineGlow=glows;
+    g.userData.navLights=[navL,navR];
   } else {
-    var body=new THREE.Mesh(new THREE.ConeGeometry(0.85,3,4),hull);
-    body.rotation.x=Math.PI/2; body.rotation.z=Math.PI/4; g.add(body);
-    var wingL=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.1,1),hull); wingL.position.set(-1,0,0.2); g.add(wingL);
-    var wingR=wingL.clone(); wingR.position.x=1; g.add(wingR);
-    var glow=new THREE.Mesh(new THREE.SphereGeometry(0.25,8,6),accent); glow.position.z=1.5; g.add(glow);
-    g.userData.engineGlow=[glow];
+    var hull=matStd(0x9fb4c9,0.4,0.55), trim=matStd(0x2a3f55,0.5,0.4);
+    var fuselageFront=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.4,6),hull);
+    fuselageFront.rotation.x=Math.PI/2; fuselageFront.position.z=1.6; g.add(fuselageFront);
+    var fuselage=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.55,2.3),hull); fuselage.position.z=0.15; g.add(fuselage);
+    var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.32,10,7),canopyMat);
+    canopy.scale.set(0.8,0.6,1.3); canopy.position.set(0,0.38,0.9); g.add(canopy);
+    var wingL=new THREE.Mesh(new THREE.BoxGeometry(2.1,0.09,1.15),hull); wingL.position.set(-1.25,-0.05,-0.35); g.add(wingL);
+    var wingR=wingL.clone(); wingR.position.x=1.25; g.add(wingR);
+    var wingletL=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.45,0.55),trim);
+    wingletL.position.set(-2.25,0.2,-0.7); wingletL.rotation.z=0.15; g.add(wingletL);
+    var wingletR=wingletL.clone(); wingletR.position.x=2.25; g.add(wingletR);
+    var finDorsal=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.55,0.9),trim); finDorsal.position.set(0,0.55,-1.1); g.add(finDorsal);
+    var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.24,1.3,8),trim);
+    podL.rotation.x=Math.PI/2; podL.position.set(-0.6,-0.1,-1.15); g.add(podL);
+    var podR=podL.clone(); podR.position.x=0.6; g.add(podR);
+    var glowL=new THREE.Mesh(new THREE.SphereGeometry(0.26,8,6),accent); glowL.position.set(-0.6,-0.1,-1.85); g.add(glowL);
+    var glowR=glowL.clone(); glowR.position.x=0.6; g.add(glowR);
+    var navL=navLight(0xff3040); navL.position.set(-2.25,0.2,-0.7); g.add(navL);
+    var navR=navLight(0x3fff70); navR.position.set(2.25,0.2,-0.7); g.add(navR);
+    g.userData.engineGlow=[glowL,glowR];
+    g.userData.navLights=[navL,navR];
   }
   return g;
 }
@@ -3347,27 +3471,24 @@ function launchShip(){
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
-  landedPlanet=null; landProgress=0; $("landedPanel").classList.add("hide"); $("planetTarget").classList.add("hide");
+  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
-  pBolts=[]; eBolts=[]; spaceParts=[];
+  pBolts=[]; eBolts=[]; clearSpaceParts();
   homeBase.hp=homeBase.maxhp;
   wave=0; waveState="clear"; waveTimer=4;
   closeShipyard();
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*14,7,-Math.cos(pShip.yaw)*14);
   camera.position.copy(pShip.pos).add(camOff);
   camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
-  state="launching";
   $("hud").classList.remove("show"); $("hudSpace").classList.add("show");
   $("mobActions").classList.remove("show");
   toast("Launching...");
   sfx.build();
-  setTimeout(function(){ if(state==="launching"){ state="space";
-    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, W/S thrust, right-click to fire":"Defend the sector");
-  } },1400);
+  beginLaunchAnim();
 }
 function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
-  landedPlanet=null; landProgress=0; $("landedPanel").classList.add("hide"); $("planetTarget").classList.add("hide");
+  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[];
   state="surface";
@@ -3390,7 +3511,7 @@ function damagePShip(dmg){
   if(dmg>0)pShip.hp-=dmg;
   if(pShip.hp<=0){
     pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound");
-    if(landedPlanet){ landedPlanet=null; landProgress=0; $("landedPanel").classList.add("hide"); }
+    if(landedPlanet){ landedPlanet=null; landProgress=0; }
     $("planetTarget").classList.add("hide");
   }
 }
@@ -3399,8 +3520,53 @@ function killEnemyShip(e,i){
   var gain=ri(2,5); stock.parts+=gain;
 }
 var SHIP_TURN_RATE=2.1;
+var launchAnim=null;
+function beginLaunchAnim(){
+  if(!pShip)return;
+  launchAnim={t:0,dur:1.35};
+  pShip.vel.set(0,0,0);
+  pShip.roll=pShip.roll||0;
+  state="launching";
+}
+function updateLaunchAnim(dt){
+  var a=launchAnim;
+  if(!a||!pShip){ launchAnim=null; state="space"; return; }
+  a.t+=dt;
+  var t=clamp(a.t/a.dur,0,1);
+  var ease=t*t*(3-2*t);
+  var dir=new THREE.Vector3(Math.sin(pShip.yaw),0,Math.cos(pShip.yaw));
+  pShip.pos.addScaledVector(dir,ease*pShip.spd*1.35*dt);
+  var arc=Math.sin(t*Math.PI);
+  pShip.mesh.position.copy(pShip.pos);
+  pShip.mesh.position.y=arc*3;
+  pShip.mesh.rotation.y=pShip.yaw;
+  pShip.mesh.rotation.x=-arc*0.2;
+  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
+    g.material.emissiveIntensity=1+ease*3.2+Math.sin(performance.now()/55)*0.25;
+  });
+  updateShipNavLights(pShip.mesh);
+  if(pShip.mesh.userData.engineGlow&&Math.random()<0.85){
+    var g=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
+    var wp=new THREE.Vector3(); g.getWorldPosition(wp);
+    var back=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(6,13));
+    back.x+=rnd(-1,1); back.y+=rnd(-0.5,1); back.z+=rnd(-1,1);
+    spawnThrustParticle(wp,back,rnd(0.4,0.85)*(0.6+ease),t<0.75?0xffcc66:0x9fd8ff);
+  }
+  updateSpaceParts(dt);
+  var camDist=14+ease*9, camHeight=7+ease*5;
+  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*camDist,camHeight,-Math.cos(pShip.yaw)*camDist);
+  var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
+  camera.position.lerp(camTarget,Math.min(1,dt*3.2));
+  camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
+  if(t>=1){
+    launchAnim=null; state="space";
+    pShip.vel.copy(dir.multiplyScalar(pShip.spd*0.75));
+    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, W/S thrust, right-click to fire":"Defend the sector");
+  }
+}
 function updateSpace(dt){
-  if(state==="launching")return;
+  updateSpaceParts(dt);
+  if(state==="launching"){ updateLaunchAnim(dt); return; }
   if(pShip&&pShip.alive){
     var boosting=false, firing=false;
     if(landedPlanet){
@@ -3434,9 +3600,22 @@ function updateSpace(dt){
         if(aim){ pShip.yaw=Math.atan2(aim.x-pShip.pos.x,aim.z-pShip.pos.z); firing=spaceFiring; }
       }
       updatePlanetTargeting(dt);
+      pShip.roll=pShip.roll==null?0:pShip.roll;
+      var targetRoll=pc?-turn*0.5:0;
+      pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
+      var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
+      if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.75:0.3)){
+        var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
+        var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
+        var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(3,6));
+        eback.x+=rnd(-.5,.5); eback.y+=rnd(-.5,.5); eback.z+=rnd(-.5,.5);
+        spawnThrustParticle(ewp,eback,rnd(0.22,0.4)*(boosting?1.4:1),boosting?0xfff0c0:0x6fd8ff);
+      }
     }
     pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
+    pShip.mesh.rotation.z=pShip.roll||0;
     pShip.mesh.userData.engineGlow.forEach(function(g){ g.material.emissiveIntensity=1+(boosting?1.2:0)+Math.sin(performance.now()/90)*0.15; });
+    updateShipNavLights(pShip.mesh);
 
     pShip.cd-=dt;
     if(!landedPlanet&&firing&&pShip.cd<=0){ fireShipBolt(); pShip.cd=pShip.rate; }
@@ -3514,7 +3693,8 @@ function updateSpace(dt){
 
   if(pShip){
     var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*14,7,-Math.cos(pShip.yaw)*14);
-    camera.position.copy(pShip.pos).add(camOff);
+    var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
+    camera.position.lerp(camTarget,Math.min(1,dt*5));
     camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
   }
   updateHudSpace();
@@ -4058,7 +4238,7 @@ function renderWorkshop(){
   });
   $("wkList").innerHTML=html;
   var icons=$("wkList").querySelectorAll(".upg > .top > img");
-  for(var j=0;j<icons.length;j++){ icons[j].style.width="64px"; icons[j].style.height="64px"; icons[j].style.flex="none"; }
+  for(var j=0;j<icons.length;j++){ icons[j].style.width="72px"; icons[j].style.height="72px"; icons[j].style.flex="none"; }
   var btns=$("wkList").querySelectorAll("[data-craft]");
   for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ craftItem(this.getAttribute("data-craft")); };
 }
@@ -4234,7 +4414,6 @@ $("bPause").onclick=function(){ sfx.click(); togglePause(); };
 $("bPauseSpace").onclick=function(){ sfx.click(); togglePause(); };
 $("bResume").onclick=function(){ sfx.click(); togglePause(); };
 $("bReturnColony").onclick=function(){ sfx.click(); returnToColony(); };
-$("bLaunchFromPlanet").onclick=function(){ launchFromPlanet(); };
 function returnToTitle(){
   cancelPlacing();
   if(pausedFrom==="space"){
@@ -4591,7 +4770,7 @@ window.__cq={
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
-  launchFromPlanet:launchFromPlanet,
+  boardShip:boardShip, disembark:disembark, beginLaunchAnim:beginLaunchAnim,
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
   forceKillEnemy:function(idx){ idx=idx||0; if(enemyShips[idx])killEnemyShip(enemyShips[idx],idx); },
