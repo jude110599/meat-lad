@@ -294,7 +294,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="ptRing"><div class="ptRingInner"></div></div>
     <div class="ptName"></div>
   </div>
-  <button class="hudbtn accent hide" id="bBoardShip" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Board Ship &amp; Launch</button>
+  <button class="hudbtn accent hide" id="bLaunchLanded" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Launch</button>
   <div class="sceneFade" id="sceneFade"></div>
 
   <div class="stickzone" id="zoneL"></div>
@@ -453,8 +453,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.19.0";
+var VERSION="1.19.1";
 var CHANGELOG=[
+  {v:"1.19.1",t:"Simplified planet landing — no more disembark/board-ship flow",items:[
+    "Removed the disembark-and-walk-around-on-Vesta mechanic entirely — it added a confusing extra scene-switch that didn't reliably work",
+    "Landing now does exactly one thing: fly to the planet, hold the lock until the circle fills, and your ship touches down and parks right there — a single Launch button appears while you're landed",
+    "Pressing Launch plays the same liftoff animation as before and drops you back into free flight near the planet",
+    "You never leave your ship or the space scene anymore — it's a clean, reliable land-and-launch loop instead of a multi-step handoff"
+  ]},
   {v:"1.19.0",t:"Real launch/landing cinematics, bigger ships and shipping buildings",items:[
     "Landing on Vesta Outpost now happens automatically the moment the lock-on circle fills — no more confirmation panel, the screen just fades and you're standing on the surface",
     "Boarding your ship at Vesta now launches you straight back into space in one action — press Board Ship & Launch and watch it happen, no extra menu",
@@ -746,24 +752,14 @@ function craterDip(x,z){
   }
   return dip;
 }
-/* a second small buildable clearing, far from home, standing in for the outpost on Vesta —
-   reachable by landing there in space and disembarking. Flattened with the exact same
-   smoothstep technique as the home clearing, just centered somewhere else and smaller. */
-var VESTA_CENTER={x:300,z:300}, VESTA_ZONE_R=55, VESTA_BLEND_R=95;
 function terrainHeight(x,z){
   var d=Math.sqrt(x*x+z*z);
-  var t1=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
-  var dvx=x-VESTA_CENTER.x, dvz=z-VESTA_CENTER.z;
-  var dv=Math.sqrt(dvx*dvx+dvz*dvz);
-  var t2=clamp((dv-VESTA_ZONE_R)/(VESTA_BLEND_R-VESTA_ZONE_R),0,1);
-  var t=Math.min(t1,t2);
+  var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
   var smooth=t*t*(3-2*t);
   return (terrainRaw(x,z)+craterDip(x,z))*smooth;
 }
 function inAnyBuildZone(x,z){
-  if(Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10)return true;
-  var dx=x-VESTA_CENTER.x, dz=z-VESTA_CENTER.z;
-  return Math.sqrt(dx*dx+dz*dz)<=VESTA_ZONE_R-10;
+  return Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10;
 }
 
 /* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
@@ -2263,20 +2259,6 @@ function scatterNodes(){
     while((d<24||d>maxR||clash)&&tries<60);
     spawnNode(x,z,t);
   });
-  /* a smaller deposit of every resource around the Vesta outpost clearing, so there's actually
-     something worth setting up shop for once you land there */
-  var vestaTypes=["iron_ore","iron_ore","copper_ore","copper_ore","coal"];
-  var vMaxR=VESTA_ZONE_R-15;
-  vestaTypes.forEach(function(t){
-    var x,z,tries=0,d,clash;
-    do{
-      x=snapGrid(VESTA_CENTER.x+rnd(-vMaxR,vMaxR)); z=snapGrid(VESTA_CENTER.z+rnd(-vMaxR,vMaxR));
-      var dx=x-VESTA_CENTER.x, dz=z-VESTA_CENTER.z; d=Math.sqrt(dx*dx+dz*dz); tries++;
-      clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
-    }
-    while((d<14||d>vMaxR||clash)&&tries<60);
-    spawnNode(x,z,t);
-  });
 }
 function nearestNode(x,z,radius){
   var best=null,bd=radius;
@@ -3034,7 +3016,7 @@ function saveGame(){
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
-      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atVesta:atVesta
+      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -3054,9 +3036,8 @@ function newColony(){
   equipment={head:null,hands:null,legs:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
-  atVesta=false; landedPlanet=null; landProgress=0;
-  if(vestaShipMesh){ surfaceScene.remove(vestaShipMesh); vestaShipMesh=null; }
-  $("bBoardShip").classList.add("hide");
+  landedPlanet=null; landProgress=0;
+  $("bLaunchLanded").classList.add("hide");
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
 }
@@ -3110,8 +3091,6 @@ function applySaveData(data){
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
-  atVesta=!!data.atVesta;
-  if(atVesta){ showVestaShip(); $("bBoardShip").classList.remove("hide"); }
 }
 function loadGame(){
   var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
@@ -3291,56 +3270,20 @@ function landOnPlanet(){
   pShip.yaw=ang+Math.PI;
   pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
   $("planetTarget").classList.add("hide");
-  toast("Landed on "+PLANET.name+" — stepping out...");
+  $("bLaunchLanded").classList.remove("hide");
+  toast("Landed on "+PLANET.name);
   sfx.build();
-  fadeTransition(function(){ disembark(); });
+  saveGame();
 }
-/* stepping out of a landed ship onto Vesta's own small buildable clearing (see VESTA_CENTER) —
-   reuses the entire home-colony surface/building system as-is, just at a different spot on the
-   same ground plane, so miners/belts/the Build menu/Backpack all work exactly the same there */
-var atVesta=false, vestaShipMesh=null;
-function showVestaShip(){
-  if(!vestaShipMesh){
-    vestaShipMesh=buildShipMesh(shipModelKey||"scout");
-    vestaShipMesh.scale.setScalar(0.62);
-    surfaceScene.add(vestaShipMesh);
-  }
-  vestaShipMesh.position.set(VESTA_CENTER.x,3.2,VESTA_CENTER.z);
-  vestaShipMesh.rotation.y=0;
-  vestaShipMesh.visible=true;
-}
-function disembark(){
+function launchFromLandedShip(){
   if(!landedPlanet)return;
-  resetMovementKeys();
-  $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
-  $("mobActions").classList.add("show");
-  $("bBoardShip").classList.remove("hide");
-  atVesta=true; state="surface";
-  player.position.set(VESTA_CENTER.x,0,VESTA_CENTER.z+8);
-  player.rotation.y=Math.PI;
-  camYaw=0; camPitch=0.55;
-  updateCameraTransform();
-  showVestaShip();
-  toast("Disembarked at "+PLANET.name+" — gather what you can and set up a Shipment Launcher");
+  landedPlanet=null; landProgress=0;
+  $("bLaunchLanded").classList.add("hide");
+  toast("Launching...");
   sfx.build();
+  beginLaunchAnim();
 }
-function boardShip(){
-  if(!atVesta)return;
-  resetMovementKeys();
-  toast("Boarding ship...");
-  sfx.click();
-  fadeTransition(function(){
-    atVesta=false;
-    if(vestaShipMesh)vestaShipMesh.visible=false;
-    $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
-    $("bBoardShip").classList.add("hide");
-    $("hudSpace").classList.add("show");
-    landedPlanet=null; landProgress=0;
-    beginLaunchAnim();
-    saveGame();
-  });
-}
-$("bBoardShip").onclick=function(){ boardShip(); };
+$("bLaunchLanded").onclick=function(){ launchFromLandedShip(); };
 
 function buildShipMesh(model){
   var g=new THREE.Group();
@@ -3471,7 +3414,7 @@ function launchShip(){
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
-  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide");
+  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[]; clearSpaceParts();
   homeBase.hp=homeBase.maxhp;
@@ -3488,7 +3431,7 @@ function launchShip(){
 }
 function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
-  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide");
+  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[];
   state="surface";
@@ -3511,7 +3454,7 @@ function damagePShip(dmg){
   if(dmg>0)pShip.hp-=dmg;
   if(pShip.hp<=0){
     pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound");
-    if(landedPlanet){ landedPlanet=null; landProgress=0; }
+    if(landedPlanet){ landedPlanet=null; landProgress=0; $("bLaunchLanded").classList.add("hide"); }
     $("planetTarget").classList.add("hide");
   }
 }
@@ -4770,7 +4713,7 @@ window.__cq={
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
-  boardShip:boardShip, disembark:disembark, beginLaunchAnim:beginLaunchAnim,
+  launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim,
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
   forceKillEnemy:function(idx){ idx=idx||0; if(enemyShips[idx])killEnemyShip(enemyShips[idx],idx); },
