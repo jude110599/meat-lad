@@ -393,8 +393,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.14.0";
+var VERSION="1.14.1";
 var CHANGELOG=[
+  {v:"1.14.1",t:"Bigger buildings, port direction arrows",items:[
+    "Buildings are noticeably bigger again (about 23% more on top of 1.14.0's bump) - more room to actually see the detail already on each model",
+    "Every belt port on every building, Splitter and Merger now shows a small floating arrow: green pointing in for inputs, red pointing out for outputs, right at the exact spot a belt will connect to",
+    "Fixed a scale mismatch this uncovered: belts, cables and smoke were still anchoring to buildings' pre-1.14.0 (smaller) size, so the connection point silently drifted from the bigger model - all three now scale with the building"
+  ]},
   {v:"1.14.0",t:"Fixed belt ports, bigger buildings, smelter smoke",items:[
     "Conveyor belts now use fixed input/output ports per machine, Satisfactory-style, instead of aiming straight at whatever's on the other end — a belt always leaves and enters a building perpendicular to its assigned side, then bends to reach the other machine at any angle, so it never cuts into a wall on a diagonal",
     "Splitters and Mergers now actually enforce their advertised port counts (1 in/2 out and 2 in/1 out) — connecting a third belt to an already-full side is rejected with a clear message instead of silently overlapping",
@@ -1472,8 +1477,10 @@ function makeBuilding(type,x,z,rotY,node){
   if((type==="miner"||type==="miner2")&&node)b.out[node.restype]=0;
   var mesh=buildBuildingMesh(type);
   /* structural pieces (foundation/wall/window/door/railing) must stay exactly grid-sized to keep
-     tiling seamless — everything else reads better a bit chunkier than the original scale */
-  if(!BUILD_DEFS[type].edge&&type!=="foundation")mesh.scale.setScalar(1.18);
+     tiling seamless — everything else reads better bigger and chunkier than the original scale,
+     with more visual room for the detail (bolts, panel seams, vents) already on each model */
+  if(!BUILD_DEFS[type].edge&&type!=="foundation")mesh.scale.setScalar(1.45);
+  addPortMarkers(mesh,type);
   mesh.position.set(x,0,z); mesh.rotation.y=b.rotY;
   surfaceScene.add(mesh);
   b.mesh=mesh;
@@ -1809,14 +1816,36 @@ function allocPortSlot(b,side){
 }
 function portSlotWorld(b,side,idx){
   var d=PORT_SIDES[b.type]; var p=d&&d[side]&&d[side][idx]; if(!p)return null;
-  var rad=BUILD_DEFS[b.type].radius+0.35;
+  var sc=(b.mesh&&b.mesh.scale.x)||1;
+  var rad=(BUILD_DEFS[b.type].radius+0.35)*sc;
   var rotY=b.rotY||0, c=Math.cos(rotY), s=Math.sin(rotY);
   var perp={x:-p.dir.z,z:p.dir.x};
-  var lx=p.dir.x*rad+perp.x*p.off, lz=p.dir.z*rad+perp.z*p.off;
+  var lx=p.dir.x*rad+perp.x*p.off*sc, lz=p.dir.z*rad+perp.z*p.off*sc;
   return {
     x:b.x+lx*c+lz*s, z:b.z-lx*s+lz*c,
     nx:p.dir.x*c+p.dir.z*s, nz:-p.dir.x*s+p.dir.z*c
   };
+}
+/* Small floor arrows at every fixed belt port, coloured green for inputs and red for outputs,
+   pointing the direction resources actually move — added as children of the building's own mesh
+   so they inherit its position/rotation/scale for free. */
+function addPortMarkers(mesh,type){
+  var ports=PORT_SIDES[type]; if(!ports)return;
+  var rad=BUILD_DEFS[type].radius+0.35;
+  ["in","out"].forEach(function(side){
+    var arr=ports[side]; if(!arr)return;
+    var col=side==="in"?0x7bd94a:0xff4d5e;
+    arr.forEach(function(p){
+      var perp={x:-p.dir.z,z:p.dir.x};
+      var lx=p.dir.x*rad+perp.x*p.off, lz=p.dir.z*rad+perp.z*p.off;
+      var pointDir=side==="out"?p.dir:{x:-p.dir.x,z:-p.dir.z};
+      var mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.85,roughness:0.4,metalness:0.15});
+      var arrow=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.7,3),mat);
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(pointDir.x,0,pointDir.z).normalize());
+      arrow.position.set(lx,0.5,lz);
+      mesh.add(arrow);
+    });
+  });
 }
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
