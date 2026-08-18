@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#050a12">
 <title>Space Conquest</title>
+<script>
+/* Registered before any other script on the page (and thus immune to a later
+   runtime error stopping script execution before it reaches its own listener
+   further down) so the native right-click menu can never leak through. */
+document.addEventListener("contextmenu",function(e){ e.preventDefault(); },{capture:true});
+</script>
 <style>
 :root{
   --void:#050a12; --panel:#0c1626; --panel2:#132038; --line:#233a56;
@@ -1037,7 +1043,35 @@ function cableAnchorWorld(b){
   return {x:b.x+a.x*c+a.z*s, y:a.y, z:b.z-a.x*s+a.z*c};
 }
 
-function matStd(color,rough,metal){ return new THREE.MeshStandardMaterial({color:color,roughness:rough==null?0.6:rough,metalness:metal==null?0.2:metal}); }
+/* Shared scuffed-metal detail texture, reused (via matStd) across every building/prop material
+   in the game instead of flat colour fills. It's a plain grayscale panel so it multiplies with
+   each material's own colour/tint rather than overriding it. */
+var panelTex=(function(){
+  var cvs=document.createElement("canvas"); cvs.width=128; cvs.height=128;
+  var g=cvs.getContext("2d");
+  g.fillStyle="#9a9a9a"; g.fillRect(0,0,128,128);
+  for(var i=0;i<420;i++){
+    var x=Math.random()*128, y=Math.random()*128, r=rnd(0.3,1.3);
+    var shade=Math.floor(rnd(70,215));
+    g.fillStyle="rgba("+shade+","+shade+","+shade+","+rnd(0.15,0.4)+")";
+    g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();
+  }
+  g.strokeStyle="rgba(30,30,30,.14)"; g.lineWidth=1;
+  for(var j=0;j<8;j++){
+    var sx=Math.random()*128, sy=Math.random()*128, ang=rnd(0,6.28), len=rnd(10,34);
+    g.beginPath(); g.moveTo(sx,sy); g.lineTo(sx+Math.cos(ang)*len,sy+Math.sin(ang)*len); g.stroke();
+  }
+  g.strokeStyle="rgba(255,255,255,.08)";
+  for(var k=0;k<6;k++){
+    var lx=Math.random()*128;
+    g.beginPath(); g.moveTo(lx,0); g.lineTo(lx,128); g.stroke();
+  }
+  var tex=new THREE.CanvasTexture(cvs);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  tex.repeat.set(2,2);
+  return tex;
+})();
+function matStd(color,rough,metal){ return new THREE.MeshStandardMaterial({color:color,roughness:rough==null?0.6:rough,metalness:metal==null?0.2:metal,map:panelTex}); }
 function boltRow(g,w,d,y,mat,n){
   n=n||4; mat=mat||matStd(0x1a2230,0.5,0.7);
   for(var i=0;i<n;i++){
