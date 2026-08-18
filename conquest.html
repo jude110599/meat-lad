@@ -431,8 +431,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.17.2";
+var VERSION="1.17.3";
 var CHANGELOG=[
+  {v:"1.17.3",t:"Belt arrows only while placing belts, chain-place structural pieces",items:[
+    "The green/red input/output arrows on every building now only show up while the Conveyor Belt tool is actually selected, instead of being visible all the time",
+    "Placing a Foundation, Wall, Window, Door or Railing now keeps that tool equipped afterward so you can keep placing more without reopening the Build menu each time — machines and ships still clear back to nothing after one placement, since those are normally a one-off decision"
+  ]},
   {v:"1.17.2",t:"The game no longer pauses when a menu is open, and better item sizing",items:[
     "Opening any menu used to stop the whole world, not just your own movement - clouds, spores and pools stopped animating, and hand-gathering stopped even while standing right on a deposit. The camera, world animation, hand-gathering and building/jump simulation now all keep running the moment a panel is open; only your own WASD movement is still locked while a fullscreen panel like Build or Workshop is up, so you can't wander around blind underneath it",
     "Shrank the character preview in the Backpack and enlarged every item icon (Carrying, Equipped slots, and the Workshop's craft list) so the actual items read clearly instead of the character render dominating the panel"
@@ -2307,7 +2311,15 @@ function tryPlaceAt3D(x,z){
   var b=makeBuilding(type,x,z,rotY,node);
   buildings.push(b);
   sfx.build(); toast(d.nm+" built"); pulseInteractPose();
-  placing=null; placeGhost.visible=false;
+  /* structural pieces (foundation/wall/window/door/railing) are almost always placed several
+     in a row — a whole wall, a tiled floor — so keep the tool equipped and the ghost tracking
+     the cursor instead of clearing back to nothing after every single piece. Everything else
+     (machines, ships) still clears after one placement, since those are one-off decisions. */
+  if(d.edge||type==="foundation"){
+    updatePlacementGhost(mouse.x,mouse.y);
+  } else {
+    placing=null; placeGhost.visible=false;
+  }
 }
 function findBuildingNear(x,z,margin){
   var best=null,bd=Infinity;
@@ -2395,6 +2407,10 @@ function portSlotWorld(b,side,idx){
 /* Small floor arrows at every fixed belt port, coloured green for inputs and red for outputs,
    pointing the direction resources actually move — added as children of the building's own mesh
    so they inherit its position/rotation/scale for free. */
+/* every port arrow ever created, so we can flip them all on/off together whenever the belt
+   tool is selected or deselected — they're only useful while you're actually choosing where
+   to run a belt, and just clutter the view the rest of the time */
+var allPortArrows=[];
 function addPortMarkers(mesh,type){
   var ports=PORT_SIDES[type]; if(!ports)return;
   var rad=BUILD_DEFS[type].radius+0.35;
@@ -2409,9 +2425,15 @@ function addPortMarkers(mesh,type){
       var arrow=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.7,3),mat);
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(pointDir.x,0,pointDir.z).normalize());
       arrow.position.set(lx,0.5,lz);
+      arrow.visible=placing==="belt";
       mesh.add(arrow);
+      allPortArrows.push(arrow);
     });
   });
+}
+function updatePortArrowVisibility(){
+  var show=placing==="belt";
+  for(var i=0;i<allPortArrows.length;i++)allPortArrows[i].visible=show;
 }
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
@@ -2623,6 +2645,7 @@ function updateSmoke(dt){
   }
 }
 function updateBuildings(dt){
+  updatePortArrowVisibility();
   /* jump physics live here (not in updateSurface) specifically so they keep resolving while a
      menu is open — updateBuildings runs every frame regardless of state, whereas updateSurface
      only runs in the "surface" state. Jumping and then opening a panel used to freeze the player
