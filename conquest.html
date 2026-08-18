@@ -393,8 +393,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.15.0";
+var VERSION="1.16.0";
 var CHANGELOG=[
+  {v:"1.16.0",t:"The colony now sits on an actual alien world",items:[
+    "New sky: a violet-to-rust gradient with faint nebula bands, a ringed gas giant and a cratered moon hanging near the horizon, and 1600 colour-varied stars instead of a flat white scatter",
+    "New lighting: the single warm sun is now joined by a cool magenta rim light standing in for a second, more distant star, so shadowed sides of buildings and terrain read as alien dusk instead of flat brown-on-brown",
+    "The wild terrain beyond the buildable clearing got a full pass: six fixed crater bowls, tall angular cliff stacks, ordinary boulders now veined with glowing purple/cyan crystal, 24 freestanding crystal clusters, giant bioluminescent mushrooms with spotted caps and glowing spore pods, scattered wreck debris, and seven ruined arches/obelisks marked with a faint glowing rune",
+    "Six pools of glowing alien liquid with a slow shimmering pulse, and ~70 drifting bio-spore motes across the whole map for ambience",
+    "Ground colours shifted to an alien palette (rust regolith, teal lichen, violet mineral crust) while keeping the buildable clearing itself readable against buildings",
+    "None of this touches the flat buildable clearing or its footprint - every new crater, cliff, ruin and pool is confined to r > 0.7x the clearing radius, so existing colonies, belts and sightlines are unaffected"
+  ]},
   {v:"1.15.0",t:"Rebuilt Smelter, Constructor and Storage from scratch",items:[
     "The Smelter is now an asymmetric blast furnace: a tapered tank leaning under an offset main chimney, a smaller secondary flue, an angled ore hopper on one side, and a slow-spinning induction fan on its flank that keeps turning whenever it's powered",
     "The Constructor is now a cantilevered stamping rig: an angled discharge chute juts out to one side instead of a centered slot, and the stamp head is a real piston that physically slides down and back up each time it actually completes a part - not just a spinning cube",
@@ -597,17 +605,23 @@ var SURFACE_SIZE=900;
 var BUILD_ZONE_R=170; /* flat, buildable clearing around the landing site */
 var TERRAIN_BLEND_R=260; /* beyond this, full hill/valley noise */
 var surfaceScene=new THREE.Scene();
-var SKY_LOW=0x2a2418, SKY_HIGH=0x0a1428;
+/* alien dusk palette: warm rust horizon bleeding up into a deep violet sky, with a cool
+   magenta rim light standing in for a second, more distant sun to keep shadows from
+   reading as flat brown-on-brown the way a single warm key light would */
+var SKY_LOW=0x3a1f28, SKY_HIGH=0x140a2e;
 surfaceScene.background=new THREE.Color(SKY_LOW);
 surfaceScene.fog=new THREE.Fog(SKY_LOW,140,620);
 
-var ambient=new THREE.AmbientLight(0x8899bb,0.6);
+var ambient=new THREE.AmbientLight(0x8f7dc9,0.55);
 surfaceScene.add(ambient);
-var sun=new THREE.DirectionalLight(0xffdcae,1.25);
+var sun=new THREE.DirectionalLight(0xffc9a0,1.2);
 sun.position.set(120,160,70);
 surfaceScene.add(sun);
-var fillLight=new THREE.HemisphereLight(0x4a5a8a,0x2a1c12,0.55);
+var fillLight=new THREE.HemisphereLight(0x5a4a9a,0x3a1c2c,0.6);
 surfaceScene.add(fillLight);
+var rimLight=new THREE.DirectionalLight(0xb060ff,0.55);
+rimLight.position.set(-140,90,-110);
+surfaceScene.add(rimLight);
 
 /* cheap deterministic pseudo-noise (layered sine waves) — no external noise lib needed */
 function terrainRaw(x,z){
@@ -615,23 +629,47 @@ function terrainRaw(x,z){
        + Math.sin(x*0.021-0.9)*Math.sin(z*0.018+2.1)*7
        + Math.sin(x*0.05+3.1)*Math.cos(z*0.047)*2.5;
 }
+/* a handful of fixed crater bowls, well out in the wild terrain — they fade in with the same
+   smoothstep as everything else beyond the buildable clearing, so they can never dent the
+   flat playable ground no matter how the constants above change */
+var CRATERS=[
+  {x:280,z:-190,r:38,depth:9},{x:-260,z:220,r:50,depth:12},{x:150,z:340,r:30,depth:7},
+  {x:-340,z:-140,r:44,depth:10},{x:380,z:130,r:26,depth:6},{x:-120,z:-360,r:34,depth:8}
+];
+function craterDip(x,z){
+  var dip=0;
+  for(var i=0;i<CRATERS.length;i++){
+    var c=CRATERS[i], dx=x-c.x, dz=z-c.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d>=c.r)continue;
+    var t=d/c.r, bowl=Math.cos(t*Math.PI*0.5);
+    dip-=bowl*bowl*c.depth;
+    if(t>0.72){ dip+=Math.sin((t-0.72)/0.28*Math.PI)*c.depth*0.18; }
+  }
+  return dip;
+}
 function terrainHeight(x,z){
   var d=Math.sqrt(x*x+z*z);
   var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
   var smooth=t*t*(3-2*t);
-  return terrainRaw(x,z)*smooth;
+  return (terrainRaw(x,z)+craterDip(x,z))*smooth;
 }
 
-/* skybox: large inverted sphere with a vertical gradient, no external texture */
+/* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
+   no external texture */
 (function(){
-  var geo=new THREE.SphereGeometry(1400,24,16);
+  var geo=new THREE.SphereGeometry(1400,32,20);
   var g=geo.attributes.position, col=new Float32Array(g.count*3);
-  var top=new THREE.Color(SKY_HIGH), bot=new THREE.Color(0x4a3420), horizon=new THREE.Color(0x6a4a2a);
+  var top=new THREE.Color(SKY_HIGH), bot=new THREE.Color(0x4a2030), horizon=new THREE.Color(0x7a3a3a);
+  var neb1=new THREE.Color(0x4a2a7a), neb2=new THREE.Color(0x2a5a6a);
   for(var i=0;i<g.count;i++){
-    var y=g.getY(i)/1400;
+    var x=g.getX(i), y=g.getY(i)/1400, z=g.getZ(i);
     var c=new THREE.Color();
     if(y>0.02)c.lerpColors(horizon,top,clamp(y*2.2,0,1));
     else c.lerpColors(bot,horizon,clamp((y+0.15)/0.15,0,1));
+    /* two soft nebula smudges, cheap to fake with a couple of directional dot-product bands */
+    var n1=Math.max(0,Math.sin(x*0.003+2.1)*Math.cos(z*0.0026-0.7))*clamp(y*3,0,1);
+    var n2=Math.max(0,Math.cos(x*0.0021-1.4)*Math.sin(z*0.0019+1.1))*clamp(y*2.6,0,1);
+    c.lerp(neb1,n1*0.22); c.lerp(neb2,n2*0.16);
     col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
   }
   geo.setAttribute("color",new THREE.BufferAttribute(col,3));
@@ -639,16 +677,99 @@ function terrainHeight(x,z){
   surfaceScene.add(new THREE.Mesh(geo,mat));
 })();
 
-/* clouds: soft alpha sprites drifting overhead */
+/* a big ringed gas giant and a smaller cratered moon hanging low over the horizon — the single
+   most recognisable "this is not Earth" cue a skybox can offer */
+(function(){
+  var giant=new THREE.Group();
+  var bodyTex=(function(){
+    var cvs=document.createElement("canvas"); cvs.width=128; cvs.height=128;
+    var g2=cvs.getContext("2d");
+    var grad=g2.createLinearGradient(0,0,0,128);
+    grad.addColorStop(0,"#8a6a9a"); grad.addColorStop(0.35,"#c99a6a"); grad.addColorStop(0.55,"#8a6a9a");
+    grad.addColorStop(0.8,"#c9a878"); grad.addColorStop(1,"#7a5a8a");
+    g2.fillStyle=grad; g2.fillRect(0,0,128,128);
+    g2.globalAlpha=0.25;
+    for(var i=0;i<6;i++){ g2.fillStyle=i%2?"#5a3a6a":"#e0b888"; g2.fillRect(0,rnd(0,128),128,rnd(3,9)); }
+    return new THREE.CanvasTexture(cvs);
+  })();
+  var body=new THREE.Mesh(new THREE.SphereGeometry(60,20,16),new THREE.MeshBasicMaterial({map:bodyTex,fog:false}));
+  giant.add(body);
+  var ring=new THREE.Mesh(new THREE.RingGeometry(85,130,48),
+    new THREE.MeshBasicMaterial({color:0xd8c0a0,transparent:true,opacity:0.55,side:THREE.DoubleSide,fog:false}));
+  ring.rotation.x=Math.PI/2.6; giant.add(ring);
+  giant.position.set(-820,340,-980);
+  surfaceScene.add(giant);
+  var moonTex=(function(){
+    var cvs=document.createElement("canvas"); cvs.width=96; cvs.height=96;
+    var g3=cvs.getContext("2d");
+    g3.fillStyle="#cfd6e0"; g3.fillRect(0,0,96,96);
+    for(var i=0;i<26;i++){
+      var mx=Math.random()*96,my=Math.random()*96,mr=rnd(2,8);
+      g3.fillStyle="rgba(120,128,145,.5)"; g3.beginPath(); g3.arc(mx,my,mr,0,6.283); g3.fill();
+    }
+    return new THREE.CanvasTexture(cvs);
+  })();
+  var moon=new THREE.Mesh(new THREE.SphereGeometry(26,16,12),new THREE.MeshBasicMaterial({map:moonTex,fog:false}));
+  moon.position.set(700,260,-1050);
+  surfaceScene.add(moon);
+})();
+
+/* varied-colour stars, brighter and cooler than a plain white scatter */
+(function(){
+  var n=1600, pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  var palette=[new THREE.Color(0xbfe0ff),new THREE.Color(0xffffff),new THREE.Color(0xd8b8ff),new THREE.Color(0xffd8b0)];
+  for(var i=0;i<n;i++){
+    var a=rnd(0,Math.PI*2), el=rnd(0.1,0.95)*Math.PI/2;
+    var r=1300;
+    pos[i*3]=Math.cos(a)*Math.cos(el)*r;
+    pos[i*3+1]=Math.sin(el)*r+40;
+    pos[i*3+2]=Math.sin(a)*Math.cos(el)*r;
+    var c=palette[Math.floor(Math.random()*palette.length)];
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  var geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+  var mat=new THREE.PointsMaterial({vertexColors:true,size:1.8,sizeAttenuation:false,transparent:true,opacity:0.65,fog:false});
+  surfaceScene.add(new THREE.Points(geo,mat));
+})();
+
+/* clouds: soft alpha sprites drifting overhead, tinted toward the sky's violet/rust palette */
 var clouds=[];
+var alienPools=[];
+/* drifting bio-spores: a fixed, gently-bobbing pool of glowing motes across the whole map for
+   atmosphere. Kept small, dim and sparse near the clearing on purpose — this is ambience, not
+   something that should ever compete with reading buildings, belts, or enemies at a glance. */
+var spores=[];
+(function(){
+  var cvs=document.createElement("canvas"); cvs.width=32; cvs.height=32;
+  var g=cvs.getContext("2d");
+  var grad=g.createRadialGradient(16,16,0,16,16,15);
+  grad.addColorStop(0,"rgba(255,255,255,.95)"); grad.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=grad; g.fillRect(0,0,32,32);
+  var tex=new THREE.CanvasTexture(cvs);
+  var tints=[0x7affe0,0xb08aff,0xffd88a];
+  for(var i=0;i<70;i++){
+    var tint=tints[i%tints.length];
+    var mat=new THREE.SpriteMaterial({map:tex,color:tint,transparent:true,opacity:0.55,depthWrite:false});
+    var s=new THREE.Sprite(mat);
+    var a=rnd(0,Math.PI*2), r=rnd(30,SURFACE_SIZE*0.46);
+    var x=Math.cos(a)*r, z=Math.sin(a)*r;
+    var sc=rnd(0.35,0.9);
+    s.scale.setScalar(sc);
+    s.position.set(x,terrainHeight(x,z)+rnd(0.8,4.5),z);
+    surfaceScene.add(s);
+    spores.push({mesh:s,baseY:s.position.y,ph:rnd(0,6.28),spd:rnd(0.3,0.7),drift:rnd(0.15,0.4),ang:rnd(0,6.28)});
+  }
+})();
 (function(){
   var cvs=document.createElement("canvas"); cvs.width=128; cvs.height=64;
   var g=cvs.getContext("2d");
   var grad=g.createRadialGradient(64,32,0,64,32,60);
-  grad.addColorStop(0,"rgba(255,255,255,.9)"); grad.addColorStop(1,"rgba(255,255,255,0)");
+  grad.addColorStop(0,"rgba(230,200,220,.85)"); grad.addColorStop(1,"rgba(230,200,220,0)");
   g.fillStyle=grad; g.fillRect(0,0,128,64);
   var tex=new THREE.CanvasTexture(cvs);
-  var mat=new THREE.SpriteMaterial({map:tex,transparent:true,opacity:0.4,depthWrite:false,fog:true});
+  var mat=new THREE.SpriteMaterial({map:tex,transparent:true,opacity:0.35,depthWrite:false,fog:true});
   for(var i=0;i<14;i++){
     var s=new THREE.Sprite(mat.clone());
     var sc=rnd(50,110);
@@ -666,7 +787,9 @@ groundGeo.rotateX(-Math.PI/2);
 (function(){
   var pos=groundGeo.attributes.position;
   var colArr=new Float32Array(pos.count*3);
-  var dirt=new THREE.Color(0x4a3c2c), grass=new THREE.Color(0x3d4a28), rock=new THREE.Color(0x5c5650), snow=new THREE.Color(0x8a8478);
+  /* alien palette: warm rust regolith in the buildable clearing (kept readable against the
+     buildings), shifting to teal lichen on the wild rises and pale violet mineral crust up high */
+  var dirt=new THREE.Color(0x5c3a28), grass=new THREE.Color(0x2a6858), rock=new THREE.Color(0x4a4258), snow=new THREE.Color(0x9a8ec2);
   for(var i=0;i<pos.count;i++){
     var x=pos.getX(i), z=pos.getZ(i);
     var h=terrainHeight(x,z);
@@ -837,10 +960,16 @@ var landingPodBeacon=null;
   surfaceScene.add(eq);
 })();
 
-/* rocks + alien vegetation scattered in the wild terrain beyond the clearing */
+/* rocks, crystal veins, alien flora, ruins and glowing pools — everything here is confined to
+   r > BUILD_ZONE_R*0.7 so none of it can ever encroach on the flat buildable clearing or the
+   sightlines around it. Density and distance both scale up further out for a proper sense of
+   an untouched wild beyond the colony perimeter. */
 (function(){
-  var rockMat=new THREE.MeshStandardMaterial({color:0x5c5650,roughness:0.95,flatShading:true});
-  for(var i=0;i<60;i++){
+  var rockMat=new THREE.MeshStandardMaterial({color:0x4a4452,roughness:0.92,metalness:0.08,flatShading:true});
+  var crystalMat=new THREE.MeshStandardMaterial({color:0x9a6aff,emissive:0x5a2aa0,emissiveIntensity:0.7,roughness:0.3,metalness:0.4,flatShading:true});
+  var crystalMat2=new THREE.MeshStandardMaterial({color:0x4adfff,emissive:0x0a6a8a,emissiveIntensity:0.65,roughness:0.3,metalness:0.4,flatShading:true});
+  /* ordinary boulders, a slice of them veined with glowing crystal shards */
+  for(var i=0;i<70;i++){
     var a=rnd(0,Math.PI*2), r=rnd(BUILD_ZONE_R*0.85,SURFACE_SIZE*0.46);
     var x=Math.cos(a)*r, z=Math.sin(a)*r;
     var y=terrainHeight(x,z);
@@ -849,10 +978,37 @@ var landingPodBeacon=null;
     rock.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
     rock.scale.set(1,rnd(0.6,1.3),1);
     surfaceScene.add(rock);
+    if(Math.random()<0.22){
+      var vein=new THREE.Mesh(new THREE.OctahedronGeometry(rnd(0.4,0.9),0),Math.random()<0.5?crystalMat:crystalMat2);
+      vein.position.set(x+rnd(-1.5,1.5),y+rnd(1,3.5),z+rnd(-1.5,1.5));
+      vein.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
+      surfaceScene.add(vein);
+    }
   }
-  var stalkMat=new THREE.MeshStandardMaterial({color:0x2a4030,roughness:0.7});
-  var capMat=new THREE.MeshStandardMaterial({color:0x7a4ac0,emissive:0x2a1050,emissiveIntensity:0.4,roughness:0.5});
-  for(var j=0;j<45;j++){
+  /* tall angular cliff stacks further out, for a real skyline instead of just low boulders */
+  for(var ci=0;ci<16;ci++){
+    var ca=rnd(0,Math.PI*2), cr=rnd(SURFACE_SIZE*0.3,SURFACE_SIZE*0.47);
+    var cx=Math.cos(ca)*cr, cz=Math.sin(ca)*cr, cy=terrainHeight(cx,cz);
+    var cliff=new THREE.Group();
+    var tiers=Math.floor(rnd(2,4));
+    for(var ti=0;ti<tiers;ti++){
+      var tw=rnd(3,7)*(1-ti*0.22), th=rnd(6,14);
+      var tier=new THREE.Mesh(new THREE.ConeGeometry(tw,th,5),rockMat);
+      tier.position.set(rnd(-1.5,1.5),th/2+ti*0.5,rnd(-1.5,1.5));
+      tier.rotation.y=rnd(0,6.28);
+      cliff.add(tier);
+    }
+    cliff.position.set(cx,cy,cz);
+    surfaceScene.add(cliff);
+  }
+  /* the original glowing mushroom, plus a much taller "giant mushroom" variant with a spotted
+     cap and small hanging spore pods */
+  var stalkMat=new THREE.MeshStandardMaterial({color:0x2a5850,roughness:0.7});
+  var capMat=new THREE.MeshStandardMaterial({color:0x7a4ac0,emissive:0x2a1050,emissiveIntensity:0.45,roughness:0.5});
+  var giantCapMat=new THREE.MeshStandardMaterial({color:0x4a7aa0,emissive:0x1a3a58,emissiveIntensity:0.4,roughness:0.5});
+  var spotMat=new THREE.MeshStandardMaterial({color:0xffd8a0,emissive:0xff9a3c,emissiveIntensity:0.9});
+  var podMat=new THREE.MeshStandardMaterial({color:0xd0ff6a,emissive:0x6aa020,emissiveIntensity:0.6});
+  for(var j=0;j<50;j++){
     var a2=rnd(0,Math.PI*2), r2=rnd(BUILD_ZONE_R*0.75,SURFACE_SIZE*0.42);
     var x2=Math.cos(a2)*r2, z2=Math.sin(a2)*r2;
     var y2=terrainHeight(x2,z2);
@@ -866,23 +1022,100 @@ var landingPodBeacon=null;
     g.rotation.y=rnd(0,6.28);
     surfaceScene.add(g);
   }
+  for(var gi=0;gi<14;gi++){
+    var ga=rnd(0,Math.PI*2), gr=rnd(BUILD_ZONE_R*0.9,SURFACE_SIZE*0.44);
+    var gx=Math.cos(ga)*gr, gz=Math.sin(ga)*gr, gy=terrainHeight(gx,gz);
+    var gg=new THREE.Group();
+    var gh=rnd(7,13);
+    var stalk2=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.75,gh,8),stalkMat);
+    stalk2.position.y=gh/2; gg.add(stalk2);
+    var gcap=new THREE.Mesh(new THREE.SphereGeometry(rnd(2.2,3.4),10,8),giantCapMat);
+    gcap.position.y=gh; gcap.scale.y=0.55; gg.add(gcap);
+    var nSpots=Math.floor(rnd(4,8));
+    for(var si=0;si<nSpots;si++){
+      var sang=rnd(0,6.28), sr=rnd(1,2.6);
+      var spot=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),spotMat);
+      spot.position.set(Math.cos(sang)*sr,gh+0.6+rnd(-0.3,0.3),Math.sin(sang)*sr); gg.add(spot);
+    }
+    var nPods=Math.floor(rnd(2,4));
+    for(var pi=0;pi<nPods;pi++){
+      var pang=rnd(0,6.28), pr=rnd(1.2,2.4);
+      var pod=new THREE.Mesh(new THREE.SphereGeometry(0.3,6,5),podMat);
+      pod.position.set(Math.cos(pang)*pr,gh-0.8,Math.sin(pang)*pr); gg.add(pod);
+    }
+    gg.position.set(gx,gy,gz);
+    gg.rotation.y=rnd(0,6.28);
+    surfaceScene.add(gg);
+  }
+  /* freestanding crystal clusters — pure decoration, distinct from the mineable ore nodes */
+  for(var ki=0;ki<24;ki++){
+    var ka=rnd(0,Math.PI*2), kr=rnd(BUILD_ZONE_R*0.8,SURFACE_SIZE*0.45);
+    var kx=Math.cos(ka)*kr, kz=Math.sin(ka)*kr, ky=terrainHeight(kx,kz);
+    var kg=new THREE.Group();
+    var kmat=Math.random()<0.5?crystalMat:crystalMat2;
+    var nShards=Math.floor(rnd(3,6));
+    for(var si2=0;si2<nShards;si2++){
+      var sh=rnd(1.2,3.2);
+      var shard=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3,0.6),sh,5),kmat);
+      shard.position.set(rnd(-0.8,0.8),sh/2,rnd(-0.8,0.8));
+      shard.rotation.set(rnd(-0.25,0.25),rnd(0,6.28),rnd(-0.25,0.25));
+      kg.add(shard);
+    }
+    kg.position.set(kx,ky,kz);
+    surfaceScene.add(kg);
+  }
+  /* small ruin markers — broken arches and leaning obelisks hinting at something that was here
+     before the colony, kept sparse and well outside any walkable/buildable path */
+  var ruinMat=new THREE.MeshStandardMaterial({color:0x3a3648,roughness:0.85,metalness:0.15});
+  var runeMat=new THREE.MeshStandardMaterial({color:0x2a2438,emissive:0x6a3aff,emissiveIntensity:0.55,roughness:0.4});
+  for(var ri=0;ri<7;ri++){
+    var ra=rnd(0,Math.PI*2), rr=rnd(SURFACE_SIZE*0.28,SURFACE_SIZE*0.45);
+    var rx=Math.cos(ra)*rr, rz=Math.sin(ra)*rr, ry=terrainHeight(rx,rz);
+    var rg=new THREE.Group();
+    if(Math.random()<0.5){
+      var legL=new THREE.Mesh(new THREE.BoxGeometry(1.1,rnd(5,8),1.1),ruinMat);
+      legL.position.set(-2.6,legL.geometry.parameters.height/2,0); rg.add(legL);
+      var legR=legL.clone(); legR.position.x=2.6; rg.add(legR);
+      var lintel=new THREE.Mesh(new THREE.BoxGeometry(6.4,1.0,1.1),ruinMat);
+      lintel.position.set(0,legL.geometry.parameters.height-0.5,0); rg.add(lintel);
+      var rune=new THREE.Mesh(new THREE.CircleGeometry(0.5,10),runeMat);
+      rune.position.set(0,legL.geometry.parameters.height-0.5,0.58); rg.add(rune);
+    } else {
+      var obelisk=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.9,rnd(7,11),5),ruinMat);
+      obelisk.position.y=obelisk.geometry.parameters.height/2; rg.add(obelisk);
+      obelisk.rotation.z=rnd(-0.12,0.12);
+      var rune2=new THREE.Mesh(new THREE.CircleGeometry(0.35,8),runeMat);
+      rune2.position.set(0,obelisk.geometry.parameters.height*0.6,0.62); rg.add(rune2);
+    }
+    rg.position.set(rx,ry,rz);
+    rg.rotation.y=rnd(0,6.28);
+    surfaceScene.add(rg);
+  }
+  /* scattered wreck debris, purely dressing */
+  var debrisMat=new THREE.MeshStandardMaterial({color:0x5b6a78,roughness:0.6,metalness:0.4});
+  for(var di=0;di<20;di++){
+    var da=rnd(0,Math.PI*2), dr=rnd(BUILD_ZONE_R*0.78,SURFACE_SIZE*0.44);
+    var dx=Math.cos(da)*dr, dz=Math.sin(da)*dr, dy=terrainHeight(dx,dz);
+    var piece=new THREE.Mesh(new THREE.BoxGeometry(rnd(0.6,1.8),rnd(0.3,0.7),rnd(0.5,1.4)),debrisMat);
+    piece.position.set(dx,dy+0.2,dz);
+    piece.rotation.set(rnd(-0.3,0.3),rnd(0,6.28),rnd(-0.3,0.3));
+    surfaceScene.add(piece);
+  }
+  /* small pools of glowing alien liquid, with a slow shimmering wobble */
+  var poolLiquidMat=new THREE.MeshStandardMaterial({color:0x1aff9a,emissive:0x0a8a5a,emissiveIntensity:0.8,roughness:0.15,metalness:0.1,transparent:true,opacity:0.85});
+  for(var qi=0;qi<6;qi++){
+    var qa=rnd(0,Math.PI*2), qr=rnd(BUILD_ZONE_R*0.85,SURFACE_SIZE*0.4);
+    var qx=Math.cos(qa)*qr, qz=Math.sin(qa)*qr, qy=terrainHeight(qx,qz);
+    var pool=new THREE.Mesh(new THREE.CircleGeometry(rnd(3,6),16),poolLiquidMat.clone());
+    pool.rotation.x=-Math.PI/2; pool.position.set(qx,qy+0.06,qz);
+    surfaceScene.add(pool);
+    alienPools.push(pool);
+    var rim=new THREE.Mesh(new THREE.RingGeometry(pool.geometry.parameters.radius,pool.geometry.parameters.radius+0.5,16),rockMat);
+    rim.rotation.x=-Math.PI/2; rim.position.set(qx,qy+0.04,qz);
+    surfaceScene.add(rim);
+  }
 })();
 
-/* stars visible above the horizon, cheap points */
-(function(){
-  var n=1200, pos=new Float32Array(n*3);
-  for(var i=0;i<n;i++){
-    var a=rnd(0,Math.PI*2), el=rnd(0.15,0.95)*Math.PI/2;
-    var r=900;
-    pos[i*3]=Math.cos(a)*Math.cos(el)*r;
-    pos[i*3+1]=Math.sin(el)*r+40;
-    pos[i*3+2]=Math.sin(a)*Math.cos(el)*r;
-  }
-  var geo=new THREE.BufferGeometry();
-  geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
-  var mat=new THREE.PointsMaterial({color:0xbfe0ff,size:1.6,sizeAttenuation:false,transparent:true,opacity:0.5});
-  surfaceScene.add(new THREE.Points(geo,mat));
-})();
 
 /* ═════════════ PLAYER ═════════════ */
 function buildPlayerMesh(){
@@ -3490,6 +3723,15 @@ function updateSurface(dt){
   playerShadow.position.y=player.position.y+0.03;
 
   clouds.forEach(function(c){ c.position.x+=dt*1.4; if(c.position.x>560)c.position.x=-560; });
+  var poolT=performance.now()/1000;
+  alienPools.forEach(function(p,pi){ p.material.emissiveIntensity=0.65+Math.sin(poolT*1.3+pi*1.7)*0.25; });
+  spores.forEach(function(s){
+    s.ph+=dt*s.spd;
+    s.mesh.position.y=s.baseY+Math.sin(s.ph)*0.6;
+    s.mesh.position.x+=Math.cos(s.ang)*s.drift*dt;
+    s.mesh.position.z+=Math.sin(s.ang)*s.drift*dt;
+    s.mesh.material.opacity=0.4+Math.sin(s.ph*1.3)*0.2;
+  });
 
   updateCameraTransform();
 
