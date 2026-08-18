@@ -45,6 +45,19 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 .saveInd .dot{width:6px;height:6px;border-radius:50%;background:var(--amber2);flex:none}
 .saveInd.done .dot{background:var(--green)}
 .saveInd.fail .dot{background:var(--red)}
+.planetTarget{position:absolute;left:0;top:0;transform:translate(-50%,-50%);z-index:8;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:6px}
+.planetTarget.hide{display:none}
+.ptRing{width:64px;height:64px;border-radius:50%;padding:3px;background:conic-gradient(var(--green) 0deg,rgba(255,255,255,.18) 0deg)}
+.planetTarget.locked .ptRing{filter:drop-shadow(0 0 6px rgba(123,217,74,.6))}
+.ptRingInner{width:100%;height:100%;border-radius:50%;border:2px solid rgba(255,255,255,.5)}
+.ptName{background:#0b0f18ee;border-radius:8px;padding:5px 12px;font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;font-weight:800;color:var(--bone);white-space:nowrap}
+.landedPanel{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);z-index:9;
+  background:#0b0f18ee;border:1px solid var(--line);border-radius:12px;padding:16px 20px;text-align:center;max-width:340px}
+.landedPanel.hide{display:none}
+.landedPanel .lpName{font-size:13px;letter-spacing:.1em;font-weight:900;color:var(--amber2);margin-bottom:6px}
+.landedPanel .lpDs{font-size:11px;color:var(--dim);margin-bottom:12px;line-height:1.4}
 
 /* ── HUD ── */
 #hud,#hudSpace{position:absolute;top:0;left:0;right:0;pointer-events:none;z-index:6;
@@ -252,6 +265,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     </div>
   </div>
 
+  <div class="planetTarget hide" id="planetTarget">
+    <div class="ptRing"><div class="ptRingInner"></div></div>
+    <div class="ptName"></div>
+  </div>
+  <div class="landedPanel hide" id="landedPanel">
+    <div class="lpName">LANDED</div>
+    <div class="lpDs">Your ship is parked here. Launch when you're ready to fly back.</div>
+    <button class="btn" id="bLaunchFromPlanet">Launch</button>
+  </div>
+
   <div class="stickzone" id="zoneL"></div>
   <div id="zoneCam"></div>
   <div class="stickArt" id="artL"><i></i></div>
@@ -361,8 +384,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.12.0";
+var VERSION="1.13.0";
 var CHANGELOG=[
+  {v:"1.13.0",t:"Real flight controls, a landable planet, belts that connect, and a real ground",items:[
+    "Conveyor belts now visually plug into the machines they connect instead of stopping short with a gap",
+    "Fixed a lingering movement/camera-drag glitch that could get stuck on after holding Shift and right-clicking at the same time",
+    "Reworked PC ship flight: A/D turn the ship, W/S thrust forward and back, and right-click fires — no more mouse-look",
+    "Added a real objective in space: fly toward Vesta Outpost, keep it centered to fill the landing ring, and touch down. Your ship stays parked there until you launch back",
+    "Replaced the bright grid overlay on the ground with an actual tiled terrain texture"
+  ]},
   {v:"1.12.0",t:"Movement/input fixes, Remove tool feedback, hardened saves",items:[
     "Fixed right-click opening the browser's native context menu — it now only ever cancels placement/tools",
     "Fixed the Build menu flickering while hovering items — icons and tabs now update in place instead of being torn down and rebuilt on every timer tick",
@@ -618,7 +648,31 @@ groundGeo.rotateX(-Math.PI/2);
   groundGeo.setAttribute("color",new THREE.BufferAttribute(colArr,3));
   groundGeo.computeVertexNormals();
 })();
-var groundMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.97,metalness:0});
+/* a small tiled speckle/noise texture so the ground reads as real terrain detail instead of a flat fill */
+var groundTex=(function(){
+  var cvs=document.createElement("canvas"); cvs.width=256; cvs.height=256;
+  var g=cvs.getContext("2d");
+  g.fillStyle="#808080"; g.fillRect(0,0,256,256);
+  for(var i=0;i<2600;i++){
+    var x=Math.random()*256, y=Math.random()*256, r=rnd(0.4,1.6);
+    var shade=Math.floor(rnd(60,190));
+    g.fillStyle="rgba("+shade+","+shade+","+shade+","+rnd(0.15,0.4)+")";
+    g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();
+  }
+  for(var j=0;j<10;j++){
+    var px=Math.random()*256, py=Math.random()*256, pr=rnd(14,34);
+    var sh=Math.floor(rnd(70,150));
+    var grad=g.createRadialGradient(px,py,0,px,py,pr);
+    grad.addColorStop(0,"rgba("+sh+","+sh+","+sh+",0.18)");
+    grad.addColorStop(1,"rgba("+sh+","+sh+","+sh+",0)");
+    g.fillStyle=grad; g.beginPath(); g.arc(px,py,pr,0,Math.PI*2); g.fill();
+  }
+  var tex=new THREE.CanvasTexture(cvs);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  tex.repeat.set(SURFACE_SIZE/6,SURFACE_SIZE/6);
+  return tex;
+})();
+var groundMat=new THREE.MeshStandardMaterial({vertexColors:true,map:groundTex,roughness:0.97,metalness:0});
 var groundMesh=new THREE.Mesh(groundGeo,groundMat);
 groundMesh.name="ground";
 surfaceScene.add(groundMesh);
@@ -635,6 +689,7 @@ surfaceScene.add(buildPlaneMesh);
 var grid=new THREE.GridHelper(BUILD_ZONE_R*2,BUILD_ZONE_R/2,0xffc978,0x6b5636);
 grid.material.opacity=0.32; grid.material.transparent=true;
 grid.position.y=0.03;
+grid.visible=false; /* ground now reads via its own texture; keep the mesh around (debug hooks reference it) but hidden */
 surfaceScene.add(grid);
 
 // landing-zone marker ring
@@ -1709,11 +1764,13 @@ function makeBeltMesh(bl){
   var beltMat=new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15});
   var railMat=matStd(0x3a4a5e,0.5,0.6);
   var beltH=0.55;
+  var OVERLAP=0.9; /* push the bed/rails past each port into the building's footprint so the belt visually plugs in instead of stopping short */
+  var visLen=len+OVERLAP*2;
   var frame=new THREE.Group();
-  var sideRailL=new THREE.Mesh(new THREE.BoxGeometry(len,0.16,0.1),railMat);
+  var sideRailL=new THREE.Mesh(new THREE.BoxGeometry(visLen,0.16,0.1),railMat);
   sideRailL.position.set(0,0.14,0.34); frame.add(sideRailL);
   var sideRailR=sideRailL.clone(); sideRailR.position.z=-0.34; frame.add(sideRailR);
-  var bed=new THREE.Mesh(new THREE.BoxGeometry(len,0.1,0.62),beltMat);
+  var bed=new THREE.Mesh(new THREE.BoxGeometry(visLen,0.1,0.62),beltMat);
   bed.position.set(0,0.02,0); frame.add(bed);
   var nLegs=Math.max(2,Math.floor(len/6));
   for(var li=0;li<=nLegs;li++){
@@ -2122,6 +2179,76 @@ var homeBaseMesh=(function(){
   return g;
 })();
 
+/* landable planet objective */
+var PLANET={name:"Vesta Outpost", x:280, z:-220, radius:22};
+var planetMesh=(function(){
+  var g=new THREE.Group();
+  var core=new THREE.Mesh(new THREE.SphereGeometry(PLANET.radius,28,20),
+    new THREE.MeshStandardMaterial({color:0xd98a4a,roughness:0.85,metalness:0.08}));
+  g.add(core);
+  var atmo=new THREE.Mesh(new THREE.SphereGeometry(PLANET.radius*1.1,28,20),
+    new THREE.MeshBasicMaterial({color:0xffb545,transparent:true,opacity:0.14,side:THREE.BackSide}));
+  g.add(atmo);
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(PLANET.radius*1.7,0.7,8,40),
+    new THREE.MeshStandardMaterial({color:0x8a6a4a,roughness:0.7,metalness:0.25}));
+  ring.rotation.x=Math.PI/2.4;
+  g.add(ring);
+  g.position.set(PLANET.x,0,PLANET.z);
+  spaceScene.add(g);
+  return g;
+})();
+var landedPlanet=null, landProgress=0;
+var LAND_TIME=5, LAND_LOCK_ANGLE=0.28, LAND_LOCK_DIST=150, LAND_SHOW_DIST=280;
+function updatePlanetTargeting(dt){
+  planetMesh.rotation.y+=dt*0.05;
+  var elTarget=$("planetTarget");
+  var dx=PLANET.x-pShip.pos.x, dz=PLANET.z-pShip.pos.z;
+  var dist=Math.sqrt(dx*dx+dz*dz);
+  if(dist>LAND_SHOW_DIST){
+    elTarget.classList.add("hide");
+    landProgress=Math.max(0,landProgress-dt/(LAND_TIME*0.5));
+    return;
+  }
+  var angToPlanet=Math.atan2(dx,dz);
+  var diff=angToPlanet-pShip.yaw;
+  while(diff>Math.PI)diff-=Math.PI*2; while(diff<-Math.PI)diff+=Math.PI*2;
+  var locked=Math.abs(diff)<LAND_LOCK_ANGLE&&dist<LAND_LOCK_DIST;
+  landProgress=locked?Math.min(1,landProgress+dt/LAND_TIME):Math.max(0,landProgress-dt/(LAND_TIME*0.5));
+  var v=new THREE.Vector3(PLANET.x,4,PLANET.z).project(camera);
+  if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
+  else{
+    var sx=(v.x*0.5+0.5)*W, sy=(1-(v.y*0.5+0.5))*H;
+    elTarget.classList.remove("hide");
+    elTarget.style.left=sx+"px"; elTarget.style.top=sy+"px";
+    elTarget.querySelector(".ptName").textContent=PLANET.name+(locked?" — LANDING":"");
+    elTarget.querySelector(".ptRing").style.background=
+      "conic-gradient(var(--green) "+(landProgress*360)+"deg, rgba(255,255,255,.18) 0deg)";
+    elTarget.classList.toggle("locked",locked);
+  }
+  if(landProgress>=1)landOnPlanet();
+}
+function landOnPlanet(){
+  landedPlanet=PLANET; landProgress=0;
+  pShip.vel.set(0,0,0);
+  var ang=Math.atan2(pShip.pos.x-PLANET.x,pShip.pos.z-PLANET.z);
+  pShip.pos.set(PLANET.x+Math.sin(ang)*(PLANET.radius+4),0,PLANET.z+Math.cos(ang)*(PLANET.radius+4));
+  pShip.yaw=ang+Math.PI;
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
+  $("planetTarget").classList.add("hide");
+  $("landedPanel").querySelector(".lpName").textContent="LANDED ON "+PLANET.name.toUpperCase();
+  $("landedPanel").classList.remove("hide");
+  toast("Landed on "+PLANET.name);
+  sfx.build();
+}
+function launchFromPlanet(){
+  if(!landedPlanet)return;
+  landedPlanet=null;
+  pShip.vel.set(Math.sin(pShip.yaw)*pShip.spd*0.6,0,Math.cos(pShip.yaw)*pShip.spd*0.6);
+  $("landedPanel").classList.add("hide");
+  toast("Launching back into space");
+  sfx.click();
+}
+
 function buildShipMesh(model){
   var g=new THREE.Group();
   var hull=matStd(0xffb545,0.4,0.5);
@@ -2192,6 +2319,7 @@ function launchShip(){
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
+  landedPlanet=null; landProgress=0; $("landedPanel").classList.add("hide"); $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[]; spaceParts=[];
   homeBase.hp=homeBase.maxhp;
@@ -2205,10 +2333,13 @@ function launchShip(){
   $("mobActions").classList.remove("show");
   toast("Launching...");
   sfx.build();
-  setTimeout(function(){ if(state==="launching"){ state="space"; toast("Defend the sector"); } },1400);
+  setTimeout(function(){ if(state==="launching"){ state="space";
+    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, W/S thrust, right-click to fire":"Defend the sector");
+  } },1400);
 }
 function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
+  landedPlanet=null; landProgress=0; $("landedPanel").classList.add("hide"); $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[];
   state="surface";
@@ -2229,37 +2360,58 @@ function damagePShip(dmg){
   pShip.shieldRegenT=3;
   if(pShip.shield>0){ var use=Math.min(pShip.shield,dmg); pShip.shield-=use; dmg-=use; }
   if(dmg>0)pShip.hp-=dmg;
-  if(pShip.hp<=0){ pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound"); }
+  if(pShip.hp<=0){
+    pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound");
+    if(landedPlanet){ landedPlanet=null; landProgress=0; $("landedPanel").classList.add("hide"); }
+    $("planetTarget").classList.add("hide");
+  }
 }
 function killEnemyShip(e,i){
   spaceScene.remove(e.mesh); enemyShips.splice(i,1);
   var gain=ri(2,5); stock.parts+=gain;
 }
+var SHIP_TURN_RATE=2.1;
 function updateSpace(dt){
   if(state==="launching")return;
   if(pShip&&pShip.alive){
-    var fwd=0,strafe=0;
-    if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
-    if(keys.d||keys.arrowright)strafe+=1; if(keys.a||keys.arrowleft)strafe-=1;
-    if(moveStick.on){ strafe+=moveStick.dx; fwd-=moveStick.dy; }
-    var mlen=Math.sqrt(fwd*fwd+strafe*strafe); if(mlen>1){fwd/=mlen;strafe/=mlen;}
-    var boosting=!!(keys[" "]||spaceBoostHeld);
-    var spd=pShip.spd*(boosting?1.7:1);
-    var tv=new THREE.Vector3(strafe*spd,0,-fwd*spd);
-    var k=Math.min(1,pShip.accel*dt);
-    pShip.vel.lerp(tv,k);
-    pShip.pos.addScaledVector(pShip.vel,dt);
-    var half=SPACE_SIZE/2;
-    pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-40,40);
+    var boosting=false, firing=false;
+    if(landedPlanet){
+      pShip.vel.set(0,0,0);
+    } else {
+      var pc=document.body.classList.contains("pc-mode");
+      var fwd=0,strafe=0,turn=0;
+      if(pc){
+        if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
+        if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
+        pShip.yaw+=turn*SHIP_TURN_RATE*dt;
+        firing=mouse.downBtn===2;
+      } else {
+        if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
+        if(keys.d||keys.arrowright)strafe+=1; if(keys.a||keys.arrowleft)strafe-=1;
+        if(moveStick.on){ strafe+=moveStick.dx; fwd-=moveStick.dy; }
+      }
+      var mlen=Math.sqrt(fwd*fwd+strafe*strafe); if(mlen>1){fwd/=mlen;strafe/=mlen;}
+      boosting=!!(keys[" "]||spaceBoostHeld);
+      var spd=pShip.spd*(boosting?1.7:1);
+      var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
+               :new THREE.Vector3(strafe*spd,0,-fwd*spd);
+      var k=Math.min(1,pShip.accel*dt);
+      pShip.vel.lerp(tv,k);
+      pShip.pos.addScaledVector(pShip.vel,dt);
+      var half=SPACE_SIZE/2;
+      pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-40,40);
 
-    var aim=spaceAimPoint();
-    var firing=false;
-    if(aim){ pShip.yaw=Math.atan2(aim.x-pShip.pos.x,aim.z-pShip.pos.z); firing=spaceFiring; }
+      if(!pc){
+        var aim=spaceAimPoint();
+        if(aim){ pShip.yaw=Math.atan2(aim.x-pShip.pos.x,aim.z-pShip.pos.z); firing=spaceFiring; }
+      }
+      updatePlanetTargeting(dt);
+    }
     pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
     pShip.mesh.userData.engineGlow.forEach(function(g){ g.material.emissiveIntensity=1+(boosting?1.2:0)+Math.sin(performance.now()/90)*0.15; });
 
     pShip.cd-=dt;
-    if(firing&&pShip.cd<=0){ fireShipBolt(); pShip.cd=pShip.rate; }
+    if(!landedPlanet&&firing&&pShip.cd<=0){ fireShipBolt(); pShip.cd=pShip.rate; }
     if(pShip.shieldRegenT>0)pShip.shieldRegenT-=dt;
     else if(pShip.shield<pShip.maxshield)pShip.shield=Math.min(pShip.maxshield,pShip.shield+pShip.maxshield*0.25*dt);
   } else if(pShip){
@@ -2340,25 +2492,17 @@ function updateSpace(dt){
   updateHudSpace();
 }
 function spaceAimPoint(){
-  if(!document.body.classList.contains("pc-mode")){
-    if(!aimStick.on)return null;
-    var mag=Math.sqrt(aimStick.dx*aimStick.dx+aimStick.dy*aimStick.dy);
-    if(mag<0.2)return null;
-    spaceFiring=true;
-    var camDir=new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y=0; camDir.normalize();
-    var camRight=new THREE.Vector3().crossVectors(camDir,new THREE.Vector3(0,1,0)).normalize();
-    return {
-      x:pShip.pos.x+camDir.x*(-aimStick.dy)*10+camRight.x*aimStick.dx*10,
-      z:pShip.pos.z+camDir.z*(-aimStick.dy)*10+camRight.z*aimStick.dx*10
-    };
-  }
-  spaceFiring=mouse.downBtn===0;
-  var ndc=new THREE.Vector2((mouse.x/W)*2-1,-(mouse.y/H)*2+1);
-  raycaster.setFromCamera(ndc,camera);
-  var plane=new THREE.Plane(new THREE.Vector3(0,1,0),-pShip.pos.y);
-  var out=new THREE.Vector3();
-  var hit=raycaster.ray.intersectPlane(plane,out);
-  return hit?{x:out.x,z:out.z}:null;
+  /* mobile only — PC turns with A/D and fires with right-click, see updateSpace() */
+  if(!aimStick.on)return null;
+  var mag=Math.sqrt(aimStick.dx*aimStick.dx+aimStick.dy*aimStick.dy);
+  if(mag<0.2)return null;
+  spaceFiring=true;
+  var camDir=new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y=0; camDir.normalize();
+  var camRight=new THREE.Vector3().crossVectors(camDir,new THREE.Vector3(0,1,0)).normalize();
+  return {
+    x:pShip.pos.x+camDir.x*(-aimStick.dy)*10+camRight.x*aimStick.dx*10,
+    z:pShip.pos.z+camDir.z*(-aimStick.dy)*10+camRight.z*aimStick.dx*10
+  };
 }
 var spaceFiring=false, spaceBoostHeld=false;
 function updateHudSpace(){
@@ -2395,10 +2539,12 @@ window.addEventListener("keydown",function(e){
 });
 window.addEventListener("keyup",function(e){ keys[e.key.toLowerCase()]=0; });
 
-var MOVE_KEYS=["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"];
 function resetMovementKeys(){
-  MOVE_KEYS.forEach(function(k){ keys[k]=0; });
+  for(var k in keys)keys[k]=0;
+  if(typeof mouse!=="undefined"&&mouse)mouse.downBtn=-1;
+  if(typeof camDragEnd==="function")camDragEnd();
   if(typeof moveStick!=="undefined"&&moveStick){ moveStick.on=false; moveStick.dx=0; moveStick.dy=0; $("artL").style.display="none"; }
+  if(typeof aimStick!=="undefined"&&aimStick){ aimStick.on=false; aimStick.dx=0; aimStick.dy=0; }
 }
 window.addEventListener("blur",resetMovementKeys);
 document.addEventListener("visibilitychange",function(){ if(document.hidden)resetMovementKeys(); });
@@ -2925,6 +3071,7 @@ $("bPause").onclick=function(){ sfx.click(); togglePause(); };
 $("bPauseSpace").onclick=function(){ sfx.click(); togglePause(); };
 $("bResume").onclick=function(){ sfx.click(); togglePause(); };
 $("bReturnColony").onclick=function(){ sfx.click(); returnToColony(); };
+$("bLaunchFromPlanet").onclick=function(){ launchFromPlanet(); };
 function returnToTitle(){
   cancelPlacing();
   if(pausedFrom==="space"){
@@ -3253,10 +3400,13 @@ window.__cq={
       pShip:pShip?{x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,yaw:pShip.yaw,hp:pShip.hp,maxhp:pShip.maxhp,
         shield:pShip.shield,maxshield:pShip.maxshield,alive:pShip.alive,vel:{x:pShip.vel.x,z:pShip.vel.z}}:null,
       enemies:enemyShips.map(function(e){return {x:e.mesh.position.x,z:e.mesh.position.z,hp:e.hp,max:e.max};}),
-      pBolts:pBolts.length, eBolts:eBolts.length, stock:JSON.parse(JSON.stringify(stock))};
+      pBolts:pBolts.length, eBolts:eBolts.length, stock:JSON.parse(JSON.stringify(stock)),
+      planet:{name:PLANET.name,x:PLANET.x,z:PLANET.z,radius:PLANET.radius},
+      landed:landedPlanet?landedPlanet.name:null, landProgress:landProgress};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
-  setSpaceMouse:function(x,y,down){ mouse.x=x; mouse.y=y; mouse.downBtn=down?0:-1; },
+  setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
+  launchFromPlanet:launchFromPlanet,
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
   forceKillEnemy:function(idx){ idx=idx||0; if(enemyShips[idx])killEnemyShip(enemyShips[idx],idx); },
