@@ -131,6 +131,9 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   display:flex;align-items:center;justify-content:center;
   padding:calc(18px + env(safe-area-inset-top,0px)) 18px calc(18px + env(safe-area-inset-bottom,0px))}
 .ovl.hide{display:none!important}
+/* the backpack opens as a slim panel pinned to the left instead of a centered blocking modal */
+.ovl.side{background:rgba(5,8,14,.35);justify-content:flex-start}
+.ovl.side .card{position:relative;max-height:70vh}
 .card{width:100%;max-width:440px;max-height:88vh;overflow-y:auto;background:linear-gradient(160deg,var(--panel2),var(--panel));
   border:1px solid var(--line);border-radius:14px;padding:18px}
 .card h2{font-size:15px;letter-spacing:.18em;text-transform:uppercase;color:var(--bone);margin-bottom:12px;text-align:center}
@@ -257,6 +260,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="res" id="powerTxt">PWR 0/0</div>
       <button class="hudbtn accent" id="bBuildOpen">Build</button>
       <button class="hudbtn" id="bMapOpen">Map</button>
+      <button class="hudbtn" id="bBackpackOpen" title="Backpack (B)">Backpack</button>
       <button class="hudbtn" id="bPause">&#10073;&#10073;</button>
     </div>
   </div>
@@ -387,14 +391,42 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <button class="btn sub" id="bGalaxyClose">Close</button>
     </div>
   </div>
+
+  <div class="ovl hide" id="o-workshop">
+    <div class="card">
+      <h2>Workshop</h2>
+      <div class="metalline">Craft permanent gear upgrades from your stockpile.</div>
+      <div id="wkList"></div>
+      <button class="btn sub" id="bWorkshopClose" style="margin-top:6px">Close</button>
+    </div>
+  </div>
+
+  <div class="ovl side hide" id="o-backpack">
+    <div class="card" style="max-width:300px">
+      <button id="bBackpackClose" class="clX">&times;</button>
+      <h2>Backpack</h2>
+      <div class="cat" style="margin:2px 2px 4px">Wearing</div>
+      <div id="bpWearing"></div>
+      <div class="cat" style="margin:14px 2px 4px">Carrying</div>
+      <div id="bpCarrying"></div>
+    </div>
+  </div>
 </div>
 
 <script type="module">
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.16.0";
+var VERSION="1.17.0";
 var CHANGELOG=[
+  {v:"1.17.0",t:"Jumping, a Workshop, craftable gear, and a Backpack",items:[
+    "You can jump now (Space) — real gravity-driven physics, not a hop animation",
+    "New building: the Workshop, a lean-to garage with a real bench, vice and a spinning grinder wheel. Interact with it (E) to craft permanent gear",
+    "Three craftable upgrades so far: Running Boots (+35% move speed, +50% jump height), Cargo Gloves (+80% hand-gathering rate), and a Haul Pack (+50% hand-gathering range) — each a one-time craft from your stockpile that's worn the moment it's made",
+    "New Backpack panel (press B, or the HUD button) — pops up on the left side of the screen without blocking the rest of the view, showing what you're wearing and your full carried stock. Production keeps running while it's open, same as every other panel",
+    "Equipped gear is saved and restored with your colony",
+    "Gave the player a real headlamp point light (not just an emissive mesh) so the wild terrain out past the buildable clearing reads better under the new dusk lighting"
+  ]},
   {v:"1.16.0",t:"The colony now sits on an actual alien world",items:[
     "New sky: a violet-to-rust gradient with faint nebula bands, a ringed gas giant and a cratered moon hanging near the horizon, and 1600 colour-varied stars instead of a flat white scatter",
     "New lighting: the single warm sun is now joined by a cool magenta rim light standing in for a second, more distant star, so shadowed sides of buildings and terrain read as alien dusk instead of flat brown-on-brown",
@@ -1162,6 +1194,11 @@ function buildPlayerMesh(){
   var lamp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,0.07,8),lightMat);
   lamp.position.set(0,0.14,0.34); lamp.rotation.x=Math.PI/2; neck.add(lamp);
   g.userData.beacon=beacon;
+  /* a real headlamp light, not just an emissive mesh — throws actual illumination a few
+     metres ahead, which matters once you're out past the buildable clearing under the new
+     dusk lighting where the ambient/fill alone leave the wild terrain fairly dim */
+  var headlamp=new THREE.PointLight(0xffe8b0,1.6,14,2);
+  headlamp.position.set(0,0.14,0.5); neck.add(headlamp);
 
   function buildArm(side){
     var shoulder=new THREE.Group(); shoulder.position.set(side*0.5,0.78,0); hip.add(shoulder);
@@ -1224,6 +1261,42 @@ var stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
 function canAfford(cost){ for(var k in cost)if((stock[k]||0)<cost[k])return false; return true; }
 function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 
+/* ═════════════ GEAR CRAFTING ═════════════ */
+/* Permanent one-time upgrades crafted at the Workshop. Each is worn automatically the moment
+   it's crafted — there's no separate equip step, since these are meant to read as character
+   upgrades rather than a loadout you swap piece to piece. */
+var CRAFT_RECIPES={
+  boots:{nm:"Running Boots",ds:"Lighter alloy soles and a spring-loaded heel.",cost:{iron:15,copper:8},
+    effect:"+35% move speed, +50% jump height",spdMult:1.35,jumpMult:1.5},
+  gloves:{nm:"Cargo Gloves",ds:"Reinforced grips for faster hand-gathering from deposits.",cost:{iron:10,copper:15},
+    effect:"+80% hand-gathering rate",gatherMult:1.8},
+  pack:{nm:"Haul Pack",ds:"A frame pack with a magnetic collector arm.",cost:{iron:12,copper:12,parts:4},
+    effect:"+50% hand-gathering range",gatherRadiusMult:1.5}
+};
+var equipment={boots:false,gloves:false,pack:false};
+function equipStats(){
+  var s={spdMult:1,jumpMult:1,gatherMult:1,gatherRadiusMult:1};
+  for(var k in CRAFT_RECIPES){
+    if(!equipment[k])continue;
+    var r=CRAFT_RECIPES[k];
+    if(r.spdMult)s.spdMult*=r.spdMult;
+    if(r.jumpMult)s.jumpMult*=r.jumpMult;
+    if(r.gatherMult)s.gatherMult*=r.gatherMult;
+    if(r.gatherRadiusMult)s.gatherRadiusMult*=r.gatherRadiusMult;
+  }
+  return s;
+}
+function craftItem(key){
+  var r=CRAFT_RECIPES[key];
+  if(!r||equipment[key])return;
+  if(!canAfford(r.cost)){ toast("Not enough materials"); return; }
+  payCost(r.cost);
+  equipment[key]=true;
+  sfx.build(); toast(r.nm+" crafted and equipped");
+  renderWorkshop();
+  saveGame();
+}
+
 /* ═════════════ BUILDINGS ═════════════ */
 var GRID=8;
 function snapGrid(v){ return Math.round(v/GRID)*GRID; }
@@ -1253,9 +1326,10 @@ var BUILD_DEFS={
   merger:{nm:"Merger",cat:"Logistics",ds:"Up to two belts in, one belt out. Combines multiple lines into a single output.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
     produces:["iron_ore","copper_ore","coal","iron","copper"],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
-  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]}
+  shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
+  workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]}
 };
-var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard"];
+var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop"];
 var BUILD_ICONS={
   foundation:'<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="2" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="4" y1="16" x2="28" y2="16" stroke="#1c2430" stroke-width="1"/><line x1="16" y1="4" x2="16" y2="28" stroke="#1c2430" stroke-width="1"/></svg>',
   wall:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="9" y1="11" x2="23" y2="11" stroke="#1c2430" stroke-width="1"/><line x1="9" y1="21" x2="23" y2="21" stroke="#1c2430" stroke-width="1"/></svg>',
@@ -1729,6 +1803,52 @@ function buildBuildingMesh(type){
     var beacon2=beacon1.clone(); beacon2.position.set(-5.2,7.7,3.0); g.add(beacon2);
     g.userData.statusMesh=ring; g.userData.statusMat=ringMat; g.userData.onCol=0xffb545; g.userData.onEm=0xff6a1a;
     g.userData.cableAnchor=new THREE.Vector3(5.2,1.0,0);
+  } else if(type==="workshop"){
+    /* a lean-to garage: a corrugated shed roof over a three-sided frame, open at the front,
+       with a real workbench, a vice and a spinning grinder wheel for a bit of constant motion */
+    var padMat=matStd(0x2a2420,0.75,0.3);
+    var pad=new THREE.Mesh(new THREE.BoxGeometry(4.8,0.3,4.2),padMat);
+    pad.position.y=0.15; g.add(pad);
+    var wallMat=matStd(0x4a3c2c,0.7,0.3);
+    var backWall=new THREE.Mesh(new THREE.BoxGeometry(4.4,2.6,0.2),wallMat);
+    backWall.position.set(0,1.6,-1.9); g.add(backWall);
+    var sideWallL=new THREE.Mesh(new THREE.BoxGeometry(0.2,2.6,3.9),wallMat);
+    sideWallL.position.set(-2.2,1.6,0); g.add(sideWallL);
+    var sideWallR=sideWallL.clone(); sideWallR.position.x=2.2; g.add(sideWallR);
+    var roofMat=matStd(0x2a3542,0.6,0.4);
+    var roof=new THREE.Mesh(new THREE.BoxGeometry(5.0,0.25,4.6),roofMat);
+    roof.position.set(0,3.05,-0.1); roof.rotation.x=-0.09; g.add(roof);
+    var roofBeam=new THREE.Mesh(new THREE.BoxGeometry(5.0,0.12,0.16),matStd(0x1c2430,0.6,0.5));
+    roofBeam.position.set(0,2.9,1.9); g.add(roofBeam);
+    var postL=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.16,2.75,6),matStd(0x2a3542,0.55,0.5));
+    postL.position.set(-2.2,1.4,1.9); g.add(postL);
+    var postR=postL.clone(); postR.position.x=2.2; g.add(postR);
+    var benchMat=matStd(0x5b4630,0.6,0.3);
+    var bench=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.85,1.0),benchMat);
+    bench.position.set(0,0.55,1.15); g.add(bench);
+    var benchTop=new THREE.Mesh(new THREE.BoxGeometry(2.5,0.1,1.1),matStd(0x8a7050,0.5,0.3));
+    benchTop.position.set(0,1.0,1.15); g.add(benchTop);
+    var vice=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.4),matStd(0x2a3542,0.5,0.6));
+    vice.position.set(-0.75,1.18,1.15); g.add(vice);
+    var grinderMat=matStd(0x9fc6ff,0.4,0.6);
+    var grinder=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.1,10),grinderMat);
+    grinder.rotation.z=Math.PI/2; grinder.position.set(0.85,1.25,1.15); g.add(grinder);
+    g.userData.spinPart=grinder;
+    var toolRackMat=matStd(0x3a3028,0.6,0.4);
+    var rack=new THREE.Mesh(new THREE.BoxGeometry(0.1,1.4,1.6),toolRackMat);
+    rack.position.set(-2.15,1.7,-0.6); g.add(rack);
+    for(var ti=0;ti<3;ti++){
+      var tool=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.7,5),matStd(0x9fc6ff,0.3,0.7));
+      tool.rotation.z=0.15; tool.position.set(-2.05,2.1-ti*0.4,-1.1+ti*0.5); g.add(tool);
+    }
+    var lightMat=new THREE.MeshStandardMaterial({color:0xffe08a,emissive:0xffaa33,emissiveIntensity:1.1});
+    var lampCord=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.7,4),matStd(0x1c2430));
+    lampCord.position.set(0,2.65,0.6); g.add(lampCord);
+    var lamp=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.2,10),lightMat);
+    lamp.position.set(0,2.28,0.6); g.add(lamp);
+    g.userData.statusMesh=lamp; g.userData.statusMat=lightMat; g.userData.onCol=0xffe08a; g.userData.onEm=0xffaa33;
+    boltRow(g,4.0,3.4,0.4,null,5);
+    g.userData.cableAnchor=null;
   }
   return g;
 }
@@ -2414,7 +2534,7 @@ function updateBuildings(dt){
     if(status){
       var active=powOk&&(d.generates||b.type==="storage"||b.type==="shipyard"&&b.job||
         ((b.type==="miner"||b.type==="miner2")&&b.node)||b.type==="smelter"||b.type==="constructor"||b.type==="pylon"||
-        b.type==="splitter"||b.type==="merger");
+        b.type==="splitter"||b.type==="merger"||b.type==="workshop");
       if(b.overload){
         status.color.set(0xff4d3a); status.emissive.set(0xff2a1a);
       } else {
@@ -2554,7 +2674,7 @@ function saveGame(){
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
-      shipBuilt:shipBuilt, shipModelKey:shipModelKey
+      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -2571,6 +2691,8 @@ function newColony(){
   clearWorld();
   stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
+  equipment={boots:false,gloves:false,pack:false};
+  playerVelY=0; playerJumpY=0; playerGrounded=true;
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
 }
@@ -2612,6 +2734,8 @@ function applySaveData(data){
     cables.push(nc);
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
+  equipment=data.equipment||{boots:false,gloves:false,pack:false};
+  playerVelY=0; playerJumpY=0; playerGrounded=true;
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
@@ -3036,6 +3160,8 @@ window.addEventListener("keydown",function(e){
     else if(state==="shipyard")closeShipyard();
     else if(state==="machine")closeMachine();
     else if(state==="storage")closeStorage();
+    else if(state==="workshop")closeWorkshop();
+    else if(state==="backpack")closeBackpack();
     else if(state==="build")closeBuild();
     else if(state==="galaxy")closeGalaxy();
     else togglePause();
@@ -3043,8 +3169,9 @@ window.addEventListener("keydown",function(e){
   if(k==="r"&&placing){ placeRotY+=Math.PI/2; updatePlacementGhost(mouse.x,mouse.y); }
   if(k==="e"&&state==="surface"&&!placing)doInteract();
   if(k==="f"&&state==="surface"&&!placing)doPlaceOnBelt();
+  if(k==="b"&&!placing)toggleBackpack();
   if(k==="tab"){ e.preventDefault(); if(state==="surface")openBuild(); else if(state==="build")closeBuild(); }
-  if("wasd".indexOf(k)>=0)e.preventDefault();
+  if("wasd".indexOf(k)>=0||k===" ")e.preventDefault();
 });
 window.addEventListener("keyup",function(e){ keys[e.key.toLowerCase()]=0; });
 
@@ -3216,8 +3343,8 @@ $("zoneCam").addEventListener("touchend",function(e){
 $("zoneCam").style.pointerEvents="auto";
 
 /* ═════════════ BUILD MENU ═════════════ */
-var BUILD_CATS=["ALL","Structure","Power","Production","Logistics","Ship Production"];
-var BUILD_CAT_LABEL={ALL:"All",Structure:"Structure",Power:"Power",Production:"Production",Logistics:"Logistics","Ship Production":"Ship"};
+var BUILD_CATS=["ALL","Structure","Power","Production","Logistics","Ship Production","Crafting"];
+var BUILD_CAT_LABEL={ALL:"All",Structure:"Structure",Power:"Power",Production:"Production",Logistics:"Logistics","Ship Production":"Ship",Crafting:"Crafting"};
 var buildActiveTab="ALL", buildSelectedKey=null, buildGridTab=null;
 function openBuild(){
   if(state!=="surface")return;
@@ -3510,6 +3637,53 @@ function renderStorage(){
 }
 $("bStorageClose").onclick=function(){ sfx.click(); closeStorage(); };
 
+/* ═════════════ WORKSHOP ═════════════ */
+function openWorkshop(){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  state="workshop"; $("o-workshop").classList.remove("hide"); renderWorkshop();
+}
+function closeWorkshop(){ if(state!=="workshop")return; state="surface"; $("o-workshop").classList.add("hide"); }
+function renderWorkshop(){
+  var html="";
+  Object.keys(CRAFT_RECIPES).forEach(function(k){
+    var r=CRAFT_RECIPES[k], owned=equipment[k], afford=canAfford(r.cost);
+    html+='<div class="upg"><div class="top"><span class="nm">'+r.nm+(owned?' <span style="color:var(--green)">&#9679; EQUIPPED</span>':'')+'</span></div>'+
+      '<div class="ds">'+r.ds+'</div>'+
+      '<div class="stat" style="color:var(--amber2)">'+r.effect+'</div>'+
+      (owned?'':
+        '<div class="stat" style="margin-top:4px">'+costStr(r.cost)+'</div>'+
+        '<button class="hudbtn'+(afford?" accent":"")+'" style="margin-top:8px" data-craft="'+k+'" '+(afford?"":"disabled")+'>'+(afford?"Craft":"Not enough materials")+'</button>')+
+      '</div>';
+  });
+  $("wkList").innerHTML=html;
+  var btns=$("wkList").querySelectorAll("[data-craft]");
+  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ craftItem(this.getAttribute("data-craft")); };
+}
+$("bWorkshopClose").onclick=function(){ sfx.click(); closeWorkshop(); };
+
+/* ═════════════ BACKPACK ═════════════ */
+function openBackpack(){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  state="backpack"; $("o-backpack").classList.remove("hide"); renderBackpack();
+}
+function closeBackpack(){ if(state!=="backpack")return; state="surface"; $("o-backpack").classList.add("hide"); }
+function toggleBackpack(){ if(state==="backpack")closeBackpack(); else if(state==="surface")openBackpack(); }
+function renderBackpack(){
+  var wearing=Object.keys(CRAFT_RECIPES).filter(function(k){return equipment[k];});
+  $("bpWearing").innerHTML=wearing.length?wearing.map(function(k){
+    var r=CRAFT_RECIPES[k];
+    return '<div class="upg"><div class="top"><span class="nm">'+r.nm+'</span></div><div class="stat" style="color:var(--amber2)">'+r.effect+'</div></div>';
+  }).join(''):'<div class="metalline" style="opacity:.6">Nothing crafted yet — visit the Workshop</div>';
+  $("bpCarrying").innerHTML=Object.keys(RES).map(function(k){
+    return '<div class="slot" style="margin-bottom:6px">'+RES_ICONS[k]+
+      '<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(stock[k]||0)+'</span></div></div>';
+  }).join('');
+}
+$("bBackpackClose").onclick=function(){ sfx.click(); closeBackpack(); };
+$("bBackpackOpen").onclick=function(){ sfx.click(); toggleBackpack(); };
+
 /* ═════════════ INTERACT ═════════════ */
 function distToSegment(px,pz,x1,z1,x2,z2){
   var dx=x2-x1,dz=z2-z1;
@@ -3550,7 +3724,7 @@ function placeOnBelt(bl){
 function interactTarget(){
   var best=null,bd=Infinity;
   buildings.forEach(function(b){
-    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="storage")return;
+    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="storage"&&b.type!=="workshop")return;
     var dx=b.x-player.position.x,dz=b.z-player.position.z,dd=Math.sqrt(dx*dx+dz*dz);
     var r=BUILD_DEFS[b.type].radius+3;
     if(dd<r&&dd<bd){bd=dd;best=b;}
@@ -3562,6 +3736,7 @@ function doInteract(){
   if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
   if(t&&(t.type==="smelter"||t.type==="constructor")){ openMachine(t); pulseInteractPose(); return; }
   if(t&&t.type==="storage"){ openStorage(t); pulseInteractPose(); return; }
+  if(t&&t.type==="workshop"){ openWorkshop(); pulseInteractPose(); return; }
   var bl=nearestBelt(player.position.x,player.position.z,2.5);
   if(bl){ takeFromBelt(bl); return; }
   toast("Nothing to interact with here");
@@ -3680,6 +3855,8 @@ $("mbCancel").addEventListener("click",function(){
 
 /* ═════════════ SURFACE UPDATE ═════════════ */
 var PLAYER_SPD=7.2;
+var PLAYER_GRAVITY=-30, PLAYER_JUMP_SPD=8.5;
+var playerVelY=0, playerJumpY=0, playerGrounded=true;
 var interactPose=0, interactPoseT=0;
 function pulseInteractPose(){ interactPoseT=0.35; }
 var walkT=0;
@@ -3691,7 +3868,8 @@ function updateSurface(dt){
   var m=Math.sqrt(mx*mx+mz*mz);
   var moving=m>0.05;
   var sprinting=moving&&!!keys.shift;
-  var spd=PLAYER_SPD*(sprinting?1.6:1);
+  var eq=equipStats();
+  var spd=PLAYER_SPD*(sprinting?1.6:1)*eq.spdMult;
   if(moving){
     mx/=m; mz/=m;
     player.position.x+=mx*spd*dt;
@@ -3705,7 +3883,18 @@ function updateSurface(dt){
   var half=SURFACE_SIZE/2-4;
   player.position.x=clamp(player.position.x,-half,half);
   player.position.z=clamp(player.position.z,-half,half);
-  player.position.y=terrainHeight(player.position.x,player.position.z);
+
+  /* jump: a simple vertical offset above the terrain surface, gravity-driven, only triggerable
+     while grounded so holding Space can't chain into flight */
+  if(keys[" "]&&playerGrounded&&!placing){
+    playerVelY=PLAYER_JUMP_SPD*eq.jumpMult;
+    playerGrounded=false;
+    sfx.step();
+  }
+  playerVelY+=PLAYER_GRAVITY*dt;
+  playerJumpY+=playerVelY*dt;
+  if(playerJumpY<=0){ playerJumpY=0; playerVelY=0; playerGrounded=true; }
+  player.position.y=terrainHeight(player.position.x,player.position.z)+playerJumpY;
 
   if(interactPoseT>0){ interactPoseT-=dt; interactPose=-1.3*clamp(interactPoseT/0.35,0,1); } else interactPose=0;
 
@@ -3740,8 +3929,8 @@ function updateSurface(dt){
   for(var ni=0;ni<nodes.length;ni++){
     var nd=nodes[ni];
     var dx=nd.x-player.position.x, dz=nd.z-player.position.z;
-    if(Math.sqrt(dx*dx+dz*dz)<2.4){
-      stock[nd.restype]+=7*dt; gathering=true;
+    if(Math.sqrt(dx*dx+dz*dz)<2.4*eq.gatherRadiusMult){
+      stock[nd.restype]+=7*dt*eq.gatherMult; gathering=true;
       gatherSfxT-=dt; if(gatherSfxT<=0){ sfx.step(); gatherSfxT=0.22; }
       nd.mesh.rotation.y+=dt*1.5;
       break;
@@ -3785,7 +3974,7 @@ function frame(now){
   }
   try{
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
-    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy";
+    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     if(state==="surface")updateSurface(dt);
     else if(menuOpen)updateBuildings(dt);
@@ -3880,7 +4069,7 @@ window.__cq={
   tickFrameLoop:function(n,dt){
     dt=dt||1/60;
     for(var i=0;i<n;i++){
-      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy";
+      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack";
       if(state==="surface")updateSurface(dt);
       else if(menuOpenT)updateBuildings(dt);
       if(state==="space"||state==="launching")updateSpace(dt);
