@@ -238,7 +238,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 <!-- V1.11.2-LIVE -->
 <style id="v112-stability-fix">.bldItem.selected,.mchRecipe.selected,.bldDetail{animation:none!important;transition:none!important}.bldItem:hover,.mchRecipe:hover{transform:none!important}</style>
 </head>
-<body>
+<body oncontextmenu="return false">
 <canvas id="game"></canvas>
 <div id="ui">
   <div id="loading"><div class="spin"></div><div class="lbl">Loading Space Conquest</div></div>
@@ -393,8 +393,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.13.1";
+var VERSION="1.14.0";
 var CHANGELOG=[
+  {v:"1.14.0",t:"Fixed belt ports, bigger buildings, smelter smoke",items:[
+    "Conveyor belts now use fixed input/output ports per machine, Satisfactory-style, instead of aiming straight at whatever's on the other end — a belt always leaves and enters a building perpendicular to its assigned side, then bends to reach the other machine at any angle, so it never cuts into a wall on a diagonal",
+    "Splitters and Mergers now actually enforce their advertised port counts (1 in/2 out and 2 in/1 out) — connecting a third belt to an already-full side is rejected with a clear message instead of silently overlapping",
+    "Every building is now about 18% larger (structural pieces like foundations and walls are untouched so grid tiling stays exact)",
+    "The Smelter now puffs real smoke from its chimney while actively smelting",
+    "Right-click suppression hardened further with a third, independent layer (an inline handler directly on <body>) on top of the two script-based listeners from 1.13.1",
+    "Re-confirmed production keeps ticking (resources, belt flow, and animations) while the Build, Machine, and Storage panels are open — tested through several real seconds of wall-clock time with each panel open, not just a single tick"
+  ]},
   {v:"1.13.1",t:"Textured buildings, hardened right-click, verified belt fix",items:[
     "Every building, prop and ship now has a subtle scuffed-metal surface instead of a flat colour fill",
     "The browser's native right-click menu is now blocked by a second listener registered before any other script on the page runs, so an unrelated error elsewhere can no longer leave it able to leak through",
@@ -1044,8 +1052,9 @@ function powerCapable(b){ var d=BUILD_DEFS[b.type]; return b.type==="pylon"||d.p
 function cableAnchorWorld(b){
   var a=b.mesh&&b.mesh.userData.cableAnchor;
   if(!a)return {x:b.x,y:1.2,z:b.z};
+  var sc=b.mesh.scale.x, lx=a.x*sc, ly=a.y*sc, lz=a.z*sc;
   var c=Math.cos(b.rotY||0), s=Math.sin(b.rotY||0);
-  return {x:b.x+a.x*c+a.z*s, y:a.y, z:b.z-a.x*s+a.z*c};
+  return {x:b.x+lx*c+lz*s, y:ly, z:b.z-lx*s+lz*c};
 }
 
 /* Shared scuffed-metal detail texture, reused (via matStd) across every building/prop material
@@ -1311,6 +1320,7 @@ function buildBuildingMesh(type){
     chim.position.set(1.0,3.8,0); g.add(chim);
     var chimTop=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.42,0.3,8),matStd(0x2a2018));
     chimTop.position.set(1.0,4.85,0); g.add(chimTop);
+    g.userData.smokeAnchor=new THREE.Vector3(1.0,4.95,0);
     var pipes=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,2.9,6),matStd(0x3a4a5e));
     pipes.position.set(-1.4,1.6,1.2); g.add(pipes);
     boltRow(g,3.0,2.6,0.42,null,5);
@@ -1461,6 +1471,9 @@ function makeBuilding(type,x,z,rotY,node){
   d.produces.forEach(function(r){ b.out[r]=0; });
   if((type==="miner"||type==="miner2")&&node)b.out[node.restype]=0;
   var mesh=buildBuildingMesh(type);
+  /* structural pieces (foundation/wall/window/door/railing) must stay exactly grid-sized to keep
+     tiling seamless — everything else reads better a bit chunkier than the original scale */
+  if(!BUILD_DEFS[type].edge&&type!=="foundation")mesh.scale.setScalar(1.18);
   mesh.position.set(x,0,z); mesh.rotation.y=b.rotY;
   surfaceScene.add(mesh);
   b.mesh=mesh;
@@ -1768,10 +1781,42 @@ function beltCompatible(from,to){
   }
   return null;
 }
-function portOf(from,to){
-  var ang=Math.atan2(to.z-from.z,to.x-from.x);
-  var r=BUILD_DEFS[from.type].radius+0.35;
-  return {x:from.x+Math.cos(ang)*r,z:from.z+Math.sin(ang)*r};
+/* Fixed belt ports, Satisfactory-style: each building has its inputs on one side and its
+   outputs on another (never the same point), each as a {dir,off} pair in LOCAL space —
+   dir is the outward-facing normal of that side, off is a perpendicular offset along that
+   side for buildings with more than one port there. A belt always leaves/enters straight
+   along its port's dir, then bends to reach the other end, so it can approach from any
+   angle without ever cutting into a building on a diagonal. */
+var PORT_SIDES={
+  miner:{out:[{dir:{x:1,z:0},off:0}]},
+  miner2:{out:[{dir:{x:1,z:0},off:0}]},
+  smelter:{in:[{dir:{x:-1,z:0},off:0}],out:[{dir:{x:1,z:0},off:0}]},
+  constructor:{in:[{dir:{x:-1,z:0},off:0}]},
+  storage:{in:[{dir:{x:-1,z:0},off:0}]},
+  splitter:{in:[{dir:{x:-1,z:0},off:0}],out:[{dir:{x:1,z:0},off:-0.55},{dir:{x:1,z:0},off:0.55}]},
+  merger:{in:[{dir:{x:-1,z:0},off:-0.55},{dir:{x:-1,z:0},off:0.55}],out:[{dir:{x:1,z:0},off:0}]}
+};
+function portCapacity(b,side){ var d=PORT_SIDES[b.type]; return (d&&d[side])?d[side].length:0; }
+function usedPortSlots(b,side){
+  return belts.filter(function(bl){ return side==="out"?bl.from===b:bl.to===b; })
+    .map(function(bl){ return side==="out"?bl._outSlot:bl._inSlot; });
+}
+function allocPortSlot(b,side){
+  var cap=portCapacity(b,side); if(!cap)return -1;
+  var used=usedPortSlots(b,side);
+  for(var i=0;i<cap;i++) if(used.indexOf(i)<0)return i;
+  return -1;
+}
+function portSlotWorld(b,side,idx){
+  var d=PORT_SIDES[b.type]; var p=d&&d[side]&&d[side][idx]; if(!p)return null;
+  var rad=BUILD_DEFS[b.type].radius+0.35;
+  var rotY=b.rotY||0, c=Math.cos(rotY), s=Math.sin(rotY);
+  var perp={x:-p.dir.z,z:p.dir.x};
+  var lx=p.dir.x*rad+perp.x*p.off, lz=p.dir.z*rad+perp.z*p.off;
+  return {
+    x:b.x+lx*c+lz*s, z:b.z-lx*s+lz*c,
+    nx:p.dir.x*c+p.dir.z*s, nz:-p.dir.x*s+p.dir.z*c
+  };
 }
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
@@ -1796,60 +1841,99 @@ function makeBeltItemMesh(res){
   }
   return g;
 }
-function makeBeltMesh(bl){
-  var p1=portOf(bl.from,bl.to), p2=portOf(bl.to,bl.from);
-  var g=new THREE.Group();
-  var len=Math.sqrt((p2.x-p1.x)*(p2.x-p1.x)+(p2.z-p1.z)*(p2.z-p1.z));
-  var ang=Math.atan2(p2.z-p1.z,p2.x-p1.x);
+function beltSegMesh(p1,p2,beltH,extStart,extEnd,mats){
+  var dx=p2.x-p1.x, dz=p2.z-p1.z;
+  var len=Math.sqrt(dx*dx+dz*dz);
+  var ang=Math.atan2(dz,dx);
   var midX=(p1.x+p2.x)/2, midZ=(p1.z+p2.z)/2;
-  var frameMat=matStd(0x2a3542,0.6,0.6);
-  var beltMat=new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15});
-  var railMat=matStd(0x3a4a5e,0.5,0.6);
-  var beltH=0.55;
-  /* buildings are boxy, not circular, but portOf() offsets along a circular radius — at a diagonal
-     approach angle the box's actual corner sits up to radius*0.41 further out than that circle, which
-     left a visible gap for larger machines. Push the bed/rails well past that worst case so the belt
-     always visually plugs into the machine regardless of approach angle. */
-  var OVERLAP=2.2;
-  var visLen=len+OVERLAP*2;
+  var visLen=Math.max(0.2,len+extStart+extEnd);
+  var shift=(extEnd-extStart)/2;
+  var midX2=midX+Math.cos(ang)*shift, midZ2=midZ+Math.sin(ang)*shift;
   var frame=new THREE.Group();
-  var sideRailL=new THREE.Mesh(new THREE.BoxGeometry(visLen,0.16,0.1),railMat);
+  var sideRailL=new THREE.Mesh(new THREE.BoxGeometry(visLen,0.16,0.1),mats.rail);
   sideRailL.position.set(0,0.14,0.34); frame.add(sideRailL);
   var sideRailR=sideRailL.clone(); sideRailR.position.z=-0.34; frame.add(sideRailR);
-  var bed=new THREE.Mesh(new THREE.BoxGeometry(visLen,0.1,0.62),beltMat);
+  var bed=new THREE.Mesh(new THREE.BoxGeometry(visLen,0.1,0.62),mats.belt);
   bed.position.set(0,0.02,0); frame.add(bed);
-  var nLegs=Math.max(2,Math.floor(len/6));
+  var nLegs=Math.max(1,Math.floor(len/6));
   for(var li=0;li<=nLegs;li++){
     var lx=-len/2+(len*li/nLegs);
-    var leg=new THREE.Mesh(new THREE.BoxGeometry(0.14,beltH,0.14),frameMat);
+    var leg=new THREE.Mesh(new THREE.BoxGeometry(0.14,beltH,0.14),mats.frame);
     leg.position.set(lx,-beltH/2,0.28); frame.add(leg);
     var leg2=leg.clone(); leg2.position.z=-0.28; frame.add(leg2);
-    var brace=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.62),frameMat);
+    var brace=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.62),mats.frame);
     brace.position.set(lx,-beltH+0.08,0); frame.add(brace);
   }
-  frame.position.set(midX,beltH,midZ);
+  frame.position.set(midX2,beltH,midZ2);
   frame.rotation.y=-ang;
-  g.add(frame);
+  return {frame:frame,len:len};
+}
+function pathLerp(waypoints,t){
+  var lens=[],total=0;
+  for(var i=0;i<waypoints.length-1;i++){
+    var dx=waypoints[i+1].x-waypoints[i].x, dz=waypoints[i+1].z-waypoints[i].z;
+    var l=Math.sqrt(dx*dx+dz*dz); lens.push(l); total+=l;
+  }
+  var target=t*total, acc=0;
+  for(var i=0;i<lens.length;i++){
+    if(target<=acc+lens[i]||i===lens.length-1){
+      var lt=lens[i]>0?(target-acc)/lens[i]:0; lt=clamp(lt,0,1);
+      return {x:lerp(waypoints[i].x,waypoints[i+1].x,lt), z:lerp(waypoints[i].z,waypoints[i+1].z,lt)};
+    }
+    acc+=lens[i];
+  }
+  return waypoints[waypoints.length-1];
+}
+function makeBeltMesh(bl){
+  var outP=portSlotWorld(bl.from,"out",bl._outSlot), inP=portSlotWorld(bl.to,"in",bl._inSlot);
+  var beltH=0.55;
+  var STUB=2.6; /* fixed straight run leaving/entering a port before the belt is free to bend toward the other building */
+  /* buildings are boxy, not circular, so push the very first/last segment this far past the port into the
+     building's footprint — enough to clear the largest machine's corner at any approach angle — so the belt
+     always visually plugs in instead of stopping short. Internal elbow joints get no such extension: they
+     already meet exactly, they're just masked with a small coupler box. */
+  var OVERLAP=2.2;
+  var elbow1={x:outP.x+outP.nx*STUB, z:outP.z+outP.nz*STUB};
+  var elbow2={x:inP.x+inP.nx*STUB, z:inP.z+inP.nz*STUB};
+  var waypoints=[{x:outP.x,z:outP.z},elbow1,elbow2,{x:inP.x,z:inP.z}];
+  var mats={
+    frame:matStd(0x2a3542,0.6,0.6),
+    belt:new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15,map:panelTex}),
+    rail:matStd(0x3a4a5e,0.5,0.6)
+  };
+  var g=new THREE.Group();
+  var seg1=beltSegMesh(waypoints[0],waypoints[1],beltH,OVERLAP,0,mats); g.add(seg1.frame);
+  var seg2=beltSegMesh(waypoints[1],waypoints[2],beltH,0,0,mats); g.add(seg2.frame);
+  var seg3=beltSegMesh(waypoints[2],waypoints[3],beltH,0,OVERLAP,mats); g.add(seg3.frame);
+  [elbow1,elbow2].forEach(function(e){
+    var joint=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.62,0.7),mats.frame);
+    joint.position.set(e.x,beltH,e.z); g.add(joint);
+  });
+  var totalLen=seg1.len+seg2.len+seg3.len;
   var items=[];
-  var n=Math.max(2,Math.floor(len/2.2));
+  var n=Math.max(2,Math.floor(totalLen/2.2));
   for(var i=0;i<n;i++){
     var itemMesh=makeBeltItemMesh(bl.res);
     itemMesh.position.y=beltH+0.18;
     g.add(itemMesh); items.push(itemMesh);
   }
   surfaceScene.add(g);
-  return {mesh:g,items:items,p1:p1,p2:p2,len:len,beltH:beltH};
+  return {mesh:g,items:items,waypoints:waypoints,len:totalLen,beltH:beltH};
 }
 function tryPlaceBelt(from,to){
   var dx=from.x-to.x,dz=from.z-to.z;
   if(Math.sqrt(dx*dx+dz*dz)>BUILD_DEFS.belt.range){ toast("Too far to connect"); return; }
   var res=beltCompatible(from,to);
   if(!res){ toast("These buildings can't be connected"); return; }
+  var outSlot=allocPortSlot(from,"out");
+  if(outSlot<0){ toast(BUILD_DEFS[from.type].nm+"'s output is already fully connected"); return; }
+  var inSlot=allocPortSlot(to,"in");
+  if(inSlot<0){ toast(BUILD_DEFS[to.type].nm+"'s input is already fully connected"); return; }
   if(!canAfford(BUILD_DEFS.belt.cost)){ toast("Not enough iron ore for a belt"); return; }
   payCost(BUILD_DEFS.belt.cost);
-  var bl={from:from,to:to,res:res,rate:6,_flow:false};
+  var bl={from:from,to:to,res:res,rate:6,_flow:false,_outSlot:outSlot,_inSlot:inSlot};
   var vis=makeBeltMesh(bl);
-  bl.mesh=vis.mesh; bl.items=vis.items; bl.p1=vis.p1; bl.p2=vis.p2; bl.len=vis.len;
+  bl.mesh=vis.mesh; bl.items=vis.items; bl.waypoints=vis.waypoints; bl.len=vis.len;
   belts.push(bl);
   sfx.click(); toast("Belt connected — "+RES[res].nm); pulseInteractPose();
 }
@@ -1912,6 +1996,37 @@ function surfaceClick3D(x,z,sx,sy){
 function cancelPlacing(){ placing=null; beltFrom=null; placeGhost.visible=false; connectHighlight.visible=false; $("aimLabel").classList.add("hide"); }
 
 /* ═════════════ SURFACE PRODUCTION TICK ═════════════ */
+/* Shared smoke-puff sprite, spawned from a building's mesh.userData.smokeAnchor while it's actively
+   working. Kept intentionally simple (billboard sprites, not a real particle library) so it can run
+   inside updateBuildings and keep animating even while a menu panel is open. */
+var smokeTex=(function(){
+  var cvs=document.createElement("canvas"); cvs.width=64; cvs.height=64;
+  var g=cvs.getContext("2d");
+  var grad=g.createRadialGradient(32,32,0,32,32,30);
+  grad.addColorStop(0,"rgba(200,195,190,.55)"); grad.addColorStop(1,"rgba(200,195,190,0)");
+  g.fillStyle=grad; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(cvs);
+})();
+var smokeSprites=[];
+function spawnSmoke(pos){
+  var mat=new THREE.SpriteMaterial({map:smokeTex,transparent:true,opacity:0.55,depthWrite:false});
+  var s=new THREE.Sprite(mat);
+  s.position.copy(pos);
+  s.scale.setScalar(rnd(0.5,0.7));
+  surfaceScene.add(s);
+  smokeSprites.push({mesh:s,age:0,life:rnd(2.2,3.2),vx:rnd(-0.15,0.15),vz:rnd(-0.15,0.15)});
+}
+function updateSmoke(dt){
+  for(var i=smokeSprites.length-1;i>=0;i--){
+    var p=smokeSprites[i];
+    p.age+=dt;
+    if(p.age>=p.life){ surfaceScene.remove(p.mesh); smokeSprites.splice(i,1); continue; }
+    var t=p.age/p.life;
+    p.mesh.position.x+=p.vx*dt; p.mesh.position.z+=p.vz*dt; p.mesh.position.y+=dt*0.9;
+    p.mesh.material.opacity=0.55*(1-t);
+    p.mesh.scale.setScalar(lerp(0.5,1.6,t));
+  }
+}
 function updateBuildings(dt){
   computePowerNetworks();
   buildings.forEach(function(b){
@@ -1991,7 +2106,18 @@ function updateBuildings(dt){
       var door=b.mesh.userData.door;
       door.rotation.y+=(doorTarget-door.rotation.y)*Math.min(1,dt*4);
     }
+    if(b.mesh&&b.mesh.userData.smokeAnchor&&b.recipeActive){
+      b._smokeT=(b._smokeT||0)-dt;
+      if(b._smokeT<=0){
+        b._smokeT=rnd(0.35,0.6);
+        var a=b.mesh.userData.smokeAnchor, rotY=b.rotY||0, sc=b.mesh.scale.x;
+        var lx=a.x*sc, ly=a.y*sc, lz=a.z*sc;
+        var c=Math.cos(rotY), s=Math.sin(rotY);
+        spawnSmoke(new THREE.Vector3(b.x+lx*c+lz*s,ly,b.z-lx*s+lz*c));
+      }
+    }
   });
+  updateSmoke(dt);
   cables.forEach(function(c){
     var powered=c.from.cableConnected&&c.to.cableConnected&&c.from.netId===c.to.netId&&c.from.netGen>=c.from.netDraw;
     var overloaded=c.from.cableConnected&&c.to.cableConnected&&c.from.netId===c.to.netId&&c.from.netGen<c.from.netDraw;
@@ -2010,7 +2136,8 @@ function updateBuildings(dt){
     var t0=(performance.now()/1000*0.4)%1;
     for(var i=0;i<bl.items.length;i++){
       var t=bl._flow?((t0+i/bl.items.length)%1):(i/bl.items.length);
-      bl.items[i].position.set(lerp(bl.p1.x,bl.p2.x,t),(bl.beltH||0.55)+0.18,lerp(bl.p1.z,bl.p2.z,t));
+      var pos=pathLerp(bl.waypoints,t);
+      bl.items[i].position.set(pos.x,(bl.beltH||0.55)+0.18,pos.z);
       bl.items[i].visible=bl._flow;
     }
   });
@@ -2094,7 +2221,7 @@ function saveGame(){
           targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
           job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null};
       }),
-      belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res};}),
+      belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
       shipBuilt:shipBuilt, shipModelKey:shipModelKey
     };
@@ -2135,9 +2262,14 @@ function applySaveData(data){
   (data.belts||[]).forEach(function(bl){
     var from=buildings[bl.fromIdx], to=buildings[bl.toIdx];
     if(!from||!to)return;
-    var nb={from:from,to:to,res:bl.res,rate:6,_flow:false};
+    /* older saves predate fixed ports and won't have outSlot/inSlot — allocate fresh ones the same
+       way a brand-new connection would, so those belts still land on a valid, non-overlapping port */
+    var outSlot=bl.outSlot; if(outSlot==null||usedPortSlots(from,"out").indexOf(outSlot)>=0)outSlot=allocPortSlot(from,"out");
+    var inSlot=bl.inSlot; if(inSlot==null||usedPortSlots(to,"in").indexOf(inSlot)>=0)inSlot=allocPortSlot(to,"in");
+    if(outSlot<0||inSlot<0)return;
+    var nb={from:from,to:to,res:bl.res,rate:6,_flow:false,_outSlot:outSlot,_inSlot:inSlot};
     var vis=makeBeltMesh(nb);
-    nb.mesh=vis.mesh; nb.items=vis.items; nb.p1=vis.p1; nb.p2=vis.p2; nb.len=vis.len;
+    nb.mesh=vis.mesh; nb.items=vis.items; nb.waypoints=vis.waypoints; nb.len=vis.len;
     belts.push(nb);
   });
   (data.cables||[]).forEach(function(cd){
@@ -3059,8 +3191,11 @@ function distToSegment(px,pz,x1,z1,x2,z2){
 function nearestBelt(px,pz,range){
   var best=null,bd=range;
   belts.forEach(function(bl){
-    var dd=distToSegment(px,pz,bl.p1.x,bl.p1.z,bl.p2.x,bl.p2.z);
-    if(dd<bd){bd=dd;best=bl;}
+    for(var i=0;i<bl.waypoints.length-1;i++){
+      var a=bl.waypoints[i],b=bl.waypoints[i+1];
+      var dd=distToSegment(px,pz,a.x,a.z,b.x,b.z);
+      if(dd<bd){bd=dd;best=bl;}
+    }
   });
   return best;
 }
