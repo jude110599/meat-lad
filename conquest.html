@@ -210,6 +210,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 .mbtn:active{background:var(--panel2)}
 .mbtn.accent{border-color:var(--amber);color:var(--amber2)}
 </style>
+
+<link rel="stylesheet" href="css/v112-flight-shipyard.css?v=1.11.2">
+<script src="js/v112-flight-shipyard.js?v=1.11.2"></script>
+<!-- V1.11.2-LIVE -->
+<style id="v112-stability-fix">.bldItem.selected,.mchRecipe.selected,.bldDetail{animation:none!important;transition:none!important}.bldItem:hover,.mchRecipe:hover{transform:none!important}</style>
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -353,6 +358,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 </div>
 
 <script type="module">
+/* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
 var VERSION="1.12.0";
@@ -362,7 +368,8 @@ var CHANGELOG=[
     "Fixed the Build menu flickering while hovering items — icons and tabs now update in place instead of being torn down and rebuilt on every timer tick",
     "The Remove tool now shows the targeted building's name and exactly what materials it will refund before you click",
     "Saves now remember exactly where you were standing and facing, keep a backup copy so a corrupted save can't wipe your colony, and show a small Saving.../Saved indicator",
-    "Starting a new colony over an existing save now asks for confirmation first"
+    "Starting a new colony over an existing save now asks for confirmation first",
+    "The Shipyard now waits for power before starting construction, shows build progress as a percentage, and displays the finished ship docked in place until you launch it"
   ]},
   {v:"1.11.0",t:"Splitters, mergers, Miner Mk.2, and better logistics",items:[
     "Added a Splitter (one belt in, up to two out) and a Merger (up to two belts in, one out) as real industrial Y-junction devices",
@@ -1845,9 +1852,11 @@ function updateBuildings(dt){
           b.cycleT=((b.cycleT||0)+dt)%r.time;
         }
       }
-    } else if(b.type==="shipyard"&&b.job&&b.powered){
-      b.job.timeLeft-=dt;
-      if(b.job.timeLeft<=0)completeShip(b);
+    } else if(b.type==="shipyard"&&b.job){
+      if(b.powered){
+        b.job.timeLeft=Math.max(0,b.job.timeLeft-dt);
+        if(b.job.timeLeft<=0)completeShip(b);
+      }
     } else if(b.type==="splitter"||b.type==="merger"){
       var passRate=30*dt;
       Object.keys(b.in).forEach(function(k){
@@ -1917,14 +1926,33 @@ function commissionShip(modelKey){
   if(b.job){ toast("Shipyard is already busy"); return; }
   var m=SHIP_MODELS.filter(function(x){return x.key===modelKey;})[0];
   if(stock.parts<m.partsCost){ toast("Not enough parts"); return; }
+  computePowerNetworks();
+  if(!b.powered){ toast("Shipyard needs power before construction can start"); return; }
   stock.parts-=m.partsCost;
-  b.job={model:modelKey,timeLeft:m.buildTime,total:m.buildTime};
-  sfx.build(); toast("Designing "+m.nm+"...");
+  b.job={model:modelKey,timeLeft:m.buildTime,total:m.buildTime,started:true};
+  sfx.build(); toast("Building "+m.nm+" — "+m.buildTime+"s");
+  saveGame();
+}
+function mountDockedShip(b){
+  if(!b||!shipModelKey)return;
+  if(b.dockedShipMesh){ try{surfaceScene.remove(b.dockedShipMesh);}catch(e){} }
+  try{
+    var m=buildShipMesh(shipModelKey);
+    m.scale.setScalar(.62);
+    m.position.copy(b.mesh.position);
+    m.position.y+=3.2;
+    m.rotation.y=b.mesh.rotation.y;
+    b.dockedShipMesh=m;
+    surfaceScene.add(m);
+  }catch(e){}
 }
 function completeShip(b){
+  if(!b||!b.job)return;
   shipModelKey=b.job.model; shipBuilt=true; b.job=null;
+  mountDockedShip(b);
   toast("SHIP COMPLETE — "+SHIP_MODELS.filter(function(x){return x.key===shipModelKey;})[0].nm+" ready to launch");
   sfx.build();
+  saveGame();
 }
 
 /* ═════════════ SAVE / LOAD (persistent colony) ═════════════ */
@@ -1960,7 +1988,8 @@ function saveGame(){
       nodes:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){
         return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
-          targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount};
+          targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
+          job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
@@ -1997,6 +2026,7 @@ function applySaveData(data){
     var b=makeBuilding(bd.type,bd.x,bd.z,bd.rotY,node);
     if(bd.in)b.in=bd.in; if(bd.out)b.out=bd.out; if(bd.recipe)b.recipe=bd.recipe;
     if(bd.targetMode)b.targetMode=bd.targetMode; if(bd.targetQty)b.targetQty=bd.targetQty; if(bd.producedCount)b.producedCount=bd.producedCount;
+    if(bd.job)b.job=bd.job;
     buildings.push(b);
   });
   (data.belts||[]).forEach(function(bl){
@@ -2016,6 +2046,8 @@ function applySaveData(data){
     cables.push(nc);
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
+  var loadedSy=shipyard();
+  if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
 }
 function loadGame(){
@@ -2150,6 +2182,8 @@ function spawnEnemyShip(){
 }
 function launchShip(){
   if(!shipBuilt){ toast("No ship ready — commission one at the Shipyard"); return; }
+  var sy=shipyard();
+  if(sy&&sy.dockedShipMesh){ try{surfaceScene.remove(sy.dockedShipMesh);}catch(e){} sy.dockedShipMesh=null; }
   var stats=SHIP_STATS[shipModelKey];
   pShip={
     pos:new THREE.Vector3(0,0,40), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
@@ -2631,7 +2665,7 @@ function renderBuildDetail(){
       toast(key==="belt"?"Select the source building":"Select the first machine or pole");
     } else {
       placing=key; placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
-      toast("Aim and confirm to place it");
+      toast("Place "+d.nm+" — click to build • R to rotate • right-click to cancel");
     }
   };
 }
@@ -2663,8 +2697,10 @@ function renderShipyard(){
   if(b.job){
     var m2=SHIP_MODELS.filter(function(x){return x.key===b.job.model;})[0];
     var pc=1-clamp(b.job.timeLeft/b.job.total,0,1);
-    html+='<div class="upg"><div class="top"><span class="nm">Building '+m2.nm+'</span></div>'+
-      '<div class="stat">'+Math.ceil(b.job.timeLeft)+'s remaining</div></div>';
+    var syStatus=b.powered?('BUILDING — '+Math.ceil(b.job.timeLeft)+'s remaining'):'WAITING FOR POWER';
+    html+='<div class="upg sy-progress-card"><div class="top"><span class="nm">Building '+m2.nm+'</span><span class="stat">'+Math.round(pc*100)+'%</span></div>'+
+      '<div class="conquest-shipyard-progress"><div class="conquest-shipyard-progress-fill" style="width:'+(pc*100)+'%"></div></div>'+
+      '<div class="conquest-shipyard-status">'+syStatus+'</div></div>';
   } else if(shipBuilt){
     html+='<div class="upg"><div class="ds">Your ship is docked at the Shipyard, ready to launch.</div>'+
       '<button class="buy" id="bLaunchShip">Launch</button></div>';
@@ -3243,5 +3279,9 @@ window.__cq={
   }
 };
 </script>
+
+<!-- CONQUEST POLISH ASSETS -->
+<link rel="stylesheet" href="css/conquest-polish.css">
+<script src="js/conquest-polish.js"></script>
 </body>
 </html>
