@@ -465,8 +465,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.21.2";
+var VERSION="1.21.3";
 var CHANGELOG=[
+  {v:"1.21.3",t:"Landing Pad is now buildable, and the targeting circle is reliable everywhere",items:[
+    "The Landing Pad is no longer fixed scenery — it's a real placeable building (under Ship Production in the Build menu), so you can put one wherever you actually want to dock, on any world",
+    "Fixed the targeting circle favoring home over whichever world you were actually flying toward — home used the same huge show radius as the landable worlds, so it kept winning \"nearest\" for most of a long approach. Home's radius is now much smaller, so the world you're flying to takes over reliably"
+  ]},
   {v:"1.21.2",t:"Fly-in landings, Bomber runs over the Hive, and truly separate worlds",items:[
     "Arriving at a world no longer cuts to a cutscene — you fly your ship in low over its actual terrain and stay in control, choosing to touch down on open ground or at the landing pad in the middle of each world's clearing",
     "A Bomber can drop bombs while flying over a world, not just in space — line up over the Hive on Verdant Hollow and blow it up from the air",
@@ -1561,27 +1565,6 @@ var landingPodBeacon=null;
     kg.position.set(kx,ky,kz);
     surfaceScene.add(kg);
   }
-  /* a simple landing pad in each world's clearing — purely a visual "aim here" marker, landing
-     works the same on any flat ground, but this gives you an obvious deliberate spot to dock at
-     instead of only ever picking a random patch of open terrain */
-  WORLDS.forEach(function(w){
-    var padMat=new THREE.MeshStandardMaterial({color:0x2a3038,roughness:0.7,metalness:0.3});
-    var ringMat=new THREE.MeshStandardMaterial({color:w.atmoCol,emissive:w.atmoCol,emissiveIntensity:0.7,roughness:0.4,metalness:0.3});
-    var pg=new THREE.Group();
-    var disc=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7,0.4,16),padMat);
-    pg.add(disc);
-    var ring=new THREE.Mesh(new THREE.TorusGeometry(6,0.22,8,24),ringMat);
-    ring.rotation.x=Math.PI/2; ring.position.y=0.22; pg.add(ring);
-    for(var pi=0;pi<4;pi++){
-      var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),ringMat);
-      var pang=pi/4*Math.PI*2;
-      lamp.position.set(Math.cos(pang)*6,0.5,Math.sin(pang)*6);
-      pg.add(lamp);
-    }
-    var py=terrainHeight(w.cx-18,w.cz-14);
-    pg.position.set(w.cx-18,py+0.2,w.cz-14);
-    surfaceScene.add(pg);
-  });
   /* each landable world gets its own decoration set ringing its clearing, so it reads as a
      distinct place the moment you're standing there — ice spikes, volcanic glass spires, or
      jungle fern clusters, depending on the world's biome */
@@ -1974,9 +1957,10 @@ var BUILD_DEFS={
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
   shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"]},
-  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"],accepts:[]}
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"],accepts:[]},
+  landingpad:{nm:"Landing Pad",cat:"Ship Production",ds:"A marked pad with docking lights. Purely a landmark to aim for — flying low and slow anywhere flat still lands you, but this gives you a deliberate spot to fly in on, on any world.",cost:{iron_ore:20,copper_ore:8},powerDraw:0,radius:7,produces:[],accepts:[]}
 };
-var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop","shiplauncher","shiphub"];
+var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","landingpad","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
   foundation:'<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="2" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="4" y1="16" x2="28" y2="16" stroke="#1c2430" stroke-width="1"/><line x1="16" y1="4" x2="16" y2="28" stroke="#1c2430" stroke-width="1"/></svg>',
   wall:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="9" y1="11" x2="23" y2="11" stroke="#1c2430" stroke-width="1"/><line x1="9" y1="21" x2="23" y2="21" stroke="#1c2430" stroke-width="1"/></svg>',
@@ -2568,6 +2552,23 @@ function buildBuildingMesh(type){
     eye2.position.set(0,4.0,0); g.add(eye2);
     g.userData.statusMesh=eye2; g.userData.statusMat=lightMat2; g.userData.onCol=0x233a56; g.userData.onEm=0xff8a2a;
     boltRow(g,3.5,3.5,0.5,null,6);
+    g.userData.cableAnchor=null;
+  } else if(type==="landingpad"){
+    /* a marked pad with a lit ring and corner lamps — a deliberate spot to fly in and touch
+       down on, placeable anywhere you can build, on any world */
+    var padMat3=new THREE.MeshStandardMaterial({color:0x2a3038,roughness:0.7,metalness:0.3});
+    var disc=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7,0.4,16),padMat3);
+    disc.position.y=0.2; g.add(disc);
+    var lampMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.7,roughness:0.4,metalness:0.3});
+    var ring=new THREE.Mesh(new THREE.TorusGeometry(6,0.22,8,24),lampMat);
+    ring.rotation.x=Math.PI/2; ring.position.y=0.42; g.add(ring);
+    for(var pi=0;pi<4;pi++){
+      var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),lampMat);
+      var pang=pi/4*Math.PI*2;
+      lamp.position.set(Math.cos(pang)*6,0.7,Math.sin(pang)*6);
+      g.add(lamp);
+    }
+    g.userData.ioGlow=[lampMat];
     g.userData.cableAnchor=null;
   }
   return g;
@@ -3800,11 +3801,15 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
 var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=420;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
+  /* home's own show radius is deliberately tiny — it sits at the origin, right where every
+     flight starts and where wave combat happens, so if it used the same generous show radius
+     as the landable worlds it would win "nearest" over whichever world you're actually flying
+     toward for most of the trip, and that world's circle would never appear */
   var all=WORLDS.concat([HOME_WORLD]);
   var best=null,bd=1e9;
   all.forEach(function(w){
     var dx=w.sx-pShip.pos.x, dz=w.sz-pShip.pos.z, d=Math.sqrt(dx*dx+dz*dz);
-    var showR=(w.radius||14)+LAND_SHOW_PAD;
+    var showR=w.isHome?(w.radius+50):(w.radius+LAND_SHOW_PAD);
     if(d<showR&&d<bd){ bd=d; best=w; }
   });
   return best;
