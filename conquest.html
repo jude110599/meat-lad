@@ -453,8 +453,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.19.1";
+var VERSION="1.19.2";
 var CHANGELOG=[
+  {v:"1.19.2",t:"Landing actually looks like landing now",items:[
+    "Your ship now visibly tilts to rest flush against the planet's curved surface instead of just floating upright next to it",
+    "The camera switches to a close, grounded angle while landed so the horizon and surface read clearly, instead of the same free-flight chase cam",
+    "Added a dust-burst effect the moment you touch down",
+    "Launching cleanly resets the ship back to level flight, no leftover tilt"
+  ]},
   {v:"1.19.1",t:"Simplified planet landing — no more disembark/board-ship flow",items:[
     "Removed the disembark-and-walk-around-on-Vesta mechanic entirely — it added a confusing extra scene-switch that didn't reliably work",
     "Landing now does exactly one thing: fly to the planet, hold the lock until the circle fills, and your ship touches down and parks right there — a single Launch button appears while you're landed",
@@ -3036,7 +3042,7 @@ function newColony(){
   equipment={head:null,hands:null,legs:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
-  landedPlanet=null; landProgress=0;
+  landedPlanet=null; landProgress=0; landedNormal=null;
   $("bLaunchLanded").classList.add("hide");
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
@@ -3224,7 +3230,7 @@ var planetMesh=(function(){
   spaceScene.add(g);
   return g;
 })();
-var landedPlanet=null, landProgress=0;
+var landedPlanet=null, landProgress=0, landedNormal=null;
 var LAND_TIME=5, LAND_LOCK_ANGLE=0.28, LAND_LOCK_DIST=150, LAND_SHOW_DIST=280;
 function updatePlanetTargeting(dt){
   planetMesh.rotation.y+=dt*0.05;
@@ -3262,22 +3268,38 @@ function fadeTransition(midCallback,fadeMs){
     setTimeout(function(){ $("sceneFade").classList.remove("show"); },30);
   },fadeMs);
 }
+function landingDustBurst(pos,normal){
+  for(var i=0;i<16;i++){
+    var dir=new THREE.Vector3(rnd(-1,1),rnd(0.1,0.6),rnd(-1,1));
+    dir.addScaledVector(normal,0.9).normalize().multiplyScalar(rnd(2.5,6));
+    spawnThrustParticle(pos.clone().addScaledVector(normal,0.4),dir,rnd(0.3,0.6),0xcaa06a);
+  }
+}
 function landOnPlanet(){
   landedPlanet=PLANET; landProgress=0;
   pShip.vel.set(0,0,0);
-  var ang=Math.atan2(pShip.pos.x-PLANET.x,pShip.pos.z-PLANET.z);
-  pShip.pos.set(PLANET.x+Math.sin(ang)*(PLANET.radius+4),0,PLANET.z+Math.cos(ang)*(PLANET.radius+4));
-  pShip.yaw=ang+Math.PI;
-  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
+  var nrm=new THREE.Vector3(pShip.pos.x-PLANET.x,0,pShip.pos.z-PLANET.z);
+  if(nrm.lengthSq()<0.01)nrm.set(0,0,1);
+  nrm.normalize();
+  var surfacePos=new THREE.Vector3(PLANET.x,0,PLANET.z).addScaledVector(nrm,PLANET.radius+1.1);
+  pShip.pos.copy(surfacePos);
+  pShip.yaw=Math.atan2(nrm.x,nrm.z)+Math.PI;
+  var upAlign=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),nrm);
+  var yawQuat=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),pShip.yaw);
+  pShip.mesh.position.copy(pShip.pos);
+  pShip.mesh.quaternion.copy(upAlign).multiply(yawQuat);
+  landedNormal=nrm;
   $("planetTarget").classList.add("hide");
   $("bLaunchLanded").classList.remove("hide");
+  landingDustBurst(pShip.pos.clone(),nrm);
   toast("Landed on "+PLANET.name);
   sfx.build();
   saveGame();
 }
 function launchFromLandedShip(){
   if(!landedPlanet)return;
-  landedPlanet=null; landProgress=0;
+  landedPlanet=null; landProgress=0; landedNormal=null;
+  pShip.mesh.rotation.set(0,pShip.yaw,0);
   $("bLaunchLanded").classList.add("hide");
   toast("Launching...");
   sfx.build();
@@ -3414,7 +3436,7 @@ function launchShip(){
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
-  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
+  landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[]; clearSpaceParts();
   homeBase.hp=homeBase.maxhp;
@@ -3431,7 +3453,7 @@ function launchShip(){
 }
 function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
-  landedPlanet=null; landProgress=0; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
+  landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[];
   state="surface";
@@ -3454,7 +3476,7 @@ function damagePShip(dmg){
   if(dmg>0)pShip.hp-=dmg;
   if(pShip.hp<=0){
     pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound");
-    if(landedPlanet){ landedPlanet=null; landProgress=0; $("bLaunchLanded").classList.add("hide"); }
+    if(landedPlanet){ landedPlanet=null; landProgress=0; landedNormal=null; $("bLaunchLanded").classList.add("hide"); }
     $("planetTarget").classList.add("hide");
   }
 }
@@ -3555,8 +3577,8 @@ function updateSpace(dt){
         spawnThrustParticle(ewp,eback,rnd(0.22,0.4)*(boosting?1.4:1),boosting?0xfff0c0:0x6fd8ff);
       }
     }
-    pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.y=pShip.yaw;
-    pShip.mesh.rotation.z=pShip.roll||0;
+    pShip.mesh.position.copy(pShip.pos);
+    if(!landedPlanet){ pShip.mesh.rotation.y=pShip.yaw; pShip.mesh.rotation.z=pShip.roll||0; }
     pShip.mesh.userData.engineGlow.forEach(function(g){ g.material.emissiveIntensity=1+(boosting?1.2:0)+Math.sin(performance.now()/90)*0.15; });
     updateShipNavLights(pShip.mesh);
 
@@ -3635,10 +3657,19 @@ function updateSpace(dt){
   }
 
   if(pShip){
-    var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*14,7,-Math.cos(pShip.yaw)*14);
+    var camOff, lookY;
+    if(landedPlanet&&landedNormal){
+      var back=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw));
+      camOff=new THREE.Vector3().addScaledVector(landedNormal,6.5).addScaledVector(back,7);
+      camOff.y+=3.5;
+      lookY=pShip.pos.y+1.2;
+    } else {
+      camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*14,7,-Math.cos(pShip.yaw)*14);
+      lookY=pShip.pos.y+1;
+    }
     var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
     camera.position.lerp(camTarget,Math.min(1,dt*5));
-    camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
+    camera.lookAt(pShip.pos.x,lookY,pShip.pos.z);
   }
   updateHudSpace();
 }
