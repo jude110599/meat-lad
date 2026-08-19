@@ -294,7 +294,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="ptRing"><div class="ptRingInner"></div></div>
     <div class="ptName"></div>
   </div>
-  <button class="hudbtn accent hide" id="bLaunchLanded" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Launch</button>
+  <button class="hudbtn accent hide" id="bLaunchLanded" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Board Ship &amp; Launch</button>
   <div class="sceneFade" id="sceneFade"></div>
 
   <div class="stickzone" id="zoneL"></div>
@@ -453,8 +453,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.19.2";
+var VERSION="1.20.0";
 var CHANGELOG=[
+  {v:"1.20.0",t:"Touch down on a real frozen outpost, with a brand new resource",items:[
+    "Landing now automatically teleports you onto an actual walkable planet surface — no menus, no waiting, you just touch down and you're standing there",
+    "This second world looks and feels distinct from home: a pale icy ground instead of home's warm alien rust, with frost spikes and frost-crusted boulders instead of purple crystal and mushrooms",
+    "New resource: Frost Crystal, native to this outpost — gather it alongside the same Iron Ore and Copper Ore you already know, so it's a mix of old and new materials to build with",
+    "Frost Crystal works everywhere the other raw materials do — Storage, Splitters, Mergers, and both Shipment buildings all accept it",
+    "Your ship is parked right at your landing spot, tilted back on its tail like it's mid-countdown — press Board Ship & Launch when you're ready to fly, and it takes off for real",
+    "Saving and reloading while you're out on the outpost puts you right back there, ship and all"
+  ]},
   {v:"1.19.2",t:"Landing actually looks like landing now",items:[
     "Your ship now visibly tilts to rest flush against the planet's curved surface instead of just floating upright next to it",
     "The camera switches to a close, grounded angle while landed so the horizon and surface read clearly, instead of the same free-flight chase cam",
@@ -758,14 +766,28 @@ function craterDip(x,z){
   }
   return dip;
 }
+/* a second small buildable clearing, far from home, standing in for a frozen outpost world you
+   land on and walk out onto — flattened with the exact same smoothstep technique as the home
+   clearing, just centered somewhere else, smaller, and painted with an icy palette below */
+var OUTPOST_CENTER={x:300,z:300}, OUTPOST_ZONE_R=55, OUTPOST_BLEND_R=95;
 function terrainHeight(x,z){
   var d=Math.sqrt(x*x+z*z);
-  var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  var t1=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  var dox=x-OUTPOST_CENTER.x, doz=z-OUTPOST_CENTER.z;
+  var od=Math.sqrt(dox*dox+doz*doz);
+  var t2=clamp((od-OUTPOST_ZONE_R)/(OUTPOST_BLEND_R-OUTPOST_ZONE_R),0,1);
+  var t=Math.min(t1,t2);
   var smooth=t*t*(3-2*t);
   return (terrainRaw(x,z)+craterDip(x,z))*smooth;
 }
 function inAnyBuildZone(x,z){
-  return Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10;
+  if(Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10)return true;
+  var dx=x-OUTPOST_CENTER.x, dz=z-OUTPOST_CENTER.z;
+  return Math.sqrt(dx*dx+dz*dz)<=OUTPOST_ZONE_R-10;
+}
+function inOutpostZone(x,z){
+  var dx=x-OUTPOST_CENTER.x, dz=z-OUTPOST_CENTER.z;
+  return Math.sqrt(dx*dx+dz*dz)<=OUTPOST_BLEND_R;
 }
 
 /* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
@@ -904,12 +926,21 @@ groundGeo.rotateX(-Math.PI/2);
   /* alien palette: warm rust regolith in the buildable clearing (kept readable against the
      buildings), shifting to teal lichen on the wild rises and pale violet mineral crust up high */
   var dirt=new THREE.Color(0x5c3a28), grass=new THREE.Color(0x2a6858), rock=new THREE.Color(0x4a4258), snow=new THREE.Color(0x9a8ec2);
+  /* the frozen outpost gets its own icy palette entirely, so it reads as a different world
+     the moment you're standing on it, not just a second copy of the home clearing */
+  var iceFloor=new THREE.Color(0xcfe8f0), iceMid=new THREE.Color(0x8fb8d8), iceRock=new THREE.Color(0x3a4a5e);
   for(var i=0;i<pos.count;i++){
     var x=pos.getX(i), z=pos.getZ(i);
     var h=terrainHeight(x,z);
     pos.setY(i,h);
     var c=new THREE.Color();
-    if(h<2)c.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
+    var odx=x-OUTPOST_CENTER.x, odz=z-OUTPOST_CENTER.z, od2=Math.sqrt(odx*odx+odz*odz);
+    if(od2<OUTPOST_BLEND_R*1.4){
+      var ot=clamp(od2/(OUTPOST_BLEND_R*1.4),0,1);
+      if(h<2)c.copy(iceFloor).lerp(iceMid,clamp(h/2+0.3,0,1));
+      else c.copy(iceMid).lerp(iceRock,clamp((h-2)/16,0,1));
+      c.lerp(h<2?dirt.clone().lerp(grass,clamp(h/2+0.3,0,1)):grass.clone().lerp(rock,clamp((h-2)/10,0,1)),ot);
+    } else if(h<2)c.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
     else if(h<12)c.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
     else c.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
     var speck=rnd(-0.04,0.04);
@@ -1178,6 +1209,31 @@ var landingPodBeacon=null;
     kg.position.set(kx,ky,kz);
     surfaceScene.add(kg);
   }
+  /* frozen outpost dressing — pale ice spikes and frost-crusted boulders ringing the second
+     landing clearing, so it reads as a distinct icy world the moment you're standing there */
+  var iceMat=new THREE.MeshStandardMaterial({color:0x9fe0f0,emissive:0x2a6a80,emissiveIntensity:0.55,roughness:0.25,metalness:0.35,flatShading:true});
+  var frostRockMat=new THREE.MeshStandardMaterial({color:0xbfd8e2,roughness:0.9,metalness:0.05,flatShading:true});
+  for(var fi=0;fi<16;fi++){
+    var fa=rnd(0,Math.PI*2), fr=rnd(OUTPOST_ZONE_R*0.75,OUTPOST_BLEND_R*1.7);
+    var fx=OUTPOST_CENTER.x+Math.cos(fa)*fr, fz=OUTPOST_CENTER.z+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
+    var fg=new THREE.Group();
+    if(Math.random()<0.6){
+      var nSp=Math.floor(rnd(2,5));
+      for(var spi=0;spi<nSp;spi++){
+        var sph=rnd(1.5,4.2);
+        var spike=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3,0.7),sph,6),iceMat);
+        spike.position.set(rnd(-1,1),sph/2,rnd(-1,1));
+        spike.rotation.set(rnd(-0.2,0.2),rnd(0,6.28),rnd(-0.2,0.2));
+        fg.add(spike);
+      }
+    } else {
+      var boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1,2.2),0),frostRockMat);
+      boulder.scale.set(1,rnd(0.6,0.9),1); boulder.rotation.y=rnd(0,6.28);
+      fg.add(boulder);
+    }
+    fg.position.set(fx,fy,fz);
+    surfaceScene.add(fg);
+  }
   /* small ruin markers — broken arches and leaning obelisks hinting at something that was here
      before the colony, kept sparse and well outside any walkable/buildable path */
   var ruinMat=new THREE.MeshStandardMaterial({color:0x3a3648,roughness:0.85,metalness:0.15});
@@ -1323,12 +1379,14 @@ surfaceScene.add(playerShadow);
 /* ═════════════ RESOURCES ═════════════ */
 var RES={
   iron_ore:{nm:"Iron Ore",col:0xb5b5c2}, copper_ore:{nm:"Copper Ore",col:0xff9d5c}, coal:{nm:"Coal",col:0x8a8a92},
+  frost_crystal:{nm:"Frost Crystal",col:0x9fe0f0},
   iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545}
 };
 var RES_ICONS={
   iron_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#b5b5c2" stroke="#5a5a62" stroke-width="1"/></svg>',
   copper_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#ff9d5c" stroke="#7a3810" stroke-width="1"/></svg>',
   coal:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#8a8a92" stroke="#1c1c20" stroke-width="1"/></svg>',
+  frost_crystal:'<svg viewBox="0 0 24 24"><path d="M12 2l4 8-4 12-4-12Z" fill="#9fe0f0" stroke="#3a6a80" stroke-width="1"/></svg>',
   iron:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#e8eaf0" stroke="#9a9aa5" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#c8cad2"/></svg>',
   copper:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#ff8a4c" stroke="#a84c14" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#ffb27a"/></svg>',
   parts:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="#1a2233" stroke="#ffb545" stroke-width="1.4"/><path d="M12 6v2.4M12 15.6V18M6 12h2.4M15.6 12H18M7.8 7.8l1.7 1.7M14.5 14.5l1.7 1.7M7.8 16.2l1.7-1.7M14.5 9.5l1.7-1.7" stroke="#ffb545" stroke-width="1.2"/><circle cx="12" cy="12" r="2.6" fill="#ffb545"/></svg>'
@@ -1339,7 +1397,7 @@ function costStr(cost){
     return '<i style="background:'+hexStr(RES[k].col)+'"></i> '+cost[k]+' '+RES[k].nm;
   }).join(' &nbsp;+&nbsp; ');
 }
-var stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
+var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,iron:0,copper:0,parts:0};
 function canAfford(cost){ for(var k in cost)if((stock[k]||0)<cost[k])return false; return true; }
 function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 
@@ -1464,21 +1522,21 @@ var BUILD_DEFS={
   pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
   solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
   cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},tool:true,range:26},
-  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal"],accepts:[],mineRate:0.5,mineCap:120},
-  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal"],accepts:[],mineRate:2,mineCap:240},
+  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal"],accepts:[],mineRate:0.5,mineCap:120},
+  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal"],accepts:[],mineRate:2,mineCap:240},
   smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
   constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
   storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
-    produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
+    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"]},
   splitter:{nm:"Splitter",cat:"Logistics",ds:"One belt in, up to two belts out. Splits the incoming flow between whatever you connect.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","iron","copper"],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"]},
   merger:{nm:"Merger",cat:"Logistics",ds:"Up to two belts in, one belt out. Combines multiple lines into a single output.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","iron","copper"],accepts:["iron_ore","copper_ore","coal","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
-  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","iron","copper","parts"]},
-  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","iron","copper","parts"],accepts:[]}
+  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper","parts"]},
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","iron","copper","parts"],accepts:[]}
 };
 var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
@@ -2213,7 +2271,8 @@ function removeBuilding(b){
 var NODE_STYLE={
   iron_ore:{rockCol:0x5a5a62,crystalCol:0xd8dbe6,emit:0x3a4048,shape:"shard"},
   copper_ore:{rockCol:0x4a3a2c,crystalCol:0xff9d5c,emit:0x7a3810,shape:"blob"},
-  coal:{rockCol:0x1c1c20,crystalCol:0x38383e,emit:0x000000,shape:"chunk"}
+  coal:{rockCol:0x1c1c20,crystalCol:0x38383e,emit:0x000000,shape:"chunk"},
+  frost_crystal:{rockCol:0x5a7a8a,crystalCol:0x9fe0f0,emit:0x2a6a80,shape:"shard"}
 };
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
@@ -2263,6 +2322,20 @@ function scatterNodes(){
       clash=nodes.some(function(n){ var dx=n.x-x,dz=n.z-z; return Math.sqrt(dx*dx+dz*dz)<14; });
     }
     while((d<24||d>maxR||clash)&&tries<60);
+    spawnNode(x,z,t);
+  });
+  /* the frozen outpost gets a mix of the same ores you already know, plus its own native
+     Frost Crystal deposits, so there's a reason to actually set up shop out there */
+  var outpostTypes=["iron_ore","iron_ore","copper_ore","frost_crystal","frost_crystal","frost_crystal"];
+  var oMaxR=OUTPOST_ZONE_R-15;
+  outpostTypes.forEach(function(t){
+    var x,z,tries=0,d,clash;
+    do{
+      x=snapGrid(OUTPOST_CENTER.x+rnd(-oMaxR,oMaxR)); z=snapGrid(OUTPOST_CENTER.z+rnd(-oMaxR,oMaxR));
+      var dx=x-OUTPOST_CENTER.x, dz=z-OUTPOST_CENTER.z; d=Math.sqrt(dx*dx+dz*dz); tries++;
+      clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
+    }
+    while((d<14||d>oMaxR||clash)&&tries<60);
     spawnNode(x,z,t);
   });
 }
@@ -2569,7 +2642,7 @@ function updatePortArrowVisibility(){
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
   var g=new THREE.Group();
-  if(res==="iron_ore"||res==="copper_ore"||res==="coal"){
+  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"){
     var mat=new THREE.MeshStandardMaterial({color:col,roughness:0.95,metalness:0.05,flatShading:true});
     var core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.15,0),mat);
     core.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
@@ -3022,7 +3095,7 @@ function saveGame(){
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
-      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment
+      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atOutpost:atOutpost
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -3037,12 +3110,14 @@ function saveGame(){
 }
 function newColony(){
   clearWorld();
-  stock={iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
+  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
   equipment={head:null,hands:null,legs:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   landedPlanet=null; landProgress=0; landedNormal=null;
+  atOutpost=false;
+  if(outpostShipMesh){ surfaceScene.remove(outpostShipMesh); outpostShipMesh=null; }
   $("bLaunchLanded").classList.add("hide");
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
@@ -3053,7 +3128,7 @@ function validSpawn(p){
 var loadedPlayerPos=null;
 function applySaveData(data){
   clearWorld();
-  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,iron:0,copper:0,parts:0};
+  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,iron:0,copper:0,parts:0};
   (data.nodes||[]).forEach(function(n){ spawnNode(n.x,n.z,n.restype); });
   (data.buildings||[]).forEach(function(bd){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
@@ -3097,6 +3172,24 @@ function applySaveData(data){
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
+  atOutpost=!!data.atOutpost;
+  if(atOutpost&&shipModelKey){
+    restoreLandedShip();
+    showOutpostShip();
+    $("bLaunchLanded").classList.remove("hide");
+  }
+}
+function restoreLandedShip(){
+  var stats=SHIP_STATS[shipModelKey];
+  pShip={
+    pos:new THREE.Vector3(PLANET.x,0,PLANET.z+PLANET.radius+1.1), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
+    hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
+    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0,
+    alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
+  };
+  spaceScene.add(pShip.mesh);
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
+  landedPlanet=PLANET; landProgress=0; landedNormal=new THREE.Vector3(0,0,1);
 }
 function loadGame(){
   var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
@@ -3275,6 +3368,7 @@ function landingDustBurst(pos,normal){
     spawnThrustParticle(pos.clone().addScaledVector(normal,0.4),dir,rnd(0.3,0.6),0xcaa06a);
   }
 }
+var atOutpost=false, outpostShipMesh=null;
 function landOnPlanet(){
   landedPlanet=PLANET; landProgress=0;
   pShip.vel.set(0,0,0);
@@ -3290,20 +3384,57 @@ function landOnPlanet(){
   pShip.mesh.quaternion.copy(upAlign).multiply(yawQuat);
   landedNormal=nrm;
   $("planetTarget").classList.add("hide");
-  $("bLaunchLanded").classList.remove("hide");
   landingDustBurst(pShip.pos.clone(),nrm);
-  toast("Landed on "+PLANET.name);
+  toast("Landed on "+PLANET.name+" — touching down...");
+  sfx.build();
+  saveGame();
+  setTimeout(function(){ if(landedPlanet)fadeTransition(function(){ teleportToOutpost(); },600); },900);
+}
+function showOutpostShip(){
+  if(!outpostShipMesh){
+    outpostShipMesh=buildShipMesh(shipModelKey||"scout");
+    outpostShipMesh.scale.setScalar(0.62);
+    surfaceScene.add(outpostShipMesh);
+  }
+  /* parked tilted back on its tail like it's mid-countdown, ready to blast off the moment
+     you climb back aboard — not just sitting there flat like a prop */
+  outpostShipMesh.position.set(OUTPOST_CENTER.x,1.1,OUTPOST_CENTER.z);
+  outpostShipMesh.rotation.set(-0.32,0,0);
+  outpostShipMesh.visible=true;
+}
+function teleportToOutpost(){
+  resetMovementKeys();
+  atOutpost=true; state="surface";
+  $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
+  $("mobActions").classList.add("show");
+  $("bLaunchLanded").classList.remove("hide");
+  player.position.set(OUTPOST_CENTER.x,0,OUTPOST_CENTER.z+8);
+  player.rotation.y=Math.PI;
+  camYaw=0; camPitch=0.55;
+  updateCameraTransform();
+  showOutpostShip();
+  toast("Touched down — gather what you can, then Launch when you're ready to fly back");
   sfx.build();
   saveGame();
 }
 function launchFromLandedShip(){
   if(!landedPlanet)return;
-  landedPlanet=null; landProgress=0; landedNormal=null;
-  pShip.mesh.rotation.set(0,pShip.yaw,0);
-  $("bLaunchLanded").classList.add("hide");
-  toast("Launching...");
-  sfx.build();
-  beginLaunchAnim();
+  resetMovementKeys();
+  toast(atOutpost?"Boarding ship...":"Launching...");
+  sfx.click();
+  fadeTransition(function(){
+    if(outpostShipMesh)outpostShipMesh.visible=false;
+    atOutpost=false;
+    $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
+    $("bLaunchLanded").classList.add("hide");
+    $("hudSpace").classList.add("show");
+    landedPlanet=null; landProgress=0; landedNormal=null;
+    pShip.mesh.rotation.set(0,pShip.yaw,0);
+    toast("Launching...");
+    sfx.build();
+    beginLaunchAnim();
+    saveGame();
+  });
 }
 $("bLaunchLanded").onclick=function(){ launchFromLandedShip(); };
 
@@ -4677,7 +4808,7 @@ requestAnimationFrame(frame);
 
 window.__cq={
   state:function(){
-    return {state:state, player:{x:player.position.x,y:player.position.y,z:player.position.z,ry:player.rotation.y},
+    return {state:state, atOutpost:atOutpost, player:{x:player.position.x,y:player.position.y,z:player.position.z,ry:player.rotation.y},
       cam:{yaw:camYaw,pitch:camPitch,pos:{x:camera.position.x,y:camera.position.y,z:camera.position.z}},
       deviceMode:document.body.classList.contains("pc-mode")?"pc":"mobile",
       stock:JSON.parse(JSON.stringify(stock)), powerGen:powerGen, powerDraw:powerDraw,
