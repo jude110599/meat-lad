@@ -72,6 +72,9 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
   padding:8px 10px;pointer-events:auto}
 .bars{flex:1;display:flex;flex-direction:column;gap:4px;min-width:140px}
 .bar{height:11px;border-radius:3px;background:rgba(0,0,0,.5);overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.06)}
+.bar.hide{display:none}
+#hiveHud{display:flex}
+#hiveHud.hide{display:none}
 .bar i{display:block;height:100%;width:100%;transition:width .12s linear}
 .bar.hull i{background:linear-gradient(90deg,#a3101c,var(--amber))}
 .bar.shield i{background:linear-gradient(90deg,#1c5a7a,var(--blue))}
@@ -210,7 +213,7 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;
   padding:6px;margin-bottom:12px}
 .bpPreview img{width:58px;height:71px;image-rendering:pixelated;image-rendering:crisp-edges}
-.gearSlots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px}
+.gearSlots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
 .gearSlot{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 6px;
   display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;min-height:118px}
 .gearSlot .slotLabel{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-weight:800}
@@ -274,6 +277,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <button class="hudbtn" id="bMapOpen">Map</button>
       <button class="hudbtn" id="bBackpackOpen" title="Backpack (B)">Backpack</button>
       <button class="hudbtn" id="bPause">&#10073;&#10073;</button>
+    </div>
+  </div>
+
+  <div id="hiveHud" class="hide" style="position:absolute;left:0;right:0;top:calc(56px + env(safe-area-inset-top,0px));justify-content:center;z-index:5;pointer-events:none">
+    <div class="hudrow" style="margin:0">
+      <div class="bars">
+        <div class="bar hull"><i id="hiveHpFill" style="width:100%"></i><span class="barlbl">YOU</span></div>
+        <div class="bar shield hide" id="hiveBossRow"><i id="hiveBossFill" style="width:100%"></i><span class="barlbl">HIVE</span></div>
+      </div>
     </div>
   </div>
 
@@ -453,8 +465,19 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.20.0";
+var VERSION="1.21.0";
 var CHANGELOG=[
+  {v:"1.21.0",t:"Three worlds to explore, fly-in landing, a Bomber, and a hostile Hive",items:[
+    "Two brand new landable worlds join Vesta Outpost: Ember Reach, a volcanic world with molten-glass spires and native Magma Shard deposits, and Verdant Hollow, a jungle world with glowing fern growths and native Spore Pod deposits",
+    "Every world now has its own sky, lighting, ground palette and decorations, so each one feels like a genuinely different place the moment you land — not a recolored copy of home",
+    "Your home colony is now a visible planet in space too, not just an abstract defended structure",
+    "The targeting circle now names whichever world you're approaching, home included — worlds you haven't landed on yet before show as UNDISCOVERED WORLD until you actually touch down there",
+    "Landing is no longer instant: fly in, hold the lock, and use Q/E to lower or raise your altitude — you only touch down once you're locked on AND low enough, so it actually feels like flying in for a landing",
+    "New ship: the Bomber. It drops heavy, high-damage bombs instead of firing bolts — press fire while flying to release one, arcing down and exploding for area damage",
+    "Verdant Hollow has a hostile Hive that periodically spawns monsters — they'll come after you if you get close, so gathering there is riskier than the other two worlds",
+    "New equipment slot: Weapon. Craft the Pulse Blaster at the Workshop and left-click while on foot to fire at the nearest monster (or the Hive itself) in front of you",
+    "Fixed a rare soft-lock where the Launch button could stop responding after landing"
+  ]},
   {v:"1.20.0",t:"Touch down on a real frozen outpost, with a brand new resource",items:[
     "Landing now automatically teleports you onto an actual walkable planet surface — no menus, no waiting, you just touch down and you're standing there",
     "This second world looks and feels distinct from home: a pale icy ground instead of home's warm alien rust, with frost spikes and frost-crusted boulders instead of purple crystal and mushrooms",
@@ -766,52 +789,248 @@ function craterDip(x,z){
   }
   return dip;
 }
-/* a second small buildable clearing, far from home, standing in for a frozen outpost world you
-   land on and walk out onto — flattened with the exact same smoothstep technique as the home
-   clearing, just centered somewhere else, smaller, and painted with an icy palette below */
-var OUTPOST_CENTER={x:300,z:300}, OUTPOST_ZONE_R=55, OUTPOST_BLEND_R=95;
+/* three landable worlds, each a small buildable clearing far from home standing in for a planet
+   you fly to, land on and walk out onto — flattened with the same smoothstep technique as the
+   home clearing, each with its own ground palette, ore, decoration set and sky/lighting so it
+   reads as a genuinely different place, not a recolored copy */
+var WORLDS=[
+  { id:"vesta", nm:"Vesta Outpost",
+    sx:280,sz:-220,radius:22,col:0xd98a4a,atmoCol:0xffb545,ringCol:0x8a6a4a,
+    cx:300,cz:300,zoneR:55,blendR:95,
+    floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
+    ore:"frost_crystal",oreNm:"Frost Crystal",decor:"ice",
+    sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:1.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
+    discovered:false,hasHive:false },
+  { id:"ember", nm:"Ember Reach",
+    sx:-260,sz:260,radius:26,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
+    cx:-320,cz:280,zoneR:55,blendR:95,
+    floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
+    ore:"magma_shard",oreNm:"Magma Shard",decor:"volcanic",
+    sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:1.3,rimCol:0xff5020,ambCol:0x8a3a1a},
+    discovered:false,hasHive:false },
+  { id:"verdance", nm:"Verdant Hollow",
+    sx:-260,sz:-260,radius:24,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
+    cx:-320,cz:-320,zoneR:60,blendR:100,
+    floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
+    ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
+    sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:1.0,rimCol:0x40ff90,ambCol:0x2a6a3a},
+    discovered:false,hasHive:true }
+];
+var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:14,isHome:true,discovered:true};
+function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
 function terrainHeight(x,z){
   var d=Math.sqrt(x*x+z*z);
-  var t1=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
-  var dox=x-OUTPOST_CENTER.x, doz=z-OUTPOST_CENTER.z;
-  var od=Math.sqrt(dox*dox+doz*doz);
-  var t2=clamp((od-OUTPOST_ZONE_R)/(OUTPOST_BLEND_R-OUTPOST_ZONE_R),0,1);
-  var t=Math.min(t1,t2);
+  var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  for(var i=0;i<WORLDS.length;i++){
+    var w=WORLDS[i], dox=x-w.cx, doz=z-w.cz, od=Math.sqrt(dox*dox+doz*doz);
+    var t2=clamp((od-w.zoneR)/(w.blendR-w.zoneR),0,1);
+    t=Math.min(t,t2);
+  }
   var smooth=t*t*(3-2*t);
   return (terrainRaw(x,z)+craterDip(x,z))*smooth;
 }
 function inAnyBuildZone(x,z){
   if(Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10)return true;
-  var dx=x-OUTPOST_CENTER.x, dz=z-OUTPOST_CENTER.z;
-  return Math.sqrt(dx*dx+dz*dz)<=OUTPOST_ZONE_R-10;
+  for(var i=0;i<WORLDS.length;i++){
+    var w=WORLDS[i], dx=x-w.cx, dz=z-w.cz;
+    if(Math.sqrt(dx*dx+dz*dz)<=w.zoneR-10)return true;
+  }
+  return false;
 }
-function inOutpostZone(x,z){
-  var dx=x-OUTPOST_CENTER.x, dz=z-OUTPOST_CENTER.z;
-  return Math.sqrt(dx*dx+dz*dz)<=OUTPOST_BLEND_R;
+function worldZoneAt(x,z){
+  for(var i=0;i<WORLDS.length;i++){
+    var w=WORLDS[i], dx=x-w.cx, dz=z-w.cz;
+    if(Math.sqrt(dx*dx+dz*dz)<=w.blendR)return w;
+  }
+  return null;
 }
 
 /* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
-   no external texture */
-(function(){
-  var geo=new THREE.SphereGeometry(1400,32,20);
-  var g=geo.attributes.position, col=new Float32Array(g.count*3);
-  var top=new THREE.Color(SKY_HIGH), bot=new THREE.Color(0x4a2030), horizon=new THREE.Color(0x7a3a3a);
-  var neb1=new THREE.Color(0x4a2a7a), neb2=new THREE.Color(0x2a5a6a);
+   no external texture — repaintable at runtime so each landable world can carry its own sky */
+var skyboxGeo=new THREE.SphereGeometry(1400,32,20);
+var skyboxMat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false});
+var skyboxMesh=new THREE.Mesh(skyboxGeo,skyboxMat);
+surfaceScene.add(skyboxMesh);
+function paintSkybox(topHex,horizonHex,botHex,neb1Hex,neb2Hex){
+  var g=skyboxGeo.attributes.position, col=new Float32Array(g.count*3);
+  var top=new THREE.Color(topHex), bot=new THREE.Color(botHex==null?0x4a2030:botHex), horizon=new THREE.Color(horizonHex);
+  var neb1=new THREE.Color(neb1Hex==null?0x4a2a7a:neb1Hex), neb2=new THREE.Color(neb2Hex==null?0x2a5a6a:neb2Hex);
   for(var i=0;i<g.count;i++){
     var x=g.getX(i), y=g.getY(i)/1400, z=g.getZ(i);
     var c=new THREE.Color();
     if(y>0.02)c.lerpColors(horizon,top,clamp(y*2.2,0,1));
     else c.lerpColors(bot,horizon,clamp((y+0.15)/0.15,0,1));
-    /* two soft nebula smudges, cheap to fake with a couple of directional dot-product bands */
     var n1=Math.max(0,Math.sin(x*0.003+2.1)*Math.cos(z*0.0026-0.7))*clamp(y*3,0,1);
     var n2=Math.max(0,Math.cos(x*0.0021-1.4)*Math.sin(z*0.0019+1.1))*clamp(y*2.6,0,1);
     c.lerp(neb1,n1*0.22); c.lerp(neb2,n2*0.16);
     col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
   }
-  geo.setAttribute("color",new THREE.BufferAttribute(col,3));
-  var mat=new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false});
-  surfaceScene.add(new THREE.Mesh(geo,mat));
-})();
+  skyboxGeo.setAttribute("color",new THREE.BufferAttribute(col,3));
+}
+paintSkybox(SKY_HIGH,0x7a3a3a,0x4a2030);
+/* swap the shared surface scene's sky/fog/lighting to a landed world's own palette, and back
+   to home's when you launch off again — since it's all one continuous ground plane, the actual
+   swap always happens mid-fade so the transition itself is invisible */
+function applyWorldAtmosphere(world){
+  var s=world.sky;
+  surfaceScene.background.set(s.low);
+  surfaceScene.fog.color.set(s.low);
+  paintSkybox(s.high,s.rimCol,s.low,s.rimCol,s.sunCol);
+  sun.color.set(s.sunCol); sun.intensity=s.sunI;
+  rimLight.color.set(s.rimCol);
+  ambient.color.set(s.ambCol);
+}
+function restoreHomeAtmosphere(){
+  surfaceScene.background.set(SKY_LOW);
+  surfaceScene.fog.color.set(SKY_LOW);
+  paintSkybox(SKY_HIGH,0x7a3a3a,0x4a2030);
+  sun.color.set(0xffc9a0); sun.intensity=1.2;
+  rimLight.color.set(0xb060ff);
+  ambient.color.set(0x8f7dc9);
+}
+
+/* ═════════════ HIVE + MONSTERS (Verdant Hollow only) ═════════════ */
+var hiveRuntime=null, monsters=[], playerHp=100, playerMaxHp=100, monsterSpawnT=4;
+function buildHiveMesh(){
+  var g=new THREE.Group();
+  var bodyMat=new THREE.MeshStandardMaterial({color:0x2a1a3a,roughness:0.7,metalness:0.1,flatShading:true});
+  var veinMat=new THREE.MeshStandardMaterial({color:0x9a3aff,emissive:0x6a1aff,emissiveIntensity:0.9,roughness:0.3,metalness:0.2});
+  var mound=new THREE.Mesh(new THREE.SphereGeometry(3.4,14,10,0,Math.PI*2,0,Math.PI/1.7),bodyMat);
+  g.add(mound);
+  for(var i=0;i<6;i++){
+    var ang=i/6*Math.PI*2;
+    var vein=new THREE.Mesh(new THREE.TorusGeometry(1.2,0.12,6,10,Math.PI*0.6),veinMat);
+    vein.position.set(Math.cos(ang)*1.8,1.2,Math.sin(ang)*1.8);
+    vein.rotation.set(Math.PI/2,0,ang);
+    g.add(vein);
+  }
+  var core=new THREE.Mesh(new THREE.SphereGeometry(0.7,10,8),veinMat);
+  core.position.y=3.0; g.add(core);
+  g.userData.core=core;
+  return g;
+}
+function ensureHive(world){
+  if(hiveRuntime)return;
+  var hx=world.cx+45, hz=world.cz+32;
+  var mesh=buildHiveMesh();
+  mesh.position.set(hx,terrainHeight(hx,hz),hz);
+  surfaceScene.add(mesh);
+  hiveRuntime={mesh:mesh,pos:new THREE.Vector3(hx,0,hz),hp:220,maxhp:220,alive:true};
+}
+function buildMonsterMesh(){
+  var g=new THREE.Group();
+  var mat=new THREE.MeshStandardMaterial({color:0x3a1a4a,roughness:0.6,metalness:0.15,flatShading:true});
+  var eyeMat=new THREE.MeshStandardMaterial({color:0x1a0a0a,emissive:0xff2a4a,emissiveIntensity:1.3});
+  var body=new THREE.Mesh(new THREE.DodecahedronGeometry(0.55,0),mat);
+  body.scale.set(1,0.75,1.2); g.add(body);
+  var eye=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,6),eyeMat);
+  eye.position.set(0,0.15,0.5); g.add(eye);
+  for(var i=0;i<4;i++){
+    var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,5),mat);
+    var a=(i/4)*Math.PI*2;
+    leg.position.set(Math.cos(a)*0.4,-0.35,Math.sin(a)*0.4);
+    leg.rotation.z=Math.cos(a)*0.5; leg.rotation.x=Math.sin(a)*0.5;
+    g.add(leg);
+  }
+  return g;
+}
+function spawnMonster(){
+  if(!hiveRuntime||!hiveRuntime.alive)return;
+  if(monsters.length>=4)return;
+  var mesh=buildMonsterMesh();
+  var ang=rnd(0,Math.PI*2), r=rnd(1,3);
+  var mx=hiveRuntime.pos.x+Math.cos(ang)*r, mz=hiveRuntime.pos.z+Math.sin(ang)*r;
+  mesh.position.set(mx,terrainHeight(mx,mz),mz);
+  surfaceScene.add(mesh);
+  monsters.push({mesh:mesh,x:mx,z:mz,hp:22,max:22,spd:rnd(3,4.5),hitT:0,dmgT:0});
+}
+function damageHive(dmg){
+  if(!hiveRuntime||!hiveRuntime.alive)return;
+  hiveRuntime.hp-=dmg;
+  hiveRuntime.mesh.userData.core.material.emissiveIntensity=2.2;
+  if(hiveRuntime.hp<=0){
+    hiveRuntime.alive=false;
+    toast("Hive destroyed!");
+    sfx.build();
+    surfaceScene.remove(hiveRuntime.mesh);
+    monsters.forEach(function(m){ surfaceScene.remove(m.mesh); });
+    monsters=[];
+  }
+}
+function damageMonster(m,dmg){
+  m.hp-=dmg; m.hitT=0.12;
+  if(m.hp<=0){
+    surfaceScene.remove(m.mesh);
+    monsters.splice(monsters.indexOf(m),1);
+    stock.parts=(stock.parts||0)+1;
+  }
+}
+function updateHiveAndMonsters(dt){
+  ensureHive(currentWorld);
+  if(hiveRuntime&&hiveRuntime.alive){
+    hiveRuntime.mesh.userData.core.material.emissiveIntensity=Math.max(0.9,hiveRuntime.mesh.userData.core.material.emissiveIntensity-dt*2);
+    monsterSpawnT-=dt;
+    if(monsterSpawnT<=0){ spawnMonster(); monsterSpawnT=rnd(5,8); }
+  }
+  if(playerInvulnT>0)playerInvulnT-=dt;
+  monsters.forEach(function(m){
+    if(m.hitT>0)m.hitT-=dt;
+    var dx=player.position.x-m.x, dz=player.position.z-m.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d>1.2){
+      m.x+=dx/d*m.spd*dt; m.z+=dz/d*m.spd*dt;
+    } else if(playerInvulnT<=0){
+      m.dmgT-=dt;
+      if(m.dmgT<=0){ playerHp=Math.max(0,playerHp-4); m.dmgT=1.0; if(playerHp<=0)respawnPlayer(); }
+    }
+    m.mesh.position.set(m.x,terrainHeight(m.x,m.z),m.z);
+    m.mesh.rotation.y=Math.atan2(dx,dz);
+    m.mesh.scale.setScalar(m.hitT>0?1.15:1);
+  });
+  if(playerHp<playerMaxHp)playerHp=Math.min(playerMaxHp,playerHp+dt*2);
+  updateHiveHud();
+}
+var playerInvulnT=0;
+function respawnPlayer(){
+  playerHp=playerMaxHp*0.6;
+  playerInvulnT=2.5;
+  player.position.set(currentWorld.cx,0,currentWorld.cz+8);
+  toast("Overwhelmed — fell back to the ship");
+}
+function updateHiveHud(){
+  var el=$("hiveHud"); if(!el)return;
+  el.classList.remove("hide");
+  $("hiveHpFill").style.width=(clamp(playerHp/playerMaxHp,0,1)*100)+"%";
+  if(hiveRuntime&&hiveRuntime.alive){
+    $("hiveBossRow").classList.remove("hide");
+    $("hiveBossFill").style.width=(clamp(hiveRuntime.hp/hiveRuntime.maxhp,0,1)*100)+"%";
+  } else {
+    $("hiveBossRow").classList.add("hide");
+  }
+}
+function fireGun(){
+  if(!equipment.weapon)return;
+  var w=CRAFT_RECIPES.blaster;
+  var best=null, bd=w.range;
+  monsters.forEach(function(m){
+    var dx=m.x-player.position.x, dz=m.z-player.position.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d>w.range)return;
+    var ang=Math.atan2(dx,dz), diff=ang-player.rotation.y;
+    while(diff>Math.PI)diff-=Math.PI*2; while(diff<-Math.PI)diff+=Math.PI*2;
+    if(Math.abs(diff)<0.6&&d<bd){ bd=d; best=m; }
+  });
+  var targetHive=false;
+  if(!best&&hiveRuntime&&hiveRuntime.alive){
+    var hdx=hiveRuntime.pos.x-player.position.x, hdz=hiveRuntime.pos.z-player.position.z, hd=Math.sqrt(hdx*hdx+hdz*hdz);
+    if(hd<w.range){
+      var hang=Math.atan2(hdx,hdz), hdiff=hang-player.rotation.y;
+      while(hdiff>Math.PI)hdiff-=Math.PI*2; while(hdiff<-Math.PI)hdiff+=Math.PI*2;
+      if(Math.abs(hdiff)<0.6)targetHive=true;
+    }
+  }
+  if(!best&&!targetHive){ sfx.click(); return; }
+  sfx.click();
+  if(targetHive)damageHive(w.dmg); else damageMonster(best,w.dmg);
+}
 
 /* a big ringed gas giant and a smaller cratered moon hanging low over the horizon — the single
    most recognisable "this is not Earth" cue a skybox can offer */
@@ -926,23 +1145,31 @@ groundGeo.rotateX(-Math.PI/2);
   /* alien palette: warm rust regolith in the buildable clearing (kept readable against the
      buildings), shifting to teal lichen on the wild rises and pale violet mineral crust up high */
   var dirt=new THREE.Color(0x5c3a28), grass=new THREE.Color(0x2a6858), rock=new THREE.Color(0x4a4258), snow=new THREE.Color(0x9a8ec2);
-  /* the frozen outpost gets its own icy palette entirely, so it reads as a different world
-     the moment you're standing on it, not just a second copy of the home clearing */
-  var iceFloor=new THREE.Color(0xcfe8f0), iceMid=new THREE.Color(0x8fb8d8), iceRock=new THREE.Color(0x3a4a5e);
+  /* each landable world gets its own palette entirely, so it reads as a genuinely different
+     place the moment you're standing on it, not just a recolored copy of the home clearing */
+  var worldCols=WORLDS.map(function(w){
+    return {w:w,floor:new THREE.Color(w.floor),mid:new THREE.Color(w.mid),rock:new THREE.Color(w.rock)};
+  });
   for(var i=0;i<pos.count;i++){
     var x=pos.getX(i), z=pos.getZ(i);
     var h=terrainHeight(x,z);
     pos.setY(i,h);
     var c=new THREE.Color();
-    var odx=x-OUTPOST_CENTER.x, odz=z-OUTPOST_CENTER.z, od2=Math.sqrt(odx*odx+odz*odz);
-    if(od2<OUTPOST_BLEND_R*1.4){
-      var ot=clamp(od2/(OUTPOST_BLEND_R*1.4),0,1);
-      if(h<2)c.copy(iceFloor).lerp(iceMid,clamp(h/2+0.3,0,1));
-      else c.copy(iceMid).lerp(iceRock,clamp((h-2)/16,0,1));
-      c.lerp(h<2?dirt.clone().lerp(grass,clamp(h/2+0.3,0,1)):grass.clone().lerp(rock,clamp((h-2)/10,0,1)),ot);
-    } else if(h<2)c.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
-    else if(h<12)c.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
-    else c.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
+    var homeC=new THREE.Color();
+    if(h<2)homeC.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
+    else if(h<12)homeC.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
+    else homeC.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
+    var nearest=null, nearestD=1e9;
+    for(var wi=0;wi<worldCols.length;wi++){
+      var wc=worldCols[wi], w=wc.w, odx=x-w.cx, odz=z-w.cz, od2=Math.sqrt(odx*odx+odz*odz);
+      if(od2<nearestD){ nearestD=od2; nearest=wc; }
+    }
+    if(nearest&&nearestD<nearest.w.blendR*1.4){
+      var ot=clamp(nearestD/(nearest.w.blendR*1.4),0,1);
+      if(h<2)c.copy(nearest.floor).lerp(nearest.mid,clamp(h/2+0.3,0,1));
+      else c.copy(nearest.mid).lerp(nearest.rock,clamp((h-2)/16,0,1));
+      c.lerp(homeC,ot);
+    } else c.copy(homeC);
     var speck=rnd(-0.04,0.04);
     c.r=clamp(c.r+speck,0,1); c.g=clamp(c.g+speck,0,1); c.b=clamp(c.b+speck,0,1);
     colArr[i*3]=c.r; colArr[i*3+1]=c.g; colArr[i*3+2]=c.b;
@@ -1209,31 +1436,73 @@ var landingPodBeacon=null;
     kg.position.set(kx,ky,kz);
     surfaceScene.add(kg);
   }
-  /* frozen outpost dressing — pale ice spikes and frost-crusted boulders ringing the second
-     landing clearing, so it reads as a distinct icy world the moment you're standing there */
+  /* each landable world gets its own decoration set ringing its clearing, so it reads as a
+     distinct place the moment you're standing there — ice spikes, volcanic glass spires, or
+     jungle fern clusters, depending on the world's biome */
   var iceMat=new THREE.MeshStandardMaterial({color:0x9fe0f0,emissive:0x2a6a80,emissiveIntensity:0.55,roughness:0.25,metalness:0.35,flatShading:true});
   var frostRockMat=new THREE.MeshStandardMaterial({color:0xbfd8e2,roughness:0.9,metalness:0.05,flatShading:true});
-  for(var fi=0;fi<16;fi++){
-    var fa=rnd(0,Math.PI*2), fr=rnd(OUTPOST_ZONE_R*0.75,OUTPOST_BLEND_R*1.7);
-    var fx=OUTPOST_CENTER.x+Math.cos(fa)*fr, fz=OUTPOST_CENTER.z+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
-    var fg=new THREE.Group();
-    if(Math.random()<0.6){
-      var nSp=Math.floor(rnd(2,5));
-      for(var spi=0;spi<nSp;spi++){
-        var sph=rnd(1.5,4.2);
-        var spike=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3,0.7),sph,6),iceMat);
-        spike.position.set(rnd(-1,1),sph/2,rnd(-1,1));
-        spike.rotation.set(rnd(-0.2,0.2),rnd(0,6.28),rnd(-0.2,0.2));
-        fg.add(spike);
+  var volGlassMat=new THREE.MeshStandardMaterial({color:0xff6a2a,emissive:0xaa2a08,emissiveIntensity:0.75,roughness:0.3,metalness:0.3,flatShading:true});
+  var volRockMat=new THREE.MeshStandardMaterial({color:0x241614,roughness:0.95,metalness:0.05,flatShading:true});
+  var fernMat=new THREE.MeshStandardMaterial({color:0x4ad86a,emissive:0x0a4a1a,emissiveIntensity:0.5,roughness:0.5,metalness:0.1,flatShading:true});
+  var vineRockMat=new THREE.MeshStandardMaterial({color:0x1a3a22,roughness:0.9,metalness:0.05,flatShading:true});
+  WORLDS.forEach(function(w){
+    for(var fi=0;fi<18;fi++){
+      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.75,w.blendR*1.7);
+      var fx=w.cx+Math.cos(fa)*fr, fz=w.cz+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
+      var fg=new THREE.Group();
+      if(w.decor==="ice"){
+        if(Math.random()<0.6){
+          var nSp=Math.floor(rnd(2,5));
+          for(var spi=0;spi<nSp;spi++){
+            var sph=rnd(1.5,4.2);
+            var spike=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3,0.7),sph,6),iceMat);
+            spike.position.set(rnd(-1,1),sph/2,rnd(-1,1));
+            spike.rotation.set(rnd(-0.2,0.2),rnd(0,6.28),rnd(-0.2,0.2));
+            fg.add(spike);
+          }
+        } else {
+          var boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1,2.2),0),frostRockMat);
+          boulder.scale.set(1,rnd(0.6,0.9),1); boulder.rotation.y=rnd(0,6.28);
+          fg.add(boulder);
+        }
+      } else if(w.decor==="volcanic"){
+        if(Math.random()<0.55){
+          var nGl=Math.floor(rnd(2,4));
+          for(var gi=0;gi<nGl;gi++){
+            var gh=rnd(1.8,4.8);
+            var glass=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.25,0.5),gh,5),volGlassMat);
+            glass.position.set(rnd(-0.9,0.9),gh/2,rnd(-0.9,0.9));
+            glass.rotation.set(rnd(-0.3,0.3),rnd(0,6.28),rnd(-0.3,0.3));
+            fg.add(glass);
+          }
+        } else {
+          var vrock=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1.2,2.6),0),volRockMat);
+          vrock.scale.set(1,rnd(0.5,0.8),1); vrock.rotation.y=rnd(0,6.28);
+          fg.add(vrock);
+          var vein=new THREE.Mesh(new THREE.OctahedronGeometry(rnd(0.3,0.6),0),volGlassMat);
+          vein.position.set(rnd(-0.6,0.6),rnd(0.4,0.9),rnd(-0.6,0.6));
+          fg.add(vein);
+        }
+      } else {
+        if(Math.random()<0.6){
+          var nFr=Math.floor(rnd(3,6));
+          for(var fri=0;fri<nFr;fri++){
+            var fh=rnd(1.2,2.6);
+            var frond=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.5,0.9),fh,4),fernMat);
+            frond.position.set(rnd(-1,1),fh/2,rnd(-1,1));
+            frond.rotation.set(rnd(-0.4,0.4),rnd(0,6.28),rnd(-0.4,0.4));
+            fg.add(frond);
+          }
+        } else {
+          var mound=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1,2),0),vineRockMat);
+          mound.scale.set(1.1,rnd(0.5,0.8),1.1); mound.rotation.y=rnd(0,6.28);
+          fg.add(mound);
+        }
       }
-    } else {
-      var boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1,2.2),0),frostRockMat);
-      boulder.scale.set(1,rnd(0.6,0.9),1); boulder.rotation.y=rnd(0,6.28);
-      fg.add(boulder);
+      fg.position.set(fx,fy,fz);
+      surfaceScene.add(fg);
     }
-    fg.position.set(fx,fy,fz);
-    surfaceScene.add(fg);
-  }
+  });
   /* small ruin markers — broken arches and leaning obelisks hinting at something that was here
      before the colony, kept sparse and well outside any walkable/buildable path */
   var ruinMat=new THREE.MeshStandardMaterial({color:0x3a3648,roughness:0.85,metalness:0.15});
@@ -1379,7 +1648,7 @@ surfaceScene.add(playerShadow);
 /* ═════════════ RESOURCES ═════════════ */
 var RES={
   iron_ore:{nm:"Iron Ore",col:0xb5b5c2}, copper_ore:{nm:"Copper Ore",col:0xff9d5c}, coal:{nm:"Coal",col:0x8a8a92},
-  frost_crystal:{nm:"Frost Crystal",col:0x9fe0f0},
+  frost_crystal:{nm:"Frost Crystal",col:0x9fe0f0}, magma_shard:{nm:"Magma Shard",col:0xff6a2a}, spore_pod:{nm:"Spore Pod",col:0x7aff6a},
   iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545}
 };
 var RES_ICONS={
@@ -1387,6 +1656,8 @@ var RES_ICONS={
   copper_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#ff9d5c" stroke="#7a3810" stroke-width="1"/></svg>',
   coal:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#8a8a92" stroke="#1c1c20" stroke-width="1"/></svg>',
   frost_crystal:'<svg viewBox="0 0 24 24"><path d="M12 2l4 8-4 12-4-12Z" fill="#9fe0f0" stroke="#3a6a80" stroke-width="1"/></svg>',
+  magma_shard:'<svg viewBox="0 0 24 24"><path d="M12 2l4 8-4 12-4-12Z" fill="#ff6a2a" stroke="#7a2a08" stroke-width="1"/></svg>',
+  spore_pod:'<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7" fill="#7aff6a" stroke="#1a5a10" stroke-width="1"/></svg>',
   iron:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#e8eaf0" stroke="#9a9aa5" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#c8cad2"/></svg>',
   copper:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#ff8a4c" stroke="#a84c14" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#ffb27a"/></svg>',
   parts:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="#1a2233" stroke="#ffb545" stroke-width="1.4"/><path d="M12 6v2.4M12 15.6V18M6 12h2.4M15.6 12H18M7.8 7.8l1.7 1.7M14.5 14.5l1.7 1.7M7.8 16.2l1.7-1.7M14.5 9.5l1.7-1.7" stroke="#ffb545" stroke-width="1.2"/><circle cx="12" cy="12" r="2.6" fill="#ffb545"/></svg>'
@@ -1397,7 +1668,7 @@ function costStr(cost){
     return '<i style="background:'+hexStr(RES[k].col)+'"></i> '+cost[k]+' '+RES[k].nm;
   }).join(' &nbsp;+&nbsp; ');
 }
-var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,iron:0,copper:0,parts:0};
+var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,iron:0,copper:0,parts:0};
 function canAfford(cost){ for(var k in cost)if((stock[k]||0)<cost[k])return false; return true; }
 function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 
@@ -1411,10 +1682,12 @@ var CRAFT_RECIPES={
   gloves:{nm:"Cargo Gloves",slot:"hands",ds:"Reinforced grips for faster hand-gathering from deposits.",cost:{iron:10,copper:15},
     effect:"+80% hand-gathering rate",gatherMult:1.8,col:0x7bd94a},
   visor:{nm:"Scanner Visor",slot:"head",ds:"A helmet-mounted deposit scanner with extended detection range.",cost:{iron:12,copper:12,parts:4},
-    effect:"+50% hand-gathering range",gatherRadiusMult:1.5,col:0xffb545}
+    effect:"+50% hand-gathering range",gatherRadiusMult:1.5,col:0xffb545},
+  blaster:{nm:"Pulse Blaster",slot:"weapon",ds:"A sidearm for dealing with hostile wildlife. Click to fire at whatever's nearest in front of you.",cost:{iron:18,copper:10,parts:6},
+    effect:"Lets you fight back — left-click to fire",dmg:14,rate:.35,range:16,col:0xff5040}
 };
-var EQUIP_SLOTS=["head","hands","legs"];
-var equipment={head:null,hands:null,legs:null};
+var EQUIP_SLOTS=["head","hands","legs","weapon"];
+var equipment={head:null,hands:null,legs:null,weapon:null};
 function equipStats(){
   var s={spdMult:1,jumpMult:1,gatherMult:1,gatherRadiusMult:1};
   EQUIP_SLOTS.forEach(function(slot){
@@ -1463,6 +1736,17 @@ function refreshPlayerGear(){
       add(socket,wrap);
     });
   }
+  if(equipment.weapon&&player.userData.arms&&player.userData.arms[1]){
+    var colW=CRAFT_RECIPES[equipment.weapon].col;
+    var matW=new THREE.MeshStandardMaterial({color:0x1a2230,roughness:0.4,metalness:0.5});
+    var tipW=new THREE.MeshStandardMaterial({color:colW,emissive:colW,emissiveIntensity:0.9,roughness:0.2,metalness:0.4});
+    var gun=new THREE.Group();
+    var barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.055,0.36,7),matW);
+    barrel.rotation.z=Math.PI/2; barrel.position.x=0.14; gun.add(barrel);
+    var tip=new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6),tipW); tip.position.x=0.32; gun.add(tip);
+    gun.position.set(0,-0.5,0.1);
+    add(player.userData.arms[1],gun);
+  }
   if(equipment.head&&player.userData.neck){
     var colV=CRAFT_RECIPES[equipment.head].col;
     var matV=new THREE.MeshStandardMaterial({color:colV,emissive:colV,emissiveIntensity:0.7,roughness:0.25,metalness:0.5});
@@ -1494,6 +1778,14 @@ function makeGearPreviewMesh(key){
       var fin=new THREE.Mesh(new THREE.CapsuleGeometry(0.06,0.22,3,6),mat);
       fin.position.set((i-1)*0.16,0.4,0.05); g.add(fin);
     }
+  } else if(r.slot==="weapon"){
+    var barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.7,8),accentMat);
+    barrel.rotation.z=Math.PI/2; barrel.position.x=0.15; g.add(barrel);
+    var tip=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,6),
+      new THREE.MeshStandardMaterial({color:r.col,emissive:r.col,emissiveIntensity:1,roughness:0.2,metalness:0.4}));
+    tip.position.x=0.52; g.add(tip);
+    var grip=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.4,0.16),mat);
+    grip.position.set(-0.22,-0.24,0); grip.rotation.z=0.3; g.add(grip);
   } else {
     var band=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.09,10,20,Math.PI*1.3),accentMat);
     band.rotation.z=Math.PI*0.85; g.add(band);
@@ -1522,21 +1814,21 @@ var BUILD_DEFS={
   pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
   solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
   cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},tool:true,range:26},
-  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal"],accepts:[],mineRate:0.5,mineCap:120},
-  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal"],accepts:[],mineRate:2,mineCap:240},
+  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod"],accepts:[],mineRate:0.5,mineCap:120},
+  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod"],accepts:[],mineRate:2,mineCap:240},
   smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
   constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
   storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
-    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"]},
+    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"]},
   splitter:{nm:"Splitter",cat:"Logistics",ds:"One belt in, up to two belts out. Splits the incoming flow between whatever you connect.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"]},
   merger:{nm:"Merger",cat:"Logistics",ds:"Up to two belts in, one belt out. Combines multiple lines into a single output.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
-  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","iron","copper","parts"]},
-  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","iron","copper","parts"],accepts:[]}
+  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"]},
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"],accepts:[]}
 };
 var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
@@ -2272,7 +2564,9 @@ var NODE_STYLE={
   iron_ore:{rockCol:0x5a5a62,crystalCol:0xd8dbe6,emit:0x3a4048,shape:"shard"},
   copper_ore:{rockCol:0x4a3a2c,crystalCol:0xff9d5c,emit:0x7a3810,shape:"blob"},
   coal:{rockCol:0x1c1c20,crystalCol:0x38383e,emit:0x000000,shape:"chunk"},
-  frost_crystal:{rockCol:0x5a7a8a,crystalCol:0x9fe0f0,emit:0x2a6a80,shape:"shard"}
+  frost_crystal:{rockCol:0x5a7a8a,crystalCol:0x9fe0f0,emit:0x2a6a80,shape:"shard"},
+  magma_shard:{rockCol:0x2a1614,crystalCol:0xff6a2a,emit:0xaa3010,shape:"shard"},
+  spore_pod:{rockCol:0x1e3a20,crystalCol:0x7aff6a,emit:0x1a6a10,shape:"blob"}
 };
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
@@ -2324,19 +2618,21 @@ function scatterNodes(){
     while((d<24||d>maxR||clash)&&tries<60);
     spawnNode(x,z,t);
   });
-  /* the frozen outpost gets a mix of the same ores you already know, plus its own native
-     Frost Crystal deposits, so there's a reason to actually set up shop out there */
-  var outpostTypes=["iron_ore","iron_ore","copper_ore","frost_crystal","frost_crystal","frost_crystal"];
-  var oMaxR=OUTPOST_ZONE_R-15;
-  outpostTypes.forEach(function(t){
-    var x,z,tries=0,d,clash;
-    do{
-      x=snapGrid(OUTPOST_CENTER.x+rnd(-oMaxR,oMaxR)); z=snapGrid(OUTPOST_CENTER.z+rnd(-oMaxR,oMaxR));
-      var dx=x-OUTPOST_CENTER.x, dz=z-OUTPOST_CENTER.z; d=Math.sqrt(dx*dx+dz*dz); tries++;
-      clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
-    }
-    while((d<14||d>oMaxR||clash)&&tries<60);
-    spawnNode(x,z,t);
+  /* every landable world gets a mix of the same ores you already know, plus its own native
+     resource, so there's a reason to actually set up shop out there */
+  WORLDS.forEach(function(w){
+    var wTypes=["iron_ore","iron_ore","copper_ore",w.ore,w.ore,w.ore];
+    var wMaxR=w.zoneR-15;
+    wTypes.forEach(function(t){
+      var x,z,tries=0,d,clash;
+      do{
+        x=snapGrid(w.cx+rnd(-wMaxR,wMaxR)); z=snapGrid(w.cz+rnd(-wMaxR,wMaxR));
+        var dx=x-w.cx, dz=z-w.cz; d=Math.sqrt(dx*dx+dz*dz); tries++;
+        clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
+      }
+      while((d<14||d>wMaxR||clash)&&tries<60);
+      spawnNode(x,z,t);
+    });
   });
 }
 function nearestNode(x,z,radius){
@@ -2642,7 +2938,7 @@ function updatePortArrowVisibility(){
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
   var g=new THREE.Group();
-  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"){
+  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"||res==="magma_shard"||res==="spore_pod"){
     var mat=new THREE.MeshStandardMaterial({color:col,roughness:0.95,metalness:0.05,flatShading:true});
     var core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.15,0),mat);
     core.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
@@ -3018,7 +3314,8 @@ function updateBuildings(dt){
 var SHIP_MODELS=[
   {key:"scout",nm:"Scout",ds:"Fast and fragile — hit and run.",partsCost:10,buildTime:4,stats:{maxhp:70,spd:22,dmg:9,rate:.28}},
   {key:"fighter",nm:"Fighter",ds:"Balanced all-rounder.",partsCost:16,buildTime:6,stats:{maxhp:100,spd:16,dmg:12,rate:.34}},
-  {key:"frigate",nm:"Frigate",ds:"Slow, but heavily armored.",partsCost:24,buildTime:9,stats:{maxhp:150,spd:11,dmg:16,rate:.42}}
+  {key:"frigate",nm:"Frigate",ds:"Slow, but heavily armored.",partsCost:24,buildTime:9,stats:{maxhp:150,spd:11,dmg:16,rate:.42}},
+  {key:"bomber",nm:"Bomber",ds:"Drops heavy bombs instead of firing bolts — click to release one on whatever's below.",partsCost:22,buildTime:8,stats:{maxhp:130,spd:13,dmg:32,rate:.9}}
 ];
 var shipBuilt=false, shipModelKey=null;
 function shipyard(){ return buildings.filter(function(b){return b.type==="shipyard";})[0]||null; }
@@ -3095,7 +3392,9 @@ function saveGame(){
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
-      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atOutpost:atOutpost
+      shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atOutpost:atOutpost,
+      atWorldId:currentWorld?currentWorld.id:null,
+      discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;})
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -3110,15 +3409,21 @@ function saveGame(){
 }
 function newColony(){
   clearWorld();
-  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,iron:0,copper:0,parts:0};
+  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
-  equipment={head:null,hands:null,legs:null};
+  equipment={head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   landedPlanet=null; landProgress=0; landedNormal=null;
-  atOutpost=false;
+  atOutpost=false; currentWorld=null;
+  WORLDS.forEach(function(w){ w.discovered=false; });
+  restoreHomeAtmosphere();
   if(outpostShipMesh){ surfaceScene.remove(outpostShipMesh); outpostShipMesh=null; }
   $("bLaunchLanded").classList.add("hide");
+  $("hiveHud").classList.add("hide");
+  if(hiveRuntime){ surfaceScene.remove(hiveRuntime.mesh); hiveRuntime=null; }
+  monsters.forEach(function(m){ surfaceScene.remove(m.mesh); }); monsters=[];
+  playerHp=playerMaxHp;
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
 }
@@ -3128,7 +3433,7 @@ function validSpawn(p){
 var loadedPlayerPos=null;
 function applySaveData(data){
   clearWorld();
-  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,iron:0,copper:0,parts:0};
+  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,iron:0,copper:0,parts:0};
   (data.nodes||[]).forEach(function(n){ spawnNode(n.x,n.z,n.restype); });
   (data.buildings||[]).forEach(function(bd){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
@@ -3166,30 +3471,34 @@ function applySaveData(data){
     cables.push(nc);
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
-  equipment=data.equipment||{head:null,hands:null,legs:null};
+  equipment=data.equipment||{head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
+  (data.discoveredWorlds||[]).forEach(function(id){ var w=worldById(id); if(w)w.discovered=true; });
   atOutpost=!!data.atOutpost;
+  var restoreWorld=worldById(data.atWorldId)||WORLDS[0];
   if(atOutpost&&shipModelKey){
-    restoreLandedShip();
-    showOutpostShip();
+    currentWorld=restoreWorld;
+    restoreLandedShip(restoreWorld);
+    showOutpostShip(restoreWorld);
+    applyWorldAtmosphere(restoreWorld);
     $("bLaunchLanded").classList.remove("hide");
   }
 }
-function restoreLandedShip(){
+function restoreLandedShip(world){
   var stats=SHIP_STATS[shipModelKey];
   pShip={
-    pos:new THREE.Vector3(PLANET.x,0,PLANET.z+PLANET.radius+1.1), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
+    pos:new THREE.Vector3(world.sx,0,world.sz+world.radius+1.1), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
     hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
-    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0,
+    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0, weapon:stats.weapon||"bolt",
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
   pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
-  landedPlanet=PLANET; landProgress=0; landedNormal=new THREE.Vector3(0,0,1);
+  landedPlanet=world; landProgress=0; landedNormal=new THREE.Vector3(0,0,1);
 }
 function loadGame(){
   var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
@@ -3289,7 +3598,8 @@ function updateShipNavLights(mesh){
   mesh.userData.navLights.forEach(function(nl){ nl.material.emissiveIntensity=nl.userData.baseIntensity*blink; });
 }
 
-/* home base station marker (defended objective) */
+/* home base station marker (defended objective), plus a visible "home world" sphere behind it
+   so the colony reads as an actual planet in space, not just an abstract defended structure */
 var homeBase={hp:300,maxhp:300};
 var homeBaseMesh=(function(){
   var g=new THREE.Group();
@@ -3304,54 +3614,84 @@ var homeBaseMesh=(function(){
   spaceScene.add(g);
   return g;
 })();
-
-/* landable planet objective */
-var PLANET={name:"Vesta Outpost", x:280, z:-220, radius:22};
-var planetMesh=(function(){
+HOME_WORLD.mesh=(function(){
   var g=new THREE.Group();
-  var core=new THREE.Mesh(new THREE.SphereGeometry(PLANET.radius,28,20),
-    new THREE.MeshStandardMaterial({color:0xd98a4a,roughness:0.85,metalness:0.08}));
+  var core=new THREE.Mesh(new THREE.SphereGeometry(HOME_WORLD.radius,26,18),
+    new THREE.MeshStandardMaterial({color:0x2a6a8a,roughness:0.75,metalness:0.1}));
   g.add(core);
-  var atmo=new THREE.Mesh(new THREE.SphereGeometry(PLANET.radius*1.1,28,20),
-    new THREE.MeshBasicMaterial({color:0xffb545,transparent:true,opacity:0.14,side:THREE.BackSide}));
+  var atmo=new THREE.Mesh(new THREE.SphereGeometry(HOME_WORLD.radius*1.12,26,18),
+    new THREE.MeshBasicMaterial({color:0x6fd0ff,transparent:true,opacity:0.13,side:THREE.BackSide}));
   g.add(atmo);
-  var ring=new THREE.Mesh(new THREE.TorusGeometry(PLANET.radius*1.7,0.7,8,40),
-    new THREE.MeshStandardMaterial({color:0x8a6a4a,roughness:0.7,metalness:0.25}));
-  ring.rotation.x=Math.PI/2.4;
-  g.add(ring);
-  g.position.set(PLANET.x,0,PLANET.z);
+  g.position.set(HOME_WORLD.sx,-6,HOME_WORLD.sz-70);
   spaceScene.add(g);
   return g;
 })();
-var landedPlanet=null, landProgress=0, landedNormal=null;
-var LAND_TIME=5, LAND_LOCK_ANGLE=0.28, LAND_LOCK_DIST=150, LAND_SHOW_DIST=280;
+
+/* landable planet objectives — one mesh per world */
+WORLDS.forEach(function(w){
+  var g=new THREE.Group();
+  var core=new THREE.Mesh(new THREE.SphereGeometry(w.radius,28,20),
+    new THREE.MeshStandardMaterial({color:w.col,roughness:0.85,metalness:0.08}));
+  g.add(core);
+  var atmo=new THREE.Mesh(new THREE.SphereGeometry(w.radius*1.1,28,20),
+    new THREE.MeshBasicMaterial({color:w.atmoCol,transparent:true,opacity:0.14,side:THREE.BackSide}));
+  g.add(atmo);
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(w.radius*1.7,0.7,8,40),
+    new THREE.MeshStandardMaterial({color:w.ringCol,roughness:0.7,metalness:0.25}));
+  ring.rotation.x=Math.PI/2.4;
+  g.add(ring);
+  g.position.set(w.sx,0,w.sz);
+  spaceScene.add(g);
+  w.mesh=g;
+});
+var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
+var LAND_TIME=5, LAND_LOCK_ANGLE=0.28, LAND_LOCK_DIST=150, LAND_SHOW_DIST=280, LAND_MAX_ALT=6;
+function findNearestTarget(){
+  var all=WORLDS.concat([HOME_WORLD]);
+  var best=null,bd=LAND_SHOW_DIST;
+  all.forEach(function(w){
+    var dx=w.sx-pShip.pos.x, dz=w.sz-pShip.pos.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d<bd){ bd=d; best=w; }
+  });
+  return best;
+}
 function updatePlanetTargeting(dt){
-  planetMesh.rotation.y+=dt*0.05;
+  WORLDS.forEach(function(w){ w.mesh.rotation.y+=dt*0.05; });
   var elTarget=$("planetTarget");
-  var dx=PLANET.x-pShip.pos.x, dz=PLANET.z-pShip.pos.z;
-  var dist=Math.sqrt(dx*dx+dz*dz);
-  if(dist>LAND_SHOW_DIST){
+  var target=findNearestTarget();
+  currentTarget=target;
+  if(!target){
     elTarget.classList.add("hide");
     landProgress=Math.max(0,landProgress-dt/(LAND_TIME*0.5));
     return;
   }
+  var dx=target.sx-pShip.pos.x, dz=target.sz-pShip.pos.z;
+  var dist=Math.sqrt(dx*dx+dz*dz);
   var angToPlanet=Math.atan2(dx,dz);
   var diff=angToPlanet-pShip.yaw;
   while(diff>Math.PI)diff-=Math.PI*2; while(diff<-Math.PI)diff+=Math.PI*2;
-  var locked=Math.abs(diff)<LAND_LOCK_ANGLE&&dist<LAND_LOCK_DIST;
+  var aimed=Math.abs(diff)<LAND_LOCK_ANGLE&&dist<LAND_LOCK_DIST;
+  var lowEnough=pShip.pos.y<LAND_MAX_ALT;
+  var locked=!target.isHome&&aimed&&lowEnough;
   landProgress=locked?Math.min(1,landProgress+dt/LAND_TIME):Math.max(0,landProgress-dt/(LAND_TIME*0.5));
-  var v=new THREE.Vector3(PLANET.x,4,PLANET.z).project(camera);
+  var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
   if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
   else{
     var sx=(v.x*0.5+0.5)*W, sy=(1-(v.y*0.5+0.5))*H;
     elTarget.classList.remove("hide");
     elTarget.style.left=sx+"px"; elTarget.style.top=sy+"px";
-    elTarget.querySelector(".ptName").textContent=PLANET.name+(locked?" — LANDING":"");
+    var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
+    var hint="";
+    if(!target.isHome){
+      if(locked)hint=" — LANDING";
+      else if(aimed&&!lowEnough)hint=" — DESCEND (Q)";
+    }
+    elTarget.querySelector(".ptName").textContent=nameTxt+hint;
     elTarget.querySelector(".ptRing").style.background=
       "conic-gradient(var(--green) "+(landProgress*360)+"deg, rgba(255,255,255,.18) 0deg)";
     elTarget.classList.toggle("locked",locked);
   }
-  if(landProgress>=1)landOnPlanet();
+  if(!target.isHome&&landProgress>=1)landOnPlanet(target);
 }
 function fadeTransition(midCallback,fadeMs){
   fadeMs=fadeMs||420;
@@ -3368,29 +3708,30 @@ function landingDustBurst(pos,normal){
     spawnThrustParticle(pos.clone().addScaledVector(normal,0.4),dir,rnd(0.3,0.6),0xcaa06a);
   }
 }
-var atOutpost=false, outpostShipMesh=null;
-function landOnPlanet(){
-  landedPlanet=PLANET; landProgress=0;
+var atOutpost=false, outpostShipMesh=null, currentWorld=null;
+function landOnPlanet(world){
+  landedPlanet=world; landProgress=0;
   pShip.vel.set(0,0,0);
-  var nrm=new THREE.Vector3(pShip.pos.x-PLANET.x,0,pShip.pos.z-PLANET.z);
+  var nrm=new THREE.Vector3(pShip.pos.x-world.sx,0,pShip.pos.z-world.sz);
   if(nrm.lengthSq()<0.01)nrm.set(0,0,1);
   nrm.normalize();
-  var surfacePos=new THREE.Vector3(PLANET.x,0,PLANET.z).addScaledVector(nrm,PLANET.radius+1.1);
-  pShip.pos.copy(surfacePos);
+  var surfacePos=new THREE.Vector3(world.sx,0,world.sz).addScaledVector(nrm,world.radius+1.1);
+  pShip.pos.copy(surfacePos); pShip.pos.y=0;
   pShip.yaw=Math.atan2(nrm.x,nrm.z)+Math.PI;
   var upAlign=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),nrm);
   var yawQuat=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),pShip.yaw);
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.quaternion.copy(upAlign).multiply(yawQuat);
   landedNormal=nrm;
+  world.discovered=true;
   $("planetTarget").classList.add("hide");
   landingDustBurst(pShip.pos.clone(),nrm);
-  toast("Landed on "+PLANET.name+" — touching down...");
+  toast("Landed on "+world.nm+" — touching down...");
   sfx.build();
   saveGame();
-  setTimeout(function(){ if(landedPlanet)fadeTransition(function(){ teleportToOutpost(); },600); },900);
+  setTimeout(function(){ if(landedPlanet)fadeTransition(function(){ teleportToOutpost(world); },600); },900);
 }
-function showOutpostShip(){
+function showOutpostShip(world){
   if(!outpostShipMesh){
     outpostShipMesh=buildShipMesh(shipModelKey||"scout");
     outpostShipMesh.scale.setScalar(0.62);
@@ -3398,41 +3739,52 @@ function showOutpostShip(){
   }
   /* parked tilted back on its tail like it's mid-countdown, ready to blast off the moment
      you climb back aboard — not just sitting there flat like a prop */
-  outpostShipMesh.position.set(OUTPOST_CENTER.x,1.1,OUTPOST_CENTER.z);
+  outpostShipMesh.position.set(world.cx,1.1,world.cz);
   outpostShipMesh.rotation.set(-0.32,0,0);
   outpostShipMesh.visible=true;
 }
-function teleportToOutpost(){
+function teleportToOutpost(world){
   resetMovementKeys();
-  atOutpost=true; state="surface";
+  atOutpost=true; currentWorld=world; state="surface";
+  applyWorldAtmosphere(world);
   $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
   $("mobActions").classList.add("show");
   $("bLaunchLanded").classList.remove("hide");
-  player.position.set(OUTPOST_CENTER.x,0,OUTPOST_CENTER.z+8);
+  if(!world.hasHive)$("hiveHud").classList.add("hide");
+  else { playerHp=playerMaxHp; playerInvulnT=3; }
+  player.position.set(world.cx,0,world.cz+8);
   player.rotation.y=Math.PI;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
-  showOutpostShip();
-  toast("Touched down — gather what you can, then Launch when you're ready to fly back");
+  showOutpostShip(world);
+  toast("Touched down on "+world.nm+" — gather what you can, then Launch when you're ready to fly back");
   sfx.build();
   saveGame();
 }
 function launchFromLandedShip(){
-  if(!landedPlanet)return;
+  /* atOutpost is the authoritative "somewhere you can launch from" flag — landedPlanet should
+     always agree with it, but check both so a stray desync can never soft-lock the Launch button */
+  if(!landedPlanet&&!atOutpost)return;
   resetMovementKeys();
   toast(atOutpost?"Boarding ship...":"Launching...");
   sfx.click();
   fadeTransition(function(){
     if(outpostShipMesh)outpostShipMesh.visible=false;
-    atOutpost=false;
+    atOutpost=false; currentWorld=null;
+    restoreHomeAtmosphere();
     $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
     $("bLaunchLanded").classList.add("hide");
+    $("hiveHud").classList.add("hide");
     $("hudSpace").classList.add("show");
     landedPlanet=null; landProgress=0; landedNormal=null;
-    pShip.mesh.rotation.set(0,pShip.yaw,0);
-    toast("Launching...");
-    sfx.build();
-    beginLaunchAnim();
+    if(pShip){
+      pShip.mesh.rotation.set(0,pShip.yaw,0);
+      toast("Launching...");
+      sfx.build();
+      beginLaunchAnim();
+    } else {
+      state="space";
+    }
     saveGame();
   });
 }
@@ -3500,6 +3852,30 @@ function buildShipMesh(model){
     var navR=navLight(0x3fff70); navR.position.set(1.55,0,1.5); g.add(navR);
     g.userData.engineGlow=glows;
     g.userData.navLights=[navL,navR];
+  } else if(model==="bomber"){
+    var hull=matStd(0x5a6a4a,0.55,0.4), plate=matStd(0x3a4530,0.6,0.35), trim=matStd(0xd9c02e,0.5,0.3);
+    var mainHull=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.3,3.4),hull); g.add(mainHull);
+    var belly=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.9,2.6),plate); belly.position.y=-0.85; g.add(belly);
+    var nose=new THREE.Mesh(new THREE.ConeGeometry(1.05,1.3,8),hull);
+    nose.rotation.x=Math.PI/2; nose.position.z=2.1; g.add(nose);
+    var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.38,10,7),canopyMat);
+    canopy.scale.set(0.9,0.7,1.2); canopy.position.set(0,0.75,0.9); g.add(canopy);
+    /* bomb bay doors along the belly, cracked open so it visibly reads as a bomber */
+    var doorL=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.1,2.0),plate);
+    doorL.position.set(-0.45,-1.32,0); doorL.rotation.z=0.5; g.add(doorL);
+    var doorR=doorL.clone(); doorR.position.x=0.45; doorR.rotation.z=-0.5; g.add(doorR);
+    var wingL=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.12,1.3),hull); wingL.position.set(-1.6,0.1,-0.4); g.add(wingL);
+    var wingR=wingL.clone(); wingR.position.x=1.6; g.add(wingR);
+    var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.28,1.5,8),plate);
+    podL.rotation.x=Math.PI/2; podL.position.set(-1.7,-0.05,-1.1); g.add(podL);
+    var podR=podL.clone(); podR.position.x=1.7; g.add(podR);
+    var glowL=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),accent); glowL.position.set(-1.7,-0.05,-1.9); g.add(glowL);
+    var glowR=glowL.clone(); glowR.position.x=1.7; g.add(glowR);
+    var tailFin=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.9,1.1),trim); tailFin.position.set(0,0.75,-1.6); g.add(tailFin);
+    var navL=navLight(0xff3040); navL.position.set(-2.9,0.1,-0.4); g.add(navL);
+    var navR=navLight(0x3fff70); navR.position.set(2.9,0.1,-0.4); g.add(navR);
+    g.userData.engineGlow=[glowL,glowR];
+    g.userData.navLights=[navL,navR];
   } else {
     var hull=matStd(0x9fb4c9,0.4,0.55), trim=matStd(0x2a3f55,0.5,0.4);
     var fuselageFront=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.4,6),hull);
@@ -3539,7 +3915,8 @@ function buildEnemyMesh(){
 var SHIP_STATS={
   scout:{maxhp:70,maxshield:20,spd:34,dmg:9,rate:.3,accel:14},
   fighter:{maxhp:100,maxshield:35,spd:26,dmg:12,rate:.36,accel:11},
-  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7}
+  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7},
+  bomber:{maxhp:120,maxshield:30,spd:19,dmg:38,rate:1.0,accel:8,weapon:"bomb"}
 };
 var pShip=null; // active flight state, created on launch
 var enemyShips=[], pBolts=[], eBolts=[], spaceParts=[];
@@ -3563,7 +3940,7 @@ function launchShip(){
   pShip={
     pos:new THREE.Vector3(0,0,40), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
     hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
-    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0,
+    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0, weapon:stats.weapon||"bolt",
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
@@ -3599,6 +3976,47 @@ function fireShipBolt(){
   var cos=Math.sin(pShip.yaw), sin=Math.cos(pShip.yaw);
   pBolts.push({x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:cos*70,vz:sin*70,dmg:pShip.dmg,life:1.4});
   sfx.click();
+}
+var bombs=[], bombGeo=new THREE.SphereGeometry(0.4,8,6), bombMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,emissive:0xff3010,emissiveIntensity:0.6,roughness:0.6,metalness:0.3});
+function dropBomb(){
+  var mesh=new THREE.Mesh(bombGeo,bombMat);
+  mesh.position.set(pShip.pos.x,pShip.pos.y,pShip.pos.z);
+  spaceScene.add(mesh);
+  bombs.push({x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,vx:pShip.vel.x,vz:pShip.vel.z,vy:-2,dmg:pShip.dmg,fuse:2.2,mesh:mesh});
+  sfx.click();
+}
+function bombBlast(b){
+  var pos=new THREE.Vector3(b.x,b.y,b.z);
+  for(var i=0;i<22;i++){
+    var dir=new THREE.Vector3(rnd(-1,1),rnd(-0.2,1),rnd(-1,1)).normalize().multiplyScalar(rnd(6,16));
+    spawnThrustParticle(pos.clone(),dir,rnd(0.5,1.1),Math.random()<0.5?0xffaa40:0xff5020);
+  }
+  var R=9;
+  for(var j=enemyShips.length-1;j>=0;j--){
+    var e=enemyShips[j], dx=e.mesh.position.x-b.x, dz=e.mesh.position.z-b.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d<R){ e.hp-=b.dmg*(1-d/R); e.hitT=0.12; if(e.hp<=0)killEnemyShip(e,j); }
+  }
+  if(hiveRuntime&&hiveRuntime.alive){
+    var hdx=hiveRuntime.pos.x-b.x, hdz=hiveRuntime.pos.z-b.z;
+    if(Math.sqrt(hdx*hdx+hdz*hdz)<R)damageHive(b.dmg*1.4);
+  }
+  sfx.build();
+}
+function updateBombs(dt){
+  for(var i=bombs.length-1;i>=0;i--){
+    var b=bombs[i];
+    b.vy-=dt*14;
+    b.x+=b.vx*dt; b.z+=b.vz*dt; b.y+=b.vy*dt; b.fuse-=dt;
+    b.mesh.position.set(b.x,b.y,b.z); b.mesh.rotation.x+=dt*4;
+    var hit=b.y<=0||b.fuse<=0;
+    if(!hit){
+      for(var j=enemyShips.length-1;j>=0;j--){
+        var e=enemyShips[j], dx=b.x-e.mesh.position.x,dz=b.z-e.mesh.position.z;
+        if(Math.sqrt(dx*dx+dz*dz)<2.2){ hit=true; break; }
+      }
+    }
+    if(hit){ spaceScene.remove(b.mesh); bombBlast(b); bombs.splice(i,1); }
+  }
 }
 function damagePShip(dmg){
   if(!pShip||!pShip.alive)return;
@@ -3688,8 +4106,12 @@ function updateSpace(dt){
       var k=Math.min(1,pShip.accel*dt);
       pShip.vel.lerp(tv,k);
       pShip.pos.addScaledVector(pShip.vel,dt);
+      /* Q/E freely raise or lower altitude — this is what actually lets you fly a landing in,
+         instead of the old instant snap-to-ground the moment the lock circle filled */
+      if(keys.q)pShip.pos.y-=dt*11;
+      if(keys.e)pShip.pos.y+=dt*11;
       var half=SPACE_SIZE/2;
-      pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-40,40);
+      pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-1,40);
 
       if(!pc){
         var aim=spaceAimPoint();
@@ -3714,7 +4136,7 @@ function updateSpace(dt){
     updateShipNavLights(pShip.mesh);
 
     pShip.cd-=dt;
-    if(!landedPlanet&&firing&&pShip.cd<=0){ fireShipBolt(); pShip.cd=pShip.rate; }
+    if(!landedPlanet&&firing&&pShip.cd<=0){ if(pShip.weapon==="bomb")dropBomb(); else fireShipBolt(); pShip.cd=pShip.rate; }
     if(pShip.shieldRegenT>0)pShip.shieldRegenT-=dt;
     else if(pShip.shield<pShip.maxshield)pShip.shield=Math.min(pShip.maxshield,pShip.shield+pShip.maxshield*0.25*dt);
   } else if(pShip){
@@ -3764,6 +4186,7 @@ function updateSpace(dt){
   homeBaseMesh.rotation.y+=dt*0.15;
   homeBaseMesh.userData.ringMat.emissiveIntensity=0.5+clamp(homeBase.hp/homeBase.maxhp,0,1)*0.6;
 
+  updateBombs(dt);
   for(var i2=pBolts.length-1;i2>=0;i2--){
     var b=pBolts[i2]; b.x+=b.vx*dt; b.z+=b.vz*dt; b.life-=dt;
     var hit=false;
@@ -3978,6 +4401,7 @@ cv.addEventListener("mousedown",function(e){
     } else if(e.button===2){ cancelPlacing(); toast("Placement cancelled"); }
     return;
   }
+  if(e.button===0&&atOutpost&&equipment.weapon&&state==="surface"){ fireGun(); return; }
   if(e.button===0||e.button===2)camDragStart(e.clientX,e.clientY,"m");
 });
 window.addEventListener("mousemove",function(e){
@@ -4360,7 +4784,7 @@ function toggleBackpack(){ if(state==="backpack")closeBackpack(); else if(state=
 function renderBackpack(){
   var previewUrl=renderPlayerPreview();
   $("bpPreview").innerHTML=previewUrl?'<img src="'+previewUrl+'" alt="Your character">':'';
-  var slotLabels={head:"Head",hands:"Hands",legs:"Legs"};
+  var slotLabels={head:"Head",hands:"Hands",legs:"Legs",weapon:"Weapon"};
   $("bpSlots").innerHTML=EQUIP_SLOTS.map(function(slot){
     var k=equipment[slot], r=k?CRAFT_RECIPES[k]:null;
     return '<div class="gearSlot'+(r?" filled":"")+'"><span class="slotLabel">'+slotLabels[slot]+'</span>'+
@@ -4694,6 +5118,7 @@ function updateSurface(dt){
   }
 
   updateBuildings(dt);
+  if(atOutpost&&currentWorld&&currentWorld.hasHive)updateHiveAndMonsters(dt);
 
   /* mobile: keep the placement ghost tracking the screen-center reticle */
   if(placing&&!document.body.classList.contains("pc-mode"))updatePlacementGhost(innerWidth/2,innerHeight/2);
@@ -4861,6 +5286,8 @@ window.__cq={
   setTarget:function(id,mode,qty){ var b=buildings.filter(function(x){return x.id===id;})[0]; if(b){ b.targetMode=mode; if(qty)b.targetQty=qty; b.producedCount=0; } },
   buildingAt:function(id){ return buildings.filter(function(b){return b.id===id;})[0]||null; },
   playerTeleport:function(x,z){ player.position.x=x; player.position.z=z; },
+  setPlayerFacing:function(ry){ player.rotation.y=ry; },
+  monsterList:function(){ return monsters.map(function(m){return {x:m.x,z:m.z,hp:m.hp};}); },
   launchShip:launchShip, returnToColony:returnToColony,
   tickSpace:function(n,dt){ dt=dt||1/60; for(var i=0;i<n;i++){ if(state==="space"||state==="launching")updateSpace(dt); } },
   spaceState:function(){
@@ -4869,14 +5296,19 @@ window.__cq={
       pShip:pShip?{x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,yaw:pShip.yaw,hp:pShip.hp,maxhp:pShip.maxhp,
         shield:pShip.shield,maxshield:pShip.maxshield,alive:pShip.alive,vel:{x:pShip.vel.x,z:pShip.vel.z}}:null,
       enemies:enemyShips.map(function(e){return {x:e.mesh.position.x,z:e.mesh.position.z,hp:e.hp,max:e.max};}),
-      pBolts:pBolts.length, eBolts:eBolts.length, stock:JSON.parse(JSON.stringify(stock)),
-      planet:{name:PLANET.name,x:PLANET.x,z:PLANET.z,radius:PLANET.radius},
-      landed:landedPlanet?landedPlanet.name:null, landProgress:landProgress};
+      pBolts:pBolts.length, eBolts:eBolts.length, bombs:bombs.length, stock:JSON.parse(JSON.stringify(stock)),
+      worlds:WORLDS.map(function(w){return {id:w.id,nm:w.nm,sx:w.sx,sz:w.sz,radius:w.radius,discovered:w.discovered};}),
+      currentTarget:currentTarget?{id:currentTarget.id,nm:currentTarget.nm,isHome:!!currentTarget.isHome}:null,
+      landed:landedPlanet?landedPlanet.id:null, landProgress:landProgress, atOutpost:atOutpost,
+      currentWorld:currentWorld?currentWorld.id:null,
+      hive:hiveRuntime?{alive:hiveRuntime.alive,hp:hiveRuntime.hp}:null, monsterCount:monsters.length,
+      playerHp:playerHp};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
-  launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim,
+  launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
+  setPShipY:function(y){ if(pShip)pShip.pos.y=y; },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
   forceKillEnemy:function(idx){ idx=idx||0; if(enemyShips[idx])killEnemyShip(enemyShips[idx],idx); },
   saveGame:saveGame, loadGame:loadGame, hasSave:hasSave, newColony:newColony,
