@@ -465,8 +465,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.21.0";
+var VERSION="1.21.1";
 var CHANGELOG=[
+  {v:"1.21.1",t:"Real freeform landing, and bigger, fully separate landscapes",items:[
+    "Landing no longer needs you to aim and hold a lock — fly low, slow down near a world, and you settle wherever you actually came to a stop, so you control exactly where you touch down",
+    "Flying fast and low near a world (a bombing run, for instance) no longer forces a landing — only stopping does, so you can freely buzz a world without getting yanked out of the sky",
+    "Fixed the targeting circle not reliably showing up near Ember Reach and Verdant Hollow — it was tied to an aiming requirement that's gone now, so all three worlds (and home) show it the same way",
+    "Every world's walkable footprint is much bigger, and no longer fades back toward home's colors until well past the edge of where you can actually walk — each one reads as its own separate landscape, not a tinted patch on the home map"
+  ]},
   {v:"1.21.0",t:"Three worlds to explore, fly-in landing, a Bomber, and a hostile Hive",items:[
     "Two brand new landable worlds join Vesta Outpost: Ember Reach, a volcanic world with molten-glass spires and native Magma Shard deposits, and Verdant Hollow, a jungle world with glowing fern growths and native Spore Pod deposits",
     "Every world now has its own sky, lighting, ground palette and decorations, so each one feels like a genuinely different place the moment you land — not a recolored copy of home",
@@ -796,21 +802,21 @@ function craterDip(x,z){
 var WORLDS=[
   { id:"vesta", nm:"Vesta Outpost",
     sx:280,sz:-220,radius:22,col:0xd98a4a,atmoCol:0xffb545,ringCol:0x8a6a4a,
-    cx:300,cz:300,zoneR:55,blendR:95,
+    cx:300,cz:300,zoneR:75,blendR:150,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",decor:"ice",
     sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:1.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false },
   { id:"ember", nm:"Ember Reach",
     sx:-260,sz:260,radius:26,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
-    cx:-320,cz:280,zoneR:55,blendR:95,
+    cx:-320,cz:280,zoneR:75,blendR:150,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
     ore:"magma_shard",oreNm:"Magma Shard",decor:"volcanic",
     sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:1.3,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false },
   { id:"verdance", nm:"Verdant Hollow",
     sx:-260,sz:-260,radius:24,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
-    cx:-320,cz:-320,zoneR:60,blendR:100,
+    cx:-320,cz:-320,zoneR:75,blendR:150,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
     sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:1.0,rimCol:0x40ff90,ambCol:0x2a6a3a},
@@ -1164,8 +1170,12 @@ groundGeo.rotateX(-Math.PI/2);
       var wc=worldCols[wi], w=wc.w, odx=x-w.cx, odz=z-w.cz, od2=Math.sqrt(odx*odx+odz*odz);
       if(od2<nearestD){ nearestD=od2; nearest=wc; }
     }
-    if(nearest&&nearestD<nearest.w.blendR*1.4){
-      var ot=clamp(nearestD/(nearest.w.blendR*1.4),0,1);
+    if(nearest&&nearestD<nearest.w.blendR){
+      /* pure world palette for the entire walkable footprint (nearestD<=zoneR), only fading
+         toward home's wild-terrain colors in the same outer band the terrain height itself
+         uses to flatten out — so the color and shape transitions finish together and each
+         world reads as fully its own place right up to where you can actually walk */
+      var ot=clamp((nearestD-nearest.w.zoneR)/(nearest.w.blendR-nearest.w.zoneR),0,1);
       if(h<2)c.copy(nearest.floor).lerp(nearest.mid,clamp(h/2+0.3,0,1));
       else c.copy(nearest.mid).lerp(nearest.rock,clamp((h-2)/16,0,1));
       c.lerp(homeC,ot);
@@ -1446,8 +1456,8 @@ var landingPodBeacon=null;
   var fernMat=new THREE.MeshStandardMaterial({color:0x4ad86a,emissive:0x0a4a1a,emissiveIntensity:0.5,roughness:0.5,metalness:0.1,flatShading:true});
   var vineRockMat=new THREE.MeshStandardMaterial({color:0x1a3a22,roughness:0.9,metalness:0.05,flatShading:true});
   WORLDS.forEach(function(w){
-    for(var fi=0;fi<18;fi++){
-      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.75,w.blendR*1.7);
+    for(var fi=0;fi<32;fi++){
+      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.7,w.blendR*1.3);
       var fx=w.cx+Math.cos(fa)*fr, fz=w.cz+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
       var fg=new THREE.Group();
       if(w.decor==="ice"){
@@ -2621,7 +2631,7 @@ function scatterNodes(){
   /* every landable world gets a mix of the same ores you already know, plus its own native
      resource, so there's a reason to actually set up shop out there */
   WORLDS.forEach(function(w){
-    var wTypes=["iron_ore","iron_ore","copper_ore",w.ore,w.ore,w.ore];
+    var wTypes=["iron_ore","iron_ore","iron_ore","copper_ore","copper_ore",w.ore,w.ore,w.ore,w.ore];
     var wMaxR=w.zoneR-15;
     wTypes.forEach(function(t){
       var x,z,tries=0,d,clash;
@@ -3483,7 +3493,9 @@ function applySaveData(data){
   if(atOutpost&&shipModelKey){
     currentWorld=restoreWorld;
     restoreLandedShip(restoreWorld);
-    showOutpostShip(restoreWorld);
+    var rox=validSpawn(data.player)?data.player.x-restoreWorld.cx:0;
+    var roz=validSpawn(data.player)?data.player.z-restoreWorld.cz-6:0;
+    showOutpostShip(restoreWorld,rox,roz);
     applyWorldAtmosphere(restoreWorld);
     $("bLaunchLanded").classList.remove("hide");
   }
@@ -3645,13 +3657,19 @@ WORLDS.forEach(function(w){
   w.mesh=g;
 });
 var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
-var LAND_TIME=5, LAND_LOCK_ANGLE=0.28, LAND_LOCK_DIST=150, LAND_SHOW_DIST=280, LAND_MAX_ALT=6;
+/* freeform landing: no aiming/lock-ring requirement — fly low and slow near a world and you
+   settle onto it wherever you actually stopped, so you control where you touch down instead
+   of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
+   so you can freely buzz/bomb a world at low altitude without being forced to land on it. */
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=140;
+var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   var all=WORLDS.concat([HOME_WORLD]);
-  var best=null,bd=LAND_SHOW_DIST;
+  var best=null,bd=1e9;
   all.forEach(function(w){
     var dx=w.sx-pShip.pos.x, dz=w.sz-pShip.pos.z, d=Math.sqrt(dx*dx+dz*dz);
-    if(d<bd){ bd=d; best=w; }
+    var showR=(w.radius||14)+LAND_SHOW_PAD;
+    if(d<showR&&d<bd){ bd=d; best=w; }
   });
   return best;
 }
@@ -3662,18 +3680,17 @@ function updatePlanetTargeting(dt){
   currentTarget=target;
   if(!target){
     elTarget.classList.add("hide");
-    landProgress=Math.max(0,landProgress-dt/(LAND_TIME*0.5));
+    landProgress=Math.max(0,landProgress-dt*2);
     return;
   }
   var dx=target.sx-pShip.pos.x, dz=target.sz-pShip.pos.z;
   var dist=Math.sqrt(dx*dx+dz*dz);
-  var angToPlanet=Math.atan2(dx,dz);
-  var diff=angToPlanet-pShip.yaw;
-  while(diff>Math.PI)diff-=Math.PI*2; while(diff<-Math.PI)diff+=Math.PI*2;
-  var aimed=Math.abs(diff)<LAND_LOCK_ANGLE&&dist<LAND_LOCK_DIST;
+  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+  var near=!target.isHome&&dist<(target.radius+LAND_RANGE_PAD);
   var lowEnough=pShip.pos.y<LAND_MAX_ALT;
-  var locked=!target.isHome&&aimed&&lowEnough;
-  landProgress=locked?Math.min(1,landProgress+dt/LAND_TIME):Math.max(0,landProgress-dt/(LAND_TIME*0.5));
+  var slow=speed<LAND_MAX_SPEED;
+  var settling=near&&lowEnough&&slow;
+  landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
   if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
   else{
@@ -3683,15 +3700,22 @@ function updatePlanetTargeting(dt){
     var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
     var hint="";
     if(!target.isHome){
-      if(locked)hint=" — LANDING";
-      else if(aimed&&!lowEnough)hint=" — DESCEND (Q)";
+      if(settling)hint=" — TOUCHING DOWN";
+      else if(near&&!lowEnough)hint=" — DESCEND (Q)";
+      else if(near&&!slow)hint=" — SLOW DOWN TO LAND";
+      else if(!near)hint=" — FLY CLOSER TO LAND";
     }
     elTarget.querySelector(".ptName").textContent=nameTxt+hint;
     elTarget.querySelector(".ptRing").style.background=
       "conic-gradient(var(--green) "+(landProgress*360)+"deg, rgba(255,255,255,.18) 0deg)";
-    elTarget.classList.toggle("locked",locked);
+    elTarget.classList.toggle("locked",settling);
   }
-  if(!target.isHome&&landProgress>=1)landOnPlanet(target);
+  if(!target.isHome&&landProgress>=1){
+    var padR=target.radius+LAND_RANGE_PAD;
+    lastLandOffset.x=clamp((pShip.pos.x-target.sx)/padR,-1,1)*(target.zoneR-12);
+    lastLandOffset.z=clamp((pShip.pos.z-target.sz)/padR,-1,1)*(target.zoneR-12);
+    landOnPlanet(target);
+  }
 }
 function fadeTransition(midCallback,fadeMs){
   fadeMs=fadeMs||420;
@@ -3731,15 +3755,16 @@ function landOnPlanet(world){
   saveGame();
   setTimeout(function(){ if(landedPlanet)fadeTransition(function(){ teleportToOutpost(world); },600); },900);
 }
-function showOutpostShip(world){
+function showOutpostShip(world,ox,oz){
   if(!outpostShipMesh){
     outpostShipMesh=buildShipMesh(shipModelKey||"scout");
     outpostShipMesh.scale.setScalar(0.62);
     surfaceScene.add(outpostShipMesh);
   }
   /* parked tilted back on its tail like it's mid-countdown, ready to blast off the moment
-     you climb back aboard — not just sitting there flat like a prop */
-  outpostShipMesh.position.set(world.cx,1.1,world.cz);
+     you climb back aboard — not just sitting there flat like a prop — right where you actually
+     touched down, not some fixed spot on the map */
+  outpostShipMesh.position.set(world.cx+(ox||0),1.1,world.cz+(oz||0));
   outpostShipMesh.rotation.set(-0.32,0,0);
   outpostShipMesh.visible=true;
 }
@@ -3752,11 +3777,12 @@ function teleportToOutpost(world){
   $("bLaunchLanded").classList.remove("hide");
   if(!world.hasHive)$("hiveHud").classList.add("hide");
   else { playerHp=playerMaxHp; playerInvulnT=3; }
-  player.position.set(world.cx,0,world.cz+8);
+  var ox=lastLandOffset.x, oz=lastLandOffset.z;
+  player.position.set(world.cx+ox,0,world.cz+oz+6);
   player.rotation.y=Math.PI;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
-  showOutpostShip(world);
+  showOutpostShip(world,ox,oz);
   toast("Touched down on "+world.nm+" — gather what you can, then Launch when you're ready to fly back");
   sfx.build();
   saveGame();
