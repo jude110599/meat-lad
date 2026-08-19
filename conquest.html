@@ -465,8 +465,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.21.1";
+var VERSION="1.21.2";
 var CHANGELOG=[
+  {v:"1.21.2",t:"Fly-in landings, Bomber runs over the Hive, and truly separate worlds",items:[
+    "Arriving at a world no longer cuts to a cutscene — you fly your ship in low over its actual terrain and stay in control, choosing to touch down on open ground or at the landing pad in the middle of each world's clearing",
+    "A Bomber can drop bombs while flying over a world, not just in space — line up over the Hive on Verdant Hollow and blow it up from the air",
+    "The targeting circle now appears from much farther out, so you can see it well before you're already on top of a world",
+    "Each world now runs its own tight fog range while you're on it, so home and the other worlds are no longer visible in the distance — you're genuinely somewhere else, not a colored patch on the home map"
+  ]},
   {v:"1.21.1",t:"Real freeform landing, and bigger, fully separate landscapes",items:[
     "Landing no longer needs you to aim and hold a lock — fly low, slow down near a world, and you settle wherever you actually came to a stop, so you control exactly where you touch down",
     "Flying fast and low near a world (a bombing run, for instance) no longer forces a landing — only stopping does, so you can freely buzz a world without getting yanked out of the sky",
@@ -881,6 +887,11 @@ function applyWorldAtmosphere(world){
   var s=world.sky;
   surfaceScene.background.set(s.low);
   surfaceScene.fog.color.set(s.low);
+  /* a much tighter fog range while you're on a landable world — its own decorations (out to
+     ~zoneR*1.3) stay visible, but home's terrain and the other worlds, all hundreds of units
+     away, fade into haze well before they'd otherwise be visible across the shared ground
+     plane. This is what actually sells "a different planet", not just the color palette. */
+  surfaceScene.fog.near=40; surfaceScene.fog.far=world.zoneR*2.6;
   paintSkybox(s.high,s.rimCol,s.low,s.rimCol,s.sunCol);
   sun.color.set(s.sunCol); sun.intensity=s.sunI;
   rimLight.color.set(s.rimCol);
@@ -889,6 +900,7 @@ function applyWorldAtmosphere(world){
 function restoreHomeAtmosphere(){
   surfaceScene.background.set(SKY_LOW);
   surfaceScene.fog.color.set(SKY_LOW);
+  surfaceScene.fog.near=140; surfaceScene.fog.far=620;
   paintSkybox(SKY_HIGH,0x7a3a3a,0x4a2030);
   sun.color.set(0xffc9a0); sun.intensity=1.2;
   rimLight.color.set(0xb060ff);
@@ -1036,6 +1048,109 @@ function fireGun(){
   if(!best&&!targetHive){ sfx.click(); return; }
   sfx.click();
   if(targetHive)damageHive(w.dmg); else damageMonster(best,w.dmg);
+}
+
+/* ═════════════ SURFACE FLIGHT (piloting the ship low over a world's terrain) ═════════════ */
+var SURF_LAND_ALT=1.8, SURF_LAND_SPEED=3, SURF_LAND_SETTLE=1.0;
+function updateSurfaceFlight(dt){
+  if(!pShip)return;
+  if(currentWorld&&currentWorld.hasHive)ensureHive(currentWorld);
+  var pc=document.body.classList.contains("pc-mode");
+  var fwd=0,strafe=0,turn=0;
+  if(pc){
+    if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
+    if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
+    pShip.yaw+=turn*SHIP_TURN_RATE*dt;
+  } else {
+    if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
+    if(keys.d||keys.arrowright)strafe+=1; if(keys.a||keys.arrowleft)strafe-=1;
+    if(moveStick.on){ strafe+=moveStick.dx; fwd-=moveStick.dy; }
+  }
+  var mlen=Math.sqrt(fwd*fwd+strafe*strafe); if(mlen>1){fwd/=mlen;strafe/=mlen;}
+  var spd=pShip.spd*0.55;
+  var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
+           :new THREE.Vector3(strafe*spd,0,-fwd*spd);
+  var k=Math.min(1,pShip.accel*dt);
+  pShip.vel.lerp(tv,k);
+  pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
+  if(keys.q)pShip.pos.y-=dt*9;
+  if(keys.e)pShip.pos.y+=dt*9;
+  var half=SURFACE_SIZE/2-4;
+  pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half);
+  var groundY=terrainHeight(pShip.pos.x,pShip.pos.z);
+  pShip.pos.y=clamp(pShip.pos.y,groundY,groundY+45);
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
+  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
+    g.material.emissiveIntensity=1+Math.sin(performance.now()/90)*0.15;
+  });
+  updateShipNavLights(pShip.mesh);
+
+  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*11,6,-Math.cos(pShip.yaw)*11);
+  var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
+  camera.position.lerp(camTarget,Math.min(1,dt*5));
+  camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
+
+  pShip.cd-=dt;
+  var firing=pc?mouse.downBtn===2:spaceFiring;
+  if(firing&&pShip.cd<=0&&pShip.weapon==="bomb"){ dropSurfaceBomb(); pShip.cd=pShip.rate; }
+  updateSurfaceBombs(dt); updateSurfaceParts(dt);
+
+  var alt=pShip.pos.y-groundY;
+  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+  var ready=alt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
+  landSettleT=ready?landSettleT+dt:Math.max(0,landSettleT-dt*2);
+  if(landSettleT>=SURF_LAND_SETTLE)touchDown();
+}
+var surfaceParts=[];
+function spawnSurfaceParticle(pos,vel,scale,colorTint){
+  var mat=new THREE.SpriteMaterial({map:sparkTex,color:colorTint||0xffcc66,transparent:true,
+    opacity:0.9,depthWrite:false,blending:THREE.AdditiveBlending});
+  var s=new THREE.Sprite(mat); s.scale.setScalar(scale||0.6); s.position.copy(pos);
+  surfaceScene.add(s);
+  surfaceParts.push({mesh:s,vel:vel.clone(),life:0.5,max:0.5,baseScale:scale||0.6});
+}
+function updateSurfaceParts(dt){
+  for(var i=surfaceParts.length-1;i>=0;i--){
+    var p=surfaceParts[i]; p.life-=dt;
+    if(p.life<=0){ surfaceScene.remove(p.mesh); p.mesh.material.dispose(); surfaceParts.splice(i,1); continue; }
+    p.mesh.position.addScaledVector(p.vel,dt);
+    p.vel.multiplyScalar(1-Math.min(1,dt*1.5));
+    var t=p.life/p.max; p.mesh.material.opacity=t*0.9; p.mesh.scale.setScalar(p.baseScale*(1.6-t*0.6));
+  }
+}
+var surfaceBombs=[];
+function dropSurfaceBomb(){
+  var mesh=new THREE.Mesh(bombGeo,bombMat);
+  mesh.position.copy(pShip.pos);
+  surfaceScene.add(mesh);
+  surfaceBombs.push({x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,vx:pShip.vel.x,vz:pShip.vel.z,vy:-2,dmg:pShip.dmg,mesh:mesh});
+  sfx.click();
+}
+function surfaceBombBlast(b){
+  var pos=new THREE.Vector3(b.x,b.y,b.z);
+  for(var i=0;i<18;i++){
+    var dir=new THREE.Vector3(rnd(-1,1),rnd(0.2,1),rnd(-1,1)).normalize().multiplyScalar(rnd(5,13));
+    spawnSurfaceParticle(pos.clone(),dir,rnd(0.5,1.0),Math.random()<0.5?0xffaa40:0xff5020);
+  }
+  var R=8.5;
+  monsters.slice().forEach(function(m){
+    var dx=m.x-b.x, dz=m.z-b.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d<R)damageMonster(m,b.dmg*(1-d/R));
+  });
+  if(hiveRuntime&&hiveRuntime.alive){
+    var hdx=hiveRuntime.pos.x-b.x, hdz=hiveRuntime.pos.z-b.z;
+    if(Math.sqrt(hdx*hdx+hdz*hdz)<R)damageHive(b.dmg*1.4);
+  }
+  sfx.build();
+}
+function updateSurfaceBombs(dt){
+  for(var i=surfaceBombs.length-1;i>=0;i--){
+    var b=surfaceBombs[i];
+    b.vy-=dt*14;
+    b.x+=b.vx*dt; b.z+=b.vz*dt; b.y+=b.vy*dt;
+    b.mesh.position.set(b.x,b.y,b.z); b.mesh.rotation.x+=dt*4;
+    if(b.y<=terrainHeight(b.x,b.z)){ surfaceScene.remove(b.mesh); surfaceBombBlast(b); surfaceBombs.splice(i,1); }
+  }
 }
 
 /* a big ringed gas giant and a smaller cratered moon hanging low over the horizon — the single
@@ -1446,6 +1561,27 @@ var landingPodBeacon=null;
     kg.position.set(kx,ky,kz);
     surfaceScene.add(kg);
   }
+  /* a simple landing pad in each world's clearing — purely a visual "aim here" marker, landing
+     works the same on any flat ground, but this gives you an obvious deliberate spot to dock at
+     instead of only ever picking a random patch of open terrain */
+  WORLDS.forEach(function(w){
+    var padMat=new THREE.MeshStandardMaterial({color:0x2a3038,roughness:0.7,metalness:0.3});
+    var ringMat=new THREE.MeshStandardMaterial({color:w.atmoCol,emissive:w.atmoCol,emissiveIntensity:0.7,roughness:0.4,metalness:0.3});
+    var pg=new THREE.Group();
+    var disc=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7,0.4,16),padMat);
+    pg.add(disc);
+    var ring=new THREE.Mesh(new THREE.TorusGeometry(6,0.22,8,24),ringMat);
+    ring.rotation.x=Math.PI/2; ring.position.y=0.22; pg.add(ring);
+    for(var pi=0;pi<4;pi++){
+      var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),ringMat);
+      var pang=pi/4*Math.PI*2;
+      lamp.position.set(Math.cos(pang)*6,0.5,Math.sin(pang)*6);
+      pg.add(lamp);
+    }
+    var py=terrainHeight(w.cx-18,w.cz-14);
+    pg.position.set(w.cx-18,py+0.2,w.cz-14);
+    surfaceScene.add(pg);
+  });
   /* each landable world gets its own decoration set ringing its clearing, so it reads as a
      distinct place the moment you're standing there — ice spikes, volcanic glass spires, or
      jungle fern clusters, depending on the world's biome */
@@ -3425,10 +3561,10 @@ function newColony(){
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   landedPlanet=null; landProgress=0; landedNormal=null;
-  atOutpost=false; currentWorld=null;
+  atOutpost=false; currentWorld=null; surfaceFlying=false;
   WORLDS.forEach(function(w){ w.discovered=false; });
   restoreHomeAtmosphere();
-  if(outpostShipMesh){ surfaceScene.remove(outpostShipMesh); outpostShipMesh=null; }
+  if(pShip){ spaceScene.remove(pShip.mesh); surfaceScene.remove(pShip.mesh); pShip=null; }
   $("bLaunchLanded").classList.add("hide");
   $("hiveHud").classList.add("hide");
   if(hiveRuntime){ surfaceScene.remove(hiveRuntime.mesh); hiveRuntime=null; }
@@ -3491,26 +3627,26 @@ function applySaveData(data){
   atOutpost=!!data.atOutpost;
   var restoreWorld=worldById(data.atWorldId)||WORLDS[0];
   if(atOutpost&&shipModelKey){
-    currentWorld=restoreWorld;
-    restoreLandedShip(restoreWorld);
-    var rox=validSpawn(data.player)?data.player.x-restoreWorld.cx:0;
-    var roz=validSpawn(data.player)?data.player.z-restoreWorld.cz-6:0;
-    showOutpostShip(restoreWorld,rox,roz);
+    currentWorld=restoreWorld; surfaceFlying=false;
+    var rgx=validSpawn(data.player)?data.player.x:restoreWorld.cx;
+    var rgz=validSpawn(data.player)?data.player.z-2.6:restoreWorld.cz;
+    restoreLandedShip(restoreWorld,rgx,rgz);
     applyWorldAtmosphere(restoreWorld);
     $("bLaunchLanded").classList.remove("hide");
+    if(restoreWorld.hasHive)$("hiveHud").classList.remove("hide");
   }
 }
-function restoreLandedShip(world){
+function restoreLandedShip(world,gx,gz){
   var stats=SHIP_STATS[shipModelKey];
   pShip={
-    pos:new THREE.Vector3(world.sx,0,world.sz+world.radius+1.1), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
+    pos:new THREE.Vector3(gx,terrainHeight(gx,gz),gz), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
     hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
     spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0, weapon:stats.weapon||"bolt",
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
-  spaceScene.add(pShip.mesh);
-  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
-  landedPlanet=world; landProgress=0; landedNormal=new THREE.Vector3(0,0,1);
+  surfaceScene.add(pShip.mesh);
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(-0.32,0,0);
+  landedPlanet=world; landProgress=0; landedNormal=new THREE.Vector3(0,1,0);
 }
 function loadGame(){
   var raw=null; try{ raw=localStorage.getItem(SKEY); }catch(e){}
@@ -3661,7 +3797,7 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
    settle onto it wherever you actually stopped, so you control where you touch down instead
    of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
    so you can freely buzz/bomb a world at low altitude without being forced to land on it. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=140;
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=420;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   var all=WORLDS.concat([HOME_WORLD]);
@@ -3732,57 +3868,50 @@ function landingDustBurst(pos,normal){
     spawnThrustParticle(pos.clone().addScaledVector(normal,0.4),dir,rnd(0.3,0.6),0xcaa06a);
   }
 }
-var atOutpost=false, outpostShipMesh=null, currentWorld=null;
+var atOutpost=false, currentWorld=null, surfaceFlying=false, landSettleT=0;
+/* Arriving at a world hands you straight into flying over its actual terrain at low altitude —
+   the same ship, now piloted inside the walkable scene instead of a cutscene that snaps you to
+   the ground. You choose where (and whether) to touch down by flying low and slow, same as the
+   approach from space; while airborne here a Bomber can drop bombs on the Hive/monsters below. */
 function landOnPlanet(world){
   landedPlanet=world; landProgress=0;
-  pShip.vel.set(0,0,0);
-  var nrm=new THREE.Vector3(pShip.pos.x-world.sx,0,pShip.pos.z-world.sz);
-  if(nrm.lengthSq()<0.01)nrm.set(0,0,1);
-  nrm.normalize();
-  var surfacePos=new THREE.Vector3(world.sx,0,world.sz).addScaledVector(nrm,world.radius+1.1);
-  pShip.pos.copy(surfacePos); pShip.pos.y=0;
-  pShip.yaw=Math.atan2(nrm.x,nrm.z)+Math.PI;
-  var upAlign=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),nrm);
-  var yawQuat=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),pShip.yaw);
-  pShip.mesh.position.copy(pShip.pos);
-  pShip.mesh.quaternion.copy(upAlign).multiply(yawQuat);
-  landedNormal=nrm;
   world.discovered=true;
-  $("planetTarget").classList.add("hide");
-  landingDustBurst(pShip.pos.clone(),nrm);
-  toast("Landed on "+world.nm+" — touching down...");
+  toast("Approaching "+world.nm+"...");
   sfx.build();
-  saveGame();
-  setTimeout(function(){ if(landedPlanet)fadeTransition(function(){ teleportToOutpost(world); },600); },900);
+  fadeTransition(function(){ enterSurfaceFlight(world); },550);
 }
-function showOutpostShip(world,ox,oz){
-  if(!outpostShipMesh){
-    outpostShipMesh=buildShipMesh(shipModelKey||"scout");
-    outpostShipMesh.scale.setScalar(0.62);
-    surfaceScene.add(outpostShipMesh);
-  }
-  /* parked tilted back on its tail like it's mid-countdown, ready to blast off the moment
-     you climb back aboard — not just sitting there flat like a prop — right where you actually
-     touched down, not some fixed spot on the map */
-  outpostShipMesh.position.set(world.cx+(ox||0),1.1,world.cz+(oz||0));
-  outpostShipMesh.rotation.set(-0.32,0,0);
-  outpostShipMesh.visible=true;
-}
-function teleportToOutpost(world){
+function enterSurfaceFlight(world){
   resetMovementKeys();
-  atOutpost=true; currentWorld=world; state="surface";
-  applyWorldAtmosphere(world);
-  $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
-  $("mobActions").classList.add("show");
-  $("bLaunchLanded").classList.remove("hide");
-  if(!world.hasHive)$("hiveHud").classList.add("hide");
-  else { playerHp=playerMaxHp; playerInvulnT=3; }
+  spaceScene.remove(pShip.mesh);
+  surfaceScene.add(pShip.mesh);
   var ox=lastLandOffset.x, oz=lastLandOffset.z;
-  player.position.set(world.cx+ox,0,world.cz+oz+6);
-  player.rotation.y=Math.PI;
+  var gx=world.cx+ox, gz=world.cz+oz;
+  pShip.pos.set(gx,terrainHeight(gx,gz)+9,gz);
+  pShip.vel.set(0,0,0);
+  pShip.mesh.position.copy(pShip.pos);
+  pShip.mesh.rotation.set(0,pShip.yaw,0);
+  atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0;
+  applyWorldAtmosphere(world);
+  $("hud").classList.add("show"); $("mobActions").classList.remove("show"); $("hudSpace").classList.remove("show");
+  $("bLaunchLanded").classList.add("hide");
+  if(!world.hasHive)$("hiveHud").classList.add("hide");
+  toast("Flying over "+world.nm+" — fly low and slow to touch down"+(pShip.weapon==="bomb"?" (right-click to bomb)":""));
+  saveGame();
+}
+function touchDown(){
+  surfaceFlying=false;
+  pShip.vel.set(0,0,0);
+  pShip.mesh.rotation.set(-0.32,0,0);
+  landedNormal=new THREE.Vector3(0,1,0);
+  landingDustBurst(pShip.pos.clone(),new THREE.Vector3(0,1,0));
+  var world=currentWorld;
+  player.position.set(pShip.pos.x,0,pShip.pos.z+2.6);
+  player.rotation.y=pShip.yaw+Math.PI;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
-  showOutpostShip(world,ox,oz);
+  $("mobActions").classList.add("show");
+  $("bLaunchLanded").classList.remove("hide");
+  if(world.hasHive){ playerHp=playerMaxHp; playerInvulnT=3; $("hiveHud").classList.remove("hide"); }
   toast("Touched down on "+world.nm+" — gather what you can, then Launch when you're ready to fly back");
   sfx.build();
   saveGame();
@@ -3792,11 +3921,11 @@ function launchFromLandedShip(){
      always agree with it, but check both so a stray desync can never soft-lock the Launch button */
   if(!landedPlanet&&!atOutpost)return;
   resetMovementKeys();
-  toast(atOutpost?"Boarding ship...":"Launching...");
+  toast("Launching...");
   sfx.click();
+  var world=currentWorld;
   fadeTransition(function(){
-    if(outpostShipMesh)outpostShipMesh.visible=false;
-    atOutpost=false; currentWorld=null;
+    atOutpost=false; currentWorld=null; surfaceFlying=false;
     restoreHomeAtmosphere();
     $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
     $("bLaunchLanded").classList.add("hide");
@@ -3804,7 +3933,10 @@ function launchFromLandedShip(){
     $("hudSpace").classList.add("show");
     landedPlanet=null; landProgress=0; landedNormal=null;
     if(pShip){
-      pShip.mesh.rotation.set(0,pShip.yaw,0);
+      surfaceScene.remove(pShip.mesh);
+      spaceScene.add(pShip.mesh);
+      if(world){ pShip.pos.set(world.sx,0,world.sz+world.radius+2); pShip.yaw=Math.PI; }
+      pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
       toast("Launching...");
       sfx.build();
       beginLaunchAnim();
@@ -4427,7 +4559,8 @@ cv.addEventListener("mousedown",function(e){
     } else if(e.button===2){ cancelPlacing(); toast("Placement cancelled"); }
     return;
   }
-  if(e.button===0&&atOutpost&&equipment.weapon&&state==="surface"){ fireGun(); return; }
+  if(e.button===0&&atOutpost&&!surfaceFlying&&equipment.weapon&&state==="surface"){ fireGun(); return; }
+  if(surfaceFlying&&e.button===2)return; /* updateSurfaceFlight reads mouse.downBtn continuously to drop bombs */
   if(e.button===0||e.button===2)camDragStart(e.clientX,e.clientY,"m");
 });
 window.addEventListener("mousemove",function(e){
@@ -5071,6 +5204,12 @@ var interactPose=0, interactPoseT=0;
 function pulseInteractPose(){ interactPoseT=0.35; }
 var walkT=0;
 function updateSurface(dt){
+  if(surfaceFlying){
+    updateSurfaceFlight(dt);
+    updateBuildings(dt);
+    updateHudSurface();
+    return;
+  }
   var eq=equipStats();
   var moving=false, sprinting=false;
   /* movement input itself is the one thing still gated to state==="surface" — you shouldn't be
@@ -5259,7 +5398,9 @@ requestAnimationFrame(frame);
 
 window.__cq={
   state:function(){
-    return {state:state, atOutpost:atOutpost, player:{x:player.position.x,y:player.position.y,z:player.position.z,ry:player.rotation.y},
+    return {state:state, atOutpost:atOutpost, surfaceFlying:surfaceFlying, currentWorldId:currentWorld?currentWorld.id:null,
+      pShipPos:pShip?{x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z}:null,
+      player:{x:player.position.x,y:player.position.y,z:player.position.z,ry:player.rotation.y},
       cam:{yaw:camYaw,pitch:camPitch,pos:{x:camera.position.x,y:camera.position.y,z:camera.position.z}},
       deviceMode:document.body.classList.contains("pc-mode")?"pc":"mobile",
       stock:JSON.parse(JSON.stringify(stock)), powerGen:powerGen, powerDraw:powerDraw,
@@ -5333,12 +5474,17 @@ window.__cq={
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
+  touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb,
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
   setPShipY:function(y){ if(pShip)pShip.pos.y=y; },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
   forceKillEnemy:function(idx){ idx=idx||0; if(enemyShips[idx])killEnemyShip(enemyShips[idx],idx); },
   saveGame:saveGame, loadGame:loadGame, hasSave:hasSave, newColony:newColony,
   rawSave:function(){ try{ return JSON.parse(localStorage.getItem(SKEY)); }catch(e){ return null; } },
+  hiveState:function(){
+    return {hive:hiveRuntime?{hp:hiveRuntime.hp,max:hiveRuntime.maxhp,alive:hiveRuntime.alive,pos:hiveRuntime.pos}:null,
+      monsters:monsters.map(function(m){return {x:m.x,z:m.z,hp:m.hp};}), playerHp:playerHp};
+  },
   setHomeBaseHp:function(n){ homeBase.hp=n; },
   sceneInfo:function(){
     return {
