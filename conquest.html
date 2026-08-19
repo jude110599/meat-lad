@@ -473,8 +473,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.27.0";
+var VERSION="1.27.1";
 var CHANGELOG=[
+  {v:"1.27.1",t:"Low flight over a world now flies like flight — banking, pitch, and an engine trail",items:[
+    "Piloting the ship low over a world used to sit dead level no matter what you did — no bank into turns, no engine trail, nothing space flight didn't already have. It now banks into turns, pitches slightly with your throttle/altitude input, and trails glowing thrust particles while moving, matching what space flight already looked like"
+  ]},
   {v:"1.27.0",t:"Ships can now actually be shot down, cooler bombs/explosions, and a fixed 'mystery planet'",items:[
     "Getting shot down by an alien turret while flying over a world is now a real crash instead of the space-combat eject (which never had anywhere to send a rescue ship out there) — your ship tumbles, catches fire, trails smoke, and slams into the ground as a wreck",
     "A wrecked ship can't be boarded or flown again. Walk up and press E to abandon it and get rescued back to your colony (you'll need to build a new ship at the Shipyard), or use the delete tool on it directly",
@@ -1352,10 +1355,30 @@ function updateSurfaceFlight(dt){
   }
   var groundY=terrainHeight(pShip.pos.x,pShip.pos.z);
   pShip.pos.y=clamp(pShip.pos.y,groundY+shipClearance(),groundY+45);
-  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
-  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
-    g.material.emissiveIntensity=1+Math.sin(performance.now()/90)*0.15;
-  });
+  pShip.mesh.position.copy(pShip.pos);
+  /* bank into turns and pitch with forward/vertical speed — brings low flight up to the same
+     liveliness space flight already had instead of sitting dead level the whole time */
+  pShip.roll=pShip.roll==null?0:pShip.roll;
+  pShip.pitch=pShip.pitch==null?0:pShip.pitch;
+  var targetRoll=pc?-turn*0.55:-strafe*0.4;
+  pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
+  var targetPitch=clamp((keys.e?1:0)-(keys.q?1:0),-1,1)*-0.18+(pc?-fwd*0.08:0);
+  pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
+  pShip.mesh.rotation.set(pShip.pitch,pShip.yaw,pShip.roll);
+  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+  if(pShip.mesh.userData.engineGlow){
+    var moving=speed>1;
+    pShip.mesh.userData.engineGlow.forEach(function(g){
+      g.material.emissiveIntensity=1+(moving?0.6:0)+Math.sin(performance.now()/90)*0.15;
+    });
+    if(moving&&Math.random()<0.5){
+      var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
+      var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
+      var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(3,6));
+      eback.x+=rnd(-.5,.5); eback.y+=rnd(-.3,.3); eback.z+=rnd(-.5,.5);
+      spawnSurfaceParticle(ewp,eback,rnd(0.22,0.4),0x6fd8ff);
+    }
+  }
   updateShipNavLights(pShip.mesh);
 
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*11,6,-Math.cos(pShip.yaw)*11);
@@ -1369,7 +1392,6 @@ function updateSurfaceFlight(dt){
   updateSurfaceBombs(dt); updateSurfaceParts(dt);
 
   var alt=pShip.pos.y-groundY;
-  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
   var ready=alt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
   landSettleT=ready?landSettleT+dt:Math.max(0,landSettleT-dt*2);
   if(landSettleT>=SURF_LAND_SETTLE){
@@ -6228,6 +6250,7 @@ window.__cq={
   debugBeltWaypoints:function(i){ var bl=belts[i||0]; return bl?bl.waypoints:null; },
   debugNodeAt:function(i){ var n=nodes[i]; if(!n)return null; return {x:n.x,z:n.z,restype:n.restype,meshPos:n.mesh.position.toArray(),visible:n.mesh.visible,inScene:surfaceScene.children.indexOf(n.mesh)>=0}; },
   debugCamInfo:function(){ return {pos:camera.position.toArray(),near:camera.near,far:camera.far,fogNear:surfaceScene.fog?surfaceScene.fog.near:null,fogFar:surfaceScene.fog?surfaceScene.fog.far:null,fogColor:surfaceScene.fog?"#"+surfaceScene.fog.color.getHexString():null}; },
+  debugShipFlight:function(){ if(!pShip)return null; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length}; },
   debugCycleSnap:function(){ cycleSnapMult(); return snapMult; },
   debugBuildPlane:function(){ return {pos:buildPlaneMesh.position.toArray(), visible:buildPlaneMesh.visible, inScene:surfaceScene.children.indexOf(buildPlaneMesh)>=0}; },
   debugBuildingUnderScreen:function(sx,sy){ renderer.render(surfaceScene,camera); var b=buildingUnderScreen(sx,sy); return b?{id:b.id,type:b.type}:null; },
