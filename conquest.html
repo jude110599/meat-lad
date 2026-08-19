@@ -465,8 +465,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.21.3";
+var VERSION="1.22.0";
 var CHANGELOG=[
+  {v:"1.22.0",t:"Every world is now a truly separate floating platform",items:[
+    "Rebuilt each landable world as its own physically separate disc-shaped platform with a raised rim wall, instead of a tinted zone painted onto the same shared ground plane as home — flying between worlds now actually takes you somewhere else, not to a different-colored patch of the same map",
+    "Fixed a bug where the space targeting circle could get stuck on screen — approaching a world and then heading home or opening a menu (like the Shipyard) could leave the circle and its label frozen on top of the UI. It's now force-hidden the instant you're not actively flying in open space",
+    "Fixed your character model staying visible (and stuck at an old position) while you were piloting the ship over a world's surface — you're properly hidden while flying and only reappear when you actually touch down",
+    "Flying or walking now keeps you within your current world's platform — you can't drift or wander off its edge into nothing"
+  ]},
   {v:"1.21.3",t:"Landing Pad is now buildable, and the targeting circle is reliable everywhere",items:[
     "The Landing Pad is no longer fixed scenery — it's a real placeable building (under Ship Production in the Build menu), so you can put one wherever you actually want to dock, on any world",
     "Fixed the targeting circle favoring home over whichever world you were actually flying toward — home used the same huge show radius as the landable worlds, so it kept winning \"nearest\" for most of a long approach. Home's radius is now much smaller, so the world you're flying to takes over reliably"
@@ -812,21 +818,21 @@ function craterDip(x,z){
 var WORLDS=[
   { id:"vesta", nm:"Vesta Outpost",
     sx:280,sz:-220,radius:22,col:0xd98a4a,atmoCol:0xffb545,ringCol:0x8a6a4a,
-    cx:300,cz:300,zoneR:75,blendR:150,
+    cx:300,cz:300,zoneR:75,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",decor:"ice",
     sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:1.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false },
   { id:"ember", nm:"Ember Reach",
     sx:-260,sz:260,radius:26,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
-    cx:-320,cz:280,zoneR:75,blendR:150,
+    cx:-320,cz:280,zoneR:75,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
     ore:"magma_shard",oreNm:"Magma Shard",decor:"volcanic",
     sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:1.3,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false },
   { id:"verdance", nm:"Verdant Hollow",
     sx:-260,sz:-260,radius:24,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
-    cx:-320,cz:-320,zoneR:75,blendR:150,
+    cx:-320,cz:-320,zoneR:75,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
     sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:1.0,rimCol:0x40ff90,ambCol:0x2a6a3a},
@@ -834,31 +840,27 @@ var WORLDS=[
 ];
 var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:14,isHome:true,discovered:true};
 function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
+function worldAt(x,z){
+  for(var i=0;i<WORLDS.length;i++){
+    var w=WORLDS[i], dx=x-w.cx, dz=z-w.cz;
+    if(dx*dx+dz*dz<=w.zoneR*w.zoneR)return w;
+  }
+  return null;
+}
 function terrainHeight(x,z){
+  /* each landable world is a flat, self-contained platform — hard-edged, not blended into
+     home's terrain shape at all, since it's rendered as its own separate disc mesh floating
+     apart from home's ground plane, not a tinted patch of the same continuous surface */
+  if(worldAt(x,z))return 0;
   var d=Math.sqrt(x*x+z*z);
   var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
-  for(var i=0;i<WORLDS.length;i++){
-    var w=WORLDS[i], dox=x-w.cx, doz=z-w.cz, od=Math.sqrt(dox*dox+doz*doz);
-    var t2=clamp((od-w.zoneR)/(w.blendR-w.zoneR),0,1);
-    t=Math.min(t,t2);
-  }
   var smooth=t*t*(3-2*t);
   return (terrainRaw(x,z)+craterDip(x,z))*smooth;
 }
 function inAnyBuildZone(x,z){
   if(Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10)return true;
-  for(var i=0;i<WORLDS.length;i++){
-    var w=WORLDS[i], dx=x-w.cx, dz=z-w.cz;
-    if(Math.sqrt(dx*dx+dz*dz)<=w.zoneR-10)return true;
-  }
-  return false;
-}
-function worldZoneAt(x,z){
-  for(var i=0;i<WORLDS.length;i++){
-    var w=WORLDS[i], dx=x-w.cx, dz=z-w.cz;
-    if(Math.sqrt(dx*dx+dz*dz)<=w.blendR)return w;
-  }
-  return null;
+  var w=worldAt(x,z);
+  return !!(w&&Math.sqrt((x-w.cx)*(x-w.cx)+(z-w.cz)*(z-w.cz))<=w.zoneR-10);
 }
 
 /* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
@@ -1079,8 +1081,13 @@ function updateSurfaceFlight(dt){
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
   if(keys.q)pShip.pos.y-=dt*9;
   if(keys.e)pShip.pos.y+=dt*9;
-  var half=SURFACE_SIZE/2-4;
-  pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half);
+  /* stay within the current world's own disc — flying past its rim would mean drifting off
+     into a floating platform's edge with nothing underneath */
+  if(currentWorld){
+    var wr=currentWorld.zoneR-3;
+    var wdx=pShip.pos.x-currentWorld.cx, wdz=pShip.pos.z-currentWorld.cz, wd=Math.sqrt(wdx*wdx+wdz*wdz);
+    if(wd>wr){ pShip.pos.x=currentWorld.cx+wdx/wd*wr; pShip.pos.z=currentWorld.cz+wdz/wd*wr; }
+  }
   var groundY=terrainHeight(pShip.pos.x,pShip.pos.z);
   pShip.pos.y=clamp(pShip.pos.y,groundY,groundY+45);
   pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
@@ -1270,35 +1277,14 @@ groundGeo.rotateX(-Math.PI/2);
   /* alien palette: warm rust regolith in the buildable clearing (kept readable against the
      buildings), shifting to teal lichen on the wild rises and pale violet mineral crust up high */
   var dirt=new THREE.Color(0x5c3a28), grass=new THREE.Color(0x2a6858), rock=new THREE.Color(0x4a4258), snow=new THREE.Color(0x9a8ec2);
-  /* each landable world gets its own palette entirely, so it reads as a genuinely different
-     place the moment you're standing on it, not just a recolored copy of the home clearing */
-  var worldCols=WORLDS.map(function(w){
-    return {w:w,floor:new THREE.Color(w.floor),mid:new THREE.Color(w.mid),rock:new THREE.Color(w.rock)};
-  });
   for(var i=0;i<pos.count;i++){
     var x=pos.getX(i), z=pos.getZ(i);
     var h=terrainHeight(x,z);
     pos.setY(i,h);
     var c=new THREE.Color();
-    var homeC=new THREE.Color();
-    if(h<2)homeC.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
-    else if(h<12)homeC.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
-    else homeC.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
-    var nearest=null, nearestD=1e9;
-    for(var wi=0;wi<worldCols.length;wi++){
-      var wc=worldCols[wi], w=wc.w, odx=x-w.cx, odz=z-w.cz, od2=Math.sqrt(odx*odx+odz*odz);
-      if(od2<nearestD){ nearestD=od2; nearest=wc; }
-    }
-    if(nearest&&nearestD<nearest.w.blendR){
-      /* pure world palette for the entire walkable footprint (nearestD<=zoneR), only fading
-         toward home's wild-terrain colors in the same outer band the terrain height itself
-         uses to flatten out — so the color and shape transitions finish together and each
-         world reads as fully its own place right up to where you can actually walk */
-      var ot=clamp((nearestD-nearest.w.zoneR)/(nearest.w.blendR-nearest.w.zoneR),0,1);
-      if(h<2)c.copy(nearest.floor).lerp(nearest.mid,clamp(h/2+0.3,0,1));
-      else c.copy(nearest.mid).lerp(nearest.rock,clamp((h-2)/16,0,1));
-      c.lerp(homeC,ot);
-    } else c.copy(homeC);
+    if(h<2)c.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
+    else if(h<12)c.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
+    else c.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
     var speck=rnd(-0.04,0.04);
     c.r=clamp(c.r+speck,0,1); c.g=clamp(c.g+speck,0,1); c.b=clamp(c.b+speck,0,1);
     colArr[i*3]=c.r; colArr[i*3+1]=c.g; colArr[i*3+2]=c.b;
@@ -1565,7 +1551,32 @@ var landingPodBeacon=null;
     kg.position.set(kx,ky,kz);
     surfaceScene.add(kg);
   }
-  /* each landable world gets its own decoration set ringing its clearing, so it reads as a
+  /* each landable world is its own separate disc-shaped platform — a completely independent
+     patch of ground floating apart from home's terrain and every other world, not a tinted
+     zone carved out of the same shared plane. A raised rim wall marks its hard edge. */
+  WORLDS.forEach(function(w){
+    var floorC=new THREE.Color(w.floor), midC=new THREE.Color(w.mid), rockC=new THREE.Color(w.rock);
+    var discGeo=new THREE.CircleGeometry(w.zoneR,48);
+    discGeo.rotateX(-Math.PI/2);
+    var dpos=discGeo.attributes.position, dcol=new Float32Array(dpos.count*3);
+    for(var di2=0;di2<dpos.count;di2++){
+      var dxp=dpos.getX(di2), dzp=dpos.getZ(di2), dr2=Math.sqrt(dxp*dxp+dzp*dzp)/w.zoneR;
+      var dc=new THREE.Color().copy(floorC).lerp(midC,clamp(dr2*1.3,0,1));
+      var dspeck=rnd(-0.035,0.035);
+      dc.r=clamp(dc.r+dspeck,0,1); dc.g=clamp(dc.g+dspeck,0,1); dc.b=clamp(dc.b+dspeck,0,1);
+      dcol[di2*3]=dc.r; dcol[di2*3+1]=dc.g; dcol[di2*3+2]=dc.b;
+    }
+    discGeo.setAttribute("color",new THREE.BufferAttribute(dcol,3));
+    var discMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,metalness:0});
+    var discMesh=new THREE.Mesh(discGeo,discMat);
+    discMesh.position.set(w.cx,0.06,w.cz);
+    surfaceScene.add(discMesh);
+    var rimMat=new THREE.MeshStandardMaterial({color:w.rock,roughness:0.85,metalness:0.15,flatShading:true});
+    var rim=new THREE.Mesh(new THREE.CylinderGeometry(w.zoneR+0.6,w.zoneR+1.6,4,40,1,true),rimMat);
+    rim.position.set(w.cx,-1.8,w.cz);
+    surfaceScene.add(rim);
+  });
+  /* each landable world gets its own decoration set scattered across its disc, so it reads as a
      distinct place the moment you're standing there — ice spikes, volcanic glass spires, or
      jungle fern clusters, depending on the world's biome */
   var iceMat=new THREE.MeshStandardMaterial({color:0x9fe0f0,emissive:0x2a6a80,emissiveIntensity:0.55,roughness:0.25,metalness:0.35,flatShading:true});
@@ -1575,8 +1586,8 @@ var landingPodBeacon=null;
   var fernMat=new THREE.MeshStandardMaterial({color:0x4ad86a,emissive:0x0a4a1a,emissiveIntensity:0.5,roughness:0.5,metalness:0.1,flatShading:true});
   var vineRockMat=new THREE.MeshStandardMaterial({color:0x1a3a22,roughness:0.9,metalness:0.05,flatShading:true});
   WORLDS.forEach(function(w){
-    for(var fi=0;fi<32;fi++){
-      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.7,w.blendR*1.3);
+    for(var fi=0;fi<26;fi++){
+      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.35,w.zoneR*0.9);
       var fx=w.cx+Math.cos(fa)*fr, fz=w.cz+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
       var fg=new THREE.Group();
       if(w.decor==="ice"){
@@ -3896,6 +3907,7 @@ function enterSurfaceFlight(world){
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(0,pShip.yaw,0);
   atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0;
+  player.visible=false; playerShadow.visible=false;
   applyWorldAtmosphere(world);
   $("hud").classList.add("show"); $("mobActions").classList.remove("show"); $("hudSpace").classList.remove("show");
   $("bLaunchLanded").classList.add("hide");
@@ -3912,6 +3924,7 @@ function touchDown(){
   var world=currentWorld;
   player.position.set(pShip.pos.x,0,pShip.pos.z+2.6);
   player.rotation.y=pShip.yaw+Math.PI;
+  player.visible=true; playerShadow.visible=true;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
   $("mobActions").classList.add("show");
@@ -5241,9 +5254,15 @@ function updateSurface(dt){
       player.rotation.y+=da*Math.min(1,dt*10);
       walkT+=dt*(sprinting?15:9);
     }
-    var half=SURFACE_SIZE/2-4;
-    player.position.x=clamp(player.position.x,-half,half);
-    player.position.z=clamp(player.position.z,-half,half);
+    if(atOutpost&&currentWorld){
+      var wr2=currentWorld.zoneR-3;
+      var pdx=player.position.x-currentWorld.cx, pdz=player.position.z-currentWorld.cz, pd=Math.sqrt(pdx*pdx+pdz*pdz);
+      if(pd>wr2){ player.position.x=currentWorld.cx+pdx/pd*wr2; player.position.z=currentWorld.cz+pdz/pd*wr2; }
+    } else {
+      var half=SURFACE_SIZE/2-4;
+      player.position.x=clamp(player.position.x,-half,half);
+      player.position.z=clamp(player.position.z,-half,half);
+    }
   }
 
   if(interactPoseT>0){ interactPoseT-=dt; interactPose=-1.3*clamp(interactPoseT/0.35,0,1); } else interactPose=0;
@@ -5325,6 +5344,10 @@ function frame(now){
   }
   try{
     var spaceStates=state==="space"||state==="launching"||(state==="pause"&&pausedFrom==="space");
+    /* the targeting circle is only ever meaningful while actively flying in normal space — force
+       it hidden in every other state so it can never get stuck showing over a menu or the ground
+       after you leave space (it only gets un-hidden again by updatePlanetTargeting itself) */
+    if(state!=="space")$("planetTarget").classList.add("hide");
     var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
