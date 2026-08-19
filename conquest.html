@@ -306,7 +306,6 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="ptRing"><div class="ptRingInner"></div></div>
     <div class="ptName"></div>
   </div>
-  <button class="hudbtn accent hide" id="bLaunchLanded" style="position:absolute;left:11px;top:calc(11px + env(safe-area-inset-top,0px));z-index:5">Board Ship &amp; Launch</button>
   <div class="sceneFade" id="sceneFade"></div>
 
   <div class="stickzone" id="zoneL"></div>
@@ -465,8 +464,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.22.2";
+var VERSION="1.23.0";
 var CHANGELOG=[
+  {v:"1.23.0",t:"Bigger worlds, alien turrets, and a real fly-it-yourself departure",items:[
+    "Every world's baseplate is 4x bigger, with ore deposits scattered generously across the whole thing instead of clustered near the middle",
+    "Vesta Outpost and Ember Reach each got a second native resource — Ice Core and Sulfur Vein — on top of their original ore",
+    "Added alien flak turrets that spawn on every world and shoot at your ship while you fly low over their territory — a Bomber can blow them up from the air the same way it deals with the Hive",
+    "Fixed the space targeting circle not working for your own colony — it had a shrunken show radius meant to stop it from hogging priority over the landable worlds, which instead made it barely show at all; targeting is back to honest nearest-wins, home included",
+    "Fixed a menu (like the Shipyard) sometimes staying stuck open on screen after landing on a world",
+    "Fixed the player spawning inside the terrain on load or on touchdown — position now always matches the actual ground height instead of assuming flat ground",
+    "Reworked leaving a world: walk up to your parked ship and press E to board it, then fly it up yourself — climbing high enough breaks you back into space. Replaces the old instant Board Ship & Launch button"
+  ]},
   {v:"1.22.2",t:"Worlds separated by real distance, not walls",items:[
     "Each landable world's ground now sits tens of thousands of units from home and from every other world — genuinely far beyond fog range and the camera's own render distance, not just a short hop away with a wall blocking the view",
     "Removed the perimeter walls — with that much real distance between worlds there's nothing nearby left to hide, so they weren't doing anything walls should be responsible for",
@@ -831,21 +839,21 @@ function craterDip(x,z){
 var WORLDS=[
   { id:"vesta", nm:"Vesta Outpost",
     sx:280,sz:-220,radius:22,col:0xd98a4a,atmoCol:0xffb545,ringCol:0x8a6a4a,
-    cx:20000,cz:20000,zoneR:75,
+    cx:20000,cz:20000,zoneR:300,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
-    ore:"frost_crystal",oreNm:"Frost Crystal",decor:"ice",
+    ore:"frost_crystal",oreNm:"Frost Crystal",ore2:"ice_core",ore2Nm:"Ice Core",decor:"ice",
     sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:1.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false },
   { id:"ember", nm:"Ember Reach",
     sx:-260,sz:260,radius:26,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
-    cx:-20000,cz:20000,zoneR:75,
+    cx:-20000,cz:20000,zoneR:300,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
-    ore:"magma_shard",oreNm:"Magma Shard",decor:"volcanic",
+    ore:"magma_shard",oreNm:"Magma Shard",ore2:"sulfur_vein",ore2Nm:"Sulfur Vein",decor:"volcanic",
     sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:1.3,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false },
   { id:"verdance", nm:"Verdant Hollow",
     sx:-260,sz:-260,radius:24,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
-    cx:-20000,cz:-20000,zoneR:75,
+    cx:-20000,cz:-20000,zoneR:300,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
     sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:1.0,rimCol:0x40ff90,ambCol:0x2a6a3a},
@@ -1042,7 +1050,8 @@ var playerInvulnT=0;
 function respawnPlayer(){
   playerHp=playerMaxHp*0.6;
   playerInvulnT=2.5;
-  player.position.set(currentWorld.cx,0,currentWorld.cz+8);
+  var rx=currentWorld.cx, rz=currentWorld.cz+8;
+  player.position.set(rx,terrainHeight(rx,rz),rz);
   toast("Overwhelmed — fell back to the ship");
 }
 function updateHiveHud(){
@@ -1054,6 +1063,77 @@ function updateHiveHud(){
     $("hiveBossFill").style.width=(clamp(hiveRuntime.hp/hiveRuntime.maxhp,0,1)*100)+"%";
   } else {
     $("hiveBossRow").classList.add("hide");
+  }
+}
+
+/* ═════════════ ALIEN FLAK TURRETS (shoot at your ship while you fly over their world) ═════════════ */
+var turrets=[], turretWorldId=null, alienBolts=[];
+function buildTurretMesh(){
+  var g=new THREE.Group();
+  var baseMat=new THREE.MeshStandardMaterial({color:0x2a2438,roughness:0.7,metalness:0.3,flatShading:true});
+  var eyeMat=new THREE.MeshStandardMaterial({color:0x2a0a0a,emissive:0xff2a20,emissiveIntensity:1.3});
+  var base=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.3,0.8,8),baseMat);
+  base.position.y=0.4; g.add(base);
+  var mount=new THREE.Mesh(new THREE.SphereGeometry(0.6,10,8),baseMat);
+  mount.position.y=1.0; g.add(mount);
+  var barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,1.6,6),baseMat);
+  barrel.rotation.x=Math.PI/2.4; barrel.position.set(0,1.2,0.7); g.add(barrel);
+  var eye=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),eyeMat);
+  eye.position.set(0,1.15,0.3); g.add(eye);
+  g.userData.eye=eye;
+  return g;
+}
+function ensureTurrets(world){
+  if(turretWorldId===world.id)return;
+  turrets.forEach(function(t){ surfaceScene.remove(t.mesh); }); turrets=[];
+  turretWorldId=world.id;
+  var n=4;
+  for(var i=0;i<n;i++){
+    var ang=(i/n)*Math.PI*2+rnd(-0.3,0.3), r=rnd(world.zoneR*0.4,world.zoneR*0.75);
+    var tx=world.cx+Math.cos(ang)*r, tz=world.cz+Math.sin(ang)*r;
+    var mesh=buildTurretMesh();
+    mesh.position.set(tx,terrainHeight(tx,tz),tz);
+    surfaceScene.add(mesh);
+    turrets.push({mesh:mesh,x:tx,z:tz,hp:40,max:40,cd:rnd(0.5,2),alive:true});
+  }
+}
+function damageTurret(t,dmg){
+  if(!t.alive)return;
+  t.hp-=dmg;
+  if(t.hp<=0){ t.alive=false; surfaceScene.remove(t.mesh); toast("Turret destroyed"); }
+}
+function fireAlienBolt(t){
+  if(!pShip)return;
+  var dx=pShip.pos.x-t.x, dz=pShip.pos.z-(t.z), dy=pShip.pos.y-1.3;
+  var d=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
+  var spd=26;
+  var mesh=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),
+    new THREE.MeshStandardMaterial({color:0xff3020,emissive:0xff3020,emissiveIntensity:1.4}));
+  mesh.position.set(t.x,1.3,t.z);
+  surfaceScene.add(mesh);
+  alienBolts.push({x:t.x,y:1.3,z:t.z,vx:dx/d*spd,vy:dy/d*spd,vz:dz/d*spd,life:3,mesh:mesh,dmg:6});
+}
+function updateTurrets(dt){
+  turrets.forEach(function(t){
+    if(!t.alive||!pShip)return;
+    var dx=pShip.pos.x-t.x, dz=pShip.pos.z-t.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(t.mesh.userData.eye)t.mesh.userData.eye.material.emissiveIntensity=d<70?1.8:1.0;
+    if(d<70){
+      t.mesh.lookAt(pShip.pos.x,t.mesh.position.y,pShip.pos.z);
+      t.cd-=dt;
+      if(t.cd<=0){ fireAlienBolt(t); t.cd=rnd(1.6,2.6); }
+    }
+  });
+  for(var i=alienBolts.length-1;i>=0;i--){
+    var b=alienBolts[i];
+    b.x+=b.vx*dt; b.y+=b.vy*dt; b.z+=b.vz*dt; b.life-=dt;
+    b.mesh.position.set(b.x,b.y,b.z);
+    var hit=false;
+    if(pShip&&pShip.alive){
+      var pdx=b.x-pShip.pos.x, pdy=b.y-pShip.pos.y, pdz=b.z-pShip.pos.z;
+      if(pdx*pdx+pdy*pdy+pdz*pdz<3.2){ damagePShip(b.dmg); hit=true; }
+    }
+    if(hit||b.life<=0){ surfaceScene.remove(b.mesh); alienBolts.splice(i,1); }
   }
 }
 function fireGun(){
@@ -1082,10 +1162,11 @@ function fireGun(){
 }
 
 /* ═════════════ SURFACE FLIGHT (piloting the ship low over a world's terrain) ═════════════ */
-var SURF_LAND_ALT=1.8, SURF_LAND_SPEED=3, SURF_LAND_SETTLE=1.0;
+var SURF_LAND_ALT=1.8, SURF_LAND_SPEED=3, SURF_LAND_SETTLE=1.0, SURF_EXIT_ALT=35;
 function updateSurfaceFlight(dt){
   if(!pShip)return;
   if(currentWorld&&currentWorld.hasHive)ensureHive(currentWorld);
+  if(currentWorld){ ensureTurrets(currentWorld); updateTurrets(dt); }
   var pc=document.body.classList.contains("pc-mode");
   var fwd=0,strafe=0,turn=0;
   if(pc){
@@ -1136,6 +1217,8 @@ function updateSurfaceFlight(dt){
   var ready=alt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
   landSettleT=ready?landSettleT+dt:Math.max(0,landSettleT-dt*2);
   if(landSettleT>=SURF_LAND_SETTLE)touchDown();
+  /* climb high enough and you break for space — the other half of "fly it out yourself" */
+  else if(alt>SURF_EXIT_ALT)exitToSpace();
 }
 var surfaceParts=[];
 function spawnSurfaceParticle(pos,vel,scale,colorTint){
@@ -1177,6 +1260,11 @@ function surfaceBombBlast(b){
     var hdx=hiveRuntime.pos.x-b.x, hdz=hiveRuntime.pos.z-b.z;
     if(Math.sqrt(hdx*hdx+hdz*hdz)<R)damageHive(b.dmg*1.4);
   }
+  turrets.forEach(function(t){
+    if(!t.alive)return;
+    var tdx=t.x-b.x, tdz=t.z-b.z;
+    if(Math.sqrt(tdx*tdx+tdz*tdz)<R)damageTurret(t,b.dmg);
+  });
   sfx.build();
 }
 function updateSurfaceBombs(dt){
@@ -1615,8 +1703,8 @@ var landingPodBeacon=null;
   var fernMat=new THREE.MeshStandardMaterial({color:0x4ad86a,emissive:0x0a4a1a,emissiveIntensity:0.5,roughness:0.5,metalness:0.1,flatShading:true});
   var vineRockMat=new THREE.MeshStandardMaterial({color:0x1a3a22,roughness:0.9,metalness:0.05,flatShading:true});
   WORLDS.forEach(function(w){
-    for(var fi=0;fi<26;fi++){
-      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.35,w.zoneR*0.9);
+    for(var fi=0;fi<90;fi++){
+      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.35,w.zoneR*0.92);
       var fx=w.cx+Math.cos(fa)*fr, fz=w.cz+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
       var fg=new THREE.Group();
       if(w.decor==="ice"){
@@ -1818,6 +1906,7 @@ surfaceScene.add(playerShadow);
 var RES={
   iron_ore:{nm:"Iron Ore",col:0xb5b5c2}, copper_ore:{nm:"Copper Ore",col:0xff9d5c}, coal:{nm:"Coal",col:0x8a8a92},
   frost_crystal:{nm:"Frost Crystal",col:0x9fe0f0}, magma_shard:{nm:"Magma Shard",col:0xff6a2a}, spore_pod:{nm:"Spore Pod",col:0x7aff6a},
+  ice_core:{nm:"Ice Core",col:0xd0f0ff}, sulfur_vein:{nm:"Sulfur Vein",col:0xe8d840},
   iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545}
 };
 var RES_ICONS={
@@ -1827,6 +1916,8 @@ var RES_ICONS={
   frost_crystal:'<svg viewBox="0 0 24 24"><path d="M12 2l4 8-4 12-4-12Z" fill="#9fe0f0" stroke="#3a6a80" stroke-width="1"/></svg>',
   magma_shard:'<svg viewBox="0 0 24 24"><path d="M12 2l4 8-4 12-4-12Z" fill="#ff6a2a" stroke="#7a2a08" stroke-width="1"/></svg>',
   spore_pod:'<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7" fill="#7aff6a" stroke="#1a5a10" stroke-width="1"/></svg>',
+  ice_core:'<svg viewBox="0 0 24 24"><path d="M12 2l4 8-4 12-4-12Z" fill="#d0f0ff" stroke="#4a8aa0" stroke-width="1"/></svg>',
+  sulfur_vein:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#e8d840" stroke="#7a6a10" stroke-width="1"/></svg>',
   iron:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#e8eaf0" stroke="#9a9aa5" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#c8cad2"/></svg>',
   copper:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#ff8a4c" stroke="#a84c14" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#ffb27a"/></svg>',
   parts:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="#1a2233" stroke="#ffb545" stroke-width="1.4"/><path d="M12 6v2.4M12 15.6V18M6 12h2.4M15.6 12H18M7.8 7.8l1.7 1.7M14.5 14.5l1.7 1.7M7.8 16.2l1.7-1.7M14.5 9.5l1.7-1.7" stroke="#ffb545" stroke-width="1.2"/><circle cx="12" cy="12" r="2.6" fill="#ffb545"/></svg>'
@@ -1837,7 +1928,7 @@ function costStr(cost){
     return '<i style="background:'+hexStr(RES[k].col)+'"></i> '+cost[k]+' '+RES[k].nm;
   }).join(' &nbsp;+&nbsp; ');
 }
-var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,iron:0,copper:0,parts:0};
+var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
 function canAfford(cost){ for(var k in cost)if((stock[k]||0)<cost[k])return false; return true; }
 function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 
@@ -1983,21 +2074,21 @@ var BUILD_DEFS={
   pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
   solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
   cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},tool:true,range:26},
-  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod"],accepts:[],mineRate:0.5,mineCap:120},
-  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod"],accepts:[],mineRate:2,mineCap:240},
+  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],accepts:[],mineRate:0.5,mineCap:120},
+  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],accepts:[],mineRate:2,mineCap:240},
   smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
   constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
   storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
-    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"]},
+    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
   splitter:{nm:"Splitter",cat:"Logistics",ds:"One belt in, up to two belts out. Splits the incoming flow between whatever you connect.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
   merger:{nm:"Merger",cat:"Logistics",ds:"Up to two belts in, one belt out. Combines multiple lines into a single output.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
-  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"]},
-  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","iron","copper","parts"],accepts:[]},
+  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper","parts"]},
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper","parts"],accepts:[]},
   landingpad:{nm:"Landing Pad",cat:"Ship Production",ds:"A marked pad with docking lights. Purely a landmark to aim for — flying low and slow anywhere flat still lands you, but this gives you a deliberate spot to fly in on, on any world.",cost:{iron_ore:20,copper_ore:8},powerDraw:0,radius:7,produces:[],accepts:[]}
 };
 var BUILD_ORDER=["foundation","wall","window","door","railing","pylon","solar","cable","miner","miner2","smelter","constructor","storage","splitter","merger","belt","shipyard","landingpad","workshop","shiplauncher","shiphub"];
@@ -2753,7 +2844,9 @@ var NODE_STYLE={
   coal:{rockCol:0x1c1c20,crystalCol:0x38383e,emit:0x000000,shape:"chunk"},
   frost_crystal:{rockCol:0x5a7a8a,crystalCol:0x9fe0f0,emit:0x2a6a80,shape:"shard"},
   magma_shard:{rockCol:0x2a1614,crystalCol:0xff6a2a,emit:0xaa3010,shape:"shard"},
-  spore_pod:{rockCol:0x1e3a20,crystalCol:0x7aff6a,emit:0x1a6a10,shape:"blob"}
+  spore_pod:{rockCol:0x1e3a20,crystalCol:0x7aff6a,emit:0x1a6a10,shape:"blob"},
+  ice_core:{rockCol:0x6a8a9a,crystalCol:0xd0f0ff,emit:0x4a9ac0,shape:"shard"},
+  sulfur_vein:{rockCol:0x3a3418,crystalCol:0xe8d840,emit:0x9a8a10,shape:"blob"}
 };
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
@@ -2806,9 +2899,13 @@ function scatterNodes(){
     spawnNode(x,z,t);
   });
   /* every landable world gets a mix of the same ores you already know, plus its own native
-     resource, so there's a reason to actually set up shop out there */
+     resource (and a second, rarer native ore on some worlds), scattered generously across its
+     much bigger footprint so there's actually a reason to explore it, not just its center */
   WORLDS.forEach(function(w){
-    var wTypes=["iron_ore","iron_ore","iron_ore","copper_ore","copper_ore",w.ore,w.ore,w.ore,w.ore];
+    var wTypes=["iron_ore","iron_ore","iron_ore","iron_ore","iron_ore","iron_ore",
+      "copper_ore","copper_ore","copper_ore","copper_ore","copper_ore",
+      w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore];
+    if(w.ore2)for(var o2=0;o2<5;o2++)wTypes.push(w.ore2);
     var wMaxR=w.zoneR-15;
     wTypes.forEach(function(t){
       var x,z,tries=0,d,clash;
@@ -2817,7 +2914,7 @@ function scatterNodes(){
         var dx=x-w.cx, dz=z-w.cz; d=Math.sqrt(dx*dx+dz*dz); tries++;
         clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
       }
-      while((d<14||d>wMaxR||clash)&&tries<60);
+      while((d<14||d>wMaxR||clash)&&tries<80);
       spawnNode(x,z,t);
     });
   });
@@ -3125,7 +3222,7 @@ function updatePortArrowVisibility(){
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
   var g=new THREE.Group();
-  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"||res==="magma_shard"||res==="spore_pod"){
+  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"||res==="magma_shard"||res==="spore_pod"||res==="ice_core"||res==="sulfur_vein"){
     var mat=new THREE.MeshStandardMaterial({color:col,roughness:0.95,metalness:0.05,flatShading:true});
     var core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.15,0),mat);
     core.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
@@ -3596,7 +3693,7 @@ function saveGame(){
 }
 function newColony(){
   clearWorld();
-  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,iron:0,copper:0,parts:0};
+  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
   equipment={head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
@@ -3606,10 +3703,11 @@ function newColony(){
   WORLDS.forEach(function(w){ w.discovered=false; });
   restoreHomeAtmosphere();
   if(pShip){ spaceScene.remove(pShip.mesh); surfaceScene.remove(pShip.mesh); pShip=null; }
-  $("bLaunchLanded").classList.add("hide");
   $("hiveHud").classList.add("hide");
   if(hiveRuntime){ surfaceScene.remove(hiveRuntime.mesh); hiveRuntime=null; }
   monsters.forEach(function(m){ surfaceScene.remove(m.mesh); }); monsters=[];
+  turrets.forEach(function(t){ surfaceScene.remove(t.mesh); }); turrets=[]; turretWorldId=null;
+  alienBolts.forEach(function(b){ surfaceScene.remove(b.mesh); }); alienBolts=[];
   playerHp=playerMaxHp;
   scatterNodes();
   try{ localStorage.removeItem(SKEY); localStorage.removeItem(SKEY+"-backup"); }catch(e){}
@@ -3620,7 +3718,7 @@ function validSpawn(p){
 var loadedPlayerPos=null;
 function applySaveData(data){
   clearWorld();
-  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,iron:0,copper:0,parts:0};
+  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
   (data.nodes||[]).forEach(function(n){ spawnNode(n.x,n.z,n.restype); });
   (data.buildings||[]).forEach(function(bd){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
@@ -3673,7 +3771,6 @@ function applySaveData(data){
     var rgz=validSpawn(data.player)?data.player.z-2.6:restoreWorld.cz;
     restoreLandedShip(restoreWorld,rgx,rgz);
     applyWorldAtmosphere(restoreWorld);
-    $("bLaunchLanded").classList.remove("hide");
     if(restoreWorld.hasHive)$("hiveHud").classList.remove("hide");
   }
 }
@@ -3838,19 +3935,19 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
    settle onto it wherever you actually stopped, so you control where you touch down instead
    of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
    so you can freely buzz/bomb a world at low altitude without being forced to land on it. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=420;
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=250;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
-  /* home's own show radius is deliberately tiny — it sits at the origin, right where every
-     flight starts and where wave combat happens, so if it used the same generous show radius
-     as the landable worlds it would win "nearest" over whichever world you're actually flying
-     toward for most of the trip, and that world's circle would never appear */
+  /* plain nearest-neighbor among home and every world, each with the same show radius — whoever
+     is genuinely closest to the ship wins, home included. Giving home its own special-cased
+     priority (or a shrunken show radius) either made it dominate the whole map or effectively
+     never show at all; a shared radius plus honest nearest-wins is what actually tracks "which
+     one am I flying toward" correctly in both directions, there and back. */
   var all=WORLDS.concat([HOME_WORLD]);
   var best=null,bd=1e9;
   all.forEach(function(w){
     var dx=w.sx-pShip.pos.x, dz=w.sz-pShip.pos.z, d=Math.sqrt(dx*dx+dz*dz);
-    var showR=w.isHome?(w.radius+50):(w.radius+LAND_SHOW_PAD);
-    if(d<showR&&d<bd){ bd=d; best=w; }
+    if(d<(w.radius+LAND_SHOW_PAD)&&d<bd){ bd=d; best=w; }
   });
   return best;
 }
@@ -3918,7 +4015,14 @@ var atOutpost=false, currentWorld=null, surfaceFlying=false, landSettleT=0;
    the same ship, now piloted inside the walkable scene instead of a cutscene that snaps you to
    the ground. You choose where (and whether) to touch down by flying low and slow, same as the
    approach from space; while airborne here a Bomber can drop bombs on the Hive/monsters below. */
+/* every menu panel is a plain .ovl overlay — force them all closed on any flight transition so
+   a panel that happened to be open (e.g. the Shipyard) can never get stuck on screen through a
+   land/launch transition, the same class of bug the targeting circle had before it was fixed */
+function forceCloseMenus(){
+  document.querySelectorAll(".ovl").forEach(function(el){ el.classList.add("hide"); });
+}
 function landOnPlanet(world){
+  forceCloseMenus();
   landedPlanet=world; landProgress=0;
   world.discovered=true;
   toast("Approaching "+world.nm+"...");
@@ -3926,6 +4030,7 @@ function landOnPlanet(world){
   fadeTransition(function(){ enterSurfaceFlight(world); },550);
 }
 function enterSurfaceFlight(world){
+  forceCloseMenus();
   resetMovementKeys();
   spaceScene.remove(pShip.mesh);
   surfaceScene.add(pShip.mesh);
@@ -3939,7 +4044,6 @@ function enterSurfaceFlight(world){
   player.visible=false; playerShadow.visible=false;
   applyWorldAtmosphere(world);
   $("hud").classList.add("show"); $("mobActions").classList.remove("show"); $("hudSpace").classList.remove("show");
-  $("bLaunchLanded").classList.add("hide");
   if(!world.hasHive)$("hiveHud").classList.add("hide");
   toast("Flying over "+world.nm+" — fly low and slow to touch down"+(pShip.weapon==="bomb"?" (right-click to bomb)":""));
   saveGame();
@@ -3951,49 +4055,73 @@ function touchDown(){
   landedNormal=new THREE.Vector3(0,1,0);
   landingDustBurst(pShip.pos.clone(),new THREE.Vector3(0,1,0));
   var world=currentWorld;
-  player.position.set(pShip.pos.x,0,pShip.pos.z+2.6);
+  var px=pShip.pos.x, pz=pShip.pos.z+2.6;
+  player.position.set(px,terrainHeight(px,pz),pz);
   player.rotation.y=pShip.yaw+Math.PI;
   player.visible=true; playerShadow.visible=true;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
   $("mobActions").classList.add("show");
-  $("bLaunchLanded").classList.remove("hide");
   if(world.hasHive){ playerHp=playerMaxHp; playerInvulnT=3; $("hiveHud").classList.remove("hide"); }
-  toast("Touched down on "+world.nm+" — gather what you can, then Launch when you're ready to fly back");
+  toast("Touched down on "+world.nm+" — walk up to your ship and press E to board, then fly high enough to break for space");
   sfx.build();
   saveGame();
 }
-function launchFromLandedShip(){
-  /* atOutpost is the authoritative "somewhere you can launch from" flag — landedPlanet should
-     always agree with it, but check both so a stray desync can never soft-lock the Launch button */
-  if(!landedPlanet&&!atOutpost)return;
+/* boarding just hands control of the parked ship back to you — you fly it out yourself (same
+   controls as the approach), climbing high enough to actually leave rather than an instant
+   button-press launch */
+function boardParkedShip(){
+  if(!atOutpost||surfaceFlying||!pShip)return;
   resetMovementKeys();
-  toast("Launching...");
+  player.visible=false; playerShadow.visible=false;
+  pShip.mesh.rotation.set(0,pShip.yaw,0);
+  pShip.vel.set(0,0,0);
+  surfaceFlying=true; landSettleT=0;
+  $("mobActions").classList.remove("show");
+  toast("Aboard — climb high enough to break for space");
   sfx.click();
+}
+function exitToSpace(){
+  if(!surfaceFlying)return;
   var world=currentWorld;
+  /* set this synchronously, not inside the fade callback below — updateSurfaceFlight runs every
+     frame and would otherwise keep calling exitToSpace() again on every frame the ship spends
+     above SURF_EXIT_ALT during the ~450ms fade, stacking up redundant transitions */
+  surfaceFlying=false;
+  forceCloseMenus();
+  resetMovementKeys();
+  toast("Breaking for space...");
+  sfx.build();
   fadeTransition(function(){
-    atOutpost=false; currentWorld=null; surfaceFlying=false;
+    atOutpost=false; currentWorld=null;
     restoreHomeAtmosphere();
     $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
-    $("bLaunchLanded").classList.add("hide");
     $("hiveHud").classList.add("hide");
     $("hudSpace").classList.add("show");
     landedPlanet=null; landProgress=0; landedNormal=null;
     if(pShip){
       surfaceScene.remove(pShip.mesh);
       spaceScene.add(pShip.mesh);
-      if(world){ pShip.pos.set(world.sx,0,world.sz+world.radius+2); pShip.yaw=Math.PI; }
+      /* clear well outside the world's own landing range (radius+LAND_RANGE_PAD) with real
+         outward speed — breaking for space right next to the marker at low speed let the ship
+         coast back into range on its own and immediately re-trigger a landing */
+      if(world){ pShip.pos.set(world.sx,0,world.sz+world.radius+LAND_RANGE_PAD+40); pShip.yaw=Math.PI; }
+      pShip.vel.set(Math.sin(pShip.yaw)*pShip.spd,0,Math.cos(pShip.yaw)*pShip.spd);
       pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
-      toast("Launching...");
-      sfx.build();
-      beginLaunchAnim();
+      state="space";
     } else {
       state="space";
     }
     saveGame();
   });
 }
-$("bLaunchLanded").onclick=function(){ launchFromLandedShip(); };
+/* kept only as a safety fallback (e.g. old saves / debug) — the normal way out is boarding the
+   parked ship and flying it up past EXIT_ALT yourself, handled inside updateSurfaceFlight */
+function launchFromLandedShip(){
+  if(!landedPlanet&&!atOutpost)return;
+  if(!surfaceFlying)boardParkedShip();
+  exitToSpace();
+}
 
 function buildShipMesh(model){
   var g=new THREE.Group();
@@ -4149,7 +4277,7 @@ function launchShip(){
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   spaceScene.add(pShip.mesh);
-  landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
+  landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[]; clearSpaceParts();
   homeBase.hp=homeBase.maxhp;
@@ -4166,7 +4294,7 @@ function launchShip(){
 }
 function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
-  landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide"); $("bLaunchLanded").classList.add("hide");
+  landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[];
   state="surface";
@@ -4230,7 +4358,7 @@ function damagePShip(dmg){
   if(dmg>0)pShip.hp-=dmg;
   if(pShip.hp<=0){
     pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound");
-    if(landedPlanet){ landedPlanet=null; landProgress=0; landedNormal=null; $("bLaunchLanded").classList.add("hide"); }
+    if(landedPlanet){ landedPlanet=null; landProgress=0; landedNormal=null; }
     $("planetTarget").classList.add("hide");
   }
 }
@@ -5121,6 +5249,10 @@ function interactTarget(){
   return best;
 }
 function doInteract(){
+  if(atOutpost&&!surfaceFlying&&pShip){
+    var sdx=pShip.pos.x-player.position.x, sdz=pShip.pos.z-player.position.z;
+    if(Math.sqrt(sdx*sdx+sdz*sdz)<5.5){ boardParkedShip(); return; }
+  }
   var t=interactTarget();
   if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
   if(t&&(t.type==="smelter"||t.type==="constructor")){ openMachine(t); pulseInteractPose(); return; }
@@ -5412,11 +5544,11 @@ function enterGame(loaded){
   audioOn();
   resize();
   if(loaded&&loadedPlayerPos){
-    player.position.set(loadedPlayerPos.x,0,loadedPlayerPos.z);
+    player.position.set(loadedPlayerPos.x,terrainHeight(loadedPlayerPos.x,loadedPlayerPos.z),loadedPlayerPos.z);
     player.rotation.y=loadedPlayerPos.rotY||0;
   } else if(loaded){
     var sy=shipyard();
-    if(sy){ player.position.set(sy.x+6,0,sy.z); } else player.position.set(0,0,14);
+    if(sy){ player.position.set(sy.x+6,terrainHeight(sy.x+6,sy.z),sy.z); } else player.position.set(0,0,14);
   } else {
     player.position.set(0,0,14);
   }
@@ -5531,7 +5663,9 @@ window.__cq={
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
-  touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb,
+  touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb, boardParkedShip:boardParkedShip, exitToSpace:exitToSpace,
+  turretState:function(){ return turrets.map(function(t){return {x:t.x,z:t.z,hp:t.hp,alive:t.alive};}); },
+  terrainHeightAt:function(x,z){ return terrainHeight(x,z); },
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
   setPShipY:function(y){ if(pShip)pShip.pos.y=y; },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
