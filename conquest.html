@@ -348,6 +348,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="res" id="powerTxt">PWR 0/0</div>
       <button class="hudbtn accent" id="bBuildOpen">Build</button>
       <button class="hudbtn" id="bMapOpen">Map</button>
+      <button class="hudbtn" id="bColorsOpen" title="Paint buildings">Colors</button>
       <button class="hudbtn" id="bBackpackOpen" title="Backpack (B)">Backpack</button>
       <button class="hudbtn" id="bPause">&#10073;&#10073;</button>
     </div>
@@ -527,6 +528,23 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     </div>
   </div>
 
+  <div class="ovl hide" id="o-colors">
+    <div class="card">
+      <div class="cardHead"><button id="bColorsClose" class="clX">&times;</button><h2><i></i>Colors</h2><div class="panelTag">Building Paint</div></div>
+      <div class="cardBody">
+        <div class="metalline">Create presets, then paint buildings by hand or apply one to everything at once.</div>
+        <div id="colorPresetList"></div>
+        <button class="btn sub" id="bColorNewPreset" style="margin-top:2px">+ New Preset</button>
+        <div class="cat" style="margin:12px 2px 4px">Active Preset</div>
+        <div id="colorActiveEditor"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn accent" id="bColorPaintGun" style="flex:1;margin:0">Paint Gun</button>
+          <button class="btn accent" id="bColorApplyAll" style="flex:1;margin:0">Apply to All</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="ovl side hide" id="o-backpack">
     <div class="card c-green" style="max-width:340px">
       <div class="cardHead"><button id="bBackpackClose" class="clX">&times;</button><h2><i></i>Backpack</h2><div class="panelTag">Inventory</div></div>
@@ -573,8 +591,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.34.0";
+var VERSION="1.35.0";
 var CHANGELOG=[
+  {v:"1.35.0",t:"Building paint — presets, a paint gun, and Apply to All",items:[
+    "Added a new Colors button to the HUD: create named color presets (each with a full color picker plus quick swatches), then either grab the Paint Gun and click individual buildings to recolor them, or hit Apply to All to instantly repaint every building on your colony",
+    "You can keep as many presets as you want, switch between them, and delete the ones you don't need — painting leaves each building's glowing bits (engine trails, status lights, hazard stripes' glow) alone and only recolors the plain structural panels/frames",
+    "Painted colors save and reload with your colony"
+  ]},
   {v:"1.34.0",t:"All 4 ships are bigger with hazard-stripe detailing",items:[
     "Every ship (Scout, Fighter, Frigate, Bomber) is now noticeably bigger — they used to read smaller than the player standing next to them, which looked wrong. Ground clearance was scaled to match so the bigger hulls still land sitting on the ground instead of sinking into it",
     "Added a hazard-stripe accent band to each ship's hull for a bit more industrial/military detail"
@@ -2370,6 +2393,23 @@ var equipment={head:null,hands:null,legs:null,weapon:null};
    userData.mats) — separate from equipment, which adds/removes gear meshes. */
 var WARDROBE_SLOTS=["body","arms","legs","head","eyes"];
 var playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
+/* Building paint: presets are just {name,color}; "painting" a building recolors every
+   non-emissive material in its mesh (structural panels/frames/hulls) while leaving glowing
+   accents — engine trails, status lights, hazard-stripe emissive bits, gauges — alone, since
+   those are identified by having a non-black emissive color already set. */
+var colorPresets=[{name:"Default",color:0x384454}];
+var activePresetIdx=0;
+function paintBuilding(b,colorHex){
+  if(!b||!b.mesh)return;
+  b.mesh.traverse(function(o){
+    if(o.isMesh&&o.material&&o.material.color){
+      var em=o.material.emissive;
+      var isEmissive=em&&(em.r>0||em.g>0||em.b>0);
+      if(!isEmissive)o.material.color.set(colorHex);
+    }
+  });
+  b.paintColor=colorHex;
+}
 function applyPlayerColors(){
   if(!player||!player.userData.mats)return;
   WARDROBE_SLOTS.forEach(function(slot){
@@ -3666,6 +3706,7 @@ connectHighlight.visible=false;
 surfaceScene.add(connectHighlight);
 function connectTargetValid(candidate){
   if(placing==="remove")return !candidate.job;
+  if(placing==="paint")return true;
   if(placing==="belt"||placing==="belt2"){
     if(!beltFrom)return buildingProduces(candidate).length>0;
     return candidate!==beltFrom&&!!beltCompatible(beltFrom,candidate);
@@ -3745,6 +3786,10 @@ function updateConnectHighlight(sx,sy,worldPt){
   if(placing==="remove"){
     lbl.innerHTML='<span class="nm" style="color:'+(ok?"var(--red)":"var(--dim)")+'">'+BUILD_DEFS[cand.type].nm+'</span>'+
       '<span class="sub">'+(ok?"Remove — returns "+refundPreviewStr(cand.type):"Busy — can't remove right now")+'</span>';
+    lbl.classList.remove("hide");
+  } else if(placing==="paint"){
+    lbl.innerHTML='<span class="nm" style="color:var(--amber2)">'+BUILD_DEFS[cand.type].nm+'</span>'+
+      '<span class="sub">Click to paint — '+(colorPresets[activePresetIdx]?colorPresets[activePresetIdx].name:"Default")+'</span>';
     lbl.classList.remove("hide");
   } else {
     lbl.innerHTML='<span class="nm" style="color:'+(ok?"var(--green)":"var(--red)")+'">'+BUILD_DEFS[cand.type].nm+'</span>';
@@ -4115,7 +4160,7 @@ function tryPlaceCable(from,to){
   cables.push(c);
   sfx.click(); toast("Power cable connected"); pulseInteractPose();
 }
-function isClickTool(p){ return p==="belt"||p==="belt2"||p==="cable"||p==="remove"; }
+function isClickTool(p){ return p==="belt"||p==="belt2"||p==="cable"||p==="remove"||p==="paint"; }
 function pickBuildingForClick(x,z,sx,sy){
   var b=(sx==null)?null:buildingUnderScreen(sx,sy);
   return b||findBuildingNear(x,z,2.5);
@@ -4130,6 +4175,14 @@ function surfaceClick3D(x,z,sx,sy){
     var rb=pickBuildingForClick(x,z,sx,sy);
     if(!rb){ toast("Aim at a building to remove"); return; }
     removeBuilding(rb);
+    return;
+  }
+  if(placing==="paint"){
+    var pb=pickBuildingForClick(x,z,sx,sy);
+    if(!pb){ toast("Aim at a building to paint"); return; }
+    var preset=colorPresets[activePresetIdx]||colorPresets[0];
+    paintBuilding(pb,preset.color);
+    sfx.build(); toast("Painted — "+preset.name); pulseInteractPose(); saveGame();
     return;
   }
   if(placing==="belt2"&&!beltFrom){
@@ -4453,14 +4506,14 @@ function saveGame(){
         return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
           targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
           job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null,
-          name:b.name,targetHubIdx:b.targetHub?buildings.indexOf(b.targetHub):-1,doorMode:b.doorMode};
+          name:b.name,targetHubIdx:b.targetHub?buildings.indexOf(b.targetHub):-1,doorMode:b.doorMode,paintColor:b.paintColor};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,tier:bl.tier||1,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
       shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atOutpost:atOutpost,
       atWorldId:currentWorld?currentWorld.id:null,
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
-      unlocked:unlocked, playerColors:playerColors
+      unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -4480,6 +4533,7 @@ function newColony(){
   unlocked={belt2:false,refinery:false};
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
+  colorPresets=[{name:"Default",color:0x384454}]; activePresetIdx=0;
   equipment={head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
@@ -4525,6 +4579,7 @@ function applySaveData(data){
     if(bd.job)b.job=bd.job;
     if(bd.name)b.name=bd.name;
     if(bd.doorMode)b.doorMode=bd.doorMode;
+    if(bd.paintColor!=null)paintBuilding(b,bd.paintColor);
     b._targetHubIdx=bd.targetHubIdx!=null?bd.targetHubIdx:-1;
     buildings.push(b);
   });
@@ -4558,6 +4613,8 @@ function applySaveData(data){
   unlocked=data.unlocked||{belt2:false,refinery:false};
   playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
+  colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454}];
+  activePresetIdx=0;
   equipment=data.equipment||{head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
@@ -5554,6 +5611,7 @@ window.addEventListener("keydown",function(e){
     else if(state==="workshop")closeWorkshop();
     else if(state==="hub")closeHubUpgrades();
     else if(state==="wardrobe")closeWardrobe();
+    else if(state==="colors")closeColors();
     else if(state==="backpack")closeBackpack();
     else if(state==="shiplauncher")closeShipLauncher();
     else if(state==="shiphub")closeShipHub();
@@ -6153,6 +6211,71 @@ $("bWardrobeReset").onclick=function(){
   applyPlayerColors(); renderWardrobe(); saveGame();
 };
 
+/* ═════════════ COLORS (building paint presets + paint gun) ═════════════ */
+function openColors(){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  state="colors"; $("o-colors").classList.remove("hide"); renderColors();
+}
+function closeColors(){ if(state!=="colors")return; state="surface"; $("o-colors").classList.add("hide"); }
+function renderColors(){
+  if(activePresetIdx>=colorPresets.length)activePresetIdx=Math.max(0,colorPresets.length-1);
+  $("colorPresetList").innerHTML=colorPresets.map(function(p,i){
+    return '<div class="upg" style="cursor:pointer;padding:8px 10px'+(i===activePresetIdx?';border-color:var(--amber)':'')+'" data-idx="'+i+'">'+
+      '<div class="top"><span class="nm" style="display:flex;align-items:center;gap:8px;color:'+(i===activePresetIdx?"var(--amber2)":"var(--bone)")+'">'+
+      '<span style="width:18px;height:18px;border-radius:50%;background:'+hexStr(p.color)+';display:inline-block;border:1px solid rgba(255,255,255,.3);flex:none"></span>'+p.name+'</span>'+
+      (colorPresets.length>1?'<span class="stat" data-del="'+i+'" style="color:var(--red);cursor:pointer;font-weight:800">DELETE</span>':'')+
+      '</div></div>';
+  }).join('');
+  var rows=$("colorPresetList").querySelectorAll("[data-idx]");
+  for(var i=0;i<rows.length;i++)rows[i].onclick=function(){ activePresetIdx=parseInt(this.getAttribute("data-idx")); sfx.click(); renderColors(); };
+  var dels=$("colorPresetList").querySelectorAll("[data-del]");
+  for(var j=0;j<dels.length;j++)dels[j].onclick=function(e){
+    e.stopPropagation();
+    var idx=parseInt(this.getAttribute("data-del"));
+    if(colorPresets.length<=1)return;
+    colorPresets.splice(idx,1);
+    if(activePresetIdx>=colorPresets.length)activePresetIdx=colorPresets.length-1;
+    sfx.remove(); renderColors(); saveGame();
+  };
+  var active=colorPresets[activePresetIdx];
+  if(!active){ $("colorActiveEditor").innerHTML=""; return; }
+  $("colorActiveEditor").innerHTML='<div class="wdSlot"><span class="wdLabel">'+active.name+'</span>'+
+    '<div class="wdSwatches">'+WARDROBE_PRESETS.map(function(c){
+      return '<div class="wdSwatch" style="background:'+hexStr(c)+'" data-hex="'+hexStr(c)+'"></div>';
+    }).join('')+'</div>'+
+    '<input type="color" value="'+hexStr(active.color)+'" id="colorActiveInput"></div>';
+  var picker=$("colorActiveInput");
+  if(picker)picker.oninput=function(){ colorPresets[activePresetIdx].color=parseInt(this.value.slice(1),16); renderColors(); saveGame(); };
+  var swatches=$("colorActiveEditor").querySelectorAll(".wdSwatch");
+  for(var k=0;k<swatches.length;k++)swatches[k].onclick=function(){
+    sfx.click();
+    colorPresets[activePresetIdx].color=parseInt(this.getAttribute("data-hex").slice(1),16);
+    renderColors(); saveGame();
+  };
+}
+$("bColorsOpen").onclick=function(){ sfx.click(); openColors(); };
+$("bColorsClose").onclick=function(){ sfx.click(); closeColors(); };
+$("bColorNewPreset").onclick=function(){
+  sfx.click();
+  var name=(prompt("Name this preset:","Preset "+(colorPresets.length+1))||"").trim();
+  if(!name)return;
+  colorPresets.push({name:name,color:0x384454});
+  activePresetIdx=colorPresets.length-1;
+  renderColors(); saveGame();
+};
+$("bColorPaintGun").onclick=function(){
+  sfx.click();
+  placing="paint"; beltFrom=null; setGhost(null); closeColors();
+  toast("Paint Gun — click a building to apply \""+(colorPresets[activePresetIdx]?colorPresets[activePresetIdx].name:"Default")+"\"");
+};
+$("bColorApplyAll").onclick=function(){
+  var preset=colorPresets[activePresetIdx]; if(!preset)return;
+  sfx.build();
+  buildings.forEach(function(b){ paintBuilding(b,preset.color); });
+  toast("Applied \""+preset.name+"\" to every building"); saveGame();
+};
+
 /* ═════════════ BACKPACK ═════════════ */
 function openBackpack(){
   if(state!=="surface")return;
@@ -6584,7 +6707,7 @@ function frame(now){
        it hidden in every other state so it can never get stuck showing over a menu or the ground
        after you leave space (it only gets un-hidden again by updatePlanetTargeting itself) */
     if(state!=="space")$("planetTarget").classList.add("hide");
-    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe";
+    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
        keeps running whenever a menu is open on top of the surface — only WASD movement itself
@@ -6755,7 +6878,7 @@ window.__cq={
   tickFrameLoop:function(n,dt){
     dt=dt||1/60;
     for(var i=0;i<n;i++){
-      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe";
+      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
       if(state==="surface"||menuOpenT)updateSurface(dt);
       if(state==="space"||state==="launching")updateSpace(dt);
     }
