@@ -297,7 +297,6 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <div class="bar base"><i id="spBaseFill"></i><span class="barlbl">BASE</span></div>
       </div>
       <div class="res" id="spWaveTxt">WAVE 0</div>
-      <button class="hudbtn accent" id="bReturnColony">Return</button>
       <button class="hudbtn" id="bPauseSpace">&#10073;&#10073;</button>
     </div>
   </div>
@@ -474,8 +473,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.26.0";
+var VERSION="1.27.0";
 var CHANGELOG=[
+  {v:"1.27.0",t:"Ships can now actually be shot down, cooler bombs/explosions, and a fixed 'mystery planet'",items:[
+    "Getting shot down by an alien turret while flying over a world is now a real crash instead of the space-combat eject (which never had anywhere to send a rescue ship out there) — your ship tumbles, catches fire, trails smoke, and slams into the ground as a wreck",
+    "A wrecked ship can't be boarded or flown again. Walk up and press E to abandon it and get rescued back to your colony (you'll need to build a new ship at the Shipyard), or use the delete tool on it directly",
+    "Redesigned the bomb model — a proper finned bomb with a glowing nose instead of a plain sphere — and gave both space and surface bomb blasts a much bigger explosion: a bright flash, a wide spray of fire, and a few lingering smoke puffs",
+    "Removed the manual Return button from the space HUD — flying home now works the same way landing on any other world does, so the button was redundant",
+    "Fixed Vesta Outpost's space-view color being desert orange/tan while the ground you actually land on (and its Frost Crystal/Ice Core ore) is an ice world — it's now the icy blue-white it actually is",
+    "Fixed the 'unnamed planet you can't land on' — it was your own colony's decorative space backdrop, positioned 70 units away from the actual point flying-close-and-slow checks against, so it looked like a separate landable world that could never be landed on. It now sits right where your colony actually is"
+  ]},
   {v:"1.26.0",t:"Command Hub, Refinery, and Conveyor Belt Mk.2 — a real upgrade tree",items:[
     "Added the Command Hub — a new one-per-colony building. Build it and that's your new respawn/return point, and interacting with it opens an upgrade console",
     "The Hub console lets you permanently unlock two things with Parts and refined metal: the Refinery (a dedicated exotic-ore processing building with better yield than the Constructor) and Conveyor Belt Mk.2 (double throughput)",
@@ -881,7 +888,10 @@ function craterDip(x,z){
    compact representation, not the actual ground you walk on. */
 var WORLDS=[
   { id:"vesta", nm:"Vesta Outpost",
-    sx:280,sz:-220,radius:22,col:0xd98a4a,atmoCol:0xffb545,ringCol:0x8a6a4a,
+    /* the space-view color used to be desert orange/tan while the actual ground (and its
+       Frost Crystal/Ice Core ore) is an ice world — landing never matched what you flew
+       toward. Recolored to the icy blue-white it actually is. */
+    sx:280,sz:-220,radius:22,col:0xbfd8e2,atmoCol:0x9fe0f0,ringCol:0x6a8ab0,
     cx:20000,cz:20000,zoneR:300,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",ore2:"ice_core",ore2Nm:"Ice Core",decor:"ice",
@@ -1251,10 +1261,66 @@ function updateLandingAnim(dt){
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
   if(t>=1){ landingAnim=null; touchDown(); }
 }
+/* shot down over a world: the ship falls burning instead of instantly ejecting (there's no
+   space-combat rescue ship out here), tumbling and trailing fire/smoke until it slams into the
+   ground and becomes an inert wreck the player has to deal with by hand */
+var shipCrashing=false, shipWrecked=false;
+function beginShipCrash(){
+  if(shipCrashing||shipWrecked||!pShip)return;
+  shipCrashing=true;
+  pShip.vel.multiplyScalar(0.35);
+  toast("Ship critically damaged — going down!");
+  sfx.build();
+}
+function updateShipCrash(dt){
+  pShip.vel.y-=dt*16;
+  pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt; pShip.pos.y+=pShip.vel.y*dt;
+  pShip.mesh.position.copy(pShip.pos);
+  pShip.mesh.rotation.x+=dt*2.0; pShip.mesh.rotation.z+=dt*2.6;
+  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
+    g.material.emissiveIntensity=Math.max(0,g.material.emissiveIntensity-dt*1.5);
+  });
+  if(Math.random()<0.8){
+    var fireDir=new THREE.Vector3(rnd(-1.2,1.2),rnd(0.4,1.6),rnd(-1.2,1.2));
+    spawnSurfaceParticle(pShip.mesh.position.clone(),fireDir,rnd(0.5,1.1),Math.random()<0.4?0xff5020:0x2a2a2a);
+  }
+  var groundY=terrainHeight(pShip.pos.x,pShip.pos.z);
+  if(pShip.pos.y<=groundY+0.35){
+    pShip.pos.y=groundY+0.35; pShip.vel.set(0,0,0);
+    pShip.mesh.position.copy(pShip.pos);
+    pShip.mesh.rotation.set(rnd(-0.25,0.25),pShip.mesh.rotation.y,Math.PI/2+rnd(-0.2,0.2));
+    spawnExplosionFX(spawnSurfaceParticle,pShip.pos.clone(),7);
+    shipCrashing=false; shipWrecked=true; surfaceFlying=false;
+    shipBuilt=false; shipModelKey=null;
+    player.visible=true; playerShadow.visible=true;
+    var px=pShip.pos.x, pz=pShip.pos.z+2.6;
+    player.position.set(px,terrainHeight(px,pz),pz);
+    camYaw=0; camPitch=0.55; updateCameraTransform();
+    $("mobActions").classList.add("show");
+    toast("Ship destroyed — walk up and press E to call for rescue, or use the delete tool to clear the wreck");
+    sfx.build(); saveGame();
+  }
+}
+/* the only way home once the ship is wrecked — same destination as boarding and flying out
+   would have gotten you, just without a ship to show for it */
+function abandonWreck(){
+  if(!shipWrecked||!pShip)return;
+  surfaceScene.remove(pShip.mesh);
+  pShip=null; shipWrecked=false;
+  atOutpost=false; currentWorld=null;
+  syncBuildPlane(null);
+  restoreHomeAtmosphere();
+  var sp=homeSpawnPoint();
+  player.position.set(sp.x,terrainHeight(sp.x,sp.z),sp.z);
+  $("hiveHud").classList.add("hide");
+  toast("Rescued — back at your colony. Build a new ship at the Shipyard.");
+  sfx.build(); updateCameraTransform(); saveGame();
+}
 function updateSurfaceFlight(dt){
   if(!pShip)return;
   if(currentWorld&&currentWorld.hasHive)ensureHive(currentWorld);
   if(currentWorld){ ensureTurrets(currentWorld); updateTurrets(dt); }
+  if(shipCrashing){ updateShipCrash(dt); return; }
   if(arrivalAnim){ updateArrivalAnim(dt); return; }
   if(landingAnim){ updateLandingAnim(dt); return; }
   var pc=document.body.classList.contains("pc-mode");
@@ -1329,20 +1395,58 @@ function updateSurfaceParts(dt){
     var t=p.life/p.max; p.mesh.material.opacity=t*0.9; p.mesh.scale.setScalar(p.baseScale*(1.6-t*0.6));
   }
 }
+/* a proper finned bomb instead of a plain glowing sphere — nose cone, tail fins, an armed-glow
+   band. Built once as a template group and cloned per drop (cheap; materials are shared). */
+function makeBombMesh(){
+  var g=new THREE.Group();
+  var bodyMat=new THREE.MeshStandardMaterial({color:0x24262a,roughness:0.5,metalness:0.55});
+  var body=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.22,0.55,8),bodyMat);
+  body.rotation.x=Math.PI/2; g.add(body);
+  var noseMat=new THREE.MeshStandardMaterial({color:0xff3010,emissive:0xff3010,emissiveIntensity:1.5});
+  var nose=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.32,8),noseMat);
+  nose.rotation.x=Math.PI/2; nose.position.z=0.43; g.add(nose);
+  var bandMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.9});
+  var band=new THREE.Mesh(new THREE.TorusGeometry(0.21,0.025,4,10),bandMat);
+  band.rotation.y=Math.PI/2; band.position.z=0.1; g.add(band);
+  var finMat=new THREE.MeshStandardMaterial({color:0x16181c,roughness:0.6,metalness:0.4});
+  for(var i=0;i<4;i++){
+    var ang=i/4*Math.PI*2;
+    var fin=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.26,0.2),finMat);
+    fin.position.set(Math.cos(ang)*0.2,Math.sin(ang)*0.2,-0.24);
+    fin.rotation.z=ang;
+    g.add(fin);
+  }
+  g.userData.glowParts=[noseMat,bandMat];
+  return g;
+}
+/* shared "cool explosion" burst — bright white-hot flash, a wide spray of fire in warm colors,
+   then a few slower dark smoke puffs that linger a moment after the fire dies down. Used for
+   both the ship's space bombs and the ones dropped on a world's surface. */
+function spawnExplosionFX(spawnFn,pos,radius){
+  spawnFn(pos.clone(),new THREE.Vector3(0,0,0),radius*0.55,0xfff2c0);
+  var fireN=Math.round(16+radius*1.6);
+  for(var i=0;i<fireN;i++){
+    var dir=new THREE.Vector3(rnd(-1,1),rnd(0.1,1),rnd(-1,1)).normalize().multiplyScalar(rnd(radius*0.7,radius*1.9));
+    var c=Math.random()<0.35?0xfff2c0:(Math.random()<0.7?0xffaa40:0xff5020);
+    spawnFn(pos.clone(),dir,rnd(0.45,1.1),c);
+  }
+  for(var j=0;j<7;j++){
+    var dir2=new THREE.Vector3(rnd(-0.35,0.35),rnd(0.7,1.5),rnd(-0.35,0.35));
+    spawnFn(pos.clone().addScaledVector(dir2,0.3),dir2.multiplyScalar(1.4),rnd(0.7,1.4),0x2a2a2a);
+  }
+}
 var surfaceBombs=[];
 function dropSurfaceBomb(){
-  var mesh=new THREE.Mesh(bombGeo,bombMat);
+  var mesh=makeBombMesh();
   mesh.position.copy(pShip.pos);
+  mesh.rotation.y=pShip.yaw;
   surfaceScene.add(mesh);
   surfaceBombs.push({x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,vx:pShip.vel.x,vz:pShip.vel.z,vy:-2,dmg:pShip.dmg,mesh:mesh});
   sfx.click();
 }
 function surfaceBombBlast(b){
   var pos=new THREE.Vector3(b.x,b.y,b.z);
-  for(var i=0;i<18;i++){
-    var dir=new THREE.Vector3(rnd(-1,1),rnd(0.2,1),rnd(-1,1)).normalize().multiplyScalar(rnd(5,13));
-    spawnSurfaceParticle(pos.clone(),dir,rnd(0.5,1.0),Math.random()<0.5?0xffaa40:0xff5020);
-  }
+  spawnExplosionFX(spawnSurfaceParticle,pos,10);
   var R=8.5;
   monsters.slice().forEach(function(m){
     var dx=m.x-b.x, dz=m.z-b.z, d=Math.sqrt(dx*dx+dz*dz);
@@ -3650,6 +3754,10 @@ function pickBuildingForClick(x,z,sx,sy){
 function surfaceClick3D(x,z,sx,sy){
   if(!placing)return;
   if(placing==="remove"){
+    if(shipWrecked&&pShip){
+      var wdx=pShip.pos.x-x, wdz=pShip.pos.z-z;
+      if(Math.sqrt(wdx*wdx+wdz*wdz)<6){ abandonWreck(); return; }
+    }
     var rb=pickBuildingForClick(x,z,sx,sy);
     if(!rb){ toast("Aim at a building to remove"); return; }
     removeBuilding(rb);
@@ -3986,6 +4094,7 @@ function newColony(){
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   landedPlanet=null; landProgress=0; landedNormal=null;
   atOutpost=false; currentWorld=null; surfaceFlying=false; arrivalAnim=null; landingAnim=null;
+  shipCrashing=false; shipWrecked=false;
   syncBuildPlane(null);
   WORLDS.forEach(function(w){ w.discovered=false; });
   restoreHomeAtmosphere();
@@ -4306,7 +4415,13 @@ HOME_WORLD.mesh=(function(){
   var atmo=new THREE.Mesh(new THREE.SphereGeometry(HOME_WORLD.radius*1.14,26,18),
     new THREE.MeshBasicMaterial({color:0x6fd0ff,transparent:true,opacity:0.13,side:THREE.BackSide}));
   g.add(atmo);
-  g.position.set(HOME_WORLD.sx,-6,HOME_WORLD.sz-70);
+  /* this used to sit 70 units behind the actual home targeting point (HOME_WORLD.sx/sz), which
+     is exactly where "fly close and slow" checks distance — so the visible planet and the one
+     you could actually land on were two different points in space, and the real one had no
+     planet-like visual of its own. Now it's right where the home base station already sits, so
+     what you fly toward really is where you land, and "your colony" reads as one coherent
+     planet-plus-station instead of a mystery second world nearby that can never be landed on. */
+  g.position.set(HOME_WORLD.sx,-3,HOME_WORLD.sz-10);
   spaceScene.add(g);
   return g;
 })();
@@ -4499,7 +4614,7 @@ function touchDown(){
    controls as the approach), climbing high enough to actually leave rather than an instant
    button-press launch */
 function boardParkedShip(){
-  if(!atOutpost||surfaceFlying||!pShip)return;
+  if(!atOutpost||surfaceFlying||!pShip||shipWrecked)return;
   resetMovementKeys();
   player.visible=false; playerShadow.visible=false;
   pShip.mesh.rotation.set(0,pShip.yaw,0);
@@ -4746,20 +4861,18 @@ function fireShipBolt(){
   pBolts.push({x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:cos*70,vz:sin*70,dmg:pShip.dmg,life:1.4});
   sfx.click();
 }
-var bombs=[], bombGeo=new THREE.SphereGeometry(0.4,8,6), bombMat=new THREE.MeshStandardMaterial({color:0x2a2a2a,emissive:0xff3010,emissiveIntensity:0.6,roughness:0.6,metalness:0.3});
+var bombs=[];
 function dropBomb(){
-  var mesh=new THREE.Mesh(bombGeo,bombMat);
+  var mesh=makeBombMesh();
   mesh.position.set(pShip.pos.x,pShip.pos.y,pShip.pos.z);
+  mesh.rotation.y=pShip.yaw;
   spaceScene.add(mesh);
   bombs.push({x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,vx:pShip.vel.x,vz:pShip.vel.z,vy:-2,dmg:pShip.dmg,fuse:2.2,mesh:mesh});
   sfx.click();
 }
 function bombBlast(b){
   var pos=new THREE.Vector3(b.x,b.y,b.z);
-  for(var i=0;i<22;i++){
-    var dir=new THREE.Vector3(rnd(-1,1),rnd(-0.2,1),rnd(-1,1)).normalize().multiplyScalar(rnd(6,16));
-    spawnThrustParticle(pos.clone(),dir,rnd(0.5,1.1),Math.random()<0.5?0xffaa40:0xff5020);
-  }
+  spawnExplosionFX(spawnThrustParticle,pos,11);
   var R=9;
   for(var j=enemyShips.length-1;j>=0;j--){
     var e=enemyShips[j], dx=e.mesh.position.x-b.x, dz=e.mesh.position.z-b.z, d=Math.sqrt(dx*dx+dz*dz);
@@ -4793,6 +4906,10 @@ function damagePShip(dmg){
   if(pShip.shield>0){ var use=Math.min(pShip.shield,dmg); pShip.shield-=use; dmg-=use; }
   if(dmg>0)pShip.hp-=dmg;
   if(pShip.hp<=0){
+    /* being shot down while flying over a world is a real crash, not the space-combat eject —
+       there's no rescue-ship-in-space to fall back on out here, so the hull goes down burning
+       and stays down until the player deals with the wreck themselves */
+    if(surfaceFlying){ beginShipCrash(); return; }
     pShip.alive=false; pShip.respawnT=3; pShip.mesh.visible=false; toast("Ejected — rescue inbound");
     if(landedPlanet){ landedPlanet=null; landProgress=0; landedNormal=null; }
     $("planetTarget").classList.add("hide");
@@ -5733,7 +5850,7 @@ function doInteract(){
   if(surfaceFlying)return;
   if(atOutpost&&pShip){
     var sdx=pShip.pos.x-player.position.x, sdz=pShip.pos.z-player.position.z;
-    if(Math.sqrt(sdx*sdx+sdz*sdz)<5.5){ boardParkedShip(); return; }
+    if(Math.sqrt(sdx*sdx+sdz*sdz)<5.5){ if(shipWrecked)abandonWreck(); else boardParkedShip(); return; }
   }
   var t=interactTarget();
   if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
@@ -5763,7 +5880,6 @@ function togglePause(){
 $("bPause").onclick=function(){ sfx.click(); togglePause(); };
 $("bPauseSpace").onclick=function(){ sfx.click(); togglePause(); };
 $("bResume").onclick=function(){ sfx.click(); togglePause(); };
-$("bReturnColony").onclick=function(){ sfx.click(); returnToColony(); };
 function returnToTitle(){
   cancelPlacing();
   if(pausedFrom==="space"){
