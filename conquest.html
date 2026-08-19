@@ -284,6 +284,16 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   font-weight:800;line-height:1.15}
 .bpGridItem .qty{position:absolute;top:3px;right:5px;font-size:9.5px;font-weight:900;color:var(--amber2)}
 .bpGridItem.empty{opacity:.3}
+/* wardrobe: one row per body-part slot, a native color input (themed to match everything
+   else) plus a quick row of preset swatches so you don't have to open the picker every time */
+.wdSlot{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:7px 9px;margin-bottom:6px}
+.wdSlot .wdLabel{font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;color:var(--dim);flex:1}
+.wdSlot input[type=color]{width:34px;height:28px;border:1px solid var(--line);border-radius:6px;
+  background:none;padding:0;cursor:pointer;flex:none}
+.wdSwatches{display:flex;gap:4px;flex:none}
+.wdSwatch{width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,.25);cursor:pointer;flex:none}
+.wdSwatch:active{transform:scale(.9)}
 .stepper{display:flex;align-items:center;gap:5px;margin-top:8px}
 .stepBtn{background:var(--panel);border:1px solid var(--line);color:var(--bone);width:32px;height:32px;
   border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;flex:none}
@@ -500,6 +510,19 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="cardBody">
         <div class="metalline">Spend Parts and refined metal to unlock new buildings and belt tiers, permanently, for this colony.</div>
         <div id="hubList"></div>
+        <button class="btn sub" id="bWardrobeOpen" style="margin-top:4px">Open Wardrobe — customize your look</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ovl hide" id="o-wardrobe">
+    <div class="card c-purple">
+      <div class="cardHead"><button id="bWardrobeClose" class="clX">&times;</button><h2><i></i>Wardrobe</h2><div class="panelTag">Customize Appearance</div></div>
+      <div class="cardBody">
+        <div class="bpPreview" id="wdPreview"></div>
+        <div class="metalline">Pick a color for each part. Changes apply instantly.</div>
+        <div id="wdSlots"></div>
+        <button class="btn sub" id="bWardrobeReset" style="margin-top:8px">Reset to Default</button>
       </div>
     </div>
   </div>
@@ -550,8 +573,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.31.0";
+var VERSION="1.32.0";
 var CHANGELOG=[
+  {v:"1.32.0",t:"Wardrobe — recolor your character from the Command Hub",items:[
+    "Added a Wardrobe, opened from the Command Hub: pick a color for your Body, Arms, Legs, Head, and Eyes independently, either from quick presets or a full color picker. Changes apply instantly and save with your colony",
+    "Body/arms/legs used to share one material, so recoloring one recolored all three — they're now separate materials so each part actually customizes on its own",
+    "Added actual eyes to the player model (previously just a glowing visor with no distinct eyes) — their own color, and they blink periodically instead of sitting static",
+    "Gave the player model's materials a bit more metalness so they catch light instead of reading completely flat"
+  ]},
   {v:"1.31.0",t:"Sci-fi blast doors, alien plants, new lights, a fixed gun, and a no-scroll Build menu",items:[
     "The Pulse Blaster now actually shows something when you fire it — a visible bolt from the muzzle to whatever it hits (or the aim point, if it misses), plus muzzle flash and impact sparks. It was only ever applying damage silently before, which read as \"the gun doesn't work\"",
     "Reworked the Door into a real sliding sci-fi blast door — two armored leaves that slide open as you approach and seal shut behind you. Interact with it to lock it permanently sealed instead of automatic",
@@ -2175,17 +2204,24 @@ var landingPodBeacon=null;
 /* ═════════════ PLAYER ═════════════ */
 function buildPlayerMesh(){
   var g=new THREE.Group();
-  var suitMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.5,metalness:0.2});
-  var plateMat=new THREE.MeshStandardMaterial({color:0xd9903a,roughness:0.45,metalness:0.3});
-  var darkMat=new THREE.MeshStandardMaterial({color:0x0b0f18,roughness:0.4,metalness:0.3});
-  var trimMat=new THREE.MeshStandardMaterial({color:0x233a56,roughness:0.5,metalness:0.4});
-  var gloveMat=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:0.6});
-  var visorMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.8,roughness:0.3});
+  /* body/arms/legs/head/eyes each get their own material instance (instead of one shared
+     "suit" material for the whole body) specifically so the Wardrobe can recolor them
+     independently — a slightly reflective finish ("kind of, not a lot") on all of them so
+     they actually catch light instead of reading flat */
+  var bodyMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.42,metalness:0.35});
+  var armMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.42,metalness:0.35});
+  var legMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.42,metalness:0.35});
+  var plateMat=new THREE.MeshStandardMaterial({color:0xd9903a,roughness:0.4,metalness:0.4});
+  var darkMat=new THREE.MeshStandardMaterial({color:0x0b0f18,roughness:0.35,metalness:0.4});
+  var trimMat=new THREE.MeshStandardMaterial({color:0x233a56,roughness:0.45,metalness:0.45});
+  var gloveMat=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:0.55,metalness:0.15});
+  var visorMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.8,roughness:0.25,metalness:0.2});
   var lightMat=new THREE.MeshStandardMaterial({color:0xffe08a,emissive:0xffaa33,emissiveIntensity:1.4});
+  var eyeMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x4fd3ff,emissiveIntensity:1.2,roughness:0.2,metalness:0.1});
 
   var hip=new THREE.Group(); hip.position.y=0.86; g.add(hip);
 
-  var torso=new THREE.Mesh(new THREE.CapsuleGeometry(0.46,0.62,4,10),suitMat);
+  var torso=new THREE.Mesh(new THREE.CapsuleGeometry(0.46,0.62,4,10),bodyMat);
   torso.position.y=0.5; hip.add(torso);
   var chest=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.42,0.22),plateMat);
   chest.position.set(0,0.62,0.32); hip.add(chest);
@@ -2210,6 +2246,12 @@ function buildPlayerMesh(){
   jaw.position.y=-0.12; jaw.scale.set(1,0.75,0.95); neck.add(jaw);
   var visor=new THREE.Mesh(new THREE.SphereGeometry(0.22,14,10),visorMat);
   visor.position.set(0,0,0.26); visor.scale.set(1,0.72,0.62); neck.add(visor);
+  /* two small glowing eyes on the visor, their own color (not tied to the head/body materials)
+     and animated with a periodic blink instead of just sitting there static */
+  var eyeGeo=new THREE.SphereGeometry(0.045,8,6);
+  var eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.09,0.02,0.4); neck.add(eyeL);
+  var eyeR=new THREE.Mesh(eyeGeo,eyeMat); eyeR.position.set(0.09,0.02,0.4); neck.add(eyeR);
+  g.userData.eyes=[eyeL,eyeR];
   var antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.3,5),trimMat);
   antenna.position.set(0.22,0.32,-0.05); antenna.rotation.z=0.3; neck.add(antenna);
   var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.045,6,6),lightMat);
@@ -2227,7 +2269,7 @@ function buildPlayerMesh(){
     var shoulder=new THREE.Group(); shoulder.position.set(side*0.5,0.78,0); hip.add(shoulder);
     var pad=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),plateMat);
     shoulder.add(pad);
-    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.11,0.32,3,6),suitMat);
+    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.11,0.32,3,6),armMat);
     upper.position.y=-0.2; shoulder.add(upper);
     var glove=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),gloveMat);
     glove.position.y=-0.42; shoulder.add(glove);
@@ -2237,7 +2279,7 @@ function buildPlayerMesh(){
 
   function buildLeg(side){
     var socket=new THREE.Group(); socket.position.set(side*0.2,-0.02,0); hip.add(socket);
-    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.15,0.34,3,6),suitMat);
+    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.15,0.34,3,6),legMat);
     upper.position.y=-0.2; socket.add(upper);
     var boot=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.2,0.34),trimMat);
     boot.position.set(0,-0.42,0.05); socket.add(boot);
@@ -2247,6 +2289,7 @@ function buildPlayerMesh(){
 
   g.userData.hip=hip; g.userData.body=torso; g.userData.neck=neck;
   g.userData.legs=[legL,legR]; g.userData.arms=[armL,armR];
+  g.userData.mats={body:bodyMat,arms:armMat,legs:legMat,head:darkMat,eyes:eyeMat};
   return g;
 }
 var player=buildPlayerMesh();
@@ -2314,6 +2357,18 @@ var CRAFT_RECIPES={
 };
 var EQUIP_SLOTS=["head","hands","legs","weapon"];
 var equipment={head:null,hands:null,legs:null,weapon:null};
+/* Wardrobe: recolors the player model's own material instances (see buildPlayerMesh's
+   userData.mats) — separate from equipment, which adds/removes gear meshes. */
+var WARDROBE_SLOTS=["body","arms","legs","head","eyes"];
+var playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
+function applyPlayerColors(){
+  if(!player||!player.userData.mats)return;
+  WARDROBE_SLOTS.forEach(function(slot){
+    var mat=player.userData.mats[slot];
+    if(mat)mat.color.set(playerColors[slot]);
+    if(slot==="eyes"&&mat)mat.emissive.set(playerColors[slot]);
+  });
+}
 function equipStats(){
   var s={spdMult:1,jumpMult:1,gatherMult:1,gatherRadiusMult:1};
   EQUIP_SLOTS.forEach(function(slot){
@@ -4364,7 +4419,7 @@ function saveGame(){
       shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atOutpost:atOutpost,
       atWorldId:currentWorld?currentWorld.id:null,
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
-      unlocked:unlocked
+      unlocked:unlocked, playerColors:playerColors
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -4382,6 +4437,8 @@ function newColony(){
   stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
   unlocked={belt2:false,refinery:false};
+  playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
+  applyPlayerColors();
   equipment={head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
@@ -4458,6 +4515,8 @@ function applySaveData(data){
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
   unlocked=data.unlocked||{belt2:false,refinery:false};
+  playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
+  applyPlayerColors();
   equipment=data.equipment||{head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
@@ -5445,6 +5504,7 @@ window.addEventListener("keydown",function(e){
     else if(state==="storage")closeStorage();
     else if(state==="workshop")closeWorkshop();
     else if(state==="hub")closeHubUpgrades();
+    else if(state==="wardrobe")closeWardrobe();
     else if(state==="backpack")closeBackpack();
     else if(state==="shiplauncher")closeShipLauncher();
     else if(state==="shiphub")closeShipHub();
@@ -6002,6 +6062,48 @@ function renderHubUpgrades(){
 }
 $("bHubClose").onclick=function(){ sfx.click(); closeHubUpgrades(); };
 
+/* ═════════════ WARDROBE (character customization, opened from the Hub) ═════════════ */
+var WARDROBE_LABELS={body:"Body",arms:"Arms",legs:"Legs",head:"Head",eyes:"Eyes"};
+var WARDROBE_PRESETS=[0xffb545,0xff4d5e,0x4fd3ff,0x7bd94a,0xb98aff,0x4fe0d3,0x9fc6ff,0xeaf2ff,0x2a2a2a,0xff8a30];
+function openWardrobe(){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  state="wardrobe"; $("o-wardrobe").classList.remove("hide"); renderWardrobe();
+}
+function closeWardrobe(){ if(state!=="wardrobe")return; state="surface"; $("o-wardrobe").classList.add("hide"); }
+function setWardrobeColor(slot,hex){
+  if(WARDROBE_SLOTS.indexOf(slot)<0)return;
+  playerColors[slot]=hex;
+  applyPlayerColors();
+  renderWardrobe();
+  saveGame();
+}
+function renderWardrobe(){
+  var previewUrl=renderPlayerPreview();
+  $("wdPreview").innerHTML=previewUrl?'<img src="'+previewUrl+'" alt="Your character">':'';
+  $("wdSlots").innerHTML=WARDROBE_SLOTS.map(function(slot){
+    var hex=hexStr(playerColors[slot]);
+    var swatches=WARDROBE_PRESETS.map(function(c){
+      return '<div class="wdSwatch" style="background:'+hexStr(c)+'" data-slot="'+slot+'" data-hex="'+hexStr(c)+'"></div>';
+    }).join('');
+    return '<div class="wdSlot"><span class="wdLabel">'+WARDROBE_LABELS[slot]+'</span>'+
+      '<div class="wdSwatches">'+swatches+'</div>'+
+      '<input type="color" value="'+hex+'" data-slot="'+slot+'">'+
+      '</div>';
+  }).join('');
+  var pickers=$("wdSlots").querySelectorAll("input[type=color]");
+  for(var i=0;i<pickers.length;i++)pickers[i].oninput=function(){ setWardrobeColor(this.getAttribute("data-slot"),parseInt(this.value.slice(1),16)); };
+  var sw=$("wdSlots").querySelectorAll(".wdSwatch");
+  for(var j=0;j<sw.length;j++)sw[j].onclick=function(){ sfx.click(); setWardrobeColor(this.getAttribute("data-slot"),parseInt(this.getAttribute("data-hex").slice(1),16)); };
+}
+$("bWardrobeOpen").onclick=function(){ sfx.click(); closeHubUpgrades(); openWardrobe(); };
+$("bWardrobeClose").onclick=function(){ sfx.click(); closeWardrobe(); };
+$("bWardrobeReset").onclick=function(){
+  sfx.click();
+  playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
+  applyPlayerColors(); renderWardrobe(); saveGame();
+};
+
 /* ═════════════ BACKPACK ═════════════ */
 function openBackpack(){
   if(state!=="surface")return;
@@ -6348,6 +6450,14 @@ function updateSurface(dt){
   player.userData.arms[0].rotation.x=moving?-Math.sin(walkT)*swing*0.8:interactPose;
   player.userData.arms[1].rotation.x=moving?Math.sin(walkT)*swing*0.8:0;
   if(player.userData.beacon)player.userData.beacon.material.emissiveIntensity=1.2+Math.sin(performance.now()/260)*0.5;
+  if(player.userData.eyes){
+    /* a periodic blink (quick flatten-and-recover) instead of the eyes just sitting there
+       static — a short blink every few seconds, timing offset per-eye is unnecessary since
+       real eyes blink together */
+    var blinkPh=(performance.now()/1000)%3.2;
+    var blinkScale=blinkPh>3.0?Math.max(0.08,1-((blinkPh-3.0)/0.1)):1;
+    player.userData.eyes.forEach(function(e){ e.scale.y=blinkScale; });
+  }
   if(landingPodBeacon)landingPodBeacon.material.emissiveIntensity=1.0+Math.sin(performance.now()/420)*0.4;
 
   playerShadow.position.x=player.position.x; playerShadow.position.z=player.position.z;
@@ -6425,7 +6535,7 @@ function frame(now){
        it hidden in every other state so it can never get stuck showing over a menu or the ground
        after you leave space (it only gets un-hidden again by updatePlanetTargeting itself) */
     if(state!=="space")$("planetTarget").classList.add("hide");
-    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub";
+    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
        keeps running whenever a menu is open on top of the surface — only WASD movement itself
@@ -6558,6 +6668,7 @@ function updateTitleDiorama(dt){
   renderer.render(titleScene,titleCamera);
 }
 
+applyPlayerColors();
 loadMeta();
 renderBuildIcons();
 renderItemIcons();
@@ -6595,7 +6706,7 @@ window.__cq={
   tickFrameLoop:function(n,dt){
     dt=dt||1/60;
     for(var i=0;i<n;i++){
-      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub";
+      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe";
       if(state==="surface"||menuOpenT)updateSurface(dt);
       if(state==="space"||state==="launching")updateSpace(dt);
     }
