@@ -100,17 +100,31 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
   padding:calc(18px + env(safe-area-inset-top,0px)) 18px calc(18px + env(safe-area-inset-bottom,0px));
   overflow-y:auto;z-index:4}
 .screen.hide{display:none!important}
+/* the title screen has a live diorama rendered behind it (see #titleDiorama / updateTitleDiorama)
+   instead of the usual near-opaque backdrop, so let it actually show through — a soft vertical
+   fade keeps the text/buttons readable without blocking the scene */
+#s-title{background:linear-gradient(180deg,rgba(5,8,14,.82) 0%,rgba(5,8,14,.4) 38%,rgba(5,8,14,.55) 62%,rgba(5,8,14,.92) 100%)}
 .page{width:100%;max-width:460px}
 h1.logo{font-size:clamp(30px,9vw,52px);line-height:.88;text-align:center;letter-spacing:.02em}
 h1.logo .a{color:var(--steel);display:block;text-shadow:0 4px 0 #123049}
 h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 .tag{text-align:center;font-size:10px;letter-spacing:.3em;color:var(--dim);margin-top:10px;text-transform:uppercase}
 .stack{display:flex;flex-direction:column;gap:9px;width:100%;margin:22px auto 0}
-.btn{display:block;width:100%;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);
+.btn{display:block;width:100%;position:relative;overflow:hidden;
+  background:linear-gradient(160deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:0 9px 9px 0;
   color:var(--bone);padding:15px 16px;font-family:inherit;font-size:13px;letter-spacing:.14em;
-  text-transform:uppercase;cursor:pointer;text-align:left;font-weight:700}
-.btn:active{background:var(--panel2)}
-.btn.sub{border-left-color:var(--line);font-size:11px;text-align:center;color:var(--dim)}
+  text-transform:uppercase;cursor:pointer;text-align:left;font-weight:700;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 3px 10px rgba(0,0,0,.35);
+  transition:transform .16s cubic-bezier(.34,1.56,.64,1),border-color .15s,box-shadow .15s}
+.btn::after{content:"›";position:absolute;right:14px;top:50%;color:var(--amber2);font-weight:900;font-size:18px;
+  opacity:0;transform:translate(4px,-50%);transition:opacity .15s,transform .15s}
+.btn:hover{border-color:var(--amber2);transform:translateX(3px)}
+.btn:hover::after{opacity:.85;transform:translate(0,-50%)}
+.btn:active{background:var(--panel2);transform:translateX(1px) scale(.99)}
+.btn.sub{border-left-color:var(--line);border-radius:9px;font-size:11px;text-align:center;color:var(--dim);box-shadow:none}
+.btn.sub::after{display:none}
+.btn.sub:hover{border-color:var(--steel);transform:none}
 .btn small{display:block;font-size:9px;letter-spacing:.08em;color:var(--dim);margin-top:4px;text-transform:none;font-weight:400}
 .hint{font-size:10.5px;color:var(--dim);line-height:1.7;margin-top:16px;text-align:center;letter-spacing:.02em}
 .ver{position:absolute;bottom:calc(10px + env(safe-area-inset-bottom,0px));font-size:9px;color:var(--dim);letter-spacing:.1em}
@@ -137,6 +151,11 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
 /* the backpack opens as a slim panel pinned to the left instead of a centered blocking modal */
 .ovl.side{background:rgba(5,8,14,.35);justify-content:flex-start}
 .ovl.side .card{position:relative;max-height:70vh}
+/* the build menu sits over the world you're actively placing things into, so it stays a touch
+   more see-through than other side panels — enough to still make out the placement ghost and
+   terrain behind it */
+#o-build{background:rgba(5,8,14,.22)}
+#o-build .card{background:linear-gradient(160deg,rgba(19,32,56,.9),rgba(12,22,38,.9))}
 /* every panel shares this same skeleton (gradient card, colored left rail, small category tag
    under the title) so they read as one consistent system — but each panel type carries its own
    --accent color and tag text, so at a glance a Shipyard panel doesn't look like a Storage panel */
@@ -372,7 +391,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     </div>
   </div>
 
-  <div class="ovl hide" id="o-build">
+  <div class="ovl side hide" id="o-build">
     <div class="card" style="max-width:560px">
       <h2><i></i>Build</h2>
       <div class="panelTag">Construction</div>
@@ -496,8 +515,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.28.0";
+var VERSION="1.29.0";
 var CHANGELOG=[
+  {v:"1.29.0",t:"Build menu moved to the left and made more transparent, a live title screen diorama, cooler buttons",items:[
+    "The Build menu now opens as a side panel on the left instead of a centered blocking modal, and it's noticeably more see-through so you can still make out the placement ghost and terrain behind it while browsing",
+    "The title screen had a small always-animating diorama added behind it — a Miner drilling, a Smelter forging (glowing, its fan actually spinning), and a lit conveyor belt actually carrying ore between them, built from the same models the real game uses. The title card is now more transparent so it's actually visible",
+    "Redesigned every button (title screen, pause menu, etc.) with a subtle gradient, a soft shadow, and a hover chevron instead of the flat single-color rectangle they were before"
+  ]},
   {v:"1.28.0",t:"Every UI panel redesigned — same theme, but each one now has its own color and identity",items:[
     "Every menu (Build, Machine, Storage, Shipyard, Workshop, Command Hub, Backpack, Shipment Launcher/Hub, Galaxy Map, Pause, Changelog) used to be the exact same gray card with a plain centered title — impossible to tell apart at a glance and all a little generic",
     "Each panel now carries its own accent color and a small category tag under its title, grouped by what it actually is: build/unlock screens in amber, ships in blue, production machines in red, storage/inventory in green, the galaxy map in cyan, the Workshop in purple — same card layout and fonts everywhere, just color-coded so you instantly know what kind of panel you're looking at",
@@ -856,6 +880,7 @@ var camera=new THREE.PerspectiveCamera(58,W/H,0.1,3000);
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
   camera.aspect=W/H; camera.updateProjectionMatrix();
+  if(typeof titleCamera!=="undefined"){ titleCamera.aspect=W/H; titleCamera.updateProjectionMatrix(); }
   renderer.setPixelRatio(DPR);
   renderer.setSize(W,H,true);
 }
@@ -6182,6 +6207,7 @@ function frame(now){
     if(state==="space"||state==="launching")updateSpace(dt);
     if(surfStates)renderer.render(surfaceScene,camera);
     else if(spaceStates)renderer.render(spaceScene,camera);
+    else if(state==="title")updateTitleDiorama(dt);
   }catch(err){
     console.error("conquest frame error:",err);
   }
@@ -6224,6 +6250,74 @@ $("bNewColony").onclick=function(){
 if(hasSave()){
   $("bStart").innerHTML='Continue<small>Resume your colony</small>';
   $("bNewColony").classList.remove("hide");
+}
+
+/* ═════════════ TITLE SCREEN DIORAMA ═════════════ */
+/* the title screen used to be a flat logo over a frozen, mostly-hidden frame of the game world —
+   a small always-animating showcase scene (drill pulling ore, belt carrying it, smelter forging
+   it) behind the now-more-transparent title card gives it some actual life. Built from the exact
+   same building meshes/materials the real game uses, just arranged as a standalone diorama. */
+var titleScene=new THREE.Scene();
+titleScene.add(new THREE.AmbientLight(0x8fa8c8,0.75));
+var titleSun=new THREE.DirectionalLight(0xfff4e0,1.25);
+titleSun.position.set(4,9,5);
+titleScene.add(titleSun);
+var titleRim=new THREE.DirectionalLight(0x4fd3ff,0.5);
+titleRim.position.set(-6,3,-4);
+titleScene.add(titleRim);
+var titleCamera=new THREE.PerspectiveCamera(38,1,0.1,100);
+
+var titleGround=new THREE.Mesh(new THREE.CylinderGeometry(6.4,6.8,0.3,28),matStd(0x141c28,0.75,0.35));
+titleGround.position.y=-0.15;
+titleScene.add(titleGround);
+var titleGroundRing=new THREE.Mesh(new THREE.TorusGeometry(6.5,0.05,6,28),new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.6}));
+titleGroundRing.rotation.x=Math.PI/2; titleGroundRing.position.y=0.02;
+titleScene.add(titleGroundRing);
+
+var titleMiner=buildBuildingMesh("miner");
+titleMiner.position.set(-3.3,0,0); titleMiner.rotation.y=0.5;
+titleScene.add(titleMiner);
+var titleSmelter=buildBuildingMesh("smelter");
+titleSmelter.position.set(3.2,0,0); titleSmelter.rotation.y=-2.4;
+titleScene.add(titleSmelter);
+
+(function(){
+  var beltMat=new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15,map:panelTex});
+  var railMat=matStd(0x3a4a5e,0.5,0.6), legMat=matStd(0x2a3542,0.6,0.6);
+  var bed=new THREE.Mesh(new THREE.BoxGeometry(6.0,0.12,0.7),beltMat);
+  bed.position.set(-0.1,0.5,0); titleScene.add(bed);
+  [0.34,-0.34].forEach(function(rz){
+    var rail=new THREE.Mesh(new THREE.BoxGeometry(6.0,0.14,0.08),railMat);
+    rail.position.set(-0.1,0.58,rz); titleScene.add(rail);
+  });
+  [-2.6,-1.1,0.4,1.9].forEach(function(lx){
+    [0.28,-0.28].forEach(function(lz){
+      var leg=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,0.12),legMat);
+      leg.position.set(lx,0.25,lz); titleScene.add(leg);
+    });
+  });
+})();
+var titleBeltItems=[];
+for(var tbi=0;tbi<4;tbi++){
+  var tim=makeBeltItemMesh("iron_ore");
+  tim.position.set(-2.9+tbi*1.5,0.62,0);
+  titleScene.add(tim);
+  titleBeltItems.push({mesh:tim,t:tbi/4});
+}
+
+function updateTitleDiorama(dt){
+  var t=performance.now()/1000;
+  titleCamera.position.set(Math.sin(t*0.11)*11,3.4+Math.sin(t*0.2)*0.35,Math.cos(t*0.11)*11+2);
+  titleCamera.lookAt(0,0.9,0);
+  if(titleMiner.userData.spinPart)titleMiner.userData.spinPart.rotation.y+=dt*3;
+  if(titleSmelter.userData.spinPart)titleSmelter.userData.spinPart.rotation.z+=dt*2.4;
+  if(titleSmelter.userData.glowMesh)titleSmelter.userData.glowMesh.material.emissiveIntensity=1.1+Math.sin(t*4)*0.35;
+  titleBeltItems.forEach(function(it){
+    it.t+=dt*0.1; if(it.t>1)it.t-=1;
+    it.mesh.position.x=-3.0+it.t*6.0;
+    it.mesh.rotation.y+=dt*1.5;
+  });
+  renderer.render(titleScene,titleCamera);
 }
 
 loadMeta();
