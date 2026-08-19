@@ -604,8 +604,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.37.0";
+var VERSION="1.38.0";
 var CHANGELOG=[
+  {v:"1.38.0",t:"Planets are actually huge now, fast ship, fixed a takeoff bug",items:[
+    "Every planet (and home) got scaled way up and spread much farther apart — flying out now feels like crossing real distance to an actual huge world instead of a short hop to an oversized beach ball. Ship speed was boosted a lot to match, so the extra distance means a fast, dramatic flight instead of a long boring one",
+    "Fixed a bug where boarding your landed ship and trying to take off would get force-landed again within about a second — the auto-land check was reading \"still near the ground and slow, right after boarding\" as \"landed\" and slamming you back down before you could actually climb out",
+    "Fixed old colonies never getting ore on the other planets — worlds that existed before per-world ore scattering was added (or any save from before this) now get their ore backfilled in automatically on load",
+    "The flyable space area, camera draw distance, and the home defense station's position were all resized/repositioned to match the much bigger planets"
+  ]},
   {v:"1.37.0",t:"Per-part building paint — a real detail editor for presets",items:[
     "The Colors panel got a new \"Paint Parts...\" button that opens a spinnable 3D preview of any building in the game — click individual panels/frames/pieces to recolor just that part instead of the whole building at once",
     "Every building type in the game is available to detail-paint, and your per-part choices are saved into the active preset — using that preset (with the Paint Gun or Apply to All) now paints each building with your exact part-by-part scheme instead of a single flat color",
@@ -1011,7 +1017,9 @@ renderer.setPixelRatio(DPR);
 renderer.setSize(W,H);
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 
-var camera=new THREE.PerspectiveCamera(58,W/H,0.1,3000);
+/* far plane bumped to comfortably cover the bigger SPACE_SIZE's farthest starfield/nebula decor
+   (up to SPACE_SIZE*1.95) now that worlds are spread much farther apart */
+var camera=new THREE.PerspectiveCamera(58,W/H,0.1,9000);
 
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
@@ -1078,33 +1086,38 @@ function craterDip(x,z){
    matter what. Only the small-scale space-flight markers (sx/sz, used for the solar-system-style
    "fly to a planet" view in space combat) stay close together — that's a separate, deliberately
    compact representation, not the actual ground you walk on. */
+/* worlds got scaled way up (~5x radius, ~5x apart) so they actually read as huge planets with a
+   tiny rocket crossing real distance between them, instead of oversized beach balls a few hundred
+   units from home — SHIP_STATS.spd was bumped to match so the extra distance doesn't just mean
+   longer boring flights. This only touches the decorative space-view sphere (radius) and its
+   position (sx,sz); the landable ground footprint (cx,cz,zoneR) is untouched. */
 var WORLDS=[
   { id:"vesta", nm:"Vesta Outpost",
     /* the space-view color used to be desert orange/tan while the actual ground (and its
        Frost Crystal/Ice Core ore) is an ice world — landing never matched what you flew
        toward. Recolored to the icy blue-white it actually is. */
-    sx:280,sz:-220,radius:22,col:0xbfd8e2,atmoCol:0x9fe0f0,ringCol:0x6a8ab0,
+    sx:1400,sz:-1100,radius:110,col:0xbfd8e2,atmoCol:0x9fe0f0,ringCol:0x6a8ab0,
     cx:20000,cz:20000,zoneR:300,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",ore2:"ice_core",ore2Nm:"Ice Core",decor:"ice",
     sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:1.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false,hasRing:true },
   { id:"ember", nm:"Ember Reach",
-    sx:-260,sz:260,radius:26,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
+    sx:-1300,sz:1300,radius:130,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
     cx:-20000,cz:20000,zoneR:300,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
     ore:"magma_shard",oreNm:"Magma Shard",ore2:"sulfur_vein",ore2Nm:"Sulfur Vein",decor:"volcanic",
     sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:1.3,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false,hasRing:false },
   { id:"verdance", nm:"Verdant Hollow",
-    sx:-260,sz:-260,radius:24,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
+    sx:-1300,sz:-1300,radius:120,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
     cx:-20000,cz:-20000,zoneR:300,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
     sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:1.0,rimCol:0x40ff90,ambCol:0x2a6a3a},
     discovered:false,hasHive:true,hasRing:false }
 ];
-var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:14,isHome:true,discovered:true};
+var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:70,isHome:true,discovered:true};
 function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
 /* every world is a genuinely separate SQUARE baseplate — its own terrain mesh, its own bounds,
    walled off at the edges — not a circle, patch or tinted zone carved out of home's map. A
@@ -1615,9 +1628,15 @@ function updateSurfaceFlight(dt){
   updateSurfaceBombs(dt); updateSurfaceParts(dt);
 
   var alt=pShip.pos.y-groundY;
-  var ready=alt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
+  /* right after boarding, the ship starts out already sitting at ~ground level and dead slow —
+     without this guard the auto-land check below reads that as "landed", counts down the same
+     settle timer, and slams the ship back down before you've had a chance to actually climb out,
+     making it look like the ship can never take off. liftedOff only flips true once you've
+     actually gained real clearance, and only then does the auto-land watch resume. */
+  if(!pShip.liftedOff&&alt>SURF_LAND_ALT*2)pShip.liftedOff=true;
+  var ready=pShip.liftedOff&&alt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
   landSettleT=ready?landSettleT+dt:Math.max(0,landSettleT-dt*2);
-  if(landSettleT>=SURF_LAND_SETTLE){
+  if(pShip.liftedOff&&landSettleT>=SURF_LAND_SETTLE){
     landingAnim={t:0,dur:0.85,fromY:pShip.pos.y,toY:groundY+shipClearance(),fromTiltX:pShip.mesh.rotation.x};
   }
   /* climb high enough and you break for space — the other half of "fly it out yourself" */
@@ -3661,26 +3680,37 @@ function scatterNodes(){
   /* every landable world gets a mix of the same ores you already know, plus its own native
      resource (and a second, rarer native ore on some worlds), scattered generously across its
      much bigger footprint so there's actually a reason to explore it, not just its center */
+  WORLDS.forEach(scatterWorldOre);
+}
+function scatterWorldOre(w){
+  var wTypes=["iron_ore","iron_ore","iron_ore","iron_ore","iron_ore","iron_ore",
+    "copper_ore","copper_ore","copper_ore","copper_ore","copper_ore",
+    w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore];
+  if(w.ore2)for(var o2=0;o2<5;o2++)wTypes.push(w.ore2);
+  /* nodes must stay inside the world's actual buildable radius, not its full terrain footprint
+     — only that inner region passes inAnyBuildZone(), so a node scattered further out (in the
+     hilly, unbuildable outer band) could be seen and hand-gathered but never had a Miner
+     placeable on it. That was a real bug: previously scattered out to zoneR-15. */
+  var wMaxR=worldBuildR(w)-15;
+  wTypes.forEach(function(t){
+    var x,z,tries=0,d,clash;
+    do{
+      x=snapGrid(w.cx+rnd(-wMaxR,wMaxR)); z=snapGrid(w.cz+rnd(-wMaxR,wMaxR));
+      var dx=x-w.cx, dz=z-w.cz; d=Math.sqrt(dx*dx+dz*dz); tries++;
+      clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
+    }
+    while((d<14||d>wMaxR||clash)&&tries<80);
+    spawnNode(x,z,t);
+  });
+}
+/* saves made before a given world had its own ore scattered (or from before this per-world
+   scatter existed at all) would otherwise stay barren forever — applySaveData calls this after
+   restoring whatever nodes the save did have, and backfills ore for any world that still has
+   none of its own, without touching worlds/nodes that are already populated */
+function ensureWorldNodes(){
   WORLDS.forEach(function(w){
-    var wTypes=["iron_ore","iron_ore","iron_ore","iron_ore","iron_ore","iron_ore",
-      "copper_ore","copper_ore","copper_ore","copper_ore","copper_ore",
-      w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore];
-    if(w.ore2)for(var o2=0;o2<5;o2++)wTypes.push(w.ore2);
-    /* nodes must stay inside the world's actual buildable radius, not its full terrain footprint
-       — only that inner region passes inAnyBuildZone(), so a node scattered further out (in the
-       hilly, unbuildable outer band) could be seen and hand-gathered but never had a Miner
-       placeable on it. That was a real bug: previously scattered out to zoneR-15. */
-    var wMaxR=worldBuildR(w)-15;
-    wTypes.forEach(function(t){
-      var x,z,tries=0,d,clash;
-      do{
-        x=snapGrid(w.cx+rnd(-wMaxR,wMaxR)); z=snapGrid(w.cz+rnd(-wMaxR,wMaxR));
-        var dx=x-w.cx, dz=z-w.cz; d=Math.sqrt(dx*dx+dz*dz); tries++;
-        clash=nodes.some(function(n){ var ddx=n.x-x,ddz=n.z-z; return Math.sqrt(ddx*ddx+ddz*ddz)<14; });
-      }
-      while((d<14||d>wMaxR||clash)&&tries<80);
-      spawnNode(x,z,t);
-    });
+    var has=nodes.some(function(n){ return Math.abs(n.x-w.cx)<=w.zoneR&&Math.abs(n.z-w.cz)<=w.zoneR; });
+    if(!has)scatterWorldOre(w);
   });
 }
 function nearestNode(x,z,radius){
@@ -4608,6 +4638,7 @@ function applySaveData(data){
     }
     spawnNode(nx,nz,n.restype);
   });
+  ensureWorldNodes();
   (data.buildings||[]).forEach(function(bd){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
     var b=makeBuilding(bd.type,bd.x,bd.z,bd.rotY,node);
@@ -4701,7 +4732,11 @@ function loadGame(){
 }
 
 /* ═════════════ SPACE SCENE ═════════════ */
-var SPACE_SIZE=900;
+/* the flyable space area has to comfortably contain every world's (sx,sz) plus room to actually
+   orbit/approach it — WORLDS now sit as far out as ~1800 units from home, so this had to grow
+   right along with them or the ship-position clamp below would make the far worlds literally
+   unreachable no matter how fast the ship is */
+var SPACE_SIZE=4000;
 var spaceScene=new THREE.Scene();
 spaceScene.background=new THREE.Color(0x030509);
 spaceScene.add(new THREE.AmbientLight(0x4a5a8a,0.6));
@@ -4837,14 +4872,16 @@ function updateShipNavLights(mesh){
 var homeBase={hp:300,maxhp:300};
 var homeBaseMesh=(function(){
   var g=new THREE.Group();
-  var core=new THREE.Mesh(new THREE.IcosahedronGeometry(6,0),new THREE.MeshStandardMaterial({color:0x101c2e,flatShading:true,roughness:0.6}));
+  var core=new THREE.Mesh(new THREE.IcosahedronGeometry(14,0),new THREE.MeshStandardMaterial({color:0x101c2e,flatShading:true,roughness:0.6}));
   g.add(core);
   var ringMat=new THREE.MeshStandardMaterial({color:0x7bd94a,emissive:0x1a4a0a,emissiveIntensity:0.8});
-  var ring=new THREE.Mesh(new THREE.TorusGeometry(10,0.5,8,28),ringMat);
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(24,1.1,8,28),ringMat);
   ring.rotation.x=Math.PI/2.3;
   g.add(ring);
   g.userData.ringMat=ringMat;
-  g.position.set(0,28,38);
+  /* clear of HOME_WORLD.mesh's much bigger sphere (radius 70, atmo ~80) now that planets got
+     scaled way up — this used to sit close in at (0,28,38) when the planet itself was tiny */
+  g.position.set(0,70,110);
   spaceScene.add(g);
   return g;
 })();
@@ -4949,7 +4986,7 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null, la
    settle onto it wherever you actually stopped, so you control where you touch down instead
    of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
    so you can freely buzz/bomb a world at low altitude without being forced to land on it. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=500;
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=90, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=500;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   /* plain nearest-neighbor among home and every world, each with the same show radius — whoever
@@ -5068,7 +5105,7 @@ function enterSurfaceFlight(world){
   pShip.vel.set(0,0,0);
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(0,pShip.yaw,0);
-  atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0;
+  atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
   arrivalAnim={t:0,dur:1.7,fromY:pShip.pos.y,toY:hoverY};
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(world);
@@ -5108,7 +5145,7 @@ function boardParkedShip(){
   player.visible=false; playerShadow.visible=false;
   pShip.mesh.rotation.set(0,pShip.yaw,0);
   pShip.vel.set(0,0,0);
-  surfaceFlying=true; landSettleT=0;
+  surfaceFlying=true; landSettleT=0; pShip.liftedOff=false;
   $("mobActions").classList.remove("show");
   toast("Aboard — climb high enough to break for space");
   sfx.click();
@@ -5346,11 +5383,15 @@ function buildEnemyMesh(){
   return g;
 }
 
+/* worlds are now spread ~5x farther apart (see WORLDS above) — ship speed and accel got bumped
+   to match so the extra distance means a fast, dramatic flight instead of just more empty travel
+   time. Surface-level flight (over a landed world's own terrain) uses a fixed 0.55x of spd, so
+   low-altitude handling near the ground isn't affected by this. */
 var SHIP_STATS={
-  scout:{maxhp:70,maxshield:20,spd:34,dmg:9,rate:.3,accel:14,clearance:1.35},
-  fighter:{maxhp:100,maxshield:35,spd:26,dmg:12,rate:.36,accel:11,clearance:1.65},
-  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7,clearance:1.95},
-  bomber:{maxhp:120,maxshield:30,spd:19,dmg:38,rate:1.0,accel:8,weapon:"bomb",clearance:4.05}
+  scout:{maxhp:70,maxshield:20,spd:160,dmg:9,rate:.3,accel:50,clearance:1.35},
+  fighter:{maxhp:100,maxshield:35,spd:130,dmg:12,rate:.36,accel:40,clearance:1.65},
+  frigate:{maxhp:160,maxshield:60,spd:95,dmg:18,rate:.5,accel:28,clearance:1.95},
+  bomber:{maxhp:120,maxshield:30,spd:100,dmg:38,rate:1.0,accel:30,weapon:"bomb",clearance:4.05}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 var pShip=null; // active flight state, created on launch
@@ -5414,7 +5455,9 @@ function returnToColony(){
 }
 function fireShipBolt(){
   var cos=Math.sin(pShip.yaw), sin=Math.cos(pShip.yaw);
-  pBolts.push({x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:cos*70,vz:sin*70,dmg:pShip.dmg,life:1.4});
+  /* bolt speed must comfortably outrun the ship's own top speed (see SHIP_STATS) or firing while
+     at speed looks like the bolt drifting backwards out of the muzzle */
+  pBolts.push({x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:cos*260,vz:sin*260,dmg:pShip.dmg,life:1.4});
   sfx.click();
 }
 var bombs=[];
