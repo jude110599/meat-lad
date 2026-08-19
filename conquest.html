@@ -464,8 +464,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.23.1";
+var VERSION="1.23.2";
 var CHANGELOG=[
+  {v:"1.23.2",t:"Fixed home's landing circle, invisible player after returning home, unbuildable ore on old saves, and new ore recipes",items:[
+    "The targeting circle near your own colony was never actually working — it showed, but the ring could never fill and nothing happened when it did, so flying home always felt broken. Home now uses the exact same fly-low-and-slow landing flow as every other world, and finishing it flies you straight back to walking around your colony",
+    "Fixed your player model staying invisible forever after returning home from space — the code that hides you while piloting the ship never had a matching \"show yourself again\" once you actually landed back home",
+    "Fixed Miners and buildings still rejecting placement on Vesta/Ember/Verdance if your save predated the last ore-scatter fix — old saves now pull any deposit sitting outside the buildable radius back inside it on load, instead of only fixing brand-new colonies",
+    "Frost Crystal, Magma Shard, Spore Pod, Ice Core, and Sulfur Vein now have real Constructor recipes — combine one with a bit of Iron or Copper for a batch of parts worth more than the base recipe"
+  ]},
   {v:"1.23.1",t:"Fixed E opening the Shipyard mid-flight, an exit-to-space bug, and unminable ore",items:[
     "Fixed pressing E while flying over a world re-triggering building-interact logic against your stale on-foot position (usually right next to home's Shipyard) and popping that panel open — E now does nothing while you're actually piloting the ship, same as it should",
     "Fixed breaking for space sending your ship back toward the planet instead of away from it — the exit velocity and the exit position were pointing in opposite directions, so the ship would drift straight back into landing range and immediately re-land, which is likely what looked like \"spawning inside the planet\"",
@@ -2083,7 +2089,7 @@ var BUILD_DEFS={
   miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],accepts:[],mineRate:0.5,mineCap:120},
   miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],accepts:[],mineRate:2,mineCap:240},
   smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
-  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper"]},
+  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"]},
   storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
     produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
   splitter:{nm:"Splitter",cat:"Logistics",ds:"One belt in, up to two belts out. Splits the incoming flow between whatever you connect.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
@@ -2123,7 +2129,12 @@ var RECIPES={
     {key:"copper",nm:"Copper Ingot",in:{copper_ore:2},out:{copper:1},time:1.5}
   ],
   constructor:[
-    {key:"parts",nm:"Ship Parts",in:{iron:2,copper:1},out:{parts:1},time:2}
+    {key:"parts",nm:"Ship Parts",in:{iron:2,copper:1},out:{parts:1},time:2},
+    {key:"parts_frost",nm:"Reinforced Parts",in:{iron:1,frost_crystal:2},out:{parts:2},time:2.2},
+    {key:"parts_magma",nm:"Magma-Forged Parts",in:{iron:1,magma_shard:2},out:{parts:2},time:2.2},
+    {key:"parts_spore",nm:"Biotech Parts",in:{copper:1,spore_pod:2},out:{parts:2},time:2.2},
+    {key:"parts_ice",nm:"Cryo Parts",in:{iron:1,ice_core:2},out:{parts:2},time:2.2},
+    {key:"parts_sulfur",nm:"Sulfur-Treated Parts",in:{copper:1,sulfur_vein:2},out:{parts:2},time:2.2}
   ]
 };
 function activeRecipe(b){
@@ -3729,7 +3740,17 @@ var loadedPlayerPos=null;
 function applySaveData(data){
   clearWorld();
   stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
-  (data.nodes||[]).forEach(function(n){ spawnNode(n.x,n.z,n.restype); });
+  (data.nodes||[]).forEach(function(n){
+    /* older saves may have nodes scattered before the buildable-radius fix, sitting out in a
+       world's unbuildable outer band — pull those back inside worldBuildR so a Miner can still
+       be placed on them instead of forever rejecting with "too far from the colony" */
+    var nx=n.x, nz=n.z, w=worldAt(nx,nz);
+    if(w){
+      var maxR=worldBuildR(w)-15, lx=nx-w.cx, lz=nz-w.cz;
+      nx=w.cx+clamp(lx,-maxR,maxR); nz=w.cz+clamp(lz,-maxR,maxR);
+    }
+    spawnNode(nx,nz,n.restype);
+  });
   (data.buildings||[]).forEach(function(bd){
     var node=bd.nodeIdx>=0?nodes[bd.nodeIdx]:null;
     var b=makeBuilding(bd.type,bd.x,bd.z,bd.rotY,node);
@@ -3940,7 +3961,7 @@ WORLDS.forEach(function(w){
   spaceScene.add(g);
   w.mesh=g;
 });
-var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
+var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null, landTransitioning=false;
 /* freeform landing: no aiming/lock-ring requirement — fly low and slow near a world and you
    settle onto it wherever you actually stopped, so you control where you touch down instead
    of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
@@ -3974,7 +3995,7 @@ function updatePlanetTargeting(dt){
   var dx=target.sx-pShip.pos.x, dz=target.sz-pShip.pos.z;
   var dist=Math.sqrt(dx*dx+dz*dz);
   var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
-  var near=!target.isHome&&dist<(target.radius+LAND_RANGE_PAD);
+  var near=dist<(target.radius+LAND_RANGE_PAD);
   var lowEnough=pShip.pos.y<LAND_MAX_ALT;
   var slow=speed<LAND_MAX_SPEED;
   var settling=near&&lowEnough&&slow;
@@ -3987,22 +4008,27 @@ function updatePlanetTargeting(dt){
     elTarget.style.left=sx+"px"; elTarget.style.top=sy+"px";
     var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
     var hint="";
-    if(!target.isHome){
-      if(settling)hint=" — TOUCHING DOWN";
-      else if(near&&!lowEnough)hint=" — DESCEND (Q)";
-      else if(near&&!slow)hint=" — SLOW DOWN TO LAND";
-      else if(!near)hint=" — FLY CLOSER TO LAND";
-    }
+    if(settling)hint=target.isHome?" — RETURNING HOME":" — TOUCHING DOWN";
+    else if(near&&!lowEnough)hint=" — DESCEND (Q)";
+    else if(near&&!slow)hint=" — SLOW DOWN TO LAND";
+    else if(!near)hint=" — FLY CLOSER TO LAND";
     elTarget.querySelector(".ptName").textContent=nameTxt+hint;
     elTarget.querySelector(".ptRing").style.background=
       "conic-gradient(var(--green) "+(landProgress*360)+"deg, rgba(255,255,255,.18) 0deg)";
     elTarget.classList.toggle("locked",settling);
   }
-  if(!target.isHome&&landProgress>=1){
-    var padR=target.radius+LAND_RANGE_PAD;
-    lastLandOffset.x=clamp((pShip.pos.x-target.sx)/padR,-1,1)*(target.zoneR-12);
-    lastLandOffset.z=clamp((pShip.pos.z-target.sz)/padR,-1,1)*(target.zoneR-12);
-    landOnPlanet(target);
+  if(landProgress>=1&&!landTransitioning){
+    landTransitioning=true;
+    if(target.isHome){
+      landProgress=0;
+      forceCloseMenus();
+      fadeTransition(function(){ returnToColony(); landTransitioning=false; },550);
+    } else {
+      var padR=target.radius+LAND_RANGE_PAD;
+      lastLandOffset.x=clamp((pShip.pos.x-target.sx)/padR,-1,1)*(target.zoneR-12);
+      lastLandOffset.z=clamp((pShip.pos.z-target.sz)/padR,-1,1)*(target.zoneR-12);
+      landOnPlanet(target);
+    }
   }
 }
 function fadeTransition(midCallback,fadeMs){
@@ -4037,9 +4063,10 @@ function landOnPlanet(world){
   world.discovered=true;
   toast("Approaching "+world.nm+"...");
   sfx.build();
-  fadeTransition(function(){ enterSurfaceFlight(world); },550);
+  fadeTransition(function(){ enterSurfaceFlight(world); landTransitioning=false; },550);
 }
 function enterSurfaceFlight(world){
+  if(!pShip)return;
   forceCloseMenus();
   resetMovementKeys();
   spaceScene.remove(pShip.mesh);
@@ -4309,9 +4336,13 @@ function returnToColony(){
   landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
   pBolts=[]; eBolts=[];
+  atOutpost=false; currentWorld=null; surfaceFlying=false;
+  restoreHomeAtmosphere();
+  player.visible=true; playerShadow.visible=true;
   state="surface";
   $("hudSpace").classList.remove("show"); $("hud").classList.add("show");
   $("mobActions").classList.add("show");
+  $("hiveHud").classList.add("hide");
   var sy=shipyard();
   if(sy){ player.position.x=sy.x+6; player.position.z=sy.z; }
   updateCameraTransform();
@@ -5607,7 +5638,7 @@ window.__cq={
   state:function(){
     return {state:state, atOutpost:atOutpost, surfaceFlying:surfaceFlying, currentWorldId:currentWorld?currentWorld.id:null,
       pShipPos:pShip?{x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z}:null,
-      player:{x:player.position.x,y:player.position.y,z:player.position.z,ry:player.rotation.y},
+      player:{x:player.position.x,y:player.position.y,z:player.position.z,ry:player.rotation.y,visible:player.visible},
       cam:{yaw:camYaw,pitch:camPitch,pos:{x:camera.position.x,y:camera.position.y,z:camera.position.z}},
       deviceMode:document.body.classList.contains("pc-mode")?"pc":"mobile",
       stock:JSON.parse(JSON.stringify(stock)), powerGen:powerGen, powerDraw:powerDraw,
