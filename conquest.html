@@ -573,8 +573,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.33.0";
+var VERSION="1.34.0";
 var CHANGELOG=[
+  {v:"1.34.0",t:"All 4 ships are bigger with hazard-stripe detailing",items:[
+    "Every ship (Scout, Fighter, Frigate, Bomber) is now noticeably bigger — they used to read smaller than the player standing next to them, which looked wrong. Ground clearance was scaled to match so the bigger hulls still land sitting on the ground instead of sinking into it",
+    "Added a hazard-stripe accent band to each ship's hull for a bit more industrial/military detail"
+  ]},
   {v:"1.33.0",t:"Fixed belt-upgrade highlight, rounder belt bends, and Storage redesigned as a real cargo crate",items:[
     "Fixed the Conveyor Belt Mk.2 hover highlight — aiming at an upgradable Mk.1 belt now actually makes it glow cyan (its rail material pulses), instead of only showing a text tooltip with nothing visibly different about the belt itself",
     "Belt bends now use a rounded swivel-hub joint instead of a flat-sided box, so turns read as a real curved corner instead of a sharp mechanical angle",
@@ -5087,6 +5091,7 @@ function buildShipMesh(model){
     var finTipR=finTipL.clone(); finTipR.position.x=1.75; finTipR.rotation.y=-0.32; g.add(finTipR);
     var nozzle=new THREE.Mesh(new THREE.TorusGeometry(0.28,0.07,6,14),trim);
     nozzle.rotation.x=Math.PI/2; nozzle.position.z=-1.3; g.add(nozzle);
+    var hazStripe=hazardRing(0.4,0.22); hazStripe.rotation.x=Math.PI/2; hazStripe.position.z=0.5; g.add(hazStripe);
     var glow=new THREE.Mesh(new THREE.SphereGeometry(0.24,8,6),accent); glow.position.z=-1.4; g.add(glow);
     var navL=navLight(0xff3040); navL.position.set(-1.75,0.18,-0.35); g.add(navL);
     var navR=navLight(0x3fff70); navR.position.set(1.75,0.18,-0.35); g.add(navR);
@@ -5102,6 +5107,7 @@ function buildShipMesh(model){
     var bridgeGlass=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.3,0.15),canopyMat);
     bridgeGlass.position.set(0,0.95,-0.42); g.add(bridgeGlass);
     var stripe=new THREE.Mesh(new THREE.BoxGeometry(2.65,0.18,0.4),trim); stripe.position.set(0,0.15,0.6); g.add(stripe);
+    var hazStripe=hazardBar(2.62,0.16,0.1); hazStripe.position.set(0,-0.4,2.02); g.add(hazStripe);
     var plateL=new THREE.Mesh(new THREE.BoxGeometry(0.3,1.2,3.6),plate); plateL.position.set(-1.4,0,-0.1); g.add(plateL);
     var plateR=plateL.clone(); plateR.position.x=1.4; g.add(plateR);
     var glows=[];
@@ -5132,6 +5138,7 @@ function buildShipMesh(model){
     var doorL=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.1,2.0),plate);
     doorL.position.set(-0.45,-1.32,0); doorL.rotation.z=0.5; g.add(doorL);
     var doorR=doorL.clone(); doorR.position.x=0.45; doorR.rotation.z=-0.5; g.add(doorR);
+    var hazStripe=hazardBar(2.22,0.16,0.1); hazStripe.position.set(0,0,1.71); g.add(hazStripe);
     var wingL=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.12,1.3),hull); wingL.position.set(-1.6,0.1,-0.4); g.add(wingL);
     var wingR=wingL.clone(); wingR.position.x=1.6; g.add(wingR);
     var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.28,1.5,8),plate);
@@ -5157,6 +5164,7 @@ function buildShipMesh(model){
     wingletL.position.set(-2.25,0.2,-0.7); wingletL.rotation.z=0.15; g.add(wingletL);
     var wingletR=wingletL.clone(); wingletR.position.x=2.25; g.add(wingletR);
     var finDorsal=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.55,0.9),trim); finDorsal.position.set(0,0.55,-1.1); g.add(finDorsal);
+    var hazStripe=hazardBar(0.97,0.14,0.08); hazStripe.position.set(0,0,0.9); g.add(hazStripe);
     var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.24,1.3,8),trim);
     podL.rotation.x=Math.PI/2; podL.position.set(-0.6,-0.1,-1.15); g.add(podL);
     var podR=podL.clone(); podR.position.x=0.6; g.add(podR);
@@ -5167,6 +5175,10 @@ function buildShipMesh(model){
     g.userData.engineGlow=[glowL,glowR];
     g.userData.navLights=[navL,navR];
   }
+  /* every ship read noticeably smaller than the player standing next to it — a flat scale
+     bump fixes that without having to reposition every single part by hand, since a Group
+     transform carries all the children's local offsets along with it */
+  g.scale.setScalar(1.4);
   return g;
 }
 function buildEnemyMesh(){
@@ -5181,10 +5193,10 @@ function buildEnemyMesh(){
 }
 
 var SHIP_STATS={
-  scout:{maxhp:70,maxshield:20,spd:34,dmg:9,rate:.3,accel:14,clearance:0.45},
-  fighter:{maxhp:100,maxshield:35,spd:26,dmg:12,rate:.36,accel:11,clearance:0.55},
-  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7,clearance:0.65},
-  bomber:{maxhp:120,maxshield:30,spd:19,dmg:38,rate:1.0,accel:8,weapon:"bomb",clearance:1.35}
+  scout:{maxhp:70,maxshield:20,spd:34,dmg:9,rate:.3,accel:14,clearance:0.63},
+  fighter:{maxhp:100,maxshield:35,spd:26,dmg:12,rate:.36,accel:11,clearance:0.77},
+  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7,clearance:0.91},
+  bomber:{maxhp:120,maxshield:30,spd:19,dmg:38,rate:1.0,accel:8,weapon:"bomb",clearance:1.89}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 var pShip=null; // active flight state, created on launch
@@ -6757,6 +6769,14 @@ window.__cq={
   debugGroundPoint:function(sx,sy){ return groundPointFromScreen(sx,sy); },
   debugBeltWaypoints:function(i){ var bl=belts[i||0]; return bl?bl.waypoints:null; },
   debugNodeAt:function(i){ var n=nodes[i]; if(!n)return null; return {x:n.x,z:n.z,restype:n.restype,meshPos:n.mesh.position.toArray(),visible:n.mesh.visible,inScene:surfaceScene.children.indexOf(n.mesh)>=0}; },
+  debugShipVsPlayer:function(model){
+    var g=buildShipMesh(model||"scout");
+    var box=new THREE.Box3().setFromObject(g);
+    var size=box.getSize(new THREE.Vector3());
+    var pbox=new THREE.Box3().setFromObject(player);
+    var psize=pbox.getSize(new THREE.Vector3());
+    return {shipSize:{x:size.x,y:size.y,z:size.z},playerSize:{x:psize.x,y:psize.y,z:psize.z}};
+  },
   debugHoverBeltWorld:function(x,z){ updateConnectHighlight(-9999,-9999,{x:x,z:z}); return hoveredUpgradeBelt?{tier:hoveredUpgradeBelt.tier,railEmI:hoveredUpgradeBelt.mats.rail.emissiveIntensity,railEm:"#"+hoveredUpgradeBelt.mats.rail.emissive.getHexString()}:null; },
   debugDoorMesh:function(){ var g=buildBuildingMesh("door"); return {hasLeafL:!!g.userData.doorLeafL,keys:Object.keys(g.userData)}; },
   debugDoorReal:function(i){ var b=buildings.filter(function(x){return x.type==="door";})[i||0]; if(!b)return null; return {type:b.type,meshType:b.mesh.type,userDataKeys:Object.keys(b.mesh.userData),childCount:b.mesh.children.length,leafLType:typeof b.mesh.userData.doorLeafL,leafLIsUndef:b.mesh.userData.doorLeafL===undefined,leafLValue:String(b.mesh.userData.doorLeafL)}; },
