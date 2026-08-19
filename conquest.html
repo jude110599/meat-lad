@@ -315,6 +315,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   <div id="mobActions">
     <div class="mbtn accent" id="mbInteract">INTERACT</div>
     <div class="mbtn" id="mbRotate">ROTATE</div>
+    <div class="mbtn" id="mbSnap">GRID 1x</div>
     <div class="mbtn" id="mbCancel">CANCEL</div>
   </div>
 
@@ -464,8 +465,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.24.0";
+var VERSION="1.25.0";
 var CHANGELOG=[
+  {v:"1.25.0",t:"Sci-fi hazard-stripe detailing on buildings, 2x/4x/8x/16x grid snap, and zoop placement",items:[
+    "Added hazard-striped (black/yellow) accent bands to the Smelter, Constructor, Storage, Miner, Miner Mk2, Shipyard, and Walls — the classic industrial-factory visual cue the buildings were missing",
+    "Grid snap now has 5 steps — 1x/2x/4x/8x/16x the base tile size — cycle through them with G while placing (or the GRID button on mobile), so laying out a big base doesn't mean clicking on every single tile boundary",
+    "Placement now \"zoops\": every building keeps the tool equipped after you place it (not just walls/foundations like before), so you can drop copy after copy without reopening the build menu. Only one-per-colony buildings like the Shipyard still clear the tool automatically"
+  ]},
   {v:"1.24.0",t:"Landing/arrival animations, a fixed placement hologram on other worlds, no more ship-in-the-ground, and a much bigger-looking space",items:[
     "Fixed the building placement hologram (and mouse placement itself) doing nothing on Vesta/Ember/Verdance — the invisible plane used to figure out where your cursor is pointing only ever covered home's own footprint, so on any other world every click and every ghost preview silently missed",
     "Your ship no longer sinks partway into the ground when it lands — it now settles at a height that actually clears its hull, tuned per ship model",
@@ -2133,7 +2139,18 @@ function makeGearPreviewMesh(key){
 
 /* ═════════════ BUILDINGS ═════════════ */
 var GRID=8;
-function snapGrid(v){ return Math.round(v/GRID)*GRID; }
+/* placement snap granularity — 1x snaps to the native GRID (one foundation tile), 2x/4x/8x/16x
+   snap to ever-larger multiples so you can lay out a big base fast without every click landing
+   on a single-tile boundary. Only affects where things snap to, not their actual built size. */
+var snapMult=1;
+var SNAP_MULTS=[1,2,4,8,16];
+function cycleSnapMult(){
+  var i=SNAP_MULTS.indexOf(snapMult);
+  snapMult=SNAP_MULTS[(i+1)%SNAP_MULTS.length];
+  toast("Grid snap: "+(GRID*snapMult)+"m ("+snapMult+"x)");
+  if(placing)updatePlacementGhost(mouse.x,mouse.y);
+}
+function snapGrid(v){ var s=GRID*snapMult; return Math.round(v/s)*s; }
 function snapWallEdge(x,z){
   var cx=snapGrid(x), cz=snapGrid(z);
   var lx=x-cx, lz=z-cz;
@@ -2257,6 +2274,39 @@ function boltRow(g,w,d,y,mat,n){
     }
   }
 }
+/* diagonal black/yellow hazard-stripe texture — the one visual cue every sci-fi factory building
+   was missing. Used as thin accent bands (base rings, edge trim) across the machine models so
+   they read as industrial equipment at a glance instead of plain painted metal. */
+var hazardTex=(function(){
+  var cvs=document.createElement("canvas"); cvs.width=64; cvs.height=64;
+  var g=cvs.getContext("2d");
+  g.fillStyle="#1a1a1a"; g.fillRect(0,0,64,64);
+  g.fillStyle="#ffb545";
+  g.save(); g.translate(32,32); g.rotate(Math.PI/4); g.translate(-32,-32);
+  for(var x=-64;x<128;x+=16)g.fillRect(x,0,8,128);
+  g.restore();
+  var tex=new THREE.CanvasTexture(cvs);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  return tex;
+})();
+function hazardMat(){ return new THREE.MeshStandardMaterial({map:hazardTex,roughness:0.6,metalness:0.3}); }
+/* a thin hazard-striped ring, sized to wrap a cylindrical tank/base — the repeat count keeps the
+   stripe scale roughly constant regardless of the ring's actual radius */
+function hazardRing(radius,height){
+  var mat=hazardMat();
+  mat.map=hazardTex.clone(); mat.map.needsUpdate=true;
+  mat.map.wrapS=mat.map.wrapT=THREE.RepeatWrapping;
+  mat.map.repeat.set(Math.max(2,Math.round(radius*2.4)),1);
+  return new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,height,16,1,true),mat);
+}
+/* a straight hazard-striped bar, for trim on boxy structural pieces */
+function hazardBar(w,h,d){
+  var mat=hazardMat();
+  mat.map=hazardTex.clone(); mat.map.needsUpdate=true;
+  mat.map.wrapS=mat.map.wrapT=THREE.RepeatWrapping;
+  mat.map.repeat.set(Math.max(1,Math.round(w*0.8)),1);
+  return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+}
 function buildBuildingMesh(type){
   var g=new THREE.Group();
   if(type==="foundation"){
@@ -2290,6 +2340,7 @@ function buildBuildingMesh(type){
     var top=new THREE.Mesh(new THREE.BoxGeometry(GRID-0.1,0.2,0.3),frameMat);
     top.position.y=3.95; g.add(top);
     var bot=top.clone(); bot.position.y=0.05; g.add(bot);
+    var hazBar=hazardBar(GRID-0.5,0.22,0.28); hazBar.position.y=0.28; g.add(hazBar);
     boltRow(g,GRID-0.8,0.2,0.4,null,6);
     boltRow(g,GRID-0.8,0.2,3.6,null,6);
     return g;
@@ -2389,6 +2440,7 @@ function buildBuildingMesh(type){
     var padMat=matStd(0x2a3542,0.7,0.6);
     var pad=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.4,0.5,10),padMat);
     pad.position.y=0.25; g.add(pad);
+    var hazBand=hazardRing(2.28,0.2); hazBand.position.y=0.52; g.add(hazBand);
     var legMat=matStd(0x1a2230,0.6,0.6);
     for(var li=0;li<4;li++){
       var ang=li/4*Math.PI*2+Math.PI/4;
@@ -2419,6 +2471,7 @@ function buildBuildingMesh(type){
     var padMat=matStd(0x2a3542,0.7,0.6);
     var pad=new THREE.Mesh(new THREE.CylinderGeometry(3.2,3.5,0.55,12),padMat);
     pad.position.y=0.28; g.add(pad);
+    var hazBand=hazardRing(3.32,0.22); hazBand.position.y=0.58; g.add(hazBand);
     var legMat=matStd(0x1a2230,0.6,0.6);
     for(var li=0;li<6;li++){
       var ang=li/6*Math.PI*2;
@@ -2468,6 +2521,7 @@ function buildBuildingMesh(type){
     var baseMat=matStd(0x1a1410,0.75,0.4);
     var base=new THREE.Mesh(new THREE.CylinderGeometry(2.0,2.2,0.4,10),baseMat);
     base.position.y=0.2; g.add(base);
+    var hazBand=hazardRing(2.05,0.22); hazBand.position.y=0.42; g.add(hazBand);
     var tank=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.65,2.9,10),matStd(0x2a2018,0.6,0.4));
     tank.position.set(-0.2,1.85,0); g.add(tank);
     var collar=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,0.22,10),matStd(0x3a3028,0.55,0.5));
@@ -2521,6 +2575,7 @@ function buildBuildingMesh(type){
     var baseMat=matStd(0x141b28,0.7,0.5);
     var base=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.4,2.6),baseMat);
     base.position.y=0.2; g.add(base);
+    var hazBand=hazardBar(3.62,0.14,0.14); hazBand.position.set(0,0.42,1.32); g.add(hazBand);
     var cab=new THREE.Mesh(new THREE.BoxGeometry(2.6,2.2,2.4),matStd(0x1a2233,0.55,0.5));
     cab.position.set(-0.7,1.5,0); g.add(cab);
     var cabTop=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,0.5,4),matStd(0x141b28,0.6,0.5));
@@ -2560,6 +2615,7 @@ function buildBuildingMesh(type){
     var padMat=matStd(0x2a2016,0.7,0.5);
     var pad=new THREE.Mesh(new THREE.CylinderGeometry(1.95,2.1,0.3,12),padMat);
     pad.position.y=0.15; g.add(pad);
+    var hazBand=hazardRing(2.0,0.2); hazBand.position.y=0.32; g.add(hazBand);
     var tank=new THREE.Mesh(new THREE.CylinderGeometry(1.55,1.75,2.5,12),matStd(0x3a2c1c,0.65,0.35));
     tank.position.y=1.55; g.add(tank);
     var ribMat=matStd(0x9fc6ff,0.4,0.5);
@@ -2625,6 +2681,7 @@ function buildBuildingMesh(type){
     var padMat=matStd(0x101c2e,0.65,0.4);
     var pad=new THREE.Mesh(new THREE.CylinderGeometry(6.6,6.6,0.4,14),padMat);
     pad.position.y=0.2; g.add(pad);
+    var hazBand=hazardRing(6.65,0.18); hazBand.position.y=0.42; g.add(hazBand);
     var padInner=new THREE.Mesh(new THREE.CylinderGeometry(5.6,5.6,0.44,14),matStd(0x0a1420,0.5,0.5));
     padInner.position.y=0.22; g.add(padInner);
     var ringMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0x3a1c00,emissiveIntensity:0.6});
@@ -3176,15 +3233,16 @@ function tryPlaceAt3D(x,z){
   payCost(d.cost);
   var b=makeBuilding(type,x,z,rotY,node);
   buildings.push(b);
-  sfx.build(); toast(d.nm+" built"); pulseInteractPose();
-  /* structural pieces (foundation/wall/window/door/railing) are almost always placed several
-     in a row — a whole wall, a tiled floor — so keep the tool equipped and the ghost tracking
-     the cursor instead of clearing back to nothing after every single piece. Everything else
-     (machines, ships) still clears after one placement, since those are one-off decisions. */
-  if(d.edge||type==="foundation"){
-    updatePlacementGhost(mouse.x,mouse.y);
-  } else {
+  sfx.build(); pulseInteractPose();
+  /* "zoop" placement: the tool stays equipped after every build (structural pieces, machines,
+     everything) so you can keep dropping copy after copy without reopening the build menu —
+     only a one-per-colony building (Shipyard) clears the tool, since a second one is never
+     placeable anyway. Right-click/Esc still cancels out of it at any time. */
+  if(d.uniq){
+    toast(d.nm+" built");
     placing=null; placeGhost.visible=false;
+  } else {
+    updatePlacementGhost(mouse.x,mouse.y);
   }
 }
 function findBuildingNear(x,z,margin){
@@ -4837,6 +4895,7 @@ window.addEventListener("keydown",function(e){
     else togglePause();
   }
   if(k==="r"&&placing){ placeRotY+=Math.PI/2; updatePlacementGhost(mouse.x,mouse.y); }
+  if(k==="g"&&placing)cycleSnapMult();
   if(k==="e"&&state==="surface"&&!placing)doInteract();
   if(k==="f"&&state==="surface"&&!placing)doPlaceOnBelt();
   if(k==="b"&&!placing)toggleBackpack();
@@ -5119,7 +5178,7 @@ function renderBuildDetail(){
       toast(key==="belt"?"Select the source building":"Select the first machine or pole");
     } else {
       placing=key; placeRotY=0; beltFrom=null; setGhost(placing); closeBuild();
-      toast("Place "+d.nm+" — click to build • R to rotate • right-click to cancel");
+      toast("Place "+d.nm+" — click to build • R to rotate • G for grid snap • right-click to cancel");
     }
   };
 }
@@ -5608,6 +5667,7 @@ $("mbInteract").addEventListener("click",function(){
   doInteract();
 });
 $("mbRotate").addEventListener("click",function(){ if(placing)placeRotY+=Math.PI/2; else doPlaceOnBelt(); });
+$("mbSnap").addEventListener("click",function(){ if(placing)cycleSnapMult(); });
 $("mbCancel").addEventListener("click",function(){
   if(placing){ cancelPlacing(); toast("Placement cancelled"); }
   else togglePause();
@@ -5729,6 +5789,9 @@ function updateHudSurface(){
   var rb=$("mbRotate");
   rb.textContent=placing?"ROTATE":"DROP";
   rb.style.opacity=(placing||nearBelt)?"1":".4";
+  var sb=$("mbSnap");
+  sb.textContent="GRID "+snapMult+"x";
+  sb.style.opacity=placing?"1":".4";
 }
 
 /* ═════════════ FRAME LOOP ═════════════ */
@@ -5860,6 +5923,7 @@ window.__cq={
   canPlaceAt:canPlaceAt3D,
   debugHighlight:function(){ return {visible:connectHighlight.visible,pos:{x:connectHighlight.position.x,z:connectHighlight.position.z},col:"#"+connectHighlightMat.color.getHexString()}; },
   debugGroundPoint:function(sx,sy){ return groundPointFromScreen(sx,sy); },
+  debugCycleSnap:function(){ cycleSnapMult(); return snapMult; },
   debugBuildPlane:function(){ return {pos:buildPlaneMesh.position.toArray(), visible:buildPlaneMesh.visible, inScene:surfaceScene.children.indexOf(buildPlaneMesh)>=0}; },
   debugBuildingUnderScreen:function(sx,sy){ renderer.render(surfaceScene,camera); var b=buildingUnderScreen(sx,sy); return b?{id:b.id,type:b.type}:null; },
   debugNearestBelt:function(){ var bl=nearestBelt(player.position.x,player.position.z,2.5); return bl?{from:bl.from.id,to:bl.to.id,res:bl.res}:null; },
