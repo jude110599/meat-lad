@@ -464,8 +464,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.23.0";
+var VERSION="1.23.1";
 var CHANGELOG=[
+  {v:"1.23.1",t:"Fixed E opening the Shipyard mid-flight, an exit-to-space bug, and unminable ore",items:[
+    "Fixed pressing E while flying over a world re-triggering building-interact logic against your stale on-foot position (usually right next to home's Shipyard) and popping that panel open — E now does nothing while you're actually piloting the ship, same as it should",
+    "Fixed breaking for space sending your ship back toward the planet instead of away from it — the exit velocity and the exit position were pointing in opposite directions, so the ship would drift straight back into landing range and immediately re-land, which is likely what looked like \"spawning inside the planet\"",
+    "Fixed most scattered ore deposits sitting outside a world's actual buildable radius — since only the inner region allows placing buildings, a Miner could never actually be placed on them even though you could see and hand-gather them. Deposits now stay within the buildable area",
+    "The targeting circle now shows from noticeably farther away again"
+  ]},
   {v:"1.23.0",t:"Bigger worlds, alien turrets, and a real fly-it-yourself departure",items:[
     "Every world's baseplate is 4x bigger, with ore deposits scattered generously across the whole thing instead of clustered near the middle",
     "Vesta Outpost and Ember Reach each got a second native resource — Ice Core and Sulfur Vein — on top of their original ore",
@@ -2906,7 +2912,11 @@ function scatterNodes(){
       "copper_ore","copper_ore","copper_ore","copper_ore","copper_ore",
       w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore,w.ore];
     if(w.ore2)for(var o2=0;o2<5;o2++)wTypes.push(w.ore2);
-    var wMaxR=w.zoneR-15;
+    /* nodes must stay inside the world's actual buildable radius, not its full terrain footprint
+       — only that inner region passes inAnyBuildZone(), so a node scattered further out (in the
+       hilly, unbuildable outer band) could be seen and hand-gathered but never had a Miner
+       placeable on it. That was a real bug: previously scattered out to zoneR-15. */
+    var wMaxR=worldBuildR(w)-15;
     wTypes.forEach(function(t){
       var x,z,tries=0,d,clash;
       do{
@@ -3935,7 +3945,7 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null;
    settle onto it wherever you actually stopped, so you control where you touch down instead
    of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
    so you can freely buzz/bomb a world at low altitude without being forced to land on it. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=250;
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=45, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=500;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   /* plain nearest-neighbor among home and every world, each with the same show radius — whoever
@@ -4104,8 +4114,10 @@ function exitToSpace(){
       spaceScene.add(pShip.mesh);
       /* clear well outside the world's own landing range (radius+LAND_RANGE_PAD) with real
          outward speed — breaking for space right next to the marker at low speed let the ship
-         coast back into range on its own and immediately re-trigger a landing */
-      if(world){ pShip.pos.set(world.sx,0,world.sz+world.radius+LAND_RANGE_PAD+40); pShip.yaw=Math.PI; }
+         coast back into range on its own and immediately re-trigger a landing. yaw=0 points the
+         same +z direction as the position offset below, so the exit velocity actually carries
+         the ship away from the world instead of back toward it (that mismatch was the bug). */
+      if(world){ pShip.pos.set(world.sx,0,world.sz+world.radius+LAND_RANGE_PAD+40); pShip.yaw=0; }
       pShip.vel.set(Math.sin(pShip.yaw)*pShip.spd,0,Math.cos(pShip.yaw)*pShip.spd);
       pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
       state="space";
@@ -5249,7 +5261,13 @@ function interactTarget(){
   return best;
 }
 function doInteract(){
-  if(atOutpost&&!surfaceFlying&&pShip){
+  /* surfaceFlying uses the same state==="surface" as actually standing on the ground, so without
+     this guard pressing E while piloting the ship over a world re-runs building-interact logic
+     against the player's stale on-foot position (frozen wherever they last stood — often right
+     next to home's Shipyard) and pops that panel open instead of doing nothing, or worse,
+     instead of boarding, which only makes sense once you're actually on foot. */
+  if(surfaceFlying)return;
+  if(atOutpost&&pShip){
     var sdx=pShip.pos.x-player.position.x, sdz=pShip.pos.z-player.position.z;
     if(Math.sqrt(sdx*sdx+sdz*sdz)<5.5){ boardParkedShip(); return; }
   }
