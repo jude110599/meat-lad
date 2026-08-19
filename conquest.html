@@ -591,8 +591,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.35.1";
+var VERSION="1.36.0";
 var CHANGELOG=[
+  {v:"1.36.0",t:"All 4 ships completely redesigned and 3x bigger",items:[
+    "Every ship (Scout, Fighter, Frigate, Bomber) got a full model rework, not just a resize — panel bolt lines, engine nozzle rings, wing hazard stripes, a cockpit frame ring, and landing pods on the Scout; a sensor dish, antenna, hull nose ram, extra point-defense guns, a 4th engine pod, and dorsal hazard striping on the Frigate; a chin sensor blister, bomb-bay struts, underwing bomb pods, and twin tail finlets on the Bomber; and wingtip gun barrels plus an engine ring/nose-cap on the Fighter",
+    "Scaled all 4 up to a full 3x their original size (up from the earlier 1.4x pass) — ground clearance was rescaled to match so the bigger hulls still land sitting on the ground instead of sinking into it"
+  ]},
   {v:"1.35.1",t:"Fixed the planet/station overlap, bigger Remove button",items:[
     "Fixed a bug where the home base's orbital defense station (the icosahedron + green ring you defend during space combat waves) was positioned right on top of your home planet's sphere, making it look like a strange growth sticking out of the planet — it's now clearly separated as its own station orbiting above the colony",
     "The Build menu's Remove tool button was a tiny unlabeled trash icon that was easy to miss or mis-click — it's now a full-size labeled Remove button"
@@ -5135,23 +5139,36 @@ function buildShipMesh(model){
     return s;
   }
   if(model==="scout"){
-    var hull=matStd(0xe8a23d,0.4,0.5), trim=matStd(0x8a5a1e,0.5,0.4);
+    var hull=matStd(0xe8a23d,0.4,0.5), trim=matStd(0x8a5a1e,0.5,0.4), dark=matStd(0x2a1f14,0.55,0.6);
     var nose=new THREE.Mesh(new THREE.ConeGeometry(0.42,1.3,7),hull);
     nose.rotation.x=Math.PI/2; nose.position.z=1.75; g.add(nose);
+    var noseTip=new THREE.Mesh(new THREE.ConeGeometry(0.14,0.4,6),trim);
+    noseTip.rotation.x=Math.PI/2; noseTip.position.z=2.55; g.add(noseTip);
     var body=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.36,1.9,7),hull);
     body.rotation.x=Math.PI/2; body.position.z=0.5; g.add(body);
+    boltRow(g,0.7,0.7,0.32,dark,4);
     var tail=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.26,0.9,7),hull);
     tail.rotation.x=Math.PI/2; tail.position.z=-0.85; g.add(tail);
     var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,7),canopyMat);
     canopy.scale.set(0.85,0.65,1.35); canopy.position.set(0,0.32,0.85); g.add(canopy);
+    var canopyFrame=new THREE.Mesh(new THREE.TorusGeometry(0.24,0.03,5,12),trim);
+    canopyFrame.rotation.x=Math.PI/2; canopyFrame.position.set(0,0.32,0.55); g.add(canopyFrame);
     var wingL=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.07,0.85),hull);
     wingL.position.set(-1.05,-0.02,-0.05); wingL.rotation.y=0.32; g.add(wingL);
     var wingR=wingL.clone(); wingR.position.x=1.05; wingR.rotation.y=-0.32; g.add(wingR);
+    var wingStripeL=hazardBar(1.75,0.075,0.32); wingStripeL.position.set(-1.05,0.0,-0.05); wingStripeL.rotation.y=0.32; g.add(wingStripeL);
+    var wingStripeR=wingStripeL.clone(); wingStripeR.position.x=1.05; wingStripeR.rotation.y=-0.32; g.add(wingStripeR);
     var finTipL=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.4,0.5),trim);
     finTipL.position.set(-1.75,0.18,-0.35); finTipL.rotation.y=0.32; g.add(finTipL);
     var finTipR=finTipL.clone(); finTipR.position.x=1.75; finTipR.rotation.y=-0.32; g.add(finTipR);
+    var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.6,6),dark);
+    podL.rotation.x=Math.PI/2; podL.position.set(-1.5,-0.14,0.55); g.add(podL);
+    var podR=podL.clone(); podR.position.x=1.5; g.add(podR);
     var nozzle=new THREE.Mesh(new THREE.TorusGeometry(0.28,0.07,6,14),trim);
     nozzle.rotation.x=Math.PI/2; nozzle.position.z=-1.3; g.add(nozzle);
+    var nozzleInner=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.18,0.3,10),dark);
+    nozzleInner.rotation.x=Math.PI/2; nozzleInner.position.z=-1.35; g.add(nozzleInner);
+    var fin=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.42,0.55),trim); fin.position.set(0,0.4,-0.85); g.add(fin);
     var hazStripe=hazardRing(0.4,0.22); hazStripe.rotation.x=Math.PI/2; hazStripe.position.z=0.5; g.add(hazStripe);
     var glow=new THREE.Mesh(new THREE.SphereGeometry(0.24,8,6),accent); glow.position.z=-1.4; g.add(glow);
     var navL=navLight(0xff3040); navL.position.set(-1.75,0.18,-0.35); g.add(navL);
@@ -5159,76 +5176,122 @@ function buildShipMesh(model){
     g.userData.engineGlow=[glow];
     g.userData.navLights=[navL,navR];
   } else if(model==="frigate"){
-    var hull=matStd(0x54607a,0.5,0.55), plate=matStd(0x3a4353,0.6,0.4), trim=matStd(0xd98a2e,0.5,0.3);
+    var hull=matStd(0x54607a,0.5,0.55), plate=matStd(0x3a4353,0.6,0.4), trim=matStd(0xd98a2e,0.5,0.3), dark=matStd(0x161d29,0.5,0.6);
     var mainHull=new THREE.Mesh(new THREE.BoxGeometry(2.6,1.1,4.3),hull); g.add(mainHull);
+    boltRow(g,2.4,3.9,0.58,dark,7);
     var bow=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.9,1.1),hull); bow.position.z=2.5; g.add(bow);
     var bowSlant=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.85,1.0),hull);
     bowSlant.position.z=2.95; bowSlant.rotation.x=-0.35; g.add(bowSlant);
+    var prow=new THREE.Mesh(new THREE.ConeGeometry(0.5,0.6,4),dark);
+    prow.rotation.x=Math.PI/2; prow.rotation.z=Math.PI/4; prow.position.z=3.55; g.add(prow);
     var bridge=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.7,1.4),hull); bridge.position.set(0,0.85,-1.1); g.add(bridge);
+    var bridgeTop=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.25,1.0),plate); bridgeTop.position.set(0,1.32,-1.1); g.add(bridgeTop);
     var bridgeGlass=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.3,0.15),canopyMat);
     bridgeGlass.position.set(0,0.95,-0.42); g.add(bridgeGlass);
+    var dish=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,6,0,Math.PI*2,0,Math.PI/2),plate);
+    dish.rotation.x=Math.PI; dish.position.set(0.7,1.45,-1.3); g.add(dish);
+    var antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.7,5),dark); antenna.position.set(-0.7,1.6,-1.3); g.add(antenna);
     var stripe=new THREE.Mesh(new THREE.BoxGeometry(2.65,0.18,0.4),trim); stripe.position.set(0,0.15,0.6); g.add(stripe);
     var hazStripe=hazardBar(2.62,0.16,0.1); hazStripe.position.set(0,-0.4,2.02); g.add(hazStripe);
+    var hazStripe2=hazardBar(2.62,0.14,0.1); hazStripe2.position.set(0,0.58,-1.9); g.add(hazStripe2);
     var plateL=new THREE.Mesh(new THREE.BoxGeometry(0.3,1.2,3.6),plate); plateL.position.set(-1.4,0,-0.1); g.add(plateL);
     var plateR=plateL.clone(); plateR.position.x=1.4; g.add(plateR);
+    var finL=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.9,1.3),plate); finL.position.set(-1.5,-0.55,-1.6); finL.rotation.z=0.2; g.add(finL);
+    var finR=finL.clone(); finR.position.x=1.5; finR.rotation.z=-0.2; g.add(finR);
     var glows=[];
-    for(var i=-1;i<=1;i++){
+    for(var i=-1.4;i<=1.4;i+=1.4){
       var pod=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.8,8),plate);
-      pod.rotation.x=Math.PI/2; pod.position.set(i*0.85,-0.25,-2.35); g.add(pod);
-      var gl=new THREE.Mesh(new THREE.SphereGeometry(0.26,8,6),accent); gl.position.set(i*0.85,-0.25,-2.75); g.add(gl);
+      pod.rotation.x=Math.PI/2; pod.position.set(i*0.7,-0.25,-2.35); g.add(pod);
+      var podRing=new THREE.Mesh(new THREE.TorusGeometry(0.32,0.04,5,12),dark);
+      podRing.rotation.x=Math.PI/2; podRing.position.set(i*0.7,-0.25,-2.0); g.add(podRing);
+      var gl=new THREE.Mesh(new THREE.SphereGeometry(0.26,8,6),accent); gl.position.set(i*0.7,-0.25,-2.75); g.add(gl);
       glows.push(gl);
     }
+    var midPod=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.34,0.6,8),plate);
+    midPod.rotation.x=Math.PI/2; midPod.position.set(0,-0.25,-2.3); g.add(midPod);
+    var midGlow=new THREE.Mesh(new THREE.SphereGeometry(0.24,8,6),accent); midGlow.position.set(0,-0.25,-2.65); g.add(midGlow);
+    glows.push(midGlow);
     var turretBaseL=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.3,8),plate); turretBaseL.position.set(-1.1,0.65,0.4); g.add(turretBaseL);
     var turretBarrelL=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.7,6),trim);
     turretBarrelL.rotation.x=Math.PI/2; turretBarrelL.position.set(-1.1,0.65,0.9); g.add(turretBarrelL);
     var turretBaseR=turretBaseL.clone(); turretBaseR.position.x=1.1; g.add(turretBaseR);
     var turretBarrelR=turretBarrelL.clone(); turretBarrelR.position.x=1.1; g.add(turretBarrelR);
+    var pdGunL=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.4,5),dark);
+    pdGunL.rotation.x=Math.PI/2; pdGunL.position.set(-0.9,0.1,2.7); g.add(pdGunL);
+    var pdGunR=pdGunL.clone(); pdGunR.position.x=0.9; g.add(pdGunR);
     var navL=navLight(0xff3040); navL.position.set(-1.55,0,1.5); g.add(navL);
     var navR=navLight(0x3fff70); navR.position.set(1.55,0,1.5); g.add(navR);
     g.userData.engineGlow=glows;
     g.userData.navLights=[navL,navR];
   } else if(model==="bomber"){
-    var hull=matStd(0x5a6a4a,0.55,0.4), plate=matStd(0x3a4530,0.6,0.35), trim=matStd(0xd9c02e,0.5,0.3);
+    var hull=matStd(0x5a6a4a,0.55,0.4), plate=matStd(0x3a4530,0.6,0.35), trim=matStd(0xd9c02e,0.5,0.3), dark=matStd(0x1c2318,0.5,0.6);
     var mainHull=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.3,3.4),hull); g.add(mainHull);
+    boltRow(g,2.0,3.0,0.68,dark,6);
     var belly=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.9,2.6),plate); belly.position.y=-0.85; g.add(belly);
     var nose=new THREE.Mesh(new THREE.ConeGeometry(1.05,1.3,8),hull);
     nose.rotation.x=Math.PI/2; nose.position.z=2.1; g.add(nose);
+    var chin=new THREE.Mesh(new THREE.SphereGeometry(0.32,8,6,0,Math.PI*2,0,Math.PI/2),canopyMat);
+    chin.rotation.x=Math.PI; chin.position.set(0,-0.15,2.4); g.add(chin);
     var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.38,10,7),canopyMat);
     canopy.scale.set(0.9,0.7,1.2); canopy.position.set(0,0.75,0.9); g.add(canopy);
+    var canopyFrame=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.035,5,12),trim);
+    canopyFrame.rotation.x=Math.PI/2; canopyFrame.position.set(0,0.75,0.55); g.add(canopyFrame);
     /* bomb bay doors along the belly, cracked open so it visibly reads as a bomber */
     var doorL=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.1,2.0),plate);
     doorL.position.set(-0.45,-1.32,0); doorL.rotation.z=0.5; g.add(doorL);
     var doorR=doorL.clone(); doorR.position.x=0.45; doorR.rotation.z=-0.5; g.add(doorR);
+    var bayStrutL=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.35,5),dark); bayStrutL.position.set(-0.45,-1.15,0); bayStrutL.rotation.x=0.5; g.add(bayStrutL);
+    var bayStrutR=bayStrutL.clone(); bayStrutR.position.x=0.45; bayStrutR.rotation.x=-0.5; g.add(bayStrutR);
     var hazStripe=hazardBar(2.22,0.16,0.1); hazStripe.position.set(0,0,1.71); g.add(hazStripe);
     var wingL=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.12,1.3),hull); wingL.position.set(-1.6,0.1,-0.4); g.add(wingL);
     var wingR=wingL.clone(); wingR.position.x=1.6; g.add(wingR);
+    var bombPodL=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,0.9,7),dark);
+    bombPodL.rotation.x=Math.PI/2; bombPodL.position.set(-2.2,-0.15,-0.2); g.add(bombPodL);
+    var bombPodR=bombPodL.clone(); bombPodR.position.x=2.2; g.add(bombPodR);
     var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.28,1.5,8),plate);
     podL.rotation.x=Math.PI/2; podL.position.set(-1.7,-0.05,-1.1); g.add(podL);
     var podR=podL.clone(); podR.position.x=1.7; g.add(podR);
+    var podRingL=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.04,5,12),trim);
+    podRingL.rotation.x=Math.PI/2; podRingL.position.set(-1.7,-0.05,-0.5); g.add(podRingL);
+    var podRingR=podRingL.clone(); podRingR.position.x=1.7; g.add(podRingR);
     var glowL=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),accent); glowL.position.set(-1.7,-0.05,-1.9); g.add(glowL);
     var glowR=glowL.clone(); glowR.position.x=1.7; g.add(glowR);
     var tailFin=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.9,1.1),trim); tailFin.position.set(0,0.75,-1.6); g.add(tailFin);
+    var finletL=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.5,0.7),plate); finletL.position.set(-0.9,0.35,-1.55); finletL.rotation.z=0.15; g.add(finletL);
+    var finletR=finletL.clone(); finletR.position.x=0.9; finletR.rotation.z=-0.15; g.add(finletR);
     var navL=navLight(0xff3040); navL.position.set(-2.9,0.1,-0.4); g.add(navL);
     var navR=navLight(0x3fff70); navR.position.set(2.9,0.1,-0.4); g.add(navR);
     g.userData.engineGlow=[glowL,glowR];
     g.userData.navLights=[navL,navR];
   } else {
-    var hull=matStd(0x9fb4c9,0.4,0.55), trim=matStd(0x2a3f55,0.5,0.4);
+    var hull=matStd(0x9fb4c9,0.4,0.55), trim=matStd(0x2a3f55,0.5,0.4), dark=matStd(0x131b26,0.5,0.6);
     var fuselageFront=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.4,6),hull);
     fuselageFront.rotation.x=Math.PI/2; fuselageFront.position.z=1.6; g.add(fuselageFront);
+    var noseCap=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.35,6),dark);
+    noseCap.rotation.x=Math.PI/2; noseCap.position.z=2.45; g.add(noseCap);
     var fuselage=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.55,2.3),hull); fuselage.position.z=0.15; g.add(fuselage);
+    boltRow(g,0.75,2.0,0.3,dark,5);
     var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.32,10,7),canopyMat);
     canopy.scale.set(0.8,0.6,1.3); canopy.position.set(0,0.38,0.9); g.add(canopy);
+    var canopyFrame=new THREE.Mesh(new THREE.TorusGeometry(0.26,0.03,5,12),trim);
+    canopyFrame.rotation.x=Math.PI/2; canopyFrame.position.set(0,0.38,0.6); g.add(canopyFrame);
     var wingL=new THREE.Mesh(new THREE.BoxGeometry(2.1,0.09,1.15),hull); wingL.position.set(-1.25,-0.05,-0.35); g.add(wingL);
     var wingR=wingL.clone(); wingR.position.x=1.25; g.add(wingR);
+    var wingWeaponL=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.6,5),dark);
+    wingWeaponL.rotation.x=Math.PI/2; wingWeaponL.position.set(-1.5,-0.12,0.35); g.add(wingWeaponL);
+    var wingWeaponR=wingWeaponL.clone(); wingWeaponR.position.x=1.5; g.add(wingWeaponR);
     var wingletL=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.45,0.55),trim);
     wingletL.position.set(-2.25,0.2,-0.7); wingletL.rotation.z=0.15; g.add(wingletL);
     var wingletR=wingletL.clone(); wingletR.position.x=2.25; g.add(wingletR);
     var finDorsal=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.55,0.9),trim); finDorsal.position.set(0,0.55,-1.1); g.add(finDorsal);
+    var finVent=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.3,0.06),dark); finVent.position.set(0,0.55,-1.4); g.add(finVent);
     var hazStripe=hazardBar(0.97,0.14,0.08); hazStripe.position.set(0,0,0.9); g.add(hazStripe);
     var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.24,1.3,8),trim);
     podL.rotation.x=Math.PI/2; podL.position.set(-0.6,-0.1,-1.15); g.add(podL);
     var podR=podL.clone(); podR.position.x=0.6; g.add(podR);
+    var podRingL=new THREE.Mesh(new THREE.TorusGeometry(0.26,0.035,5,12),dark);
+    podRingL.rotation.x=Math.PI/2; podRingL.position.set(-0.6,-0.1,-0.65); g.add(podRingL);
+    var podRingR=podRingL.clone(); podRingR.position.x=0.6; g.add(podRingR);
     var glowL=new THREE.Mesh(new THREE.SphereGeometry(0.26,8,6),accent); glowL.position.set(-0.6,-0.1,-1.85); g.add(glowL);
     var glowR=glowL.clone(); glowR.position.x=0.6; g.add(glowR);
     var navL=navLight(0xff3040); navL.position.set(-2.25,0.2,-0.7); g.add(navL);
@@ -5236,10 +5299,10 @@ function buildShipMesh(model){
     g.userData.engineGlow=[glowL,glowR];
     g.userData.navLights=[navL,navR];
   }
-  /* every ship read noticeably smaller than the player standing next to it — a flat scale
-     bump fixes that without having to reposition every single part by hand, since a Group
-     transform carries all the children's local offsets along with it */
-  g.scale.setScalar(1.4);
+  /* every ship read noticeably smaller than the player standing next to it, so pushed all four
+     up to a full 3x — a Group transform carries all the children's local offsets along with it,
+     so the extra greebles added above scale up cleanly with the rest of the hull */
+  g.scale.setScalar(3);
   return g;
 }
 function buildEnemyMesh(){
@@ -5254,10 +5317,10 @@ function buildEnemyMesh(){
 }
 
 var SHIP_STATS={
-  scout:{maxhp:70,maxshield:20,spd:34,dmg:9,rate:.3,accel:14,clearance:0.63},
-  fighter:{maxhp:100,maxshield:35,spd:26,dmg:12,rate:.36,accel:11,clearance:0.77},
-  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7,clearance:0.91},
-  bomber:{maxhp:120,maxshield:30,spd:19,dmg:38,rate:1.0,accel:8,weapon:"bomb",clearance:1.89}
+  scout:{maxhp:70,maxshield:20,spd:34,dmg:9,rate:.3,accel:14,clearance:1.35},
+  fighter:{maxhp:100,maxshield:35,spd:26,dmg:12,rate:.36,accel:11,clearance:1.65},
+  frigate:{maxhp:160,maxshield:60,spd:18,dmg:18,rate:.5,accel:7,clearance:1.95},
+  bomber:{maxhp:120,maxshield:30,spd:19,dmg:38,rate:1.0,accel:8,weapon:"bomb",clearance:4.05}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 var pShip=null; // active flight state, created on launch
