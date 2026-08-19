@@ -465,8 +465,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.22.0";
+var VERSION="1.22.1";
 var CHANGELOG=[
+  {v:"1.22.1",t:"Every world is now a walled square baseplate, not a circle",items:[
+    "Rebuilt each landable world's terrain from a circular disc into a proper square baseplate, built the same way home's map is — its own height-mapped, vertex-colored terrain mesh with real bumps and rises, not a flat tinted patch",
+    "Boxed every world in with a solid perimeter wall on all four sides, so it unmistakably reads as its own bounded map rather than an island fading into open space",
+    "Movement (both flying and on foot) now clamps to that square footprint instead of a circular radius"
+  ]},
   {v:"1.22.0",t:"Every world is now a truly separate floating platform",items:[
     "Rebuilt each landable world as its own physically separate disc-shaped platform with a raised rim wall, instead of a tinted zone painted onto the same shared ground plane as home — flying between worlds now actually takes you somewhere else, not to a different-colored patch of the same map",
     "Fixed a bug where the space targeting circle could get stuck on screen — approaching a world and then heading home or opening a menu (like the Shipyard) could leave the circle and its label frozen on top of the UI. It's now force-hidden the instant you're not actively flying in open space",
@@ -840,27 +845,39 @@ var WORLDS=[
 ];
 var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:14,isHome:true,discovered:true};
 function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
+/* every world is a genuinely separate SQUARE baseplate — its own terrain mesh, its own bounds,
+   walled off at the edges — not a circle, patch or tinted zone carved out of home's map. A
+   point only ever belongs to one world at a time: a plain axis-aligned box test against that
+   world's own square footprint, nothing blended or shared with home's terrain function. */
 function worldAt(x,z){
   for(var i=0;i<WORLDS.length;i++){
-    var w=WORLDS[i], dx=x-w.cx, dz=z-w.cz;
-    if(dx*dx+dz*dz<=w.zoneR*w.zoneR)return w;
+    var w=WORLDS[i];
+    if(Math.abs(x-w.cx)<=w.zoneR&&Math.abs(z-w.cz)<=w.zoneR)return w;
   }
   return null;
 }
+function worldBuildR(w){ return w.zoneR*0.55; }
 function terrainHeight(x,z){
-  /* each landable world is a flat, self-contained platform — hard-edged, not blended into
-     home's terrain shape at all, since it's rendered as its own separate disc mesh floating
-     apart from home's ground plane, not a tinted patch of the same continuous surface */
-  if(worldAt(x,z))return 0;
-  var d=Math.sqrt(x*x+z*z);
-  var t=clamp((d-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
-  var smooth=t*t*(3-2*t);
-  return (terrainRaw(x,z)+craterDip(x,z))*smooth;
+  var w=worldAt(x,z);
+  if(w){
+    var lx=x-w.cx, lz=z-w.cz;
+    var buildR=worldBuildR(w);
+    var d=Math.max(Math.abs(lx),Math.abs(lz));
+    var t=clamp((d-buildR)/(w.zoneR-buildR),0,1);
+    var smooth=t*t*(3-2*t);
+    return terrainRaw(x,z)*smooth*0.55;
+  }
+  var hd=Math.sqrt(x*x+z*z);
+  var ht=clamp((hd-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
+  var hsmooth=ht*ht*(3-2*ht);
+  return (terrainRaw(x,z)+craterDip(x,z))*hsmooth;
 }
 function inAnyBuildZone(x,z){
   if(Math.sqrt(x*x+z*z)<=BUILD_ZONE_R-10)return true;
   var w=worldAt(x,z);
-  return !!(w&&Math.sqrt((x-w.cx)*(x-w.cx)+(z-w.cz)*(z-w.cz))<=w.zoneR-10);
+  if(!w)return false;
+  var buildR=worldBuildR(w)-10;
+  return Math.abs(x-w.cx)<=buildR&&Math.abs(z-w.cz)<=buildR;
 }
 
 /* skybox: large inverted sphere with a vertical gradient plus faint nebula-coloured bands,
@@ -1081,12 +1098,12 @@ function updateSurfaceFlight(dt){
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
   if(keys.q)pShip.pos.y-=dt*9;
   if(keys.e)pShip.pos.y+=dt*9;
-  /* stay within the current world's own disc — flying past its rim would mean drifting off
-     into a floating platform's edge with nothing underneath */
+  /* stay within the current world's own square baseplate — flying past its walls would mean
+     drifting off the map into nothing */
   if(currentWorld){
     var wr=currentWorld.zoneR-3;
-    var wdx=pShip.pos.x-currentWorld.cx, wdz=pShip.pos.z-currentWorld.cz, wd=Math.sqrt(wdx*wdx+wdz*wdz);
-    if(wd>wr){ pShip.pos.x=currentWorld.cx+wdx/wd*wr; pShip.pos.z=currentWorld.cz+wdz/wd*wr; }
+    pShip.pos.x=clamp(pShip.pos.x,currentWorld.cx-wr,currentWorld.cx+wr);
+    pShip.pos.z=clamp(pShip.pos.z,currentWorld.cz-wr,currentWorld.cz+wr);
   }
   var groundY=terrainHeight(pShip.pos.x,pShip.pos.z);
   pShip.pos.y=clamp(pShip.pos.y,groundY,groundY+45);
@@ -1551,30 +1568,43 @@ var landingPodBeacon=null;
     kg.position.set(kx,ky,kz);
     surfaceScene.add(kg);
   }
-  /* each landable world is its own separate disc-shaped platform — a completely independent
-     patch of ground floating apart from home's terrain and every other world, not a tinted
-     zone carved out of the same shared plane. A raised rim wall marks its hard edge. */
+  /* every world is its own separate SQUARE baseplate — its own terrain mesh with real height
+     variation and its own walled boundary, not a circle, not a tinted patch of home's ground.
+     Built exactly like the home baseplate is (a height-displaced, vertex-colored plane), just
+     smaller and using that world's own palette, and fully walled in on all four sides so it
+     reads unmistakably as its own bounded map. */
   WORLDS.forEach(function(w){
     var floorC=new THREE.Color(w.floor), midC=new THREE.Color(w.mid), rockC=new THREE.Color(w.rock);
-    var discGeo=new THREE.CircleGeometry(w.zoneR,48);
-    discGeo.rotateX(-Math.PI/2);
-    var dpos=discGeo.attributes.position, dcol=new Float32Array(dpos.count*3);
-    for(var di2=0;di2<dpos.count;di2++){
-      var dxp=dpos.getX(di2), dzp=dpos.getZ(di2), dr2=Math.sqrt(dxp*dxp+dzp*dzp)/w.zoneR;
-      var dc=new THREE.Color().copy(floorC).lerp(midC,clamp(dr2*1.3,0,1));
-      var dspeck=rnd(-0.035,0.035);
-      dc.r=clamp(dc.r+dspeck,0,1); dc.g=clamp(dc.g+dspeck,0,1); dc.b=clamp(dc.b+dspeck,0,1);
-      dcol[di2*3]=dc.r; dcol[di2*3+1]=dc.g; dcol[di2*3+2]=dc.b;
+    var seg=Math.max(20,Math.round(w.zoneR/3));
+    var wGeo=new THREE.PlaneGeometry(w.zoneR*2,w.zoneR*2,seg,seg);
+    wGeo.rotateX(-Math.PI/2);
+    var wpos=wGeo.attributes.position, wcol=new Float32Array(wpos.count*3);
+    var buildR=worldBuildR(w);
+    for(var wi2=0;wi2<wpos.count;wi2++){
+      var lxp=wpos.getX(wi2), lzp=wpos.getZ(wi2);
+      var h=terrainHeight(w.cx+lxp,w.cz+lzp);
+      wpos.setY(wi2,h);
+      var edget=clamp(Math.max(Math.abs(lxp),Math.abs(lzp))/buildR,0,1.6);
+      var wc=new THREE.Color().copy(floorC).lerp(midC,clamp(edget*0.7,0,1)).lerp(rockC,clamp((edget-1)*1.5,0,1));
+      var wspeck=rnd(-0.035,0.035);
+      wc.r=clamp(wc.r+wspeck,0,1); wc.g=clamp(wc.g+wspeck,0,1); wc.b=clamp(wc.b+wspeck,0,1);
+      wcol[wi2*3]=wc.r; wcol[wi2*3+1]=wc.g; wcol[wi2*3+2]=wc.b;
     }
-    discGeo.setAttribute("color",new THREE.BufferAttribute(dcol,3));
-    var discMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,metalness:0});
-    var discMesh=new THREE.Mesh(discGeo,discMat);
-    discMesh.position.set(w.cx,0.06,w.cz);
-    surfaceScene.add(discMesh);
-    var rimMat=new THREE.MeshStandardMaterial({color:w.rock,roughness:0.85,metalness:0.15,flatShading:true});
-    var rim=new THREE.Mesh(new THREE.CylinderGeometry(w.zoneR+0.6,w.zoneR+1.6,4,40,1,true),rimMat);
-    rim.position.set(w.cx,-1.8,w.cz);
-    surfaceScene.add(rim);
+    wGeo.setAttribute("color",new THREE.BufferAttribute(wcol,3));
+    wGeo.computeVertexNormals();
+    var wMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,metalness:0});
+    var wMesh=new THREE.Mesh(wGeo,wMat);
+    wMesh.position.set(w.cx,0,w.cz);
+    surfaceScene.add(wMesh);
+    /* a solid perimeter wall boxing in all four edges of the square */
+    var wallMat=new THREE.MeshStandardMaterial({color:w.rock,roughness:0.85,metalness:0.15,flatShading:true});
+    var wallH=10, wallT=3, e=w.zoneR;
+    [[0,-e-wallT/2,e*2+wallT*2,wallT],[0,e+wallT/2,e*2+wallT*2,wallT],
+     [-e-wallT/2,0,wallT,e*2],[e+wallT/2,0,wallT,e*2]].forEach(function(seg2){
+      var wall=new THREE.Mesh(new THREE.BoxGeometry(seg2[2],wallH,seg2[3]),wallMat);
+      wall.position.set(w.cx+seg2[0],wallH/2-2,w.cz+seg2[1]);
+      surfaceScene.add(wall);
+    });
   });
   /* each landable world gets its own decoration set scattered across its disc, so it reads as a
      distinct place the moment you're standing there — ice spikes, volcanic glass spires, or
@@ -5256,8 +5286,8 @@ function updateSurface(dt){
     }
     if(atOutpost&&currentWorld){
       var wr2=currentWorld.zoneR-3;
-      var pdx=player.position.x-currentWorld.cx, pdz=player.position.z-currentWorld.cz, pd=Math.sqrt(pdx*pdx+pdz*pdz);
-      if(pd>wr2){ player.position.x=currentWorld.cx+pdx/pd*wr2; player.position.z=currentWorld.cz+pdz/pd*wr2; }
+      player.position.x=clamp(player.position.x,currentWorld.cx-wr2,currentWorld.cx+wr2);
+      player.position.z=clamp(player.position.z,currentWorld.cz-wr2,currentWorld.cz+wr2);
     } else {
       var half=SURFACE_SIZE/2-4;
       player.position.x=clamp(player.position.x,-half,half);
