@@ -537,10 +537,23 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <button class="btn sub" id="bColorNewPreset" style="margin-top:2px">+ New Preset</button>
         <div class="cat" style="margin:12px 2px 4px">Active Preset</div>
         <div id="colorActiveEditor"></div>
+        <button class="btn sub" id="bColorPaintParts" style="margin-top:6px">Paint Parts...</button>
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn accent" id="bColorPaintGun" style="flex:1;margin:0">Paint Gun</button>
           <button class="btn accent" id="bColorApplyAll" style="flex:1;margin:0">Apply to All</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ovl hide" id="o-colorDetail">
+    <div class="card c-purple" style="max-width:520px">
+      <div class="cardHead"><button id="bColorDetailClose" class="clX">&times;</button><h2><i></i>Paint Parts</h2><div class="panelTag" id="colorDetailTag">Building Paint</div></div>
+      <div class="cardBody">
+        <div class="metalline">Pick a building, then click a part on the model to recolor just that piece. Drag to spin it around.</div>
+        <div id="colorDetailTypes" style="display:flex;flex-wrap:wrap;gap:4px;max-height:82px;overflow-y:auto;margin-bottom:8px"></div>
+        <div id="colorDetailCanvasWrap" style="position:relative;width:100%;aspect-ratio:1.35;background:radial-gradient(circle at 50% 35%,rgba(79,211,255,.08),transparent 70%);border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:grab"></div>
+        <div id="colorDetailPartEditor" style="margin-top:10px"></div>
       </div>
     </div>
   </div>
@@ -591,8 +604,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.36.0";
+var VERSION="1.37.0";
 var CHANGELOG=[
+  {v:"1.37.0",t:"Per-part building paint — a real detail editor for presets",items:[
+    "The Colors panel got a new \"Paint Parts...\" button that opens a spinnable 3D preview of any building in the game — click individual panels/frames/pieces to recolor just that part instead of the whole building at once",
+    "Every building type in the game is available to detail-paint, and your per-part choices are saved into the active preset — using that preset (with the Paint Gun or Apply to All) now paints each building with your exact part-by-part scheme instead of a single flat color",
+    "Added a Reset This Part button per selected piece to drop it back to the preset's base color"
+  ]},
   {v:"1.36.0",t:"All 4 ships completely redesigned and 3x bigger",items:[
     "Every ship (Scout, Fighter, Frigate, Bomber) got a full model rework, not just a resize — panel bolt lines, engine nozzle rings, wing hazard stripes, a cockpit frame ring, and landing pods on the Scout; a sensor dish, antenna, hull nose ram, extra point-defense guns, a 4th engine pod, and dorsal hazard striping on the Frigate; a chin sensor blister, bomb-bay struts, underwing bomb pods, and twin tail finlets on the Bomber; and wingtip gun barrels plus an engine ring/nose-cap on the Fighter",
     "Scaled all 4 up to a full 3x their original size (up from the earlier 1.4x pass) — ground clearance was rescaled to match so the bigger hulls still land sitting on the ground instead of sinking into it"
@@ -2401,22 +2419,33 @@ var equipment={head:null,hands:null,legs:null,weapon:null};
    userData.mats) — separate from equipment, which adds/removes gear meshes. */
 var WARDROBE_SLOTS=["body","arms","legs","head","eyes"];
 var playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
-/* Building paint: presets are just {name,color}; "painting" a building recolors every
+/* Building paint: a preset is {name,color,parts}; "painting" a building recolors every
    non-emissive material in its mesh (structural panels/frames/hulls) while leaving glowing
    accents — engine trails, status lights, hazard-stripe emissive bits, gauges — alone, since
-   those are identified by having a non-black emissive color already set. */
-var colorPresets=[{name:"Default",color:0x384454}];
+   those are identified by having a non-black emissive color already set. Beyond the flat
+   preset.color fallback, a preset can also carry per-part overrides in parts[buildingType] —
+   an array of hex colors indexed in the same order paintableParts() walks that building's
+   mesh, painted by hand in the Colors panel's detail editor (see openColorDetail). */
+var colorPresets=[{name:"Default",color:0x384454,parts:{}}];
 var activePresetIdx=0;
-function paintBuilding(b,colorHex){
-  if(!b||!b.mesh)return;
-  b.mesh.traverse(function(o){
+function paintableParts(mesh){
+  var arr=[];
+  mesh.traverse(function(o){
     if(o.isMesh&&o.material&&o.material.color){
       var em=o.material.emissive;
       var isEmissive=em&&(em.r>0||em.g>0||em.b>0);
-      if(!isEmissive)o.material.color.set(colorHex);
+      if(!isEmissive)arr.push(o);
     }
   });
+  return arr;
+}
+function paintBuilding(b,colorHex,partsArr){
+  if(!b||!b.mesh)return;
+  paintableParts(b.mesh).forEach(function(o,i){
+    o.material.color.set((partsArr&&partsArr[i]!=null)?partsArr[i]:colorHex);
+  });
   b.paintColor=colorHex;
+  b.paintParts=partsArr?partsArr.slice():null;
 }
 function applyPlayerColors(){
   if(!player||!player.userData.mats)return;
@@ -4189,7 +4218,7 @@ function surfaceClick3D(x,z,sx,sy){
     var pb=pickBuildingForClick(x,z,sx,sy);
     if(!pb){ toast("Aim at a building to paint"); return; }
     var preset=colorPresets[activePresetIdx]||colorPresets[0];
-    paintBuilding(pb,preset.color);
+    paintBuilding(pb,preset.color,preset.parts&&preset.parts[pb.type]);
     sfx.build(); toast("Painted — "+preset.name); pulseInteractPose(); saveGame();
     return;
   }
@@ -4514,7 +4543,7 @@ function saveGame(){
         return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
           targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
           job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null,
-          name:b.name,targetHubIdx:b.targetHub?buildings.indexOf(b.targetHub):-1,doorMode:b.doorMode,paintColor:b.paintColor};
+          name:b.name,targetHubIdx:b.targetHub?buildings.indexOf(b.targetHub):-1,doorMode:b.doorMode,paintColor:b.paintColor,paintParts:b.paintParts};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,tier:bl.tier||1,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
@@ -4541,7 +4570,7 @@ function newColony(){
   unlocked={belt2:false,refinery:false};
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
-  colorPresets=[{name:"Default",color:0x384454}]; activePresetIdx=0;
+  colorPresets=[{name:"Default",color:0x384454,parts:{}}]; activePresetIdx=0;
   equipment={head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
   playerVelY=0; playerJumpY=0; playerGrounded=true;
@@ -4587,7 +4616,7 @@ function applySaveData(data){
     if(bd.job)b.job=bd.job;
     if(bd.name)b.name=bd.name;
     if(bd.doorMode)b.doorMode=bd.doorMode;
-    if(bd.paintColor!=null)paintBuilding(b,bd.paintColor);
+    if(bd.paintColor!=null)paintBuilding(b,bd.paintColor,bd.paintParts);
     b._targetHubIdx=bd.targetHubIdx!=null?bd.targetHubIdx:-1;
     buildings.push(b);
   });
@@ -4621,7 +4650,8 @@ function applySaveData(data){
   unlocked=data.unlocked||{belt2:false,refinery:false};
   playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
-  colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454}];
+  colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454,parts:{}}];
+  colorPresets.forEach(function(p){ if(!p.parts)p.parts={}; });
   activePresetIdx=0;
   equipment=data.equipment||{head:null,hands:null,legs:null,weapon:null};
   refreshPlayerGear();
@@ -5679,6 +5709,7 @@ window.addEventListener("keydown",function(e){
     else if(state==="hub")closeHubUpgrades();
     else if(state==="wardrobe")closeWardrobe();
     else if(state==="colors")closeColors();
+    else if(state==="colorDetail")closeColorDetail();
     else if(state==="backpack")closeBackpack();
     else if(state==="shiplauncher")closeShipLauncher();
     else if(state==="shiphub")closeShipHub();
@@ -6327,7 +6358,7 @@ $("bColorNewPreset").onclick=function(){
   sfx.click();
   var name=(prompt("Name this preset:","Preset "+(colorPresets.length+1))||"").trim();
   if(!name)return;
-  colorPresets.push({name:name,color:0x384454});
+  colorPresets.push({name:name,color:0x384454,parts:{}});
   activePresetIdx=colorPresets.length-1;
   renderColors(); saveGame();
 };
@@ -6339,9 +6370,155 @@ $("bColorPaintGun").onclick=function(){
 $("bColorApplyAll").onclick=function(){
   var preset=colorPresets[activePresetIdx]; if(!preset)return;
   sfx.build();
-  buildings.forEach(function(b){ paintBuilding(b,preset.color); });
+  buildings.forEach(function(b){ paintBuilding(b,preset.color,preset.parts&&preset.parts[b.type]); });
   toast("Applied \""+preset.name+"\" to every building"); saveGame();
 };
+
+/* ═════════════ COLOR DETAIL EDITOR — paint individual parts of a building type ═════════════
+   Opens a live, spinnable 3D preview of one building model at a time. Clicking a part raycasts
+   into it, and the color you pick is written into the active preset's parts[type] array at that
+   part's paintableParts() index — the same index paintBuilding() walks when it later applies this
+   preset to a real placed building, so what you paint here is exactly what shows up in the world. */
+var COLOR_DETAIL_TYPES=BUILD_ORDER.filter(function(t){ return t!=="belt"&&t!=="belt2"&&t!=="cable"; });
+var colorDetailType=null, colorDetailSelIdx=-1, colorDetailParts=[], colorDetailGroup=null;
+var colorDetailScene=null, colorDetailCam=null, colorDetailRenderer=null;
+var colorDetailYaw=0.6, cdDragging=false, cdDragMoved=false, cdLastX=0;
+function ensureColorDetailRenderer(){
+  if(colorDetailRenderer)return;
+  var wrap=$("colorDetailCanvasWrap");
+  var W=wrap.clientWidth||480, H=Math.round(W/1.35);
+  var cvs=document.createElement("canvas");
+  colorDetailRenderer=new THREE.WebGLRenderer({canvas:cvs,alpha:true,antialias:true});
+  colorDetailRenderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  colorDetailRenderer.setSize(W,H,false);
+  wrap.appendChild(cvs);
+  colorDetailScene=new THREE.Scene();
+  colorDetailScene.add(new THREE.AmbientLight(0xffffff,1.1));
+  var k1=new THREE.DirectionalLight(0xfff4e0,1.4); k1.position.set(3,5,4); colorDetailScene.add(k1);
+  var k2=new THREE.DirectionalLight(0x8fb8ff,0.6); k2.position.set(-3,2,-3); colorDetailScene.add(k2);
+  colorDetailCam=new THREE.PerspectiveCamera(32,W/H,0.05,200);
+  cvs.addEventListener("pointerdown",function(e){ cdDragging=true; cdDragMoved=false; cdLastX=e.clientX; wrap.style.cursor="grabbing"; });
+  window.addEventListener("pointerup",function(){ cdDragging=false; wrap.style.cursor="grab"; });
+  window.addEventListener("pointermove",function(e){
+    if(!cdDragging)return;
+    if(Math.abs(e.clientX-cdLastX)>1)cdDragMoved=true;
+    colorDetailYaw+=(e.clientX-cdLastX)*0.012;
+    cdLastX=e.clientX;
+    if(colorDetailGroup)colorDetailGroup.rotation.y=colorDetailYaw;
+    renderColorDetailFrame();
+  });
+  cvs.addEventListener("click",function(e){
+    if(cdDragMoved)return;
+    pickColorDetailPart(e,cvs);
+  });
+}
+function renderColorDetailFrame(){
+  if(colorDetailRenderer&&colorDetailScene&&colorDetailCam)colorDetailRenderer.render(colorDetailScene,colorDetailCam);
+}
+function loadColorDetailType(type){
+  ensureColorDetailRenderer();
+  colorDetailType=type; colorDetailSelIdx=-1;
+  if(colorDetailGroup)colorDetailScene.remove(colorDetailGroup);
+  var mesh=buildBuildingMesh(type);
+  if(!BUILD_DEFS[type].edge&&type!=="foundation")mesh.scale.setScalar(1.45);
+  mesh.rotation.y=colorDetailYaw;
+  colorDetailGroup=mesh;
+  colorDetailScene.add(colorDetailGroup);
+  colorDetailParts=paintableParts(colorDetailGroup);
+  var preset=colorPresets[activePresetIdx];
+  var partsArr=preset&&preset.parts&&preset.parts[type];
+  colorDetailParts.forEach(function(o,i){
+    o.material.color.set((partsArr&&partsArr[i]!=null)?partsArr[i]:(preset?preset.color:0x384454));
+  });
+  var box=new THREE.Box3().setFromObject(colorDetailGroup);
+  var size=new THREE.Vector3(); box.getSize(size);
+  var center=new THREE.Vector3(); box.getCenter(center);
+  var maxDim=Math.max(size.x,size.y,size.z,0.5);
+  var dist=maxDim*1.7+1.4;
+  colorDetailCam.position.set(center.x,center.y+maxDim*0.3,center.z+dist);
+  colorDetailCam.lookAt(center.x,center.y,center.z);
+  renderColorDetailPartEditor();
+  renderColorDetailFrame();
+}
+function pickColorDetailPart(e,cvs){
+  var rect=cvs.getBoundingClientRect();
+  var mx=((e.clientX-rect.left)/rect.width)*2-1;
+  var my=-((e.clientY-rect.top)/rect.height)*2+1;
+  var ray=new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(mx,my),colorDetailCam);
+  var hits=ray.intersectObjects(colorDetailParts,false);
+  if(!hits.length)return;
+  var idx=colorDetailParts.indexOf(hits[0].object);
+  if(idx<0)return;
+  colorDetailSelIdx=idx; sfx.click();
+  renderColorDetailPartEditor();
+}
+function saveColorDetailPart(type,idx,hex){
+  var preset=colorPresets[activePresetIdx]; if(!preset)return;
+  if(!preset.parts)preset.parts={};
+  if(!preset.parts[type])preset.parts[type]=[];
+  preset.parts[type][idx]=hex;
+  saveGame();
+}
+function renderColorDetailPartEditor(){
+  var el=$("colorDetailPartEditor");
+  if(colorDetailSelIdx<0){ el.innerHTML='<div class="metalline">Click a part on the model above to recolor just that piece.</div>'; return; }
+  var part=colorDetailParts[colorDetailSelIdx];
+  var hex=hexStr(part.material.color.getHex());
+  el.innerHTML='<div class="wdSlot"><span class="wdLabel">Part '+(colorDetailSelIdx+1)+' / '+colorDetailParts.length+'</span>'+
+    '<div class="wdSwatches">'+WARDROBE_PRESETS.map(function(c){
+      return '<div class="wdSwatch" style="background:'+hexStr(c)+'" data-hex="'+hexStr(c)+'"></div>';
+    }).join('')+'</div>'+
+    '<input type="color" value="'+hex+'" id="colorDetailPartInput"></div>'+
+    '<button class="btn sub" id="bColorDetailReset" style="margin-top:6px">Reset This Part</button>';
+  function setPartColor(hexVal){
+    var n=parseInt(hexVal.replace("#",""),16);
+    part.material.color.set(n);
+    saveColorDetailPart(colorDetailType,colorDetailSelIdx,n);
+    renderColorDetailFrame();
+  }
+  $("colorDetailPartInput").oninput=function(){ setPartColor(this.value); };
+  var swatches=el.querySelectorAll(".wdSwatch");
+  for(var i=0;i<swatches.length;i++)swatches[i].onclick=function(){
+    sfx.click(); setPartColor(this.getAttribute("data-hex")); renderColorDetailPartEditor();
+  };
+  $("bColorDetailReset").onclick=function(){
+    sfx.click();
+    var preset=colorPresets[activePresetIdx];
+    if(preset&&preset.parts&&preset.parts[colorDetailType])delete preset.parts[colorDetailType][colorDetailSelIdx];
+    part.material.color.set(preset?preset.color:0x384454);
+    saveGame(); renderColorDetailPartEditor(); renderColorDetailFrame();
+  };
+}
+function renderColorDetailTypes(){
+  $("colorDetailTypes").innerHTML=COLOR_DETAIL_TYPES.map(function(t){
+    var nm=BUILD_DEFS[t]?BUILD_DEFS[t].nm:t;
+    return '<button class="btn sub" data-type="'+t+'" style="display:inline-block;width:auto;margin:0;padding:5px 9px;font-size:10px'+
+      (t===colorDetailType?';border-color:var(--amber);color:var(--amber2)':'')+'">'+nm+'</button>';
+  }).join('');
+  var btns=$("colorDetailTypes").querySelectorAll("[data-type]");
+  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){
+    sfx.click();
+    var t=this.getAttribute("data-type");
+    loadColorDetailType(t);
+    renderColorDetailTypes();
+  };
+}
+function openColorDetail(){
+  if(state!=="colors")return;
+  state="colorDetail"; $("o-colorDetail").classList.remove("hide"); $("o-colors").classList.add("hide");
+  var preset=colorPresets[activePresetIdx];
+  $("colorDetailTag").textContent=preset?preset.name:"Building Paint";
+  renderColorDetailTypes();
+  loadColorDetailType(colorDetailType||COLOR_DETAIL_TYPES[0]);
+}
+function closeColorDetail(){
+  if(state!=="colorDetail")return;
+  state="colors"; $("o-colorDetail").classList.add("hide"); $("o-colors").classList.remove("hide");
+  renderColors();
+}
+$("bColorPaintParts").onclick=function(){ sfx.click(); openColorDetail(); };
+$("bColorDetailClose").onclick=function(){ sfx.click(); closeColorDetail(); };
 
 /* ═════════════ BACKPACK ═════════════ */
 function openBackpack(){
