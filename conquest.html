@@ -604,8 +604,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.40.0";
+var VERSION="1.40.1";
 var CHANGELOG=[
+  {v:"1.40.1",t:"Rebalanced ship speed for combat and low-altitude flight",items:[
+    "The last update's big ship-speed boost was meant for crossing the huge new distances between planets — but it also carried into the home-defense dogfight and into flying low over a landed world's own terrain, both of which are still the same compact scale as before. A fast ship in either one meant crossing the whole fight, or the whole world, in under a second",
+    "The home-defense wave fight (enemy spawn distance, movement/bolt speed, attack range) was scaled up to match the new arena size instead of the old one",
+    "Flying low over a landed world now uses its own fixed speed per ship instead of a cut of the interplanetary cruise speed, so picking a landing spot or lining up a bombing run is controllable again"
+  ]},
   {v:"1.40.0",t:"Colony planet recolor, real per-world power, fly-home landing, 9x bigger worlds",items:[
     "Your home planet was a plain blue-and-white marble in space view — recolored to the same warm brown/purple/orange alien palette as everywhere else",
     "The Build menu's close X is now much bigger and easier to hit",
@@ -1601,7 +1606,7 @@ function updateSurfaceFlight(dt){
     if(moveStick.on){ strafe+=moveStick.dx; fwd-=moveStick.dy; }
   }
   var mlen=Math.sqrt(fwd*fwd+strafe*strafe); if(mlen>1){fwd/=mlen;strafe/=mlen;}
-  var spd=pShip.spd*0.55;
+  var spd=shipSurfSpd();
   var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
            :new THREE.Vector3(strafe*spd,0,-fwd*spd);
   var k=Math.min(1,pShip.accel*dt);
@@ -5478,12 +5483,18 @@ function buildEnemyMesh(){
    accel scaled by the same 9x so a full crossing still takes a similar amount of real time
    instead of turning into a long dead stretch of nothing happening */
 var SHIP_STATS={
-  scout:{maxhp:70,maxshield:20,spd:1440,dmg:9,rate:.3,accel:450,clearance:1.35},
-  fighter:{maxhp:100,maxshield:35,spd:1170,dmg:12,rate:.36,accel:360,clearance:1.65},
-  frigate:{maxhp:160,maxshield:60,spd:855,dmg:18,rate:.5,accel:252,clearance:1.95},
-  bomber:{maxhp:120,maxshield:30,spd:900,dmg:38,rate:1.0,accel:270,weapon:"bomb",clearance:4.05}
+  scout:{maxhp:70,maxshield:20,spd:1440,dmg:9,rate:.3,accel:450,clearance:1.35,surfSpd:46},
+  fighter:{maxhp:100,maxshield:35,spd:1170,dmg:12,rate:.36,accel:360,clearance:1.65,surfSpd:38},
+  frigate:{maxhp:160,maxshield:60,spd:855,dmg:18,rate:.5,accel:252,clearance:1.95,surfSpd:26},
+  bomber:{maxhp:120,maxshield:30,spd:900,dmg:38,rate:1.0,accel:270,weapon:"bomb",clearance:4.05,surfSpd:30}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
+/* low-altitude flight over a landed world's own compact terrain (still a fixed 300-unit zoneR,
+   untouched by the interplanetary distance scaling above) needs its own speed, independent of
+   pShip.spd — that field now covers crossing tens of thousands of units between planets, and
+   using even a fraction of it here would let a ship cross an entire world's landable area in
+   under a second, too fast to actually pick a landing spot or run a bombing pass. */
+function shipSurfSpd(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.surfSpd!=null?s.surfSpd:20; }
 var pShip=null; // active flight state, created on launch
 var enemyShips=[], pBolts=[], eBolts=[], spaceParts=[];
 var wave=0, waveTimer=5, waveState="clear", enemiesToSpawn=0, spawnTimer=0;
@@ -5497,12 +5508,12 @@ function spWaveCount(w){ return 2+Math.floor(w*1.1); }
    band well clear of the planet's surface instead of sitting down near y=0 inside it. */
 var HOME_COMBAT_Y=800;
 function spawnEnemyShip(){
-  var a=rnd(0,Math.PI*2), r=rnd(140,220);
+  var a=rnd(0,Math.PI*2), r=rnd(1260,1980);
   var mesh=buildEnemyMesh();
   mesh.position.set(Math.cos(a)*r,HOME_COMBAT_Y+rnd(-6,6),Math.sin(a)*r);
   spaceScene.add(mesh);
   var hp=spEnemyHP(wave);
-  enemyShips.push({mesh:mesh,hp:hp,max:hp,dmg:spEnemyDmg(wave),cd:rnd(.6,1.4),standoff:26,hitT:0});
+  enemyShips.push({mesh:mesh,hp:hp,max:hp,dmg:spEnemyDmg(wave),cd:rnd(.6,1.4),standoff:234,hitT:0});
 }
 function launchShip(){
   if(!shipBuilt){ toast("No ship ready — commission one at the Shipyard"); return; }
@@ -5750,20 +5761,24 @@ function updateSpace(dt){
     var d=Math.sqrt(dx*dx+dz*dz);
     var ang=Math.atan2(dx,dz);
     var toBase=Math.sqrt(e.mesh.position.x*e.mesh.position.x+e.mesh.position.z*e.mesh.position.z);
-    if(toBase>16){
-      var dirMul=d>e.standoff+8?1:(d<e.standoff-8?-1:0);
-      e.mesh.position.x+=Math.sin(ang)*16*dirMul*dt;
-      e.mesh.position.z+=Math.cos(ang)*16*dirMul*dt;
+    /* the whole home-defense arena (spawn ring, standoff, attack range, movement/bolt speed) was
+       scaled up 9x along with everything else in this pass — the player's cruise speed alone
+       jumped ~9x (see SHIP_STATS), and without scaling the fight to match, a ship that fast would
+       cross the entire old, much smaller arena in a couple of frames */
+    if(toBase>144){
+      var dirMul=d>e.standoff+72?1:(d<e.standoff-72?-1:0);
+      e.mesh.position.x+=Math.sin(ang)*144*dirMul*dt;
+      e.mesh.position.z+=Math.cos(ang)*144*dirMul*dt;
       e.mesh.rotation.y=ang;
     } else {
       homeBase.hp-=e.dmg*0.6*dt;
     }
     if(pShip&&pShip.alive){
       e.cd-=dt;
-      if(e.cd<=0&&d<90){
+      if(e.cd<=0&&d<810){
         e.cd=rnd(1.2,1.8);
         var ea=Math.atan2(pShip.pos.x-e.mesh.position.x,pShip.pos.z-e.mesh.position.z);
-        eBolts.push({x:e.mesh.position.x,y:e.mesh.position.y,z:e.mesh.position.z,vx:Math.sin(ea)*40,vz:Math.cos(ea)*40,dmg:e.dmg,life:2.4});
+        eBolts.push({x:e.mesh.position.x,y:e.mesh.position.y,z:e.mesh.position.z,vx:Math.sin(ea)*360,vz:Math.cos(ea)*360,dmg:e.dmg,life:2.4});
       }
     }
   }
