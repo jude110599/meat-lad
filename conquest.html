@@ -438,7 +438,10 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="card" style="max-width:840px">
       <div class="cardHead">
         <button id="bBuildClose" class="clX" style="font-size:38px;top:6px;right:8px">&times;</button>
-        <button id="bRemoveTool" style="position:absolute;left:12px;top:9px;background:rgba(255,77,94,.12);border:1px solid rgba(255,77,94,.5);border-radius:6px;color:#ff8a97;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:7px 12px;display:flex;align-items:center;gap:6px;transition:background .15s,opacity .15s" title="Remove tool" onmouseover="this.style.background='rgba(255,77,94,.24)'" onmouseout="this.style.background='rgba(255,77,94,.12)'"><span style="font-size:15px;line-height:1">&#128465;</span>Remove</button>
+        <div style="position:absolute;left:12px;top:9px;display:flex;gap:6px">
+          <button id="bRemoveTool" style="background:rgba(255,77,94,.12);border:1px solid rgba(255,77,94,.5);border-radius:6px;color:#ff8a97;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:7px 12px;display:flex;align-items:center;gap:6px;transition:background .15s,opacity .15s" title="Remove tool" onmouseover="this.style.background='rgba(255,77,94,.24)'" onmouseout="this.style.background='rgba(255,77,94,.12)'"><span style="font-size:15px;line-height:1">&#128465;</span>Remove</button>
+          <button id="bGridCycle" style="background:rgba(159,198,255,.12);border:1px solid rgba(159,198,255,.5);border-radius:6px;color:#9fc6ff;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:7px 12px;transition:background .15s" title="Change placement grid snap (or press G while placing)" onmouseover="this.style.background='rgba(159,198,255,.24)'" onmouseout="this.style.background='rgba(159,198,255,.12)'">Grid: 1x</button>
+        </div>
         <h2><i></i>Build</h2><div class="panelTag">Construction</div>
       </div>
       <div class="cardBody" style="overflow-y:hidden">
@@ -604,8 +607,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.41.0";
+var VERSION="1.42.0";
 var CHANGELOG=[
+  {v:"1.42.0",t:"Fixed lighting regression, Shipment Hub belts, ghost sizing, grid button, Q/E",items:[
+    "The logarithmic depth buffer added last update to fix planet flicker was itself causing lighting glitches on some hardware — reverted it and fixed the flicker a safer way (a much higher camera near plane), so the lighting should be back to normal",
+    "Fixed Shipment Hub belts not moving anything: connecting a belt always tried to pull whichever resource came first in the hub's full accepted-cargo list, even if that specific one had never actually arrived — it now connects to whatever's actually sitting in the hub",
+    "Fixed the placement hologram being smaller than the building it actually places — it was missing the same 1.45x scale-up every real building gets",
+    "Added a visible \"Grid\" button next to Remove in the Build panel to change placement snap size — it was only ever reachable through the (undiscoverable) G key on desktop",
+    "Q/E in space barely moved you at the current ship speeds (tied to a flat old-scale number) — rate now scales with the ship's own speed, and Q/E now visibly tilt the nose down/up while climbing or descending instead of the ship staying dead level",
+    "Conveyor belts now have scrolling chevron tread marks (Satisfactory-style) that animate along the belt while it's actually carrying something, instead of a static painted panel texture",
+    "Tested Fighter weapon fire directly — it does fire bolts correctly on right-click, same as every other non-Bomber ship; if it still looks like nothing's happening, that's likely the very fast bolt speed being hard to spot rather than it not firing"
+  ]},
   {v:"1.41.0",t:"Fixed space camera lag and planet flicker, planets 5x bigger again",items:[
     "The chase camera used to trail the ship by a fixed lerp rate that was tuned for the old, much slower cruise speed — at the current speeds that meant the camera fell hundreds of units behind during sustained flight, reading as it suddenly zooming way out. It now catches up fast enough to stay tight at any speed",
     "Fixed the planets' surface flickering/glitching in space — a 1-unit-near, huge-far camera needed to see both nearby ships and the far starfield at this scale was overwhelming the standard depth buffer, so the planet's core/cloud/atmosphere layers were fighting over which one was actually in front each frame. Turned on a logarithmic depth buffer, which is built for exactly this",
@@ -1036,12 +1048,7 @@ function computeDPR(){
   return Math.min(coarse?1:2,window.devicePixelRatio||1);
 }
 var W=innerWidth,H=innerHeight,DPR=computeDPR();
-/* logarithmicDepthBuffer is what actually fixes the planet-texture z-fighting/flicker in space —
-   a 0.1-near/70000-far camera (needed to see both nearby ships and far starfield decor at the
-   new huge scale) blows way past what a standard linear depth buffer can resolve, so overlapping
-   surfaces (the planet core/cloud/atmo shells especially) fight over which one's actually in
-   front and flicker between them every frame. */
-var renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,powerPreference:"high-performance",logarithmicDepthBuffer:true});
+var renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,powerPreference:"high-performance"});
 renderer.setPixelRatio(DPR);
 renderer.setSize(W,H);
 renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -1056,7 +1063,13 @@ renderer.toneMappingExposure=1.3;
 
 /* far plane bumped to comfortably cover the bigger SPACE_SIZE's farthest starfield/nebula decor
    (up to SPACE_SIZE*1.95) now that worlds are spread much farther apart */
-var camera=new THREE.PerspectiveCamera(58,W/H,1,95000);
+/* the logarithmicDepthBuffer this used to lean on for z-fighting caused its own lighting
+   artifacts on some hardware — reverted that, and instead pushed the near plane way up. Depth
+   precision is a function of the near/far ratio: 1/95000 was still a factor of 95000, plenty
+   to flicker the planet's tightly-nested core/cloud/atmo shells at any real viewing distance.
+   10/95000 is under a tenth of that ratio and nothing in this game is ever rendered closer than
+   a few units from the camera anyway, so raising it costs nothing visually. */
+var camera=new THREE.PerspectiveCamera(58,W/H,10,95000);
 
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
@@ -2644,6 +2657,7 @@ function cycleSnapMult(){
   snapMult=SNAP_MULTS[(i+1)%SNAP_MULTS.length];
   toast("Grid snap: "+(GRID*snapMult)+"m ("+snapMult+"x)");
   if(placing)updatePlacementGhost(mouse.x,mouse.y);
+  var gb=$("bGridCycle"); if(gb)gb.textContent="Grid: "+snapMult+"x";
 }
 function snapGrid(v){ var s=GRID*snapMult; return Math.round(v/s)*s; }
 function snapWallEdge(x,z){
@@ -2806,6 +2820,21 @@ var hazardTex=(function(){
   return tex;
 })();
 function hazardMat(){ return new THREE.MeshStandardMaterial({map:hazardTex,roughness:0.6,metalness:0.3}); }
+/* chevron arrows scrolling along the belt bed — the actual "conveyor belt" cue Satisfactory
+   belts are known for, so a belt reads as a moving surface at a glance even where no items
+   happen to be sitting on it right now, instead of a static painted panel texture. */
+var beltTreadTex=(function(){
+  var cvs=document.createElement("canvas"); cvs.width=64; cvs.height=32;
+  var g=cvs.getContext("2d");
+  g.fillStyle="#181410"; g.fillRect(0,0,64,32);
+  g.strokeStyle="#3a2f24"; g.lineWidth=5; g.lineCap="round";
+  for(var x=-16;x<80;x+=32){
+    g.beginPath(); g.moveTo(x,4); g.lineTo(x+12,16); g.lineTo(x,28); g.stroke();
+  }
+  var tex=new THREE.CanvasTexture(cvs);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  return tex;
+})();
 /* a thin hazard-striped ring, sized to wrap a cylindrical tank/base — the repeat count keeps the
    stripe scale roughly constant regardless of the ring's actual radius */
 function hazardRing(radius,height){
@@ -3921,6 +3950,10 @@ function setGhost(type){
   placeGhost.clear();
   if(!type||isClickTool(type))return;
   var mesh=buildBuildingMesh(type);
+  /* makeBuilding() scales every actually-placed non-edge/non-foundation building up 1.45x (see
+     its own comment) — the ghost preview never matched that, so the hologram you lined up with
+     always looked smaller than what you'd actually get. */
+  if(!BUILD_DEFS[type].edge&&type!=="foundation")mesh.scale.setScalar(1.45);
   mesh.traverse(function(o){
     if(o.isMesh){
       var mm=o.material.clone();
@@ -4003,6 +4036,16 @@ function findBuildingNear(x,z,margin){
 function buildingProduces(b){
   if(b.type==="miner"||b.type==="miner2")return b.node?[b.node.restype]:[];
   if(b.type==="smelter"){ var r=activeRecipe(b); return r?Object.keys(r.out):[]; }
+  if(b.type==="shiphub"){
+    /* a Shipment Hub's "produces" is really "whatever anyone's ever shipped it" — connecting a
+       belt used to always pick the first resource type in BUILD_DEFS.shiphub.produces (iron ore)
+       regardless of what had actually arrived, so a belt hooked up to a hub that only ever
+       received, say, parts would sit there pulling from an iron ore total that never moves and
+       looks completely dead. Prefer whatever's actually sitting in the hub right now; only fall
+       back to the full list if nothing's arrived yet, so you can still pre-wire a belt early. */
+    var have=BUILD_DEFS.shiphub.produces.filter(function(k){ return (b.out[k]||0)>0.01; });
+    return have.length?have:BUILD_DEFS.shiphub.produces;
+  }
   return BUILD_DEFS[b.type].produces;
 }
 function machineStatus(b){
@@ -4187,9 +4230,11 @@ function makeBeltMesh(bl){
   var elbow2={x:inP.x+inP.nx*STUB, z:inP.z+inP.nz*STUB};
   var waypoints=[{x:outP.x,z:outP.z},elbow1,elbow2,{x:inP.x,z:inP.z}];
   var mk2=bl.tier===2;
+  var treadMap=beltTreadTex.clone(); treadMap.needsUpdate=true;
+  treadMap.wrapS=treadMap.wrapT=THREE.RepeatWrapping;
   var mats={
     frame:matStd(mk2?0x1a3a4a:0x2a3542,0.6,0.6),
-    belt:new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15,map:panelTex}),
+    belt:new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15,map:treadMap}),
     rail:new THREE.MeshStandardMaterial({color:mk2?0x4fd3ff:0x3a4a5e,roughness:0.4,metalness:0.6,
       emissive:mk2?0x1a5a70:0x000000,emissiveIntensity:mk2?0.7:0})
   };
@@ -4206,6 +4251,7 @@ function makeBeltMesh(bl){
     ring.rotation.x=Math.PI/2; ring.position.set(e.x,beltH+0.14,e.z); g.add(ring);
   });
   var totalLen=seg1.len+seg2.len+seg3.len;
+  treadMap.repeat.set(Math.max(1,Math.round(totalLen*0.35)),1);
   var items=[];
   var n=Math.max(2,Math.floor(totalLen/2.2));
   for(var i=0;i<n;i++){
@@ -4531,6 +4577,12 @@ function updateBuildings(dt){
     var amt=Math.min(bl.rate*dt,avail,room);
     if(amt>0){ bl.from.out[bl.res]-=amt; bl.to.in[bl.res]=cur+amt; }
     bl._flow=amt>0.001;
+    if(bl.mats&&bl.mats.belt.map){
+      /* scroll the tread chevrons along the belt while it's actually carrying something, still
+         for an idle line — the same "is this belt doing anything" cue the moving items give,
+         but visible along the belt's whole length instead of just wherever an item happens to be */
+      bl.mats.belt.map.offset.x+=(bl._flow?dt*1.6:0);
+    }
     var t0=(performance.now()/1000*0.4)%1;
     for(var i=0;i<bl.items.length;i++){
       var t=bl._flow?((t0+i/bl.items.length)%1):(i/bl.items.length);
@@ -5720,9 +5772,13 @@ function updateSpace(dt){
       pShip.vel.lerp(tv,k);
       pShip.pos.addScaledVector(pShip.vel,dt);
       /* Q/E freely raise or lower altitude — this is what actually lets you fly a landing in,
-         instead of the old instant snap-to-ground the moment the lock circle filled */
-      if(keys.q)pShip.pos.y-=dt*11;
-      if(keys.e)pShip.pos.y+=dt*11;
+         instead of the old instant snap-to-ground the moment the lock circle filled. The old
+         flat dt*11 climb rate was tuned for a ~30-unit/sec cruise ship and became imperceptible
+         once ship speeds jumped into the hundreds — tying it to a cut of pShip.spd keeps vertical
+         movement feeling proportionate to how fast the ship actually flies. */
+      var vertSpd=pShip.spd*0.6;
+      if(keys.q)pShip.pos.y-=dt*vertSpd;
+      if(keys.e)pShip.pos.y+=dt*vertSpd;
       var half=SPACE_SIZE/2;
       pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-1,HOME_COMBAT_Y+20);
 
@@ -5734,6 +5790,12 @@ function updateSpace(dt){
       pShip.roll=pShip.roll==null?0:pShip.roll;
       var targetRoll=pc?-turn*0.5:0;
       pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
+      /* Q/E now visibly pitch the nose up/down while climbing/descending, matching the same
+         (climb -> negative pitch) convention low-altitude surface flight already uses, instead
+         of the ship staying dead level while silently sliding up and down */
+      pShip.pitch=pShip.pitch==null?0:pShip.pitch;
+      var targetPitch=((keys.e?1:0)-(keys.q?1:0))*-0.4;
+      pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
       if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.75:0.3)){
         var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
@@ -5744,7 +5806,7 @@ function updateSpace(dt){
       }
     }
     pShip.mesh.position.copy(pShip.pos);
-    if(!landedPlanet){ pShip.mesh.rotation.y=pShip.yaw; pShip.mesh.rotation.z=pShip.roll||0; }
+    if(!landedPlanet){ pShip.mesh.rotation.set(pShip.pitch||0,pShip.yaw,pShip.roll||0); }
     pShip.mesh.userData.engineGlow.forEach(function(g){ g.material.emissiveIntensity=1+(boosting?1.2:0)+Math.sin(performance.now()/90)*0.15; });
     updateShipNavLights(pShip.mesh);
 
@@ -6197,6 +6259,7 @@ function renderBuildDetail(){
 $("bRemoveTool").onclick=function(){
   sfx.click(); placing="remove"; beltFrom=null; setGhost(null); closeBuild(); toast("Click a building to remove it");
 };
+$("bGridCycle").onclick=function(){ sfx.click(); cycleSnapMult(); };
 $("bBuildOpen").onclick=function(){ sfx.click(); openBuild(); };
 $("bBuildClose").onclick=function(){ sfx.click(); closeBuild(); };
 
