@@ -623,8 +623,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.44.2";
+var VERSION="1.44.3";
 var CHANGELOG=[
+  {v:"1.44.3",t:"Found the real cause of the dark band at the bottom of the screen",items:[
+    "That solid dark band sitting at the bottom of the screen the whole time wasn't a UI bug — the camera's near clipping plane got raised to 10 units a few updates back to stop the space scene's planets from z-fighting, but that's one shared camera used for on-foot walking too. Standing anywhere near a building, a slope, or just normal ground put real geometry closer than 10 units to the camera, which got clipped away entirely, showing raw empty background through the gap instead. The near plane now switches per scene (10 in space, 0.3 on foot) instead of one fixed value forced on both"
+  ]},
   {v:"1.44.2",t:"Fixed the flight camera, Q/E tilt swap, and how far the landing circle reaches",items:[
     "Q and E were swapped — climbing tilted the nose the way descending should, and descending tilted it the way climbing should",
     "The landing-approach radius was a flat number added to a world's radius, so a bigger world (Ember Reach especially) could dwarf the pad and still make you fly almost onto the surface before \"near\" registered. It's now a straight multiple of that world's own radius, so it scales automatically no matter how big a given world is",
@@ -6238,7 +6241,16 @@ function updateCameraTransform(){
   var ox=Math.sin(camYaw)*Math.cos(camPitch)*camDist;
   var oy=Math.sin(camPitch)*camDist+camHeight;
   var oz=Math.cos(camYaw)*Math.cos(camPitch)*camDist;
-  camera.position.set(player.position.x+ox,player.position.y+oy,player.position.z+oz);
+  var cx=player.position.x+ox, cy=player.position.y+oy, cz=player.position.z+oz;
+  /* the camera's offset from the player is a fixed distance/height with no idea what the ground
+     actually does out there — stand on any slope steep enough (a hillside, a crater rim) and the
+     camera's plain offset position can land BELOW the terrain surface at that spot, putting the
+     camera underneath/inside the ground mesh looking up through its unlit backface instead of
+     down at the world. That's the solid dark band that's been showing up at the bottom of the
+     screen this whole time — not a UI bug, the camera really was clipping through the ground. */
+  var groundY=terrainHeight(cx,cz);
+  if(cy<groundY+2.5)cy=groundY+2.5;
+  camera.position.set(cx,cy,cz);
   camera.lookAt(player.position.x,player.position.y+1.5,player.position.z);
 }
 function forwardRightVectors(){
@@ -7451,6 +7463,15 @@ function frame(now){
       }
     }
     if(state==="space"||state==="launching")updateSpace(dt);
+    /* one shared camera serves both scenes, but they need very different near planes: space
+       needed a big one (10) to stop the huge planets' core/cloud/atmo shells from z-fighting,
+       while on foot the camera sits only ~11-14 units from the player and is often pitched
+       down at nearby ground — with that same near=10 in effect there, any ground/geometry
+       closer than 10 units (routine on a slope, or just standing near a building) got clipped
+       away entirely, showing the raw scene background through the gap. That's the solid dark
+       band that's been sitting at the bottom of the screen this whole time. */
+    var wantNear=spaceStates?10:0.3;
+    if(camera.near!==wantNear){ camera.near=wantNear; camera.updateProjectionMatrix(); }
     if(surfStates)renderer.render(surfaceScene,camera);
     else if(spaceStates)renderer.render(spaceScene,camera);
     else if(state==="title")updateTitleDiorama(dt);
