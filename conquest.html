@@ -623,8 +623,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.45.0";
+var VERSION="1.45.1";
 var CHANGELOG=[
+  {v:"1.45.1",t:"Fixed the flight camera falling behind for good, stronger Q/E tilt",items:[
+    "Every earlier fix for the ship-chase camera lagging behind and zooming way out just bumped its catch-up rate — which works right up until ship speed gets pushed higher again in a later update, then the lag creeps back in, worse than ever with the spacebar boost active. The camera now hard-clamps itself to a fixed maximum distance from the ship on top of the catch-up lerp, so it physically cannot drift far behind no matter how fast the ship ends up flying in the future",
+    "Q/E ship tilt was too subtle to read — nearly doubled the tilt angle in space flight and low-altitude surface flight alike so banking with Q/E actually looks dramatic"
+  ]},
   {v:"1.45.0",t:"Landing Pad and Splitter/Merger rebuilt with a lot more detail",items:[
     "Landing Pad was just a flat disc, a lit ring, and four ball lamps — rebuilt as a real raised deck standing clear of the ground on six visible support legs, with a hazard-striped rim, a painted center marker, four corner beacon masts, and a small control shack with a window and an antenna",
     "Splitter and Merger were a base disc, one plain box, and a flat trim band — added corner gussets so the cabinet reads as actually welded together, a vented top hatch instead of a flat cap, exposed pipe stubs, and panel bolt rows"
@@ -1572,6 +1576,20 @@ var SURF_LAND_ALT=1.8, SURF_LAND_SPEED=3, SURF_LAND_SETTLE=1.0, SURF_EXIT_ALT=35
 /* arriving at a world drops the ship in from high altitude instead of snapping straight to
    hover height — a visible "falling out of the sky" entrance instead of an instant cut */
 var arrivalAnim=null;
+/* a plain exponential lerp toward the chase target can never actually keep pace with the ship
+   once its cruise speed goes high enough — the lag it settles into is proportional to speed
+   (lag ~= speed/rate), so any FIXED rate eventually falls behind again the next time speed goes
+   up, which is exactly what kept happening here as SHIP_STATS.spd got bumped release after
+   release (boosting on top of that makes it worse still). Lerping for feel, then hard-clamping
+   the camera to within maxLag of its ideal chase position, bounds the worst case regardless of
+   how fast the ship ever ends up going — "zoomed out so far I can barely see my ship" simply
+   can't happen once the lag distance itself has a ceiling. */
+function chaseCamTo(camTarget,dt,maxLag){
+  camera.position.lerp(camTarget,Math.min(1,dt*24));
+  var lag=new THREE.Vector3().subVectors(camera.position,camTarget);
+  var lagLen=lag.length();
+  if(lagLen>maxLag){ lag.multiplyScalar(maxLag/lagLen); camera.position.copy(camTarget).add(lag); }
+}
 function updateArrivalAnim(dt){
   var a=arrivalAnim; a.t+=dt;
   var t=clamp(a.t/a.dur,0,1), ease=1-Math.pow(1-t,3);
@@ -1591,7 +1609,7 @@ function updateArrivalAnim(dt){
      up clipping into (or behind) the ship's own now-3x-scale hull, and made the whole multi-
      second glide down read as a confusing instant snap instead of an actual descent. */
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*38,18,-Math.cos(pShip.yaw)*38);
-  camera.position.lerp(new THREE.Vector3().copy(pShip.pos).add(camOff),Math.min(1,dt*24));
+  chaseCamTo(new THREE.Vector3().copy(pShip.pos).add(camOff),dt,16);
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
   if(t>=1){
     arrivalAnim=null;
@@ -1614,7 +1632,7 @@ function updateLandingAnim(dt){
   });
   if(Math.random()<0.5*(1-t))spawnSurfaceParticle(pShip.pos.clone(),new THREE.Vector3(rnd(-1,1),-1,rnd(-1,1)),rnd(0.3,0.5),0xcaa06a);
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
-  camera.position.lerp(new THREE.Vector3().copy(pShip.pos).add(camOff),Math.min(1,dt*24));
+  chaseCamTo(new THREE.Vector3().copy(pShip.pos).add(camOff),dt,14);
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
   if(t>=1){ landingAnim=null; touchDown(); }
 }
@@ -1716,7 +1734,7 @@ function updateSurfaceFlight(dt){
   pShip.pitch=pShip.pitch==null?0:pShip.pitch;
   var targetRoll=pc?-turn*0.55:-strafe*0.4;
   pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
-  var targetPitch=clamp((keys.e?1:0)-(keys.q?1:0),-1,1)*-0.18+(pc?-fwd*0.08:0);
+  var targetPitch=clamp((keys.e?1:0)-(keys.q?1:0),-1,1)*-0.32+(pc?-fwd*0.08:0);
   pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
   pShip.mesh.rotation.set(pShip.pitch,pShip.yaw,pShip.roll);
   var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
@@ -1737,7 +1755,7 @@ function updateSurfaceFlight(dt){
 
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
   var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-  camera.position.lerp(camTarget,Math.min(1,dt*24));
+  chaseCamTo(camTarget,dt,14);
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
 
   pShip.cd-=dt;
@@ -6002,11 +6020,7 @@ function updateLaunchAnim(dt){
   var camDist=30+ease*20, camHeight=16+ease*8;
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*camDist,camHeight,-Math.cos(pShip.yaw)*camDist);
   var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-  /* the old dt*3.2 catch-up rate left the camera trailing the ship by (speed / rate) units at
-     steady speed — fine at the old ~30-160 cruise speeds, but at the current 855-1440 that lag
-     ballooned into hundreds of units, reading as the camera suddenly zooming way out during the
-     launch climb. A much higher rate keeps the chase tight regardless of how fast the ship is. */
-  camera.position.lerp(camTarget,Math.min(1,dt*24));
+  chaseCamTo(camTarget,dt,16);
   camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
   if(t>=1){
     launchAnim=null; state="space";
@@ -6070,7 +6084,7 @@ function updateSpace(dt){
       pShip.pitch=pShip.pitch==null?0:pShip.pitch;
       /* was backwards — E (climb) was tilting the nose the way Q (descend) should, and vice
          versa, so the tilt direction never matched which way you were actually moving */
-      var targetPitch=((keys.q?1:0)-(keys.e?1:0))*-0.4;
+      var targetPitch=((keys.q?1:0)-(keys.e?1:0))*-0.7;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
       /* a few-unit, sub-half-scale particle trail was tuned for the original ~30-unit/sec, 1x
@@ -6198,10 +6212,7 @@ function updateSpace(dt){
       lookY=pShip.pos.y+1;
     }
     var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-    /* same fix as the launch-climb camera above — dt*5 left the chase cam trailing by hundreds
-       of units at the current cruise speeds, which read as the camera zooming far out while
-       flying. A much higher catch-up rate keeps it tight at any ship speed. */
-    camera.position.lerp(camTarget,Math.min(1,dt*24));
+    chaseCamTo(camTarget,dt,16);
     camera.lookAt(pShip.pos.x,lookY,pShip.pos.z);
   }
   updateHudSpace();
