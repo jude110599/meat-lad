@@ -623,8 +623,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.45.1";
+var VERSION="1.45.2";
 var CHANGELOG=[
+  {v:"1.45.2",t:"Smoother planet arrival, faster surface flight, landing prompt reaches you sooner",items:[
+    "Spawning in over a world dropped you 900 units up then eased out fast — full speed the instant you appeared, only slowing down near the ground — which read as spawning in the air and immediately plummeting. Switched to the same smooth ease-in/ease-out curve the actual touchdown already used, so the descent ramps up gently instead of starting at full plummet",
+    "Low-altitude flight over a landed world's terrain was capped at 26-46 units/sec regardless of ship — way too slow next to how far you can see across a world. Roughly doubled every ship's surface speed",
+    "The ring/name prompt that shows you're near a landable world only appeared once you were within 500 units of its surface — for a 5000+ unit-radius world that's barely outside the visible sphere, so you'd fly straight into the planet with zero warning it was even there. It now scales off each world's own radius and reaches you well before you're in landing range"
+  ]},
   {v:"1.45.1",t:"Fixed the flight camera falling behind for good, stronger Q/E tilt",items:[
     "Every earlier fix for the ship-chase camera lagging behind and zooming way out just bumped its catch-up rate — which works right up until ship speed gets pushed higher again in a later update, then the lag creeps back in, worse than ever with the spacebar boost active. The camera now hard-clamps itself to a fixed maximum distance from the ship on top of the catch-up lerp, so it physically cannot drift far behind no matter how fast the ship ends up flying in the future",
     "Q/E ship tilt was too subtle to read — nearly doubled the tilt angle in space flight and low-altitude surface flight alike so banking with Q/E actually looks dramatic"
@@ -1592,7 +1597,11 @@ function chaseCamTo(camTarget,dt,maxLag){
 }
 function updateArrivalAnim(dt){
   var a=arrivalAnim; a.t+=dt;
-  var t=clamp(a.t/a.dur,0,1), ease=1-Math.pow(1-t,3);
+  /* was an ease-OUT cubic, which moves fastest the instant t=0 and only slows down after — since
+     the ship spawns 900 units up and this curve front-loads all its speed at the very start, it
+     read as spawning in the air and immediately plummeting rather than gliding down. Smoothstep
+     eases in AND out, so the descent ramps up gently instead of starting at full speed. */
+  var t=clamp(a.t/a.dur,0,1), ease=t*t*(3-2*t);
   pShip.pos.y=a.fromY+(a.toY-a.fromY)*ease;
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(Math.min(0.5,(1-t)*0.5),pShip.yaw,0);
@@ -5363,7 +5372,7 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null, la
    into the sphere just to get the landing prompt to start counting down. It's the margin OUTSIDE
    the radius where you're considered close enough to land, so it needs to be a real fraction of
    the radius itself at this scale, not a small fixed number. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=4500, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=500;
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=4500, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_MULT=4.5;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   /* plain nearest-neighbor among home and every world, each with the same show radius — whoever
@@ -5371,11 +5380,17 @@ function findNearestTarget(){
      priority (or a shrunken show radius) either made it dominate the whole map or effectively
      never show at all; a shared radius plus honest nearest-wins is what actually tracks "which
      one am I flying toward" correctly in both directions, there and back. */
+  /* used to be a flat +500 pad on top of the world's own radius (4950-5850) — barely outside the
+     visible sphere, so the ring/name prompt only appeared once you were already grazing the
+     surface, well inside the near*2.4 landing range below. You'd fly right into the planet mesh
+     with zero warning it was even there. Scaling the show range off the radius itself (and well
+     past the near-landing multiplier) means the prompt reaches you while you're still visibly
+     approaching, not after you've already arrived. */
   var all=WORLDS.concat([HOME_WORLD]);
   var best=null,bd=1e9;
   all.forEach(function(w){
     var dx=w.sx-pShip.pos.x, dz=w.sz-pShip.pos.z, d=Math.sqrt(dx*dx+dz*dz);
-    if(d<(w.radius+LAND_SHOW_PAD)&&d<bd){ bd=d; best=w; }
+    if(d<w.radius*LAND_SHOW_MULT&&d<bd){ bd=d; best=w; }
   });
   return best;
 }
@@ -5813,10 +5828,10 @@ function buildEnemyMesh(){
    accel scaled by the same 9x so a full crossing still takes a similar amount of real time
    instead of turning into a long dead stretch of nothing happening */
 var SHIP_STATS={
-  scout:{maxhp:70,maxshield:20,spd:9072,dmg:9,rate:.3,accel:2835,clearance:1.35,surfSpd:46},
-  fighter:{maxhp:100,maxshield:35,spd:7371,dmg:12,rate:.36,accel:2268,clearance:1.65,surfSpd:38},
-  frigate:{maxhp:160,maxshield:60,spd:5387,dmg:18,rate:.5,accel:1588,clearance:1.95,surfSpd:26},
-  bomber:{maxhp:120,maxshield:30,spd:5670,dmg:38,rate:1.0,accel:1701,weapon:"bomb",clearance:4.05,surfSpd:30}
+  scout:{maxhp:70,maxshield:20,spd:9072,dmg:9,rate:.3,accel:2835,clearance:1.35,surfSpd:100},
+  fighter:{maxhp:100,maxshield:35,spd:7371,dmg:12,rate:.36,accel:2268,clearance:1.65,surfSpd:85},
+  frigate:{maxhp:160,maxshield:60,spd:5387,dmg:18,rate:.5,accel:1588,clearance:1.95,surfSpd:58},
+  bomber:{maxhp:120,maxshield:30,spd:5670,dmg:38,rate:1.0,accel:1701,weapon:"bomb",clearance:4.05,surfSpd:65}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 /* low-altitude flight over a landed world's own compact terrain (still a fixed 300-unit zoneR,
