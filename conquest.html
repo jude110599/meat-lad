@@ -81,6 +81,16 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 .bar.shield i{background:linear-gradient(90deg,#1c5a7a,var(--blue))}
 .bar.base i{background:linear-gradient(90deg,#2f6b12,var(--green))}
 .barlbl{position:absolute;left:5px;top:-1px;font-size:8px;letter-spacing:.12em;color:#0008;font-weight:800}
+/* throttle lever, docked to the right edge of the screen while flying in space — a plain vertical
+   gauge that fills bottom-up so "more filled" reads the same way the hull/shield bars already do */
+#throttleHud{position:fixed;right:16px;top:50%;transform:translateY(-50%);display:flex;
+  flex-direction:column;align-items:center;gap:6px;z-index:4;pointer-events:none}
+.thrLbl{font-size:9px;letter-spacing:.12em;color:var(--dim);font-weight:800}
+.thrBar{width:16px;height:150px;border-radius:8px;background:rgba(0,0,0,.55);
+  border:1px solid rgba(255,255,255,.16);overflow:hidden;position:relative}
+.thrBar i{position:absolute;left:0;right:0;bottom:0;height:0%;
+  background:linear-gradient(0deg,#0d3a55,var(--blue));transition:height .08s linear}
+.thrPct{font-size:10px;font-weight:800;color:var(--bone)}
 #vig{position:absolute;inset:0;pointer-events:none;z-index:5;
   background:radial-gradient(ellipse at center,transparent 55%,rgba(200,10,20,.55) 100%);opacity:0}
 .res{font-size:11px;font-weight:800;white-space:nowrap;flex:none;display:flex;align-items:center;gap:4px}
@@ -383,6 +393,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="res" id="spWaveTxt">WAVE 0</div>
       <button class="hudbtn" id="bPauseSpace">&#10073;&#10073;</button>
     </div>
+    <div id="throttleHud">
+      <div class="thrLbl">THR</div>
+      <div class="thrBar"><i id="thrFill"></i></div>
+      <div class="thrPct" id="thrPct">75%</div>
+    </div>
   </div>
 
   <div class="planetTarget hide" id="planetTarget">
@@ -623,8 +638,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.46.1";
+var VERSION="1.47.0";
 var CHANGELOG=[
+  {v:"1.47.0",t:"Collision matches the actual models, a visible throttle gauge, no more accidental home-landing mid-fight",items:[
+    "Found a serious one: home-defense combat happens at a fixed altitude almost directly above the colony, and last patch's proximity-only landing lock-on checked distance in a flat plane with no altitude limit at all — so simply fighting a wave kept the lock-on timer filling the entire time, and would silently force-land you out of the fight roughly every 1.3 seconds. Landing near a world now also requires being reasonably low relative to that world's own size (generous enough that normal approach flying is unaffected — this isn't the old 6-unit hard floor), which keeps combat altitude clearly out of range everywhere",
+    "Foundation tiles and the Landing Pad were flagged solid along with everything else, which is exactly backwards — a Foundation is the flat floor you're meant to stand on, and the Landing Pad is a raised deck on thin legs, not a solid drum. Both are walk/fly-through again",
+    "The ship itself had no building collision at all and flew straight through everything at low altitude, including the Landing Pad it's supposed to be landing on. Low-altitude surface flight now collides with buildings the same way the on-foot player does",
+    "Added a throttle gauge docked to the right edge of the screen while flying in space, filling live as you adjust speed",
+    "S and the down arrow can no longer push the throttle negative — it stops dead at 0 instead of reversing",
+    "Engine effects got a real pass: a small white-hot core spark right at each nozzle, and an actual point light so the engine now visibly lights up the hull and anything nearby instead of just being a bright texture that illuminates nothing — boosting pushes both much further than before"
+  ]},
   {v:"1.46.1",t:"Fixed the throttle never letting the ship coast to a stop",items:[
     "The new throttle held its value completely whenever neither W/S nor the arrow keys were being pressed — which sounds fine for a real throttle lever, but the ship launches at 0.75 throttle and, since dogfighting is mostly turning and dodging rather than constantly holding forward, it would just keep cruising at that speed with nothing to stop it, flying itself tens of thousands of units off into empty space within seconds of a normal fight. The throttle now decays back toward zero on its own whenever you're not actively holding a throttle key, so letting go actually brings the ship to a stop again like it always used to, while still keeping the smooth ramp instead of an instant snap while you are holding a key"
   ]},
@@ -1743,6 +1766,14 @@ function updateSurfaceFlight(dt){
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
   if(keys.q)pShip.pos.y-=dt*9;
   if(keys.e)pShip.pos.y+=dt*9;
+  /* the ship used to fly straight through every building with nothing stopping it — only ever
+     low enough to matter for a landing approach or ground-level buzzing, so this only kicks in
+     under roughly rooftop height rather than treating buildings as infinitely tall towers that'd
+     block high cruising too. */
+  if(pShip.pos.y-terrainHeight(pShip.pos.x,pShip.pos.z)<8){
+    var shipPushed=resolveBuildingCollision(pShip.pos.x,pShip.pos.z,SHIP_BUILD_COLLISION_RADIUS);
+    pShip.pos.x=shipPushed.x; pShip.pos.z=shipPushed.z;
+  }
   /* stay within the current world's own square baseplate — flying past its walls would mean
      drifting off the map into nothing */
   if(currentWorld){
@@ -2778,7 +2809,7 @@ function snapWallEdge(x,z){
   return {x:cx,z:cz+(lz>=0?GRID/2:-GRID/2),rotY:0};
 }
 var BUILD_DEFS={
-  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},powerDraw:0,radius:4,produces:[],accepts:[]},
+  foundation:{nm:"Foundation",cat:"Structure",ds:"A flat metal floor tile. Snaps edge-to-edge with other foundations to build out a factory floor.",cost:{iron_ore:6},powerDraw:0,radius:4,noCollide:true,produces:[],accepts:[]},
   wall:{nm:"Wall",cat:"Structure",ds:"A solid wall panel. Snaps to the edge of a grid cell.",cost:{iron_ore:8},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
   window:{nm:"Window Wall",cat:"Structure",ds:"A wall panel with a viewport. Snaps to the edge of a grid cell.",cost:{iron_ore:8,copper_ore:2},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
   door:{nm:"Blast Door",cat:"Structure",ds:"A sliding armored door. Automatically opens as you approach and seals shut behind you — interact with it to lock it sealed instead. Snaps to the edge of a grid cell.",cost:{iron_ore:10},powerDraw:0,radius:1,edge:true,produces:[],accepts:[]},
@@ -2807,7 +2838,7 @@ var BUILD_DEFS={
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
   shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper","parts"]},
   shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper","parts"],accepts:[]},
-  landingpad:{nm:"Landing Pad",cat:"Ship Production",ds:"A marked pad with docking lights. Purely a landmark to aim for — flying low and slow anywhere flat still lands you, but this gives you a deliberate spot to fly in on, on any world.",cost:{iron_ore:20,copper_ore:8},powerDraw:0,radius:7,produces:[],accepts:[]}
+  landingpad:{nm:"Landing Pad",cat:"Ship Production",ds:"A marked pad with docking lights. Purely a landmark to aim for — flying low and slow anywhere flat still lands you, but this gives you a deliberate spot to fly in on, on any world.",cost:{iron_ore:20,copper_ore:8},powerDraw:0,radius:7,noCollide:true,produces:[],accepts:[]}
 };
 var BUILD_ORDER=["hub","foundation","wall","window","door","railing","plant","lightpost","floorlight","pylon","solar","cable","miner","miner2","smelter","constructor","refinery","storage","splitter","merger","belt","belt2","shipyard","landingpad","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
@@ -5191,8 +5222,8 @@ function updateEngineFlames(mesh,dt,intensity,boosting){
   mesh.userData.flameT+=(target-mesh.userData.flameT)*Math.min(1,dt*8);
   var t=mesh.userData.flameT;
   var flicker=1+Math.sin(performance.now()/70)*0.08;
-  var lenMul=t*(boosting?2.4:1)*flicker;
-  var widthMul=boosting?1.7:1;
+  var lenMul=t*(boosting?3.2:1)*flicker;
+  var widthMul=boosting?2.1:1;
   var glowCol=boosting?ENGINE_GLOW_BOOST:ENGINE_GLOW_FLY;
   var innerCol=boosting?ENGINE_FLAME_INNER_BOOST:ENGINE_FLAME_INNER_FLY;
   if(mesh.userData.engineGlow)mesh.userData.engineGlow.forEach(function(g){
@@ -5206,6 +5237,19 @@ function updateEngineFlames(mesh,dt,intensity,boosting){
     f.inner.material.opacity=0.8*t*(boosting?1.2:1);
     f.outer.material.color.copy(glowCol);
     f.inner.material.color.copy(innerCol);
+    /* a small bright core sprite right at the nozzle mouth, plus a real point light — the cones
+       alone were just flat additive shapes that lit nothing around them, so nearby hull panels,
+       particles, even the ground on a low pass never actually looked lit by the engine. */
+    if(f.core){
+      f.core.scale.setScalar(0.14+t*(boosting?0.6:0.32)*flicker);
+      f.core.material.opacity=t*(boosting?1:0.85);
+      f.core.material.color.copy(innerCol);
+    }
+    if(f.light){
+      f.light.color.copy(glowCol);
+      f.light.intensity=t*(boosting?6.5:2.4)*flicker;
+      f.light.distance=16+(boosting?18:0)*t;
+    }
   });
 }
 function updateShipNavLights(mesh){
@@ -5488,12 +5532,17 @@ function updatePlanetTargeting(dt){
      were nearly on top of the visible surface. A multiplier of the world's own radius scales
      automatically no matter how big a particular world (or a future one) ends up being. */
   var near=dist<target.radius*2.4;
-  /* used to also require low altitude and slow speed before the lock-on timer would even start
-     filling — since the ring only appeared once you were already inside that same near range,
-     in practice you had to thread both gates at once while basically on top of the planet, which
-     read as having to fly into it. Proximity alone now drives the lock-on: get within range and
-     it starts locking on, no separate altitude/speed fiddling required. */
-  var settling=near;
+  /* dropping the altitude gate entirely (see the old comment this replaced) turned out to break
+     something the fixed tiny gate had accidentally been protecting: home-defense combat happens
+     at HOME_COMBAT_Y (4200, chosen only to clear home's own rendered sphere), and "near" here is
+     a purely horizontal x/z check — the combat arena sits almost exactly above home's own (x,z)
+     position the entire time by design. With no altitude gate at all, that meant simply fighting
+     a wave was enough to satisfy "near" continuously, so the lock-on timer kept filling and
+     force-landed the player mid-fight roughly every 1.3 seconds. A generous, radius-relative
+     altitude ceiling (nothing like the old fixed 6-unit one) keeps combat altitude clearly outside
+     landing range for every world while still being far looser than "basically on the ground". */
+  var lowEnough=pShip.pos.y<target.radius*0.65;
+  var settling=near&&lowEnough;
   landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
   if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
@@ -5504,6 +5553,7 @@ function updatePlanetTargeting(dt){
     var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
     var hint="";
     if(settling)hint=" — LOCKING ON";
+    else if(near&&!lowEnough)hint=" — DESCEND (Q)";
     else hint=" — FLY CLOSER TO LAND";
     elTarget.querySelector(".ptName").textContent=nameTxt+hint;
     elTarget.querySelector(".ptRing").style.background=
@@ -5905,7 +5955,19 @@ function buildShipMesh(model){
     var inner=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.5,7,1,true),innerMat);
     inner.rotation.x=-Math.PI/2; inner.position.copy(glow.position);
     g.add(inner);
-    flames.push({outer:outer,inner:inner});
+    /* a white-hot core spark right at the nozzle mouth, plus a real point light so the engine
+       actually illuminates the hull and any nearby particles/ships instead of just being a bright
+       texture that lights nothing around it — the flame cones alone were still just flat additive
+       shapes with no real presence in the scene. */
+    var coreMat=new THREE.SpriteMaterial({map:sparkTex,color:0xffffff,transparent:true,
+      opacity:0,depthWrite:false,blending:THREE.AdditiveBlending});
+    var core=new THREE.Sprite(coreMat);
+    core.position.copy(glow.position);
+    g.add(core);
+    var light=new THREE.PointLight(0x6fd8ff,0,16,2);
+    light.position.copy(glow.position);
+    g.add(light);
+    flames.push({outer:outer,inner:inner,core:core,light:light});
   });
   g.userData.engineFlames=flames;
   /* every ship read noticeably smaller than the player standing next to it, so pushed all four
@@ -6189,7 +6251,9 @@ function updateSpace(dt){
         var throttleIn=0;
         if(keys.w||keys.arrowup)throttleIn+=1;
         if(keys.s||keys.arrowdown)throttleIn-=1;
-        if(throttleIn!==0)pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,-1,1);
+        /* no reverse — S/down now only ever bring the throttle back down to a dead stop at 0,
+           they can't push it negative, so "backwards" isn't a thing the ship does anymore */
+        if(throttleIn!==0)pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,0,1);
         else pShip.throttle+=(0-pShip.throttle)*Math.min(1,dt*THROTTLE_DECAY);
         fwd=pShip.throttle;
       } else {
@@ -6405,6 +6469,9 @@ function updateHudSpace(){
   $("spBaseFill").style.width=(clamp(homeBase.hp/homeBase.maxhp,0,1)*100)+"%";
   $("spWaveTxt").textContent=waveState==="clear"?("NEXT WAVE "+Math.ceil(waveTimer)+"s"):("WAVE "+wave);
   $("vig").style.opacity=pShip.alive?Math.max(0,(1-hpPc)*0.6-0.05):0;
+  var thrPc=clamp(pShip.throttle==null?0:pShip.throttle,0,1);
+  $("thrFill").style.height=(thrPc*100)+"%";
+  $("thrPct").textContent=Math.round(thrPc*100)+"%";
 }
 
 /* ═════════════ INPUT ═════════════ */
@@ -6445,7 +6512,7 @@ window.addEventListener("keyup",function(e){ keys[e.key.toLowerCase()]=0; });
 window.addEventListener("wheel",function(e){
   if(state!=="space"||!pShip||!pShip.alive)return;
   e.preventDefault();
-  pShip.throttle=clamp((pShip.throttle==null?0.75:pShip.throttle)+(e.deltaY<0?1:-1)*THROTTLE_WHEEL_STEP,-1,1);
+  pShip.throttle=clamp((pShip.throttle==null?0.75:pShip.throttle)+(e.deltaY<0?1:-1)*THROTTLE_WHEEL_STEP,0,1);
 },{passive:false});
 
 function resetMovementKeys(){
@@ -7576,17 +7643,24 @@ var walkT=0;
 /* buildings used to have zero collision at all — walking straight through a Shipyard or a
    Refinery looked broken next to how solid everything else in the scene reads. Plain circle-vs-
    point collision against each building's own existing placement radius (already used for
-   spacing/overlap checks when placing) pushes the player back out along the line from the
+   spacing/overlap checks when placing) pushes the actor back out along the line from the
    building's center, which is enough for every free-standing machine/structure without needing
    real per-shape hitboxes. Wall/window/door/railing panels are "edge" pieces mounted flush along
    a grid line rather than free-standing blobs, and belts/cables are routing tools with no real
-   footprint, so both are skipped here — a circle doesn't fit either shape. */
-var PLAYER_RADIUS=0.55;
-function resolveBuildingCollision(px,pz){
+   footprint, so both are skipped — a circle doesn't fit either shape. Foundation and Landing Pad
+   are explicitly flagged noCollide: a Foundation is a flat floor tile you're meant to stand on,
+   not bump into, and a Landing Pad is a raised deck on thin support legs, not a solid drum — a
+   flat ground-level circle blocked you from ever walking under/onto either one, which is exactly
+   backwards from what they're for. shipSurfaceFlying reuses this same function (with a bigger
+   actorRadius sized to the ship's own hull) so the ship stops at building walls too instead of
+   flying straight through them the way the player used to be able to walk through everything. */
+var PLAYER_RADIUS=0.55, SHIP_BUILD_COLLISION_RADIUS=2.2;
+function resolveBuildingCollision(px,pz,actorRadius){
+  actorRadius=actorRadius==null?PLAYER_RADIUS:actorRadius;
   for(var bi=0;bi<buildings.length;bi++){
     var b=buildings[bi], def=BUILD_DEFS[b.type];
-    if(!def||def.edge||def.tool)continue;
-    var r=(def.radius||1.2)+PLAYER_RADIUS;
+    if(!def||def.edge||def.tool||def.noCollide)continue;
+    var r=(def.radius||1.2)+actorRadius;
     var dx=px-b.x, dz=pz-b.z, d=Math.sqrt(dx*dx+dz*dz);
     if(d<r){
       if(d<0.0001){ px+=r; }
@@ -7956,7 +8030,7 @@ window.__cq={
     return {doorMode:b.doorMode,doorOpenT:b.doorOpenT,_doorAnim:b._doorAnim,truthy:truthy,leafLx:lx,leafRx:rx};
   },
   debugCamInfo:function(){ return {pos:camera.position.toArray(),near:camera.near,far:camera.far,fov:camera.fov,fogNear:surfaceScene.fog?surfaceScene.fog.near:null,fogFar:surfaceScene.fog?surfaceScene.fog.far:null,fogColor:surfaceScene.fog?"#"+surfaceScene.fog.color.getHexString():null}; },
-  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null,throttle:pShip.throttle,glowEmissive:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?pShip.mesh.userData.engineGlow[0].material.emissiveIntensity:null,glowColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.emissive.getHexString():null,glowBaseColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.color.getHexString():null}; },
+  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null,throttle:pShip.throttle,glowEmissive:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?pShip.mesh.userData.engineGlow[0].material.emissiveIntensity:null,glowColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.emissive.getHexString():null,glowBaseColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.color.getHexString():null,lightIntensity:fl&&fl[0]&&fl[0].light?fl[0].light.intensity:null,lightDistance:fl&&fl[0]&&fl[0].light?fl[0].light.distance:null,coreScale:fl&&fl[0]&&fl[0].core?fl[0].core.scale.x:null,coreOpacity:fl&&fl[0]&&fl[0].core?fl[0].core.material.opacity:null}; },
   debugCycleSnap:function(){ cycleSnapMult(); return snapMult; },
   debugBuildPlane:function(){ return {pos:buildPlaneMesh.position.toArray(), visible:buildPlaneMesh.visible, inScene:surfaceScene.children.indexOf(buildPlaneMesh)>=0}; },
   debugBuildingUnderScreen:function(sx,sy){ renderer.render(surfaceScene,camera); var b=buildingUnderScreen(sx,sy); return b?{id:b.id,type:b.type}:null; },
