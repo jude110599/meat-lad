@@ -623,8 +623,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.46.0";
+var VERSION="1.46.1";
 var CHANGELOG=[
+  {v:"1.46.1",t:"Fixed the throttle never letting the ship coast to a stop",items:[
+    "The new throttle held its value completely whenever neither W/S nor the arrow keys were being pressed — which sounds fine for a real throttle lever, but the ship launches at 0.75 throttle and, since dogfighting is mostly turning and dodging rather than constantly holding forward, it would just keep cruising at that speed with nothing to stop it, flying itself tens of thousands of units off into empty space within seconds of a normal fight. The throttle now decays back toward zero on its own whenever you're not actively holding a throttle key, so letting go actually brings the ship to a stop again like it always used to, while still keeping the smooth ramp instead of an instant snap while you are holding a key"
+  ]},
   {v:"1.46.0",t:"Throttle control, real engine ignition, solid buildings and planets",items:[
     "The bright blue nozzle balls used to sit permanently lit no matter what the ship was doing — they're a plain grey inert part at rest now, and only light up (and the flame blasts out through them) once the ship actually starts moving, scaling continuously with how fast it's actually going",
     "Boosting now blasts a visibly different engine: the flame stretches and widens further than before and switches to a hot magenta instead of just a brighter version of the normal cyan, so it reads as a distinct mode rather than the same flame turned up",
@@ -6149,7 +6152,7 @@ function updateLaunchAnim(dt){
 }
 /* how fast the throttle ramps per second of W/S (or the arrow-key equivalents) held down, and how
    much a single scroll-wheel notch nudges it directly */
-var THROTTLE_RATE=0.7, THROTTLE_WHEEL_STEP=0.08;
+var THROTTLE_RATE=0.7, THROTTLE_WHEEL_STEP=0.08, THROTTLE_DECAY=1.1;
 function updateSpace(dt){
   updateSpaceParts(dt);
   if(state==="launching"){ updateLaunchAnim(dt); return; }
@@ -6171,12 +6174,23 @@ function updateSpace(dt){
            key went down — no way to just cruise at, say, half throttle. They now ramp a
            persistent throttle value up or down instead (the scroll wheel nudges the same value
            directly, see the wheel listener), and that throttle is what actually drives velocity
-           below, so easing off doesn't cut speed to zero, it just eases the throttle back. */
+           below, so easing off doesn't cut speed to zero instantly, it eases down instead.
+           The first version of this left the throttle completely alone whenever neither key was
+           held, which sounds reasonable for a real throttle lever but was a disaster in practice:
+           the ship launches at 0.75 throttle, and if you're not actively holding W (which is most
+           of the time in a dogfight, where turning/dodging matters more than constantly holding
+           forward) it just kept cruising at that speed forever with nothing to stop it — it flew
+           itself tens of thousands of units off into empty space in a few seconds of normal play.
+           Decaying back toward 0 whenever neither throttle key is held brings the ship to a stop
+           on its own once you let go, like every version of these controls before the throttle
+           existed, while still keeping the smooth ramp (instead of an instant snap) while you're
+           actually holding a key. */
         pShip.throttle=pShip.throttle==null?0.75:pShip.throttle;
         var throttleIn=0;
         if(keys.w||keys.arrowup)throttleIn+=1;
         if(keys.s||keys.arrowdown)throttleIn-=1;
-        pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,-1,1);
+        if(throttleIn!==0)pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,-1,1);
+        else pShip.throttle+=(0-pShip.throttle)*Math.min(1,dt*THROTTLE_DECAY);
         fwd=pShip.throttle;
       } else {
         if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
