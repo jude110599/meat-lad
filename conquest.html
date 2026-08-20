@@ -604,8 +604,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.40.1";
+var VERSION="1.41.0";
 var CHANGELOG=[
+  {v:"1.41.0",t:"Fixed space camera lag and planet flicker, planets 5x bigger again",items:[
+    "The chase camera used to trail the ship by a fixed lerp rate that was tuned for the old, much slower cruise speed — at the current speeds that meant the camera fell hundreds of units behind during sustained flight, reading as it suddenly zooming way out. It now catches up fast enough to stay tight at any speed",
+    "Fixed the planets' surface flickering/glitching in space — a 1-unit-near, huge-far camera needed to see both nearby ships and the far starfield at this scale was overwhelming the standard depth buffer, so the planet's core/cloud/atmosphere layers were fighting over which one was actually in front each frame. Turned on a logarithmic depth buffer, which is built for exactly this",
+    "Every world (and home) got another 5x bigger on top of the last two scale-ups. Bumped the planet texture resolution too so it doesn't look blurry stretched over one this size, and grew the flyable space area and the home-defense fight's altitude to match so nothing clips into the now-even-bigger home planet"
+  ]},
   {v:"1.40.1",t:"Rebalanced ship speed for combat and low-altitude flight",items:[
     "The last update's big ship-speed boost was meant for crossing the huge new distances between planets — but it also carried into the home-defense dogfight and into flying low over a landed world's own terrain, both of which are still the same compact scale as before. A fast ship in either one meant crossing the whole fight, or the whole world, in under a second",
     "The home-defense wave fight (enemy spawn distance, movement/bolt speed, attack range) was scaled up to match the new arena size instead of the old one",
@@ -1031,7 +1036,12 @@ function computeDPR(){
   return Math.min(coarse?1:2,window.devicePixelRatio||1);
 }
 var W=innerWidth,H=innerHeight,DPR=computeDPR();
-var renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,powerPreference:"high-performance"});
+/* logarithmicDepthBuffer is what actually fixes the planet-texture z-fighting/flicker in space —
+   a 0.1-near/70000-far camera (needed to see both nearby ships and far starfield decor at the
+   new huge scale) blows way past what a standard linear depth buffer can resolve, so overlapping
+   surfaces (the planet core/cloud/atmo shells especially) fight over which one's actually in
+   front and flicker between them every frame. */
+var renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,powerPreference:"high-performance",logarithmicDepthBuffer:true});
 renderer.setPixelRatio(DPR);
 renderer.setSize(W,H);
 renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -1046,7 +1056,7 @@ renderer.toneMappingExposure=1.3;
 
 /* far plane bumped to comfortably cover the bigger SPACE_SIZE's farthest starfield/nebula decor
    (up to SPACE_SIZE*1.95) now that worlds are spread much farther apart */
-var camera=new THREE.PerspectiveCamera(58,W/H,0.1,70000);
+var camera=new THREE.PerspectiveCamera(58,W/H,1,95000);
 
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
@@ -1128,28 +1138,28 @@ var WORLDS=[
     /* the space-view color used to be desert orange/tan while the actual ground (and its
        Frost Crystal/Ice Core ore) is an ice world — landing never matched what you flew
        toward. Recolored to the icy blue-white it actually is. */
-    sx:12600,sz:-9900,radius:990,col:0xbfd8e2,atmoCol:0x9fe0f0,ringCol:0x6a8ab0,
+    sx:12600,sz:-9900,radius:4950,col:0xbfd8e2,atmoCol:0x9fe0f0,ringCol:0x6a8ab0,
     cx:20000,cz:20000,zoneR:300,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",ore2:"ice_core",ore2Nm:"Ice Core",decor:"ice",
     sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:4.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false,hasRing:true },
   { id:"ember", nm:"Ember Reach",
-    sx:-11700,sz:11700,radius:1170,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
+    sx:-11700,sz:11700,radius:5850,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
     cx:-20000,cz:20000,zoneR:300,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
     ore:"magma_shard",oreNm:"Magma Shard",ore2:"sulfur_vein",ore2Nm:"Sulfur Vein",decor:"volcanic",
     sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:4.9,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false,hasRing:false },
   { id:"verdance", nm:"Verdant Hollow",
-    sx:-11700,sz:-11700,radius:1080,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
+    sx:-11700,sz:-11700,radius:5400,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
     cx:-20000,cz:-20000,zoneR:300,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
     sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:3.75,rimCol:0x40ff90,ambCol:0x2a6a3a},
     discovered:false,hasHive:true,hasRing:false }
 ];
-var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:630,isHome:true,discovered:true};
+var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:3150,isHome:true,discovered:true};
 function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
 /* every world is a genuinely separate SQUARE baseplate — its own terrain mesh, its own bounds,
    walled off at the edges — not a circle, patch or tinted zone carved out of home's map. A
@@ -4793,7 +4803,10 @@ function loadGame(){
    orbit/approach it — WORLDS now sit as far out as ~1800 units from home, so this had to grow
    right along with them or the ship-position clamp below would make the far worlds literally
    unreachable no matter how fast the ship is */
-var SPACE_SIZE=30000;
+/* half of this must clear every world's position PLUS its own (now much bigger) atmo radius, or
+   the ship-position clamp in updateSpace cuts off part of a planet's far side before you can
+   actually fly all the way around it */
+var SPACE_SIZE=40000;
 var spaceScene=new THREE.Scene();
 spaceScene.background=new THREE.Color(0x030509);
 spaceScene.add(new THREE.AmbientLight(0x4a5a8a,0.6));
@@ -4929,16 +4942,16 @@ function updateShipNavLights(mesh){
 var homeBase={hp:300,maxhp:300};
 var homeBaseMesh=(function(){
   var g=new THREE.Group();
-  var core=new THREE.Mesh(new THREE.IcosahedronGeometry(126,0),new THREE.MeshStandardMaterial({color:0x101c2e,flatShading:true,roughness:0.6}));
+  var core=new THREE.Mesh(new THREE.IcosahedronGeometry(630,0),new THREE.MeshStandardMaterial({color:0x101c2e,flatShading:true,roughness:0.6}));
   g.add(core);
   var ringMat=new THREE.MeshStandardMaterial({color:0x7bd94a,emissive:0x1a4a0a,emissiveIntensity:0.8});
-  var ring=new THREE.Mesh(new THREE.TorusGeometry(216,9.9,8,28),ringMat);
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(1080,49.5,8,28),ringMat);
   ring.rotation.x=Math.PI/2.3;
   g.add(ring);
   g.userData.ringMat=ringMat;
-  /* clear of HOME_WORLD.mesh's much bigger sphere (radius 630, atmo ~718) now that planets got
-     scaled way up again — this used to sit at (0,70,110) when the planet was a ninth this size */
-  g.position.set(0,630,990);
+  /* clear of HOME_WORLD.mesh's much bigger sphere (radius 3150, atmo ~3591) now that planets got
+     scaled up another 5x — this used to sit at (0,630,990) when the planet was a fifth this size */
+  g.position.set(0,3150,4950);
   spaceScene.add(g);
   return g;
 })();
@@ -4946,7 +4959,7 @@ var homeBaseMesh=(function(){
    banding, built from the same three-colour palette each world already uses for its ground, so
    the space-view planet actually resembles the terrain you land on instead of a flat-shaded orb */
 function makePlanetTexture(floorHex,midHex,rockHex){
-  var size=256;
+  var size=512; /* planets got a lot bigger — a 256px texture stretched over one that huge read as blurry/blocky up close */
   var cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
   var g=cvs.getContext("2d");
   function hx(h){ return "#"+("000000"+h.toString(16)).slice(-6); }
@@ -5506,7 +5519,7 @@ function spWaveCount(w){ return 2+Math.floor(w*1.1); }
    altitude. But the home planet's own decorative sphere (HOME_WORLD.mesh) is now huge and also
    centered close to that same origin, so the whole fight got moved up to a high, fixed altitude
    band well clear of the planet's surface instead of sitting down near y=0 inside it. */
-var HOME_COMBAT_Y=800;
+var HOME_COMBAT_Y=4200;
 function spawnEnemyShip(){
   var a=rnd(0,Math.PI*2), r=rnd(1260,1980);
   var mesh=buildEnemyMesh();
@@ -5666,7 +5679,11 @@ function updateLaunchAnim(dt){
   var camDist=14+ease*9, camHeight=7+ease*5;
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*camDist,camHeight,-Math.cos(pShip.yaw)*camDist);
   var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-  camera.position.lerp(camTarget,Math.min(1,dt*3.2));
+  /* the old dt*3.2 catch-up rate left the camera trailing the ship by (speed / rate) units at
+     steady speed — fine at the old ~30-160 cruise speeds, but at the current 855-1440 that lag
+     ballooned into hundreds of units, reading as the camera suddenly zooming way out during the
+     launch climb. A much higher rate keeps the chase tight regardless of how fast the ship is. */
+  camera.position.lerp(camTarget,Math.min(1,dt*24));
   camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
   if(t>=1){
     launchAnim=null; state="space";
@@ -5822,7 +5839,10 @@ function updateSpace(dt){
       lookY=pShip.pos.y+1;
     }
     var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-    camera.position.lerp(camTarget,Math.min(1,dt*5));
+    /* same fix as the launch-climb camera above — dt*5 left the chase cam trailing by hundreds
+       of units at the current cruise speeds, which read as the camera zooming far out while
+       flying. A much higher catch-up rate keeps it tight at any ship speed. */
+    camera.position.lerp(camTarget,Math.min(1,dt*24));
     camera.lookAt(pShip.pos.x,lookY,pShip.pos.z);
   }
   updateHudSpace();
