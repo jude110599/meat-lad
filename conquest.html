@@ -623,8 +623,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.44.4";
+var VERSION="1.45.0";
 var CHANGELOG=[
+  {v:"1.45.0",t:"Landing Pad and Splitter/Merger rebuilt with a lot more detail",items:[
+    "Landing Pad was just a flat disc, a lit ring, and four ball lamps — rebuilt as a real raised deck standing clear of the ground on six visible support legs, with a hazard-striped rim, a painted center marker, four corner beacon masts, and a small control shack with a window and an antenna",
+    "Splitter and Merger were a base disc, one plain box, and a flat trim band — added corner gussets so the cabinet reads as actually welded together, a vented top hatch instead of a flat cap, exposed pipe stubs, and panel bolt rows"
+  ]},
   {v:"1.44.4",t:"Polish pass: smoother turning for enemies and turrets, a livelier shipyard",items:[
     "Enemy ships in the home-defense fight used to snap their facing instantly to your exact bearing every single frame — they now turn smoothly toward you like something actually flying instead of twitching to track you",
     "Alien turrets aimed the same instant-snap way — they now traverse smoothly onto target",
@@ -3273,16 +3277,42 @@ function buildBuildingMesh(type){
     boltRow(g,3.0,2.0,0.32,null,5);
     g.userData.cableAnchor=null;
   } else if(type==="splitter"||type==="merger"){
+    /* was a base disc, one plain box body, and a flat trim band — added corner gussets so the
+       box actually reads as a welded machine cabinet, a vented top hatch instead of a flat cap,
+       and pipe stubs breaking up the silhouette instead of a clean cube sitting on a puck */
     var isSplit=type==="splitter";
     var baseMat=matStd(0x1c2430,0.65,0.5);
     var base=new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.9,0.3,8),baseMat);
     base.position.y=0.15; g.add(base);
+    var hazBandSM=hazardRing(1.75,0.14); hazBandSM.position.y=0.32; g.add(hazBandSM);
     var bodyMat=matStd(0x2a3542,0.6,0.5);
     var body=new THREE.Mesh(new THREE.BoxGeometry(2.3,1.3,2.3),bodyMat);
     body.position.y=0.95; g.add(body);
+    var gussetMat=matStd(0x1a2230,0.55,0.55);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(gc){
+      var gusset=new THREE.Mesh(new THREE.BoxGeometry(0.16,1.3,0.16),gussetMat);
+      gusset.position.set(gc[0]*1.1,0.95,gc[1]*1.1); g.add(gusset);
+    });
+    boltRow(g,1.9,1.9,0.5,null,4);
+    boltRow(g,1.9,1.9,1.4,null,4);
     var trimMat=matStd(isSplit?0xffb545:0x9fc6ff,0.4,0.6);
     var trim=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.14,2.4),trimMat);
     trim.position.y=1.62; g.add(trim);
+    var hatchMat=matStd(0x1a2230,0.6,0.5);
+    var hatch=new THREE.Mesh(new THREE.CylinderGeometry(0.85,0.95,0.3,8),hatchMat);
+    hatch.position.y=1.84; g.add(hatch);
+    var ventMat=matStd(0x0e1620,0.7,0.4);
+    for(var vi=0;vi<6;vi++){
+      var vang=vi/6*Math.PI*2;
+      var vent=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.08,0.3),ventMat);
+      vent.position.set(Math.cos(vang)*0.75,1.99,Math.sin(vang)*0.75); vent.rotation.y=vang;
+      g.add(vent);
+    }
+    var pipeMat=matStd(0x3a4a5e,0.5,0.55);
+    var pipe=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,0.9,6),pipeMat);
+    pipe.position.set(-1.5,0.5,-1.5); g.add(pipe);
+    var pipeElbowSM=new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6),pipeMat);
+    pipeElbowSM.position.set(-1.5,0.95,-1.5); g.add(pipeElbowSM);
     var portMat=matStd(0x1a2230,0.5,0.6);
     function port(x,z,rotY,big){
       var p=new THREE.Mesh(new THREE.BoxGeometry(big?1.0:0.75,0.7,0.55),portMat);
@@ -3302,7 +3332,7 @@ function buildBuildingMesh(type){
     }
     var lightMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:isSplit?0xffb545:0x4fd3ff,emissiveIntensity:1});
     var light=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),lightMat);
-    light.position.set(0,1.85,0); g.add(light);
+    light.position.set(0,2.08,0); g.add(light);
     g.userData.statusMesh=light; g.userData.statusMat=lightMat;
     g.userData.onCol=0x233a56; g.userData.onEm=isSplit?0xffb545:0x4fd3ff;
     g.userData.cableAnchor=null;
@@ -3451,20 +3481,51 @@ function buildBuildingMesh(type){
     boltRow(g,3.5,3.5,0.5,null,6);
     g.userData.cableAnchor=null;
   } else if(type==="landingpad"){
-    /* a marked pad with a lit ring and corner lamps — a deliberate spot to fly in and touch
-       down on, placeable anywhere you can build, on any world */
-    var padMat3=new THREE.MeshStandardMaterial({color:0x2a3038,roughness:0.7,metalness:0.3});
-    var disc=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7,0.4,16),padMat3);
-    disc.position.y=0.2; g.add(disc);
-    var lampMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.7,roughness:0.4,metalness:0.3});
-    var ring=new THREE.Mesh(new THREE.TorusGeometry(6,0.22,8,24),lampMat);
-    ring.rotation.x=Math.PI/2; ring.position.y=0.42; g.add(ring);
-    for(var pi=0;pi<4;pi++){
-      var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),lampMat);
-      var pang=pi/4*Math.PI*2;
-      lamp.position.set(Math.cos(pang)*6,0.7,Math.sin(pang)*6);
-      g.add(lamp);
+    /* was a flat disc, a ring, and four ball lamps — now a real raised deck standing clear of
+       the ground on visible support legs, with a hazard-striped rim, a painted center marker,
+       four corner beacon masts, and a little control shack with an antenna keeping watch */
+    var legMat=matStd(0x1a2230,0.6,0.55);
+    for(var li=0;li<6;li++){
+      var lang=li/6*Math.PI*2;
+      var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.3,1.1,6),legMat);
+      leg.position.set(Math.cos(lang)*5.2,0.55,Math.sin(lang)*5.2); g.add(leg);
+      var footPlate=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,0.12,6),legMat);
+      footPlate.position.set(Math.cos(lang)*5.2,0.06,Math.sin(lang)*5.2); g.add(footPlate);
     }
+    var padMat3=new THREE.MeshStandardMaterial({color:0x2a3038,roughness:0.7,metalness:0.3});
+    var disc=new THREE.Mesh(new THREE.CylinderGeometry(6.5,7,0.5,8),padMat3);
+    disc.position.y=1.15; g.add(disc);
+    var deckMat=new THREE.MeshStandardMaterial({color:0x3a4250,roughness:0.6,metalness:0.4});
+    var deck=new THREE.Mesh(new THREE.CylinderGeometry(6.2,6.2,0.14,8),deckMat);
+    deck.position.y=1.44; g.add(deck);
+    var hazEdge=hazardRing(6.55,0.3); hazEdge.position.y=1.16; g.add(hazEdge);
+    var markMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.55,roughness:0.4});
+    var markRing=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.07,6,28),markMat);
+    markRing.rotation.x=Math.PI/2; markRing.position.y=1.52; g.add(markRing);
+    var bar1=new THREE.Mesh(new THREE.BoxGeometry(4.2,0.03,0.16),markMat); bar1.position.y=1.52; g.add(bar1);
+    var bar2=bar1.clone(); bar2.rotation.y=Math.PI/2; g.add(bar2);
+    var lampMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffb545,emissiveIntensity:0.7,roughness:0.4,metalness:0.3});
+    var ring=new THREE.Mesh(new THREE.TorusGeometry(6,0.16,8,24),lampMat);
+    ring.rotation.x=Math.PI/2; ring.position.y=1.44; g.add(ring);
+    var beaconMat=new THREE.MeshStandardMaterial({color:0xff4d5e,emissive:0xff4d5e,emissiveIntensity:1.1});
+    for(var pi=0;pi<4;pi++){
+      var pang=pi/4*Math.PI*2+Math.PI/4;
+      var mastPole=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,1.6,6),legMat);
+      mastPole.position.set(Math.cos(pang)*6.0,2.2,Math.sin(pang)*6.0); g.add(mastPole);
+      var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6),beaconMat.clone());
+      beacon.position.set(Math.cos(pang)*6.0,3.0,Math.sin(pang)*6.0); g.add(beacon);
+    }
+    var shackMat=matStd(0x2a3038,0.6,0.4);
+    var shack=new THREE.Mesh(new THREE.BoxGeometry(1.3,1.2,1.1),shackMat);
+    shack.position.set(-4.6,2.1,-4.6); g.add(shack);
+    var shackWin=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.5,0.8),new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.6,transparent:true,opacity:0.6}));
+    shackWin.position.set(-3.95,2.15,-4.6); g.add(shackWin);
+    var shackRoof=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.14,1.3),matStd(0x1a2230,0.55,0.5));
+    shackRoof.position.set(-4.6,2.75,-4.6); g.add(shackRoof);
+    var antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1.2,5),legMat);
+    antenna.position.set(-4.6,3.4,-4.6); g.add(antenna);
+    var antTip=new THREE.Mesh(new THREE.SphereGeometry(0.08,6,6),beaconMat.clone());
+    antTip.position.set(-4.6,4.0,-4.6); g.add(antTip);
     g.userData.ioGlow=[lampMat];
     g.userData.cableAnchor=null;
   } else if(type==="hub"){
