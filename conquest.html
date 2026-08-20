@@ -623,8 +623,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.45.4";
+var VERSION="1.46.0";
 var CHANGELOG=[
+  {v:"1.46.0",t:"Throttle control, real engine ignition, solid buildings and planets",items:[
+    "The bright blue nozzle balls used to sit permanently lit no matter what the ship was doing — they're a plain grey inert part at rest now, and only light up (and the flame blasts out through them) once the ship actually starts moving, scaling continuously with how fast it's actually going",
+    "Boosting now blasts a visibly different engine: the flame stretches and widens further than before and switches to a hot magenta instead of just a brighter version of the normal cyan, so it reads as a distinct mode rather than the same flame turned up",
+    "W/S (and the up/down arrows) used to snap speed straight to full forward or full reverse the instant a key went down. They now ramp a persistent throttle up or down instead — the scroll wheel nudges the same throttle directly too — so you can settle at any cruising speed, including easing into reverse, instead of only ever having full-send or a dead stop",
+    "Buildings had no collision at all — you could walk straight through a Shipyard or a Refinery. Free-standing buildings (not wall/window/door panels, not belts/cables) are now solid and block the player",
+    "Planets had no collision either — the ship could fly straight into the middle of a world's rendered sphere. Planets are now solid too; flying into one bumps the ship back out and bleeds off its speed instead of clipping through the mesh"
+  ]},
   {v:"1.45.4",t:"Fixed Q/E pitch direction in space, proximity lock-on landing, diagonal arrival glide",items:[
     "In space, E (climb) was pitching the nose down while the ship actually rose, and Q (descend) pitched it up — exactly backwards, and disorienting since the tilt never matched which way you were actually moving. Fixed the sign so climbing noses up and descending noses down, matching low-altitude flight's convention",
     "Landing on a world required flying near it AND already being at near-zero altitude AND under 3 units/sec, all at once — since the lock-on ring itself only appeared deep inside that same near range, in practice you had to basically fly into the planet just to get the prompt to start counting down. Landing now locks on from proximity alone: get within range at any altitude or speed and it locks on and takes you down, no more fiddly last-second altitude/speed threading",
@@ -1621,10 +1628,7 @@ function updateArrivalAnim(dt){
   pShip.pos.z=a.fromZ+(a.toZ-a.fromZ)*ease;
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(Math.min(0.5,(1-t)*0.5),pShip.yaw,0);
-  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
-    g.material.emissiveIntensity=1+(1-t)*2.8+Math.sin(performance.now()/55)*0.2;
-  });
-  updateEngineFlames(pShip.mesh,dt,true,false);
+  updateEngineFlames(pShip.mesh,dt,1,false);
   updateShipNavLights(pShip.mesh);
   if(Math.random()<0.7){
     var streakPos=pShip.pos.clone(); streakPos.y+=1.2;
@@ -1649,10 +1653,7 @@ function updateLandingAnim(dt){
   pShip.pos.y=a.fromY+(a.toY-a.fromY)*ease;
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(a.fromTiltX+(0-a.fromTiltX)*ease,pShip.yaw,0);
-  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
-    g.material.emissiveIntensity=1+(1-ease)*1.4+Math.sin(performance.now()/70)*0.15;
-  });
-  updateEngineFlames(pShip.mesh,dt,t<0.8,false);
+  updateEngineFlames(pShip.mesh,dt,t<0.8?1:0,false);
   if(Math.random()<0.5*(1-t))spawnSurfaceParticle(pShip.pos.clone(),new THREE.Vector3(rnd(-1,1),-1,rnd(-1,1)),rnd(0.3,0.5),0xcaa06a);
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
   chaseCamTo(new THREE.Vector3().copy(pShip.pos).add(camOff),dt,14);
@@ -1675,10 +1676,7 @@ function updateShipCrash(dt){
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt; pShip.pos.y+=pShip.vel.y*dt;
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.x+=dt*2.0; pShip.mesh.rotation.z+=dt*2.6;
-  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
-    g.material.emissiveIntensity=Math.max(0,g.material.emissiveIntensity-dt*1.5);
-  });
-  updateEngineFlames(pShip.mesh,dt,false,false);
+  updateEngineFlames(pShip.mesh,dt,0,false);
   if(Math.random()<0.8){
     var fireDir=new THREE.Vector3(rnd(-1.2,1.2),rnd(0.4,1.6),rnd(-1.2,1.2));
     spawnSurfaceParticle(pShip.mesh.position.clone(),fireDir,rnd(0.5,1.1),Math.random()<0.4?0xff5020:0x2a2a2a);
@@ -1764,10 +1762,7 @@ function updateSurfaceFlight(dt){
   var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
   if(pShip.mesh.userData.engineGlow){
     var moving=speed>1;
-    updateEngineFlames(pShip.mesh,dt,moving,false);
-    pShip.mesh.userData.engineGlow.forEach(function(g){
-      g.material.emissiveIntensity=1+(moving?0.6:0)+Math.sin(performance.now()/90)*0.15;
-    });
+    updateEngineFlames(pShip.mesh,dt,clamp(speed/shipSurfSpd(),0,1),false);
     if(moving&&Math.random()<0.5){
       var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
       var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
@@ -5176,27 +5171,38 @@ function clearSpaceParts(){
   spaceParts.forEach(function(p){ spaceScene.remove(p.mesh); p.mesh.material.dispose(); });
   spaceParts=[];
 }
-/* eases each engine flame cone toward full length while actually flying and a dim idle flicker
-   otherwise, instead of hard-cutting between the two — same smoothing approach as the chase
-   camera and pitch/roll lerps elsewhere, just applied to the flame's own scale/opacity/color.
-   Boosting stretches and widens the flame further and shifts both cones to a hotter color, on
-   top of (not instead of) the existing particle-trail boost treatment. */
-function updateEngineFlames(mesh,dt,flying,boosting){
+var ENGINE_GLOW_FLY=new THREE.Color(0x6fd8ff), ENGINE_GLOW_BOOST=new THREE.Color(0xff4fd8);
+var ENGINE_FLAME_INNER_FLY=new THREE.Color(0xcfefff), ENGINE_FLAME_INNER_BOOST=new THREE.Color(0xffffff);
+/* the nozzle ball used to sit permanently lit — now it's a plain grey unlit part at rest and only
+   the actual engine (this function's flame cones, plus the nozzle's own emissive glow) light up,
+   and how intensely they light up is driven by "intensity" (0..1, meant to track how hard the
+   ship is actually thrusting — throttle magnitude in space, or a simple 0/1 elsewhere) rather than
+   a flat on/off "is it moving" flag, so easing the throttle down visibly dims the flame back down
+   instead of it staying pinned at full brightness until you stop completely. Boosting swaps both
+   the nozzle glow and the flame to a hot magenta-white so it reads as a distinct mode, not just
+   the same flame turned up. */
+function updateEngineFlames(mesh,dt,intensity,boosting){
   var flames=mesh&&mesh.userData.engineFlames; if(!flames||!flames.length)return;
   mesh.userData.flameT=mesh.userData.flameT==null?0:mesh.userData.flameT;
-  var target=flying?1:0.18;
+  var target=clamp(intensity,0,1);
   mesh.userData.flameT+=(target-mesh.userData.flameT)*Math.min(1,dt*8);
   var t=mesh.userData.flameT;
-  var lenMul=t*(boosting?1.75:1)*(1+Math.sin(performance.now()/70)*0.08);
-  var widthMul=boosting?1.35:1;
-  var outerCol=boosting?0xffb060:0x6fd8ff, innerCol=boosting?0xfff6d8:0xcfefff;
+  var flicker=1+Math.sin(performance.now()/70)*0.08;
+  var lenMul=t*(boosting?2.4:1)*flicker;
+  var widthMul=boosting?1.7:1;
+  var glowCol=boosting?ENGINE_GLOW_BOOST:ENGINE_GLOW_FLY;
+  var innerCol=boosting?ENGINE_FLAME_INNER_BOOST:ENGINE_FLAME_INNER_FLY;
+  if(mesh.userData.engineGlow)mesh.userData.engineGlow.forEach(function(g){
+    g.material.emissive.copy(glowCol);
+    g.material.emissiveIntensity=t*(boosting?2.6:1.3)*flicker;
+  });
   flames.forEach(function(f){
     f.outer.scale.set(widthMul,Math.max(0.05,lenMul),widthMul);
     f.inner.scale.set(widthMul,Math.max(0.05,lenMul*0.85),widthMul);
-    f.outer.material.opacity=0.5*t*(boosting?1.15:1);
-    f.inner.material.opacity=0.8*t*(boosting?1.15:1);
-    f.outer.material.color.setHex(outerCol);
-    f.inner.material.color.setHex(innerCol);
+    f.outer.material.opacity=0.5*t*(boosting?1.2:1);
+    f.inner.material.opacity=0.8*t*(boosting?1.2:1);
+    f.outer.material.color.copy(glowCol);
+    f.inner.material.color.copy(innerCol);
   });
 }
 function updateShipNavLights(mesh){
@@ -5401,6 +5407,28 @@ WORLDS.forEach(function(w){
   spaceScene.add(g);
   w.mesh=g;
 });
+/* planets used to have no collision at all — the ship could fly straight through the middle of a
+   world's own rendered sphere with nothing stopping it. Real 3D distance from the ship to each
+   world's center (planets sit at y=0, so this isn't just a flat x/z check) against that world's
+   own radius plus a small buffer for the ship's own hull, pushed back out along the same line the
+   ship came in on, with velocity bled off on impact so grazing a planet actually reads as hitting
+   something solid instead of just sliding along it. */
+var SHIP_COLLISION_PAD=30;
+function resolvePlanetCollision(pShip){
+  var all=WORLDS.concat([HOME_WORLD]);
+  for(var i=0;i<all.length;i++){
+    var w=all[i];
+    var dx=pShip.pos.x-w.sx, dy=pShip.pos.y, dz=pShip.pos.z-w.sz;
+    var d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    var minD=w.radius+SHIP_COLLISION_PAD;
+    if(d<minD){
+      if(d<0.001){ pShip.pos.y+=minD; continue; }
+      var push=(minD-d)/d;
+      pShip.pos.x+=dx*push; pShip.pos.y+=dy*push; pShip.pos.z+=dz*push;
+      pShip.vel.multiplyScalar(0.25);
+    }
+  }
+}
 var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null, landTransitioning=false;
 /* freeform landing: no aiming/lock-ring requirement — fly low and slow near a world and you
    settle onto it wherever you actually stopped, so you control where you touch down instead
@@ -5681,7 +5709,11 @@ function launchFromLandedShip(){
 
 function buildShipMesh(model){
   var g=new THREE.Group();
-  var accent=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x0d3a55,emissiveIntensity:1});
+  /* used to be a permanently-lit bright blue ball regardless of whether the engine was actually
+     doing anything — now a plain grey metal nozzle at rest, with updateEngineFlames driving its
+     emissive color/intensity up from nothing the moment the ship actually starts moving. */
+  var accent=new THREE.MeshStandardMaterial({color:0x34393f,roughness:0.45,metalness:0.35,
+    emissive:0x000000,emissiveIntensity:0});
   var canopyMat=new THREE.MeshStandardMaterial({color:0x0a1622,emissive:0x1a4a66,emissiveIntensity:0.7,
     roughness:0.15,metalness:0.6,transparent:true,opacity:0.92});
   function navLight(color){
@@ -6093,10 +6125,7 @@ function updateLaunchAnim(dt){
   pShip.mesh.position.y=pShip.pos.y+arc*3;
   pShip.mesh.rotation.y=pShip.yaw;
   pShip.mesh.rotation.x=-arc*0.2;
-  if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
-    g.material.emissiveIntensity=1+ease*3.2+Math.sin(performance.now()/55)*0.25;
-  });
-  updateEngineFlames(pShip.mesh,dt,true,t<0.75);
+  updateEngineFlames(pShip.mesh,dt,Math.max(0.4,ease),t<0.75);
   updateShipNavLights(pShip.mesh);
   if(pShip.mesh.userData.engineGlow&&Math.random()<0.85){
     var g=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
@@ -6113,10 +6142,14 @@ function updateLaunchAnim(dt){
   camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
   if(t>=1){
     launchAnim=null; state="space";
+    pShip.throttle=0.75;
     pShip.vel.copy(dir.multiplyScalar(pShip.spd*0.75));
-    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, W/S thrust, right-click to fire":"Defend the sector");
+    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, W/S/arrows/scroll for throttle, Q/E altitude, right-click to fire":"Defend the sector");
   }
 }
+/* how fast the throttle ramps per second of W/S (or the arrow-key equivalents) held down, and how
+   much a single scroll-wheel notch nudges it directly */
+var THROTTLE_RATE=0.7, THROTTLE_WHEEL_STEP=0.08;
 function updateSpace(dt){
   updateSpaceParts(dt);
   if(state==="launching"){ updateLaunchAnim(dt); return; }
@@ -6125,15 +6158,26 @@ function updateSpace(dt){
     var boosting=false, firing=false;
     if(landedPlanet){
       pShip.vel.set(0,0,0);
-      updateEngineFlames(pShip.mesh,dt,false,false);
+      updateEngineFlames(pShip.mesh,dt,0,false);
     } else {
       var pc=document.body.classList.contains("pc-mode");
       var fwd=0,strafe=0,turn=0;
       if(pc){
-        if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
         if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
         pShip.yaw+=turn*SHIP_TURN_RATE*dt;
         firing=mouse.downBtn===2;
+        /* W/S and the up/down arrows used to snap fwd straight to +1/-1/0 every frame, so the
+           ship was either at a dead stop or already at full (boosted or not) speed the instant a
+           key went down — no way to just cruise at, say, half throttle. They now ramp a
+           persistent throttle value up or down instead (the scroll wheel nudges the same value
+           directly, see the wheel listener), and that throttle is what actually drives velocity
+           below, so easing off doesn't cut speed to zero, it just eases the throttle back. */
+        pShip.throttle=pShip.throttle==null?0.75:pShip.throttle;
+        var throttleIn=0;
+        if(keys.w||keys.arrowup)throttleIn+=1;
+        if(keys.s||keys.arrowdown)throttleIn-=1;
+        pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,-1,1);
+        fwd=pShip.throttle;
       } else {
         if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
         if(keys.d||keys.arrowright)strafe+=1; if(keys.a||keys.arrowleft)strafe-=1;
@@ -6161,6 +6205,7 @@ function updateSpace(dt){
       if(keys.e)pShip.pos.y+=dt*vertSpd;
       var half=SPACE_SIZE/2;
       pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-1,HOME_COMBAT_Y+20);
+      resolvePlanetCollision(pShip);
 
       if(!pc){
         var aim=spaceAimPoint();
@@ -6181,28 +6226,34 @@ function updateSpace(dt){
          -> positive (nose down), so the pitch actually agrees with which way you're moving. */
       var targetPitch=((keys.e?1:0)-(keys.q?1:0))*-0.7;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
-      var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
-      updateEngineFlames(pShip.mesh,dt,moving,boosting);
+      /* the engine flame/glow used to just be on or off based on whether the ship was moving at
+         all — now it tracks actual current speed as a fraction of top speed, so easing the
+         throttle down visibly dims the flame back down instead of it staying pinned at full
+         brightness right up until the ship fully stops. */
+      var curSpeed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+      var speedFrac=clamp(curSpeed/spd,0,1);
+      var moving=curSpeed>1;
+      updateEngineFlames(pShip.mesh,dt,speedFrac,boosting);
       /* a few-unit, sub-half-scale particle trail was tuned for the original ~30-unit/sec, 1x
          scale ship — next to the current 3x-scale hull moving thousands of units a second it was
          basically invisible. Bigger, farther-flung, and more frequent so the engines actually
          read as doing something at this scale. Boosting now spawns a second particle on top of
          the higher chance/scale it already had, so the trail actually thickens instead of just
-         getting slightly bigger dots. */
-      if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.9:0.55)){
+         getting slightly bigger dots, and spawn chance itself now scales with speedFrac so a
+         light throttle trails only the occasional spark instead of a full stream. */
+      if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.9:0.55)*speedFrac){
         var burst=boosting?2:1;
         for(var bi=0;bi<burst;bi++){
           var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
           var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
           var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(18,44));
           eback.x+=rnd(-3,3); eback.y+=rnd(-3,3); eback.z+=rnd(-3,3);
-          spawnThrustParticle(ewp,eback,rnd(1.6,3.2)*(boosting?1.9:1),boosting?0xfff0c0:0x6fd8ff);
+          spawnThrustParticle(ewp,eback,rnd(1.6,3.2)*(boosting?1.9:1),boosting?0xff4fd8:0x6fd8ff);
         }
       }
     }
     pShip.mesh.position.copy(pShip.pos);
     if(!landedPlanet){ pShip.mesh.rotation.set(pShip.pitch||0,pShip.yaw,pShip.roll||0); }
-    pShip.mesh.userData.engineGlow.forEach(function(g){ g.material.emissiveIntensity=1+(boosting?1.2:0)+Math.sin(performance.now()/90)*0.15; });
     updateShipNavLights(pShip.mesh);
 
     pShip.cd-=dt;
@@ -6375,6 +6426,13 @@ window.addEventListener("keydown",function(e){
   if("wasd".indexOf(k)>=0||k===" ")e.preventDefault();
 });
 window.addEventListener("keyup",function(e){ keys[e.key.toLowerCase()]=0; });
+/* scroll wheel doubles as a throttle lever while actually piloting the ship in space — scoped to
+   state==="space" specifically so it never hijacks normal page/panel scrolling anywhere else */
+window.addEventListener("wheel",function(e){
+  if(state!=="space"||!pShip||!pShip.alive)return;
+  e.preventDefault();
+  pShip.throttle=clamp((pShip.throttle==null?0.75:pShip.throttle)+(e.deltaY<0?1:-1)*THROTTLE_WHEEL_STEP,-1,1);
+},{passive:false});
 
 function resetMovementKeys(){
   for(var k in keys)keys[k]=0;
@@ -7501,6 +7559,28 @@ var playerVelY=0, playerJumpY=0, playerGrounded=true;
 var interactPose=0, interactPoseT=0;
 function pulseInteractPose(){ interactPoseT=0.35; }
 var walkT=0;
+/* buildings used to have zero collision at all — walking straight through a Shipyard or a
+   Refinery looked broken next to how solid everything else in the scene reads. Plain circle-vs-
+   point collision against each building's own existing placement radius (already used for
+   spacing/overlap checks when placing) pushes the player back out along the line from the
+   building's center, which is enough for every free-standing machine/structure without needing
+   real per-shape hitboxes. Wall/window/door/railing panels are "edge" pieces mounted flush along
+   a grid line rather than free-standing blobs, and belts/cables are routing tools with no real
+   footprint, so both are skipped here — a circle doesn't fit either shape. */
+var PLAYER_RADIUS=0.55;
+function resolveBuildingCollision(px,pz){
+  for(var bi=0;bi<buildings.length;bi++){
+    var b=buildings[bi], def=BUILD_DEFS[b.type];
+    if(!def||def.edge||def.tool)continue;
+    var r=(def.radius||1.2)+PLAYER_RADIUS;
+    var dx=px-b.x, dz=pz-b.z, d=Math.sqrt(dx*dx+dz*dz);
+    if(d<r){
+      if(d<0.0001){ px+=r; }
+      else{ var push=(r-d)/d; px+=dx*push; pz+=dz*push; }
+    }
+  }
+  return {x:px,z:pz};
+}
 function updateSurface(dt){
   if(surfaceFlying){
     updateSurfaceFlight(dt);
@@ -7526,8 +7606,9 @@ function updateSurface(dt){
     var spd=PLAYER_SPD*(sprinting?1.6:1)*eq.spdMult;
     if(moving){
       mx/=m; mz/=m;
-      player.position.x+=mx*spd*dt;
-      player.position.z+=mz*spd*dt;
+      var pushed=resolveBuildingCollision(player.position.x+mx*spd*dt,player.position.z+mz*spd*dt);
+      player.position.x=pushed.x;
+      player.position.z=pushed.z;
       var targetAngle=Math.atan2(mx,mz);
       var da=targetAngle-player.rotation.y;
       while(da>Math.PI)da-=Math.PI*2; while(da<-Math.PI)da+=Math.PI*2;
@@ -7861,7 +7942,7 @@ window.__cq={
     return {doorMode:b.doorMode,doorOpenT:b.doorOpenT,_doorAnim:b._doorAnim,truthy:truthy,leafLx:lx,leafRx:rx};
   },
   debugCamInfo:function(){ return {pos:camera.position.toArray(),near:camera.near,far:camera.far,fov:camera.fov,fogNear:surfaceScene.fog?surfaceScene.fog.near:null,fogFar:surfaceScene.fog?surfaceScene.fog.far:null,fogColor:surfaceScene.fog?"#"+surfaceScene.fog.color.getHexString():null}; },
-  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null}; },
+  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null,throttle:pShip.throttle,glowEmissive:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?pShip.mesh.userData.engineGlow[0].material.emissiveIntensity:null,glowColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.emissive.getHexString():null,glowBaseColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.color.getHexString():null}; },
   debugCycleSnap:function(){ cycleSnapMult(); return snapMult; },
   debugBuildPlane:function(){ return {pos:buildPlaneMesh.position.toArray(), visible:buildPlaneMesh.visible, inScene:surfaceScene.children.indexOf(buildPlaneMesh)>=0}; },
   debugBuildingUnderScreen:function(sx,sy){ renderer.render(surfaceScene,camera); var b=buildingUnderScreen(sx,sy); return b?{id:b.id,type:b.type}:null; },
