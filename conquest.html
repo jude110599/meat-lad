@@ -284,6 +284,16 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   font-weight:800;line-height:1.15}
 .bpGridItem .qty{position:absolute;top:3px;right:5px;font-size:9.5px;font-weight:900;color:var(--amber2)}
 .bpGridItem.empty{opacity:.3}
+.bpGridItem[draggable="true"]{cursor:grab}
+.bpGridItem.dragOver{border-color:var(--accent,#7bd94a);box-shadow:0 0 0 2px var(--accent,#7bd94a) inset}
+/* Storage panel's two grids — bigger tiles than the compact Backpack side-panel version, since
+   this UI has a full card's width to spread out in and is meant to be the main "move stuff
+   around" screen rather than a quick glance */
+.stgSlots{grid-template-columns:repeat(4,1fr)}
+.stgSlots.dragOver{outline:2px dashed var(--accent,#7bd94a);outline-offset:4px;border-radius:10px}
+.stgSlots .bpGridItem{min-height:96px;padding:9px 4px}
+.stgSlots .bpGridItem svg,.stgSlots .bpGridItem img{width:60px;height:60px}
+.stgSlots .bpGridItem .nm{font-size:8.5px}
 /* wardrobe: one row per body-part slot, a native color input (themed to match everything
    else) plus a quick row of preset swatches so you don't have to open the picker every time */
 .wdSlot{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);
@@ -476,18 +486,18 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   </div>
 
   <div class="ovl hide" id="o-storage">
-    <div class="card c-green" style="max-width:640px">
+    <div class="card c-green" style="max-width:920px">
       <div class="cardHead"><button id="bStorageClose" class="clX">&times;</button><h2><i></i>Storage Container</h2><div class="panelTag">Logistics</div></div>
       <div class="cardBody">
         <div id="stgCap" class="metalline"></div>
-        <div style="display:flex;gap:16px;margin-top:10px">
+        <div style="display:flex;gap:22px;margin-top:12px">
           <div style="flex:1;min-width:0">
-            <div class="cat" style="margin:2px 2px 4px">Backpack — drag into the container</div>
-            <div class="bpGrid" id="stgPlayerGrid"></div>
+            <div class="cat" style="margin:2px 2px 6px">Backpack — drag into the container</div>
+            <div class="bpGrid stgSlots" id="stgPlayerGrid"></div>
           </div>
           <div style="flex:1;min-width:0">
-            <div class="cat" style="margin:2px 2px 4px">Container — drag into your backpack</div>
-            <div class="bpGrid" id="stgStoreGrid"></div>
+            <div class="cat" style="margin:2px 2px 6px">Container — drag into your backpack</div>
+            <div class="bpGrid stgSlots" id="stgStoreGrid"></div>
           </div>
         </div>
       </div>
@@ -613,8 +623,14 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.44.0";
+var VERSION="1.44.1";
 var CHANGELOG=[
+  {v:"1.44.1",t:"Fixed parked ship teleporting on reload, real drag-and-drop Storage, hid world edges",items:[
+    "Your parked ship's position was never actually saved — reloading fell back to wherever the player was last standing, so walking away from a landed ship before saving would make it \"teleport\" to your new spot on reload. Now saves and restores the ship's own resting position",
+    "Found why dragging into Storage never worked: the panel was quietly rebuilding its whole grid every 0.4 seconds while open, which destroys the exact element you're mid-drag on and silently kills the drop. Drag is now suppressed while an item's actually being dragged",
+    "Storage panel is bigger and fuller, with real empty slots shown on both sides (not just what's non-zero) so there's always a visible tile to drop onto",
+    "Extended each world's ground plate all the way out to its own fog distance, so the plate's actual edge is always fully fogged out before it comes into view instead of showing as a hard line against open space in the distance"
+  ]},
   {v:"1.44.0",t:"Weapon fire is finally visible, flight fixes, more room to approach a planet",items:[
     "Found the real reason weapon fire (Fighter included) looked broken: pBolts/eBolts were pure invisible data with no mesh ever created for them, on any ship, the entire time — added an actual glowing bolt mesh for both player and enemy fire, and widened the hit-detection radius so a bolt moving thousands of units/sec can't tunnel straight through a target between frames",
     "Q/E vertical thrust in space was accidentally set to 0.6x cruise speed — for a 5000+ speed ship that's 3000+ units/sec of vertical motion in one key press, which is what was actually behind the camera going crazy and the ship's motion not matching its visible tilt. Cut down to a much saner 0.05x",
@@ -2215,7 +2231,14 @@ var landingPodBeacon=null;
   WORLDS.forEach(function(w){
     var floorC=new THREE.Color(w.floor), midC=new THREE.Color(w.mid), rockC=new THREE.Color(w.rock);
     var seg=Math.max(20,Math.round(w.zoneR/3));
-    var wGeo=new THREE.PlaneGeometry(w.zoneR*2,w.zoneR*2,seg,seg);
+    /* the plate used to end exactly at zoneR*2 — well short of applyWorldAtmosphere's own fog
+       range (zoneR*2.6), so from any high vantage point (like the flight-in approach) you could
+       see the ground's actual geometric edge against open space past it. Extending the plate all
+       the way out to the fog's far distance means the ground is always fully fogged out before
+       its edge would ever come into view — same rock-colored falloff past buildR*1.6, just
+       carried out to where fog hides it instead of stopping short. */
+    var plateHalf=w.zoneR*2.6;
+    var wGeo=new THREE.PlaneGeometry(plateHalf*2,plateHalf*2,seg,seg);
     wGeo.rotateX(-Math.PI/2);
     var wpos=wGeo.attributes.position, wcol=new Float32Array(wpos.count*3);
     var buildR=worldBuildR(w);
@@ -4708,6 +4731,11 @@ function saveGame(){
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
       shipBuilt:shipBuilt, shipModelKey:shipModelKey, equipment:equipment, atOutpost:atOutpost,
       atWorldId:currentWorld?currentWorld.id:null,
+      /* a parked ship's own resting spot — restoring used to fall back to wherever the PLAYER
+         last stood, which was only ever actually correct the instant after touchDown() (which
+         plants the player right next to it). Walk away and save before reboarding and the ship
+         would "teleport" to your new position on reload instead of staying put. */
+      shipX:pShip?pShip.pos.x:null, shipZ:pShip?pShip.pos.z:null, shipYaw:pShip?pShip.yaw:null,
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
       unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets
     };
@@ -4830,13 +4858,17 @@ function applySaveData(data){
      an unset/default spot nowhere near the parked ship). */
   if(atOutpost&&shipModelKey){ player.visible=true; playerShadow.visible=true; }
   if(atOutpost&&shipModelKey){
+    /* prefer the ship's own saved resting spot — falling back to "near the player" only for
+       saves made before shipX/shipZ existed, which is only ever actually right the instant
+       after touchDown() and wrong the moment you walk off to do something else before saving */
+    var hasShipPos=isFinite(data.shipX)&&isFinite(data.shipZ);
     if(data.atWorldId){
       /* landed on one of the alien worlds */
       var restoreWorld=worldById(data.atWorldId)||WORLDS[0];
       currentWorld=restoreWorld; surfaceFlying=false;
-      var rgx=validSpawn(data.player)?data.player.x:restoreWorld.cx;
-      var rgz=validSpawn(data.player)?data.player.z-2.6:restoreWorld.cz;
-      restoreLandedShip(restoreWorld,rgx,rgz);
+      var rgx=hasShipPos?data.shipX:(validSpawn(data.player)?data.player.x:restoreWorld.cx);
+      var rgz=hasShipPos?data.shipZ:(validSpawn(data.player)?data.player.z-2.6:restoreWorld.cz);
+      restoreLandedShip(restoreWorld,rgx,rgz,data.shipYaw);
       syncBuildPlane(restoreWorld);
       applyWorldAtmosphere(restoreWorld);
       if(restoreWorld.hasHive)$("hiveHud").classList.remove("hide");
@@ -4845,24 +4877,24 @@ function applySaveData(data){
          never a member of WORLDS so it never had an id to save here) */
       currentWorld=null; surfaceFlying=false;
       var sp=homeSpawnPoint();
-      var rgx=validSpawn(data.player)?data.player.x:sp.x;
-      var rgz=validSpawn(data.player)?data.player.z-2.6:sp.z;
-      restoreLandedShip(null,rgx,rgz);
+      var rgx=hasShipPos?data.shipX:(validSpawn(data.player)?data.player.x:sp.x);
+      var rgz=hasShipPos?data.shipZ:(validSpawn(data.player)?data.player.z-2.6:sp.z);
+      restoreLandedShip(null,rgx,rgz,data.shipYaw);
       syncBuildPlane(null);
       restoreHomeAtmosphere();
     }
   }
 }
-function restoreLandedShip(world,gx,gz){
+function restoreLandedShip(world,gx,gz,yaw){
   var stats=SHIP_STATS[shipModelKey];
   pShip={
-    pos:new THREE.Vector3(gx,terrainHeight(gx,gz)+(stats.clearance!=null?stats.clearance:0.5),gz), vel:new THREE.Vector3(0,0,0), yaw:Math.PI,
+    pos:new THREE.Vector3(gx,terrainHeight(gx,gz)+(stats.clearance!=null?stats.clearance:0.5),gz), vel:new THREE.Vector3(0,0,0), yaw:yaw!=null?yaw:Math.PI,
     hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
     spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0, weapon:stats.weapon||"bolt",
     alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
   };
   surfaceScene.add(pShip.mesh);
-  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(-0.32,0,0);
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
   landedPlanet=world; landProgress=0; landedNormal=new THREE.Vector3(0,1,0);
 }
 function loadGame(){
@@ -6575,6 +6607,11 @@ function closeStorage(){
   if(storageTarget)storageTarget.doorTarget=0;
   state="surface"; $("o-storage").classList.add("hide"); storageTarget=null;
 }
+/* while a real HTML5 drag is in progress, the 0.4s panelRefreshT auto-refresh (see the main
+   frame loop) was rebuilding this whole grid's innerHTML mid-gesture — which destroys the very
+   element being dragged and silently kills the drop. stgDragging suppresses that refresh for
+   the duration of a drag. */
+var stgDragging=false;
 function renderStorage(){
   var b=storageTarget; if(!b||buildings.indexOf(b)<0){ closeStorage(); return; }
   var accepts=BUILD_DEFS.storage.accepts;
@@ -6583,42 +6620,45 @@ function renderStorage(){
   $("stgCap").innerHTML='<span>'+Math.floor(used)+' / '+(cap*accepts.length)+' stored</span>'+
     '<button class="hudbtn" id="bStoreAll">Store All</button>'+
     '<button class="hudbtn accent" id="bTakeAll">Take All</button>';
-  /* both sides are the same icon-grid the Backpack panel uses, side by side, so moving stuff
-     between them is one drag instead of hunting through a scrolling text list — click still
-     works too (moves the whole stack), for touch or just not wanting to drag */
-  var carried=Object.keys(RES).filter(function(k){ return (stock[k]||0)>0; });
-  $("stgPlayerGrid").innerHTML=carried.length?carried.map(function(k){
-    var canStore=accepts.indexOf(k)>=0;
-    return '<div class="bpGridItem'+(canStore?"":" empty")+'" draggable="true" data-res="'+k+'" data-side="player" title="'+(canStore?"Drag into the container":"This container can't hold this")+'">'+
-      '<span class="qty">'+Math.floor(stock[k]||0)+'</span>'+(RES_MODEL_ICONS[k]||RES_ICONS[k])+'<span class="nm">'+RES[k].nm+'</span></div>';
-  }).join(''):'<div class="metalline">Not carrying anything.</div>';
-  var stored=accepts.filter(function(k){ return (b.in[k]||0)>0; });
-  $("stgStoreGrid").innerHTML=stored.length?stored.map(function(k){
-    return '<div class="bpGridItem" draggable="true" data-res="'+k+'" data-side="storage" title="Drag into your backpack">'+
-      '<span class="qty">'+Math.floor(b.in[k]||0)+' / '+cap+'</span>'+(RES_MODEL_ICONS[k]||RES_ICONS[k])+'<span class="nm">'+RES[k].nm+'</span></div>';
-  }).join(''):'<div class="metalline">Nothing stored here yet.</div>';
+  /* both sides always show every slot (empty ones dimmed) instead of only what's non-zero, so
+     there's always a real tile to see and drop onto instead of an empty grid with nothing to
+     aim at — the same "always show every slot" pattern the Backpack panel already uses */
+  $("stgPlayerGrid").innerHTML=Object.keys(RES).map(function(k){
+    var qty=Math.floor(stock[k]||0), canStore=accepts.indexOf(k)>=0, has=qty>0;
+    return '<div class="bpGridItem'+(has?"":" empty")+'" draggable="'+(has?"true":"false")+'" data-res="'+k+'" data-side="player" title="'+(has?(canStore?"Drag into the container":"This container can't hold this"):RES[k].nm)+'">'+
+      (has?'<span class="qty">'+qty+'</span>':'')+(RES_MODEL_ICONS[k]||RES_ICONS[k])+'<span class="nm">'+RES[k].nm+'</span></div>';
+  }).join('');
+  $("stgStoreGrid").innerHTML=accepts.map(function(k){
+    var qty=Math.floor(b.in[k]||0), has=qty>0;
+    return '<div class="bpGridItem'+(has?"":" empty")+'" draggable="'+(has?"true":"false")+'" data-res="'+k+'" data-side="storage" title="'+(has?"Drag into your backpack":RES[k].nm)+'">'+
+      (has?'<span class="qty">'+qty+' / '+cap+'</span>':'')+(RES_MODEL_ICONS[k]||RES_ICONS[k])+'<span class="nm">'+RES[k].nm+'</span></div>';
+  }).join('');
   var playerItems=$("stgPlayerGrid").querySelectorAll("[data-res]");
   for(var i=0;i<playerItems.length;i++)(function(el){
     var k=el.getAttribute("data-res");
-    el.onclick=function(){ if(accepts.indexOf(k)<0){ toast("This container can't hold that"); return; } storageStore(b,k); sfx.click(); renderStorage(); };
-    el.addEventListener("dragstart",function(e){ e.dataTransfer.setData("text/plain",k+"|player"); });
+    el.onclick=function(){ if((stock[k]||0)<=0)return; if(accepts.indexOf(k)<0){ toast("This container can't hold that"); return; } storageStore(b,k); sfx.click(); renderStorage(); };
+    el.addEventListener("dragstart",function(e){ stgDragging=true; e.dataTransfer.setData("text/plain",k+"|player"); });
+    el.addEventListener("dragend",function(){ stgDragging=false; });
   })(playerItems[i]);
   var storeItems=$("stgStoreGrid").querySelectorAll("[data-res]");
   for(var j=0;j<storeItems.length;j++)(function(el){
     var k=el.getAttribute("data-res");
-    el.onclick=function(){ storageTake(b,k); sfx.click(); renderStorage(); };
-    el.addEventListener("dragstart",function(e){ e.dataTransfer.setData("text/plain",k+"|storage"); });
+    el.onclick=function(){ if((b.in[k]||0)<=0)return; storageTake(b,k); sfx.click(); renderStorage(); };
+    el.addEventListener("dragstart",function(e){ stgDragging=true; e.dataTransfer.setData("text/plain",k+"|storage"); });
+    el.addEventListener("dragend",function(){ stgDragging=false; });
   })(storeItems[j]);
   var pg=$("stgPlayerGrid"), sg=$("stgStoreGrid");
-  pg.ondragover=function(e){ e.preventDefault(); };
+  pg.ondragover=function(e){ e.preventDefault(); pg.classList.add("dragOver"); };
+  pg.ondragleave=function(){ pg.classList.remove("dragOver"); };
   pg.ondrop=function(e){
-    e.preventDefault();
+    e.preventDefault(); pg.classList.remove("dragOver"); stgDragging=false;
     var data=(e.dataTransfer.getData("text/plain")||"").split("|");
     if(data[1]==="storage"){ storageTake(b,data[0]); sfx.click(); renderStorage(); }
   };
-  sg.ondragover=function(e){ e.preventDefault(); };
+  sg.ondragover=function(e){ e.preventDefault(); sg.classList.add("dragOver"); };
+  sg.ondragleave=function(){ sg.classList.remove("dragOver"); };
   sg.ondrop=function(e){
-    e.preventDefault();
+    e.preventDefault(); sg.classList.remove("dragOver"); stgDragging=false;
     var data=(e.dataTransfer.getData("text/plain")||"").split("|");
     if(data[1]==="player"){
       if(accepts.indexOf(data[0])<0){ toast("This container can't hold that"); return; }
@@ -7390,7 +7430,7 @@ function frame(now){
       if(panelRefreshT<=0){
         panelRefreshT=0.4;
         if(state==="machine"&&document.activeElement.id!=="mchTargetQty")renderMachine();
-        if(state==="storage")renderStorage();
+        if(state==="storage"&&!stgDragging)renderStorage();
         if(state==="build"){ renderBuildResources(); refreshBuildGridLive(); renderBuildDetail(); }
         if(state==="shipyard")renderShipyard();
       }
