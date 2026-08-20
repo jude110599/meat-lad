@@ -604,8 +604,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.38.1";
+var VERSION="1.39.0";
 var CHANGELOG=[
+  {v:"1.39.0",t:"Fixed the whole game being way too dark — this is why everything looked bad",items:[
+    "The surface scene's lighting was tuned so low that almost nothing actually read on screen — every building's detail (bolt rows, pipes, gauges, hazard stripes) was there all along, just invisible in the dark. Ambient, sun, and fill lighting were all boosted a lot, plus a proper filmic tone-map on the renderer so buildings, terrain, and (this was very likely also why the other planets' ore looked missing) ore nodes are all actually visible now",
+    "Every world's own sun brightness was scaled up to match, so landing elsewhere doesn't suddenly go dim again"
+  ]},
   {v:"1.38.1",t:"Storage now only lists what's actually in it",items:[
     "The Storage panel's container list used to show every resource type it could ever accept, most of them sitting at 0 — it now only lists what's actually stored, with a small note when it's empty"
   ]},
@@ -1019,6 +1023,14 @@ var renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,powerPreference:"
 renderer.setPixelRatio(DPR);
 renderer.setSize(W,H);
 renderer.outputColorSpace=THREE.SRGBColorSpace;
+/* every building/ship model already carries real detail (bolt rows, pipes, gauges, hazard
+   stripes...) but with no tone mapping curve the whole scene rendered dim and flat — PBR
+   materials lit mostly by moderate ambient/directional light clip harshly under plain sRGB
+   output instead of rolling off smoothly, so none of that detail actually read on screen.
+   ACES filmic tone mapping is the standard fix: it lifts midtones and adds contrast/color
+   punch without having to individually retune every light and material in the game. */
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.3;
 
 /* far plane bumped to comfortably cover the bigger SPACE_SIZE's farthest starfield/nebula decor
    (up to SPACE_SIZE*1.95) now that worlds are spread much farther apart */
@@ -1047,14 +1059,19 @@ var SKY_LOW=0x3a1f28, SKY_HIGH=0x140a2e;
 surfaceScene.background=new THREE.Color(SKY_LOW);
 surfaceScene.fog=new THREE.Fog(SKY_LOW,140,620);
 
-var ambient=new THREE.AmbientLight(0x8f7dc9,0.55);
+/* the ground/building palette (see groundGeo's dirt/grass/rock colors and every building's dark
+   steel/plate materials below) is deliberately dark and earthy, but the old light levels here
+   were tuned so low the whole scene read as near-black — none of the buildings' actual detail
+   (bolt rows, pipes, gauges, hazard stripes) was visible at all. Bumped every light here well up
+   so the scene actually reads instead of just being a silhouette. */
+var ambient=new THREE.AmbientLight(0x9f92d4,3.0);
 surfaceScene.add(ambient);
-var sun=new THREE.DirectionalLight(0xffc9a0,1.2);
+var sun=new THREE.DirectionalLight(0xffd9b0,4.5);
 sun.position.set(120,160,70);
 surfaceScene.add(sun);
-var fillLight=new THREE.HemisphereLight(0x5a4a9a,0x3a1c2c,0.6);
+var fillLight=new THREE.HemisphereLight(0x8a7ac9,0x4a2c3c,1.2);
 surfaceScene.add(fillLight);
-var rimLight=new THREE.DirectionalLight(0xb060ff,0.55);
+var rimLight=new THREE.DirectionalLight(0xb060ff,0.5);
 rimLight.position.set(-140,90,-110);
 surfaceScene.add(rimLight);
 
@@ -1103,21 +1120,21 @@ var WORLDS=[
     cx:20000,cz:20000,zoneR:300,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",ore2:"ice_core",ore2Nm:"Ice Core",decor:"ice",
-    sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:1.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
+    sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:4.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false,hasRing:true },
   { id:"ember", nm:"Ember Reach",
     sx:-1300,sz:1300,radius:130,col:0xaa3020,atmoCol:0xff6a2a,ringCol:0x5a2010,
     cx:-20000,cz:20000,zoneR:300,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
     ore:"magma_shard",oreNm:"Magma Shard",ore2:"sulfur_vein",ore2Nm:"Sulfur Vein",decor:"volcanic",
-    sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:1.3,rimCol:0xff5020,ambCol:0x8a3a1a},
+    sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:4.9,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false,hasRing:false },
   { id:"verdance", nm:"Verdant Hollow",
     sx:-1300,sz:-1300,radius:120,col:0x2a7a3a,atmoCol:0x6aff8a,ringCol:0x1a4a2a,
     cx:-20000,cz:-20000,zoneR:300,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
-    sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:1.0,rimCol:0x40ff90,ambCol:0x2a6a3a},
+    sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:3.75,rimCol:0x40ff90,ambCol:0x2a6a3a},
     discovered:false,hasHive:true,hasRing:false }
 ];
 var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:70,isHome:true,discovered:true};
@@ -1202,7 +1219,7 @@ function restoreHomeAtmosphere(){
   surfaceScene.fog.color.set(SKY_LOW);
   surfaceScene.fog.near=140; surfaceScene.fog.far=620;
   paintSkybox(SKY_HIGH,0x7a3a3a,0x4a2030);
-  sun.color.set(0xffc9a0); sun.intensity=1.2;
+  sun.color.set(0xffc9a0); sun.intensity=4.5;
   rimLight.color.set(0xb060ff);
   ambient.color.set(0x8f7dc9);
 }
