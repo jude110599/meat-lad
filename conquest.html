@@ -623,8 +623,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.45.3";
+var VERSION="1.45.4";
 var CHANGELOG=[
+  {v:"1.45.4",t:"Fixed Q/E pitch direction in space, proximity lock-on landing, diagonal arrival glide",items:[
+    "In space, E (climb) was pitching the nose down while the ship actually rose, and Q (descend) pitched it up — exactly backwards, and disorienting since the tilt never matched which way you were actually moving. Fixed the sign so climbing noses up and descending noses down, matching low-altitude flight's convention",
+    "Landing on a world required flying near it AND already being at near-zero altitude AND under 3 units/sec, all at once — since the lock-on ring itself only appeared deep inside that same near range, in practice you had to basically fly into the planet just to get the prompt to start counting down. Landing now locks on from proximity alone: get within range at any altitude or speed and it locks on and takes you down, no more fiddly last-second altitude/speed threading",
+    "The glide down to a world's surface only ever moved the ship straight down — x/z never changed, so despite spawning hundreds of units up it was a dead-vertical drop with zero forward motion, reading as plummeting rather than flying in even though the ship wasn't tilted at all. It now spawns behind its own facing and eases in on a real diagonal path, and since forward motion sells the descent by itself now, the drop height came down a lot too"
+  ]},
   {v:"1.45.3",t:"Real engine flames while flying, dramatically hotter effects on boost",items:[
     "The only sign the engines were doing anything used to be a small idle glow ball plus occasional random particle puffs — between puffs it read as static. Every ship now has an actual flame at each nozzle (a soft outer flame plus a hot inner core) that eases up to full length the moment you're moving and settles back to a dim flicker at idle",
     "Boosting now visibly transforms the engines instead of just moving faster: the flames stretch further, flare wider, and shift from cool blue-white to a hot orange-gold, the particle trail spawns twice as many streaks, and the camera's field of view widens for a few seconds — the classic everything-rushing-past push that sells speed better than a bigger trail alone"
@@ -1606,12 +1611,14 @@ function chaseCamTo(camTarget,dt,maxLag){
 }
 function updateArrivalAnim(dt){
   var a=arrivalAnim; a.t+=dt;
-  /* was an ease-OUT cubic, which moves fastest the instant t=0 and only slows down after — since
-     the ship spawns 900 units up and this curve front-loads all its speed at the very start, it
-     read as spawning in the air and immediately plummeting rather than gliding down. Smoothstep
-     eases in AND out, so the descent ramps up gently instead of starting at full speed. */
+  /* smoothstep eases in AND out, so the glide ramps up gently instead of starting at full speed
+     the instant the ship spawns in. x/z now ease toward the landing spot the same way y does —
+     this used to only touch pos.y, which made "descending from altitude" a dead-straight vertical
+     drop with zero forward motion, reading as plummeting rather than flying in. */
   var t=clamp(a.t/a.dur,0,1), ease=t*t*(3-2*t);
+  pShip.pos.x=a.fromX+(a.toX-a.fromX)*ease;
   pShip.pos.y=a.fromY+(a.toY-a.fromY)*ease;
+  pShip.pos.z=a.fromZ+(a.toZ-a.fromZ)*ease;
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(Math.min(0.5,(1-t)*0.5),pShip.yaw,0);
   if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
@@ -1623,10 +1630,6 @@ function updateArrivalAnim(dt){
     var streakPos=pShip.pos.clone(); streakPos.y+=1.2;
     spawnSurfaceParticle(streakPos,new THREE.Vector3(rnd(-0.6,0.6),9+rnd(0,3),rnd(-0.6,0.6)),rnd(0.4,0.8),0x9fd8ff);
   }
-  /* the ship can fall hundreds of units in a single burst early in this ease-out curve — the old
-     13-unit-back/dt*4 chase cam couldn't remotely keep up with that, so it lagged behind, ended
-     up clipping into (or behind) the ship's own now-3x-scale hull, and made the whole multi-
-     second glide down read as a confusing instant snap instead of an actual descent. */
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*38,18,-Math.cos(pShip.yaw)*38);
   chaseCamTo(new THREE.Vector3().copy(pShip.pos).add(camOff),dt,16);
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
@@ -5408,7 +5411,7 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null, la
    into the sphere just to get the landing prompt to start counting down. It's the margin OUTSIDE
    the radius where you're considered close enough to land, so it needs to be a real fraction of
    the radius itself at this scale, not a small fixed number. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=4500, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_MULT=4.5;
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=4500, LAND_SHOW_MULT=4.5;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   /* plain nearest-neighbor among home and every world, each with the same show radius — whoever
@@ -5449,15 +5452,17 @@ function updatePlanetTargeting(dt){
   }
   var dx=target.sx-pShip.pos.x, dz=target.sz-pShip.pos.z;
   var dist=Math.sqrt(dx*dx+dz*dz);
-  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
   /* a fixed additive pad doesn't scale with how big any given world actually is — ember's own
      radius (5850) already dwarfed the old +4500 pad, so "near" still only kicked in once you
      were nearly on top of the visible surface. A multiplier of the world's own radius scales
      automatically no matter how big a particular world (or a future one) ends up being. */
   var near=dist<target.radius*2.4;
-  var lowEnough=pShip.pos.y<LAND_MAX_ALT;
-  var slow=speed<LAND_MAX_SPEED;
-  var settling=near&&lowEnough&&slow;
+  /* used to also require low altitude and slow speed before the lock-on timer would even start
+     filling — since the ring only appeared once you were already inside that same near range,
+     in practice you had to thread both gates at once while basically on top of the planet, which
+     read as having to fly into it. Proximity alone now drives the lock-on: get within range and
+     it starts locking on, no separate altitude/speed fiddling required. */
+  var settling=near;
   landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
   if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
@@ -5467,10 +5472,8 @@ function updatePlanetTargeting(dt){
     elTarget.style.left=sx+"px"; elTarget.style.top=sy+"px";
     var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
     var hint="";
-    if(settling)hint=" — TOUCHING DOWN";
-    else if(near&&!lowEnough)hint=" — DESCEND (Q)";
-    else if(near&&!slow)hint=" — SLOW DOWN TO LAND";
-    else if(!near)hint=" — FLY CLOSER TO LAND";
+    if(settling)hint=" — LOCKING ON";
+    else hint=" — FLY CLOSER TO LAND";
     elTarget.querySelector(".ptName").textContent=nameTxt+hint;
     elTarget.querySelector(".ptRing").style.background=
       "conic-gradient(var(--green) "+(landProgress*360)+"deg, rgba(255,255,255,.18) 0deg)";
@@ -5524,6 +5527,26 @@ function landOnPlanet(world){
   sfx.build();
   fadeTransition(function(){ enterSurfaceFlight(world); landTransitioning=false; },550);
 }
+/* the descent used to only ever touch pShip.pos.y — x/z sat completely fixed at the landing spot
+   the whole time, so "gliding down from altitude" was actually a dead-straight vertical drop with
+   no forward motion at all, which read as plummeting rather than flying in. Spawning behind the
+   ship's own facing and letting updateArrivalAnim ease x/z in step with y gives it a real diagonal
+   glide path — and since forward motion now sells the "coming in to land" feeling by itself, the
+   drop no longer needs hundreds of units of empty air above the landing spot to read as a real
+   descent, so the spawn height came down a lot too. */
+function beginArrivalDescent(gx,gz,hoverY,worldBounds){
+  var descHeight=140, descDist=170;
+  var dirX=Math.sin(pShip.yaw), dirZ=Math.cos(pShip.yaw);
+  var startX=gx-dirX*descDist, startZ=gz-dirZ*descDist;
+  if(worldBounds){
+    startX=clamp(startX,worldBounds.cx-worldBounds.wr,worldBounds.cx+worldBounds.wr);
+    startZ=clamp(startZ,worldBounds.cz-worldBounds.wr,worldBounds.cz+worldBounds.wr);
+  }
+  pShip.pos.set(startX,hoverY+descHeight,startZ);
+  pShip.mesh.position.copy(pShip.pos);
+  pShip.mesh.rotation.set(0,pShip.yaw,0);
+  arrivalAnim={t:0,dur:1.8,fromX:startX,fromY:pShip.pos.y,fromZ:startZ,toX:gx,toY:hoverY,toZ:gz};
+}
 function enterSurfaceFlight(world){
   if(!pShip)return;
   forceCloseMenus();
@@ -5533,14 +5556,9 @@ function enterSurfaceFlight(world){
   var ox=lastLandOffset.x, oz=lastLandOffset.z;
   var gx=world.cx+ox, gz=world.cz+oz;
   var hoverY=terrainHeight(gx,gz)+9;
-  /* used to drop in from only 58 units up, barely a hop at this scale — now genuinely glides
-     down from altitude so arriving at a world actually reads as an approach, not a pop-in */
-  pShip.pos.set(gx,hoverY+900,gz);
   pShip.vel.set(0,0,0);
-  pShip.mesh.position.copy(pShip.pos);
-  pShip.mesh.rotation.set(0,pShip.yaw,0);
   atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
-  arrivalAnim={t:0,dur:3.2,fromY:pShip.pos.y,toY:hoverY};
+  beginArrivalDescent(gx,gz,hoverY,{cx:world.cx,cz:world.cz,wr:world.zoneR-3});
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(world);
   applyWorldAtmosphere(world);
@@ -5588,12 +5606,9 @@ function enterHomeSurfaceFlight(){
   surfaceScene.add(pShip.mesh);
   var sp=homeSpawnPoint();
   var hoverY=terrainHeight(sp.x,sp.z)+9;
-  pShip.pos.set(sp.x,hoverY+900,sp.z);
   pShip.vel.set(0,0,0);
-  pShip.mesh.position.copy(pShip.pos);
-  pShip.mesh.rotation.set(0,pShip.yaw,0);
   atOutpost=true; currentWorld=null; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
-  arrivalAnim={t:0,dur:3.2,fromY:pShip.pos.y,toY:hoverY};
+  beginArrivalDescent(sp.x,sp.z,hoverY,null);
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(null);
   restoreHomeAtmosphere();
@@ -6159,9 +6174,12 @@ function updateSpace(dt){
          (climb -> negative pitch) convention low-altitude surface flight already uses, instead
          of the ship staying dead level while silently sliding up and down */
       pShip.pitch=pShip.pitch==null?0:pShip.pitch;
-      /* was backwards — E (climb) was tilting the nose the way Q (descend) should, and vice
-         versa, so the tilt direction never matched which way you were actually moving */
-      var targetPitch=((keys.q?1:0)-(keys.e?1:0))*-0.7;
+      /* this had q and e on the wrong sides of the subtraction — E (climb, pos.y increasing)
+         was producing a POSITIVE pitch, which is the nose-down "diving" pose used elsewhere in
+         this file (see the arrival glide), so climbing visibly dipped the nose while the ship
+         rose. Swapped to match surface flight's convention: climb -> negative (nose up), descend
+         -> positive (nose down), so the pitch actually agrees with which way you're moving. */
+      var targetPitch=((keys.e?1:0)-(keys.q?1:0))*-0.7;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
       updateEngineFlames(pShip.mesh,dt,moving,boosting);
