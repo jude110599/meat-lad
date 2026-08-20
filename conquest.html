@@ -623,8 +623,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.45.2";
+var VERSION="1.45.3";
 var CHANGELOG=[
+  {v:"1.45.3",t:"Real engine flames while flying, dramatically hotter effects on boost",items:[
+    "The only sign the engines were doing anything used to be a small idle glow ball plus occasional random particle puffs — between puffs it read as static. Every ship now has an actual flame at each nozzle (a soft outer flame plus a hot inner core) that eases up to full length the moment you're moving and settles back to a dim flicker at idle",
+    "Boosting now visibly transforms the engines instead of just moving faster: the flames stretch further, flare wider, and shift from cool blue-white to a hot orange-gold, the particle trail spawns twice as many streaks, and the camera's field of view widens for a few seconds — the classic everything-rushing-past push that sells speed better than a bigger trail alone"
+  ]},
   {v:"1.45.2",t:"Smoother planet arrival, faster surface flight, landing prompt reaches you sooner",items:[
     "Spawning in over a world dropped you 900 units up then eased out fast — full speed the instant you appeared, only slowing down near the ground — which read as spawning in the air and immediately plummeting. Switched to the same smooth ease-in/ease-out curve the actual touchdown already used, so the descent ramps up gently instead of starting at full plummet",
     "Low-altitude flight over a landed world's terrain was capped at 26-46 units/sec regardless of ship — way too slow next to how far you can see across a world. Roughly doubled every ship's surface speed",
@@ -1134,7 +1138,12 @@ renderer.toneMappingExposure=1.3;
    to flicker the planet's tightly-nested core/cloud/atmo shells at any real viewing distance.
    10/95000 is under a tenth of that ratio and nothing in this game is ever rendered closer than
    a few units from the camera anyway, so raising it costs nothing visually. */
-var camera=new THREE.PerspectiveCamera(58,W/H,10,430000);
+var BASE_FOV=58, BOOST_FOV=70;
+var camera=new THREE.PerspectiveCamera(BASE_FOV,W/H,10,430000);
+/* set true/false each frame from updateSpace while the ship is actually thrusting on boost — the
+   frame loop reads it to ease the camera's FOV wider, the classic "everything rushing past" push
+   that sells speed far better than a faster particle trail alone could. */
+var shipBoosting=false;
 
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
@@ -1608,6 +1617,7 @@ function updateArrivalAnim(dt){
   if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
     g.material.emissiveIntensity=1+(1-t)*2.8+Math.sin(performance.now()/55)*0.2;
   });
+  updateEngineFlames(pShip.mesh,dt,true,false);
   updateShipNavLights(pShip.mesh);
   if(Math.random()<0.7){
     var streakPos=pShip.pos.clone(); streakPos.y+=1.2;
@@ -1639,6 +1649,7 @@ function updateLandingAnim(dt){
   if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
     g.material.emissiveIntensity=1+(1-ease)*1.4+Math.sin(performance.now()/70)*0.15;
   });
+  updateEngineFlames(pShip.mesh,dt,t<0.8,false);
   if(Math.random()<0.5*(1-t))spawnSurfaceParticle(pShip.pos.clone(),new THREE.Vector3(rnd(-1,1),-1,rnd(-1,1)),rnd(0.3,0.5),0xcaa06a);
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
   chaseCamTo(new THREE.Vector3().copy(pShip.pos).add(camOff),dt,14);
@@ -1664,6 +1675,7 @@ function updateShipCrash(dt){
   if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
     g.material.emissiveIntensity=Math.max(0,g.material.emissiveIntensity-dt*1.5);
   });
+  updateEngineFlames(pShip.mesh,dt,false,false);
   if(Math.random()<0.8){
     var fireDir=new THREE.Vector3(rnd(-1.2,1.2),rnd(0.4,1.6),rnd(-1.2,1.2));
     spawnSurfaceParticle(pShip.mesh.position.clone(),fireDir,rnd(0.5,1.1),Math.random()<0.4?0xff5020:0x2a2a2a);
@@ -1749,6 +1761,7 @@ function updateSurfaceFlight(dt){
   var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
   if(pShip.mesh.userData.engineGlow){
     var moving=speed>1;
+    updateEngineFlames(pShip.mesh,dt,moving,false);
     pShip.mesh.userData.engineGlow.forEach(function(g){
       g.material.emissiveIntensity=1+(moving?0.6:0)+Math.sin(performance.now()/90)*0.15;
     });
@@ -5160,6 +5173,29 @@ function clearSpaceParts(){
   spaceParts.forEach(function(p){ spaceScene.remove(p.mesh); p.mesh.material.dispose(); });
   spaceParts=[];
 }
+/* eases each engine flame cone toward full length while actually flying and a dim idle flicker
+   otherwise, instead of hard-cutting between the two — same smoothing approach as the chase
+   camera and pitch/roll lerps elsewhere, just applied to the flame's own scale/opacity/color.
+   Boosting stretches and widens the flame further and shifts both cones to a hotter color, on
+   top of (not instead of) the existing particle-trail boost treatment. */
+function updateEngineFlames(mesh,dt,flying,boosting){
+  var flames=mesh&&mesh.userData.engineFlames; if(!flames||!flames.length)return;
+  mesh.userData.flameT=mesh.userData.flameT==null?0:mesh.userData.flameT;
+  var target=flying?1:0.18;
+  mesh.userData.flameT+=(target-mesh.userData.flameT)*Math.min(1,dt*8);
+  var t=mesh.userData.flameT;
+  var lenMul=t*(boosting?1.75:1)*(1+Math.sin(performance.now()/70)*0.08);
+  var widthMul=boosting?1.35:1;
+  var outerCol=boosting?0xffb060:0x6fd8ff, innerCol=boosting?0xfff6d8:0xcfefff;
+  flames.forEach(function(f){
+    f.outer.scale.set(widthMul,Math.max(0.05,lenMul),widthMul);
+    f.inner.scale.set(widthMul,Math.max(0.05,lenMul*0.85),widthMul);
+    f.outer.material.opacity=0.5*t*(boosting?1.15:1);
+    f.inner.material.opacity=0.8*t*(boosting?1.15:1);
+    f.outer.material.color.setHex(outerCol);
+    f.inner.material.color.setHex(innerCol);
+  });
+}
 function updateShipNavLights(mesh){
   if(!mesh||!mesh.userData.navLights)return;
   var blink=Math.sin(performance.now()/260)>0.3?1:0.15;
@@ -5800,6 +5836,28 @@ function buildShipMesh(model){
     g.userData.engineGlow=[glowL,glowR];
     g.userData.navLights=[navL,navR];
   }
+  /* continuous engine flame — before this the only sign of thrust was the small idle glow sphere
+     plus occasional randomly-spawned particle puffs, so between puffs the engines read as static.
+     A pair of cones (a soft outer flame, a hot inner core) parented at each nozzle and rotated to
+     point straight down the ship's own -Z axis rides along with the hull for free — no per-frame
+     orientation math needed, it just inherits the ship's rotation like any other child mesh.
+     updateEngineFlames animates their length/width/color every frame based on how fast the ship
+     is actually going and whether it's boosting. */
+  var flames=[];
+  (g.userData.engineGlow||[]).forEach(function(glow){
+    var outerMat=new THREE.MeshBasicMaterial({color:0x6fd8ff,transparent:true,opacity:0.5,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+    var outer=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.9,8,1,true),outerMat);
+    outer.rotation.x=-Math.PI/2; outer.position.copy(glow.position);
+    g.add(outer);
+    var innerMat=new THREE.MeshBasicMaterial({color:0xcfefff,transparent:true,opacity:0.8,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+    var inner=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.5,7,1,true),innerMat);
+    inner.rotation.x=-Math.PI/2; inner.position.copy(glow.position);
+    g.add(inner);
+    flames.push({outer:outer,inner:inner});
+  });
+  g.userData.engineFlames=flames;
   /* every ship read noticeably smaller than the player standing next to it, so pushed all four
      up to a full 3x — a Group transform carries all the children's local offsets along with it,
      so the extra greebles added above scale up cleanly with the rest of the hull */
@@ -6023,6 +6081,7 @@ function updateLaunchAnim(dt){
   if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
     g.material.emissiveIntensity=1+ease*3.2+Math.sin(performance.now()/55)*0.25;
   });
+  updateEngineFlames(pShip.mesh,dt,true,t<0.75);
   updateShipNavLights(pShip.mesh);
   if(pShip.mesh.userData.engineGlow&&Math.random()<0.85){
     var g=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
@@ -6046,10 +6105,12 @@ function updateLaunchAnim(dt){
 function updateSpace(dt){
   updateSpaceParts(dt);
   if(state==="launching"){ updateLaunchAnim(dt); return; }
+  shipBoosting=false;
   if(pShip&&pShip.alive){
     var boosting=false, firing=false;
     if(landedPlanet){
       pShip.vel.set(0,0,0);
+      updateEngineFlames(pShip.mesh,dt,false,false);
     } else {
       var pc=document.body.classList.contains("pc-mode");
       var fwd=0,strafe=0,turn=0;
@@ -6065,6 +6126,7 @@ function updateSpace(dt){
       }
       var mlen=Math.sqrt(fwd*fwd+strafe*strafe); if(mlen>1){fwd/=mlen;strafe/=mlen;}
       boosting=!!(keys[" "]||spaceBoostHeld);
+      shipBoosting=boosting;
       var spd=pShip.spd*(boosting?1.7:1);
       var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
                :new THREE.Vector3(strafe*spd,0,-fwd*spd);
@@ -6102,16 +6164,22 @@ function updateSpace(dt){
       var targetPitch=((keys.q?1:0)-(keys.e?1:0))*-0.7;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
+      updateEngineFlames(pShip.mesh,dt,moving,boosting);
       /* a few-unit, sub-half-scale particle trail was tuned for the original ~30-unit/sec, 1x
          scale ship — next to the current 3x-scale hull moving thousands of units a second it was
          basically invisible. Bigger, farther-flung, and more frequent so the engines actually
-         read as doing something at this scale. */
+         read as doing something at this scale. Boosting now spawns a second particle on top of
+         the higher chance/scale it already had, so the trail actually thickens instead of just
+         getting slightly bigger dots. */
       if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.9:0.55)){
-        var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
-        var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
-        var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(18,40));
-        eback.x+=rnd(-3,3); eback.y+=rnd(-3,3); eback.z+=rnd(-3,3);
-        spawnThrustParticle(ewp,eback,rnd(1.6,3.2)*(boosting?1.6:1),boosting?0xfff0c0:0x6fd8ff);
+        var burst=boosting?2:1;
+        for(var bi=0;bi<burst;bi++){
+          var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
+          var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
+          var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(18,44));
+          eback.x+=rnd(-3,3); eback.y+=rnd(-3,3); eback.z+=rnd(-3,3);
+          spawnThrustParticle(ewp,eback,rnd(1.6,3.2)*(boosting?1.9:1),boosting?0xfff0c0:0x6fd8ff);
+        }
       }
     }
     pShip.mesh.position.copy(pShip.pos);
@@ -7581,6 +7649,11 @@ function frame(now){
        band that's been sitting at the bottom of the screen this whole time. */
     var wantNear=spaceStates?10:0.3;
     if(camera.near!==wantNear){ camera.near=wantNear; camera.updateProjectionMatrix(); }
+    var wantFov=(spaceStates&&shipBoosting)?BOOST_FOV:BASE_FOV;
+    if(Math.abs(camera.fov-wantFov)>0.02){
+      camera.fov+=(wantFov-camera.fov)*Math.min(1,dt*7);
+      camera.updateProjectionMatrix();
+    }
     if(surfStates)renderer.render(surfaceScene,camera);
     else if(spaceStates)renderer.render(spaceScene,camera);
     else if(state==="title")updateTitleDiorama(dt);
@@ -7769,8 +7842,8 @@ window.__cq={
     if(ud.doorLeafR)rx=ud.doorLeafR.position.x;
     return {doorMode:b.doorMode,doorOpenT:b.doorOpenT,_doorAnim:b._doorAnim,truthy:truthy,leafLx:lx,leafRx:rx};
   },
-  debugCamInfo:function(){ return {pos:camera.position.toArray(),near:camera.near,far:camera.far,fogNear:surfaceScene.fog?surfaceScene.fog.near:null,fogFar:surfaceScene.fog?surfaceScene.fog.far:null,fogColor:surfaceScene.fog?"#"+surfaceScene.fog.color.getHexString():null}; },
-  debugShipFlight:function(){ if(!pShip)return null; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length}; },
+  debugCamInfo:function(){ return {pos:camera.position.toArray(),near:camera.near,far:camera.far,fov:camera.fov,fogNear:surfaceScene.fog?surfaceScene.fog.near:null,fogFar:surfaceScene.fog?surfaceScene.fog.far:null,fogColor:surfaceScene.fog?"#"+surfaceScene.fog.color.getHexString():null}; },
+  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null}; },
   debugCycleSnap:function(){ cycleSnapMult(); return snapMult; },
   debugBuildPlane:function(){ return {pos:buildPlaneMesh.position.toArray(), visible:buildPlaneMesh.visible, inScene:surfaceScene.children.indexOf(buildPlaneMesh)>=0}; },
   debugBuildingUnderScreen:function(sx,sy){ renderer.render(surfaceScene,camera); var b=buildingUnderScreen(sx,sy); return b?{id:b.id,type:b.type}:null; },
@@ -7809,7 +7882,7 @@ window.__cq={
       landed:landedPlanet?landedPlanet.id:null, landProgress:landProgress, atOutpost:atOutpost,
       currentWorld:currentWorld?currentWorld.id:null,
       hive:hiveRuntime?{alive:hiveRuntime.alive,hp:hiveRuntime.hp}:null, monsterCount:monsters.length,
-      playerHp:playerHp};
+      playerHp:playerHp, shipBoosting:shipBoosting};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
