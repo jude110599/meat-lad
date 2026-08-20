@@ -623,8 +623,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.44.1";
+var VERSION="1.44.2";
 var CHANGELOG=[
+  {v:"1.44.2",t:"Fixed the flight camera, Q/E tilt swap, and how far the landing circle reaches",items:[
+    "Q and E were swapped — climbing tilted the nose the way descending should, and descending tilted it the way climbing should",
+    "The landing-approach radius was a flat number added to a world's radius, so a bigger world (Ember Reach especially) could dwarf the pad and still make you fly almost onto the surface before \"near\" registered. It's now a straight multiple of that world's own radius, so it scales automatically no matter how big a given world is",
+    "Found why the flight camera clipped into and cut off the ship, and why the glide-down entrance didn't read as gradual: three separate camera-follow spots (world arrival, final touchdown, low-altitude flight) were still using an old, small 11-13 unit follow distance and a slow catch-up rate — nowhere near enough clearance for a ship that can fall 900 units in the first moment of the entrance glide. All five ship-following camera spots now use the same much larger distance and fast catch-up rate the interplanetary cruise camera already got fixed to"
+  ]},
   {v:"1.44.1",t:"Fixed parked ship teleporting on reload, real drag-and-drop Storage, hid world edges",items:[
     "Your parked ship's position was never actually saved — reloading fell back to wherever the player was last standing, so walking away from a landed ship before saving would make it \"teleport\" to your new spot on reload. Now saves and restores the ship's own resting position",
     "Found why dragging into Storage never worked: the panel was quietly rebuilding its whole grid every 0.4 seconds while open, which destroys the exact element you're mid-drag on and silently kills the drop. Drag is now suppressed while an item's actually being dragged",
@@ -1566,8 +1571,12 @@ function updateArrivalAnim(dt){
     var streakPos=pShip.pos.clone(); streakPos.y+=1.2;
     spawnSurfaceParticle(streakPos,new THREE.Vector3(rnd(-0.6,0.6),9+rnd(0,3),rnd(-0.6,0.6)),rnd(0.4,0.8),0x9fd8ff);
   }
-  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*13,7,-Math.cos(pShip.yaw)*13);
-  camera.position.lerp(new THREE.Vector3().copy(pShip.pos).add(camOff),Math.min(1,dt*4));
+  /* the ship can fall hundreds of units in a single burst early in this ease-out curve — the old
+     13-unit-back/dt*4 chase cam couldn't remotely keep up with that, so it lagged behind, ended
+     up clipping into (or behind) the ship's own now-3x-scale hull, and made the whole multi-
+     second glide down read as a confusing instant snap instead of an actual descent. */
+  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*38,18,-Math.cos(pShip.yaw)*38);
+  camera.position.lerp(new THREE.Vector3().copy(pShip.pos).add(camOff),Math.min(1,dt*24));
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
   if(t>=1){
     arrivalAnim=null;
@@ -1589,8 +1598,8 @@ function updateLandingAnim(dt){
     g.material.emissiveIntensity=1+(1-ease)*1.4+Math.sin(performance.now()/70)*0.15;
   });
   if(Math.random()<0.5*(1-t))spawnSurfaceParticle(pShip.pos.clone(),new THREE.Vector3(rnd(-1,1),-1,rnd(-1,1)),rnd(0.3,0.5),0xcaa06a);
-  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*11,6,-Math.cos(pShip.yaw)*11);
-  camera.position.lerp(new THREE.Vector3().copy(pShip.pos).add(camOff),Math.min(1,dt*5));
+  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
+  camera.position.lerp(new THREE.Vector3().copy(pShip.pos).add(camOff),Math.min(1,dt*24));
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
   if(t>=1){ landingAnim=null; touchDown(); }
 }
@@ -1711,9 +1720,9 @@ function updateSurfaceFlight(dt){
   }
   updateShipNavLights(pShip.mesh);
 
-  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*11,6,-Math.cos(pShip.yaw)*11);
+  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
   var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-  camera.position.lerp(camTarget,Math.min(1,dt*5));
+  camera.position.lerp(camTarget,Math.min(1,dt*24));
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
 
   pShip.cd-=dt;
@@ -5293,7 +5302,11 @@ function updatePlanetTargeting(dt){
   var dx=target.sx-pShip.pos.x, dz=target.sz-pShip.pos.z;
   var dist=Math.sqrt(dx*dx+dz*dz);
   var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
-  var near=dist<(target.radius+LAND_RANGE_PAD);
+  /* a fixed additive pad doesn't scale with how big any given world actually is — ember's own
+     radius (5850) already dwarfed the old +4500 pad, so "near" still only kicked in once you
+     were nearly on top of the visible surface. A multiplier of the world's own radius scales
+     automatically no matter how big a particular world (or a future one) ends up being. */
+  var near=dist<target.radius*2.4;
   var lowEnough=pShip.pos.y<LAND_MAX_ALT;
   var slow=speed<LAND_MAX_SPEED;
   var settling=near&&lowEnough&&slow;
@@ -5753,7 +5766,7 @@ function launchShip(){
   homeBase.hp=homeBase.maxhp;
   wave=0; waveState="clear"; waveTimer=4;
   closeShipyard();
-  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*14,7,-Math.cos(pShip.yaw)*14);
+  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
   camera.position.copy(pShip.pos).add(camOff);
   camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
   $("hud").classList.remove("show"); $("hudSpace").classList.add("show");
@@ -5907,7 +5920,7 @@ function updateLaunchAnim(dt){
     spawnThrustParticle(wp,back,rnd(0.4,0.85)*(0.6+ease),t<0.75?0xffcc66:0x9fd8ff);
   }
   updateSpaceParts(dt);
-  var camDist=14+ease*9, camHeight=7+ease*5;
+  var camDist=30+ease*20, camHeight=16+ease*8;
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*camDist,camHeight,-Math.cos(pShip.yaw)*camDist);
   var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
   /* the old dt*3.2 catch-up rate left the camera trailing the ship by (speed / rate) units at
@@ -5976,7 +5989,9 @@ function updateSpace(dt){
          (climb -> negative pitch) convention low-altitude surface flight already uses, instead
          of the ship staying dead level while silently sliding up and down */
       pShip.pitch=pShip.pitch==null?0:pShip.pitch;
-      var targetPitch=((keys.e?1:0)-(keys.q?1:0))*-0.4;
+      /* was backwards — E (climb) was tilting the nose the way Q (descend) should, and vice
+         versa, so the tilt direction never matched which way you were actually moving */
+      var targetPitch=((keys.q?1:0)-(keys.e?1:0))*-0.4;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
       /* a few-unit, sub-half-scale particle trail was tuned for the original ~30-unit/sec, 1x
@@ -6089,11 +6104,11 @@ function updateSpace(dt){
     var camOff, lookY;
     if(landedPlanet&&landedNormal){
       var back=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw));
-      camOff=new THREE.Vector3().addScaledVector(landedNormal,6.5).addScaledVector(back,7);
-      camOff.y+=3.5;
+      camOff=new THREE.Vector3().addScaledVector(landedNormal,16).addScaledVector(back,20);
+      camOff.y+=9;
       lookY=pShip.pos.y+1.2;
     } else {
-      camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*14,7,-Math.cos(pShip.yaw)*14);
+      camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
       lookY=pShip.pos.y+1;
     }
     var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
