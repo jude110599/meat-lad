@@ -613,8 +613,19 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.43.0";
+var VERSION="1.44.0";
 var CHANGELOG=[
+  {v:"1.44.0",t:"Weapon fire is finally visible, flight fixes, more room to approach a planet",items:[
+    "Found the real reason weapon fire (Fighter included) looked broken: pBolts/eBolts were pure invisible data with no mesh ever created for them, on any ship, the entire time — added an actual glowing bolt mesh for both player and enemy fire, and widened the hit-detection radius so a bolt moving thousands of units/sec can't tunnel straight through a target between frames",
+    "Q/E vertical thrust in space was accidentally set to 0.6x cruise speed — for a 5000+ speed ship that's 3000+ units/sec of vertical motion in one key press, which is what was actually behind the camera going crazy and the ship's motion not matching its visible tilt. Cut down to a much saner 0.05x",
+    "The landing approach radius only extended ~800 units past a planet's surface at a 5000+ unit radius, so you had to fly almost inside a planet before \"near\" ever registered — pushed out to 4500 so you can start your final approach from well outside the visible surface",
+    "Arriving at a world (or gliding home) now starts the descent from much higher up (900 units instead of 58), so it actually reads as a real approach at this scale instead of a short hop",
+    "touchDown() was hardcoding the ship's landing rotation to a fixed tilt and yaw of exactly 0, ignoring whichever way you actually flew in — ships now land flat, facing the direction you brought them in on",
+    "A save made mid-flight (surfaceFlying true — mid-glide-down, or just after boarding to take off) restores as if already landed, but never turned the player's model back on — fixed, so you don't come back invisible",
+    "Enemy ships were still built at their original pre-3x scale (a speck next to a real ship) — scaled up 5x for visibility and fairness",
+    "Beefed up the engine thrust particle trail (bigger, farther-flung, more frequent) — the old few-unit, sub-half-scale sparks were invisible next to the current ship scale and speed",
+    "Worlds spread another ~1.8x farther apart on top of the last pass, with ship speed/accel/bolt speed scaled to match"
+  ]},
   {v:"1.43.0",t:"Unique alien planets, redesigned home station, drag-and-drop Storage",items:[
     "Worlds are spread another ~3.5x farther apart, with ship speed/accel/bolt speed scaled to match so travel time doesn't balloon",
     "Every world used to be the same sphere-plus-clouds template just recolored — each now has its own real design: Vesta has jagged ice crystals jutting off the surface, Ember Reach is a cracked lava world with glowing fissures and eruption plumes instead of clouds, and Verdant Hollow has a hazy spore-cloud shell with a lumpy organic ring of growths instead of a clean planetary ring. All three got more vivid, alien colors too",
@@ -1081,7 +1092,7 @@ renderer.toneMappingExposure=1.3;
    to flicker the planet's tightly-nested core/cloud/atmo shells at any real viewing distance.
    10/95000 is under a tenth of that ratio and nothing in this game is ever rendered closer than
    a few units from the camera anyway, so raising it costs nothing visually. */
-var camera=new THREE.PerspectiveCamera(58,W/H,10,250000);
+var camera=new THREE.PerspectiveCamera(58,W/H,10,430000);
 
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
@@ -1163,21 +1174,21 @@ var WORLDS=[
     /* the space-view color used to be desert orange/tan while the actual ground (and its
        Frost Crystal/Ice Core ore) is an ice world — landing never matched what you flew
        toward. Recolored to the icy blue-white it actually is. */
-    sx:44100,sz:-34650,radius:4950,col:0xaef0ff,atmoCol:0x6fe8ff,ringCol:0x8fd9ff,
+    sx:79380,sz:-62370,radius:4950,col:0xaef0ff,atmoCol:0x6fe8ff,ringCol:0x8fd9ff,
     cx:20000,cz:20000,zoneR:300,
     floor:0xcfe8f0,mid:0x8fb8d8,rock:0x3a4a5e,
     ore:"frost_crystal",oreNm:"Frost Crystal",ore2:"ice_core",ore2Nm:"Ice Core",decor:"ice",
     sky:{low:0x18222c,high:0x0a1420,sunCol:0xbfe0ff,sunI:4.1,rimCol:0x6fd0ff,ambCol:0x6a8ab0},
     discovered:false,hasHive:false,hasRing:true },
   { id:"ember", nm:"Ember Reach",
-    sx:-40950,sz:40950,radius:5850,col:0xff2a10,atmoCol:0xff6600,ringCol:0x5a2010,
+    sx:-73710,sz:73710,radius:5850,col:0xff2a10,atmoCol:0xff6600,ringCol:0x5a2010,
     cx:-20000,cz:20000,zoneR:300,
     floor:0x6a2418,mid:0x3a1a14,rock:0x241210,
     ore:"magma_shard",oreNm:"Magma Shard",ore2:"sulfur_vein",ore2Nm:"Sulfur Vein",decor:"volcanic",
     sky:{low:0x3a1008,high:0x1a0604,sunCol:0xffb060,sunI:4.9,rimCol:0xff5020,ambCol:0x8a3a1a},
     discovered:false,hasHive:false,hasRing:false },
   { id:"verdance", nm:"Verdant Hollow",
-    sx:-40950,sz:-40950,radius:5400,col:0x1aff7a,atmoCol:0x50ffb0,ringCol:0x1a4a2a,
+    sx:-73710,sz:-73710,radius:5400,col:0x1aff7a,atmoCol:0x50ffb0,ringCol:0x1a4a2a,
     cx:-20000,cz:-20000,zoneR:300,
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
@@ -1557,7 +1568,7 @@ function updateLandingAnim(dt){
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
   pShip.pos.y=a.fromY+(a.toY-a.fromY)*ease;
   pShip.mesh.position.copy(pShip.pos);
-  pShip.mesh.rotation.set(a.fromTiltX+(-0.32-a.fromTiltX)*ease,pShip.yaw,0);
+  pShip.mesh.rotation.set(a.fromTiltX+(0-a.fromTiltX)*ease,pShip.yaw,0);
   if(pShip.mesh.userData.engineGlow)pShip.mesh.userData.engineGlow.forEach(function(g){
     g.material.emissiveIntensity=1+(1-ease)*1.4+Math.sin(performance.now()/70)*0.15;
   });
@@ -4811,6 +4822,13 @@ function applySaveData(data){
   (data.discoveredWorlds||[]).forEach(function(id){ var w=worldById(id); if(w)w.discovered=true; });
   atOutpost=!!data.atOutpost;
   syncBuildPlane(null);
+  /* a save made mid-flight (surfaceFlying true, mid-glide down or just after boarding to take
+     off) always restores as if you'd already landed and parked — but player.visible/playerShadow
+     were switched off for that flight and nothing here ever switched them back on, so reloading
+     one of those saves left the player permanently invisible, standing wherever their on-foot
+     position last was before boarding (which, for a world visited for the first time, could be
+     an unset/default spot nowhere near the parked ship). */
+  if(atOutpost&&shipModelKey){ player.visible=true; playerShadow.visible=true; }
   if(atOutpost&&shipModelKey){
     if(data.atWorldId){
       /* landed on one of the alien worlds */
@@ -4870,7 +4888,7 @@ function loadGame(){
 /* half of this must clear every world's position PLUS its own (now much bigger) atmo radius, or
    the ship-position clamp in updateSpace cuts off part of a planet's far side before you can
    actually fly all the way around it */
-var SPACE_SIZE=110000;
+var SPACE_SIZE=190000;
 var spaceScene=new THREE.Scene();
 spaceScene.background=new THREE.Color(0x030509);
 spaceScene.add(new THREE.AmbientLight(0x4a5a8a,0.6));
@@ -5202,7 +5220,12 @@ var landedPlanet=null, landProgress=0, landedNormal=null, currentTarget=null, la
    settle onto it wherever you actually stopped, so you control where you touch down instead
    of being funneled to a fixed spot. Moving fast or high near a world never triggers a landing,
    so you can freely buzz/bomb a world at low altitude without being forced to land on it. */
-var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=810, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=500;
+/* LAND_RANGE_PAD used to only add 810 on top of a 5000+ radius, so "near" only ever became true
+   once you were basically already at (or inside) the planet's visual surface — you had to fly
+   into the sphere just to get the landing prompt to start counting down. It's the margin OUTSIDE
+   the radius where you're considered close enough to land, so it needs to be a real fraction of
+   the radius itself at this scale, not a small fixed number. */
+var LAND_SETTLE_TIME=1.3, LAND_RANGE_PAD=4500, LAND_MAX_ALT=6, LAND_MAX_SPEED=3, LAND_SHOW_PAD=500;
 var lastLandOffset={x:0,z:0};
 function findNearestTarget(){
   /* plain nearest-neighbor among home and every world, each with the same show radius — whoever
@@ -5317,12 +5340,14 @@ function enterSurfaceFlight(world){
   var ox=lastLandOffset.x, oz=lastLandOffset.z;
   var gx=world.cx+ox, gz=world.cz+oz;
   var hoverY=terrainHeight(gx,gz)+9;
-  pShip.pos.set(gx,hoverY+58,gz);
+  /* used to drop in from only 58 units up, barely a hop at this scale — now genuinely glides
+     down from altitude so arriving at a world actually reads as an approach, not a pop-in */
+  pShip.pos.set(gx,hoverY+900,gz);
   pShip.vel.set(0,0,0);
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(0,pShip.yaw,0);
   atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
-  arrivalAnim={t:0,dur:1.7,fromY:pShip.pos.y,toY:hoverY};
+  arrivalAnim={t:0,dur:3.2,fromY:pShip.pos.y,toY:hoverY};
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(world);
   applyWorldAtmosphere(world);
@@ -5336,7 +5361,11 @@ function touchDown(){
   pShip.vel.set(0,0,0);
   pShip.pos.y=terrainHeight(pShip.pos.x,pShip.pos.z)+shipClearance();
   pShip.mesh.position.copy(pShip.pos);
-  pShip.mesh.rotation.set(-0.32,0,0);
+  /* was hardcoding rotation to (-0.32,0,0) — a permanent nose-down tilt AND a yaw of exactly 0
+     regardless of which way the ship was actually facing on approach, so it always landed pointed
+     the same fixed direction with its nose stuck in the ground instead of sitting flat, facing
+     wherever you flew it in from. */
+  pShip.mesh.rotation.set(0,pShip.yaw,0);
   landedNormal=new THREE.Vector3(0,1,0);
   landingDustBurst(pShip.pos.clone(),new THREE.Vector3(0,1,0));
   var world=currentWorld;
@@ -5366,12 +5395,12 @@ function enterHomeSurfaceFlight(){
   surfaceScene.add(pShip.mesh);
   var sp=homeSpawnPoint();
   var hoverY=terrainHeight(sp.x,sp.z)+9;
-  pShip.pos.set(sp.x,hoverY+58,sp.z);
+  pShip.pos.set(sp.x,hoverY+900,sp.z);
   pShip.vel.set(0,0,0);
   pShip.mesh.position.copy(pShip.pos);
   pShip.mesh.rotation.set(0,pShip.yaw,0);
   atOutpost=true; currentWorld=null; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
-  arrivalAnim={t:0,dur:1.7,fromY:pShip.pos.y,toY:hoverY};
+  arrivalAnim={t:0,dur:3.2,fromY:pShip.pos.y,toY:hoverY};
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(null);
   restoreHomeAtmosphere();
@@ -5621,6 +5650,8 @@ function buildShipMesh(model){
   return g;
 }
 function buildEnemyMesh(){
+  /* still built at its original tiny scale while player ships got 3x'd — next to a real ship
+     these were barely a speck, easy to lose track of (and to land a hit on) at current distances */
   var g=new THREE.Group();
   var mat=new THREE.MeshStandardMaterial({color:0xff4d5e,roughness:0.5,metalness:0.4});
   var body=new THREE.Mesh(new THREE.OctahedronGeometry(0.9,0),mat);
@@ -5628,6 +5659,7 @@ function buildEnemyMesh(){
   var eyeMat=new THREE.MeshStandardMaterial({color:0x2a0a0a,emissive:0xff2020,emissiveIntensity:1.4});
   var eye=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6),eyeMat);
   eye.position.z=0.9; g.add(eye);
+  g.scale.setScalar(5);
   return g;
 }
 
@@ -5639,10 +5671,10 @@ function buildEnemyMesh(){
    accel scaled by the same 9x so a full crossing still takes a similar amount of real time
    instead of turning into a long dead stretch of nothing happening */
 var SHIP_STATS={
-  scout:{maxhp:70,maxshield:20,spd:5040,dmg:9,rate:.3,accel:1575,clearance:1.35,surfSpd:46},
-  fighter:{maxhp:100,maxshield:35,spd:4095,dmg:12,rate:.36,accel:1260,clearance:1.65,surfSpd:38},
-  frigate:{maxhp:160,maxshield:60,spd:2993,dmg:18,rate:.5,accel:882,clearance:1.95,surfSpd:26},
-  bomber:{maxhp:120,maxshield:30,spd:3150,dmg:38,rate:1.0,accel:945,weapon:"bomb",clearance:4.05,surfSpd:30}
+  scout:{maxhp:70,maxshield:20,spd:9072,dmg:9,rate:.3,accel:2835,clearance:1.35,surfSpd:46},
+  fighter:{maxhp:100,maxshield:35,spd:7371,dmg:12,rate:.36,accel:2268,clearance:1.65,surfSpd:38},
+  frigate:{maxhp:160,maxshield:60,spd:5387,dmg:18,rate:.5,accel:1588,clearance:1.95,surfSpd:26},
+  bomber:{maxhp:120,maxshield:30,spd:5670,dmg:38,rate:1.0,accel:1701,weapon:"bomb",clearance:4.05,surfSpd:30}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 /* low-altitude flight over a landed world's own compact terrain (still a fixed 300-unit zoneR,
@@ -5685,7 +5717,7 @@ function launchShip(){
   spaceScene.add(pShip.mesh);
   landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
-  pBolts=[]; eBolts=[]; clearSpaceParts();
+  clearBolts(); clearSpaceParts();
   homeBase.hp=homeBase.maxhp;
   wave=0; waveState="clear"; waveTimer=4;
   closeShipyard();
@@ -5702,7 +5734,7 @@ function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
   landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
-  pBolts=[]; eBolts=[];
+  clearBolts();
   atOutpost=false; currentWorld=null; surfaceFlying=false;
   syncBuildPlane(null);
   restoreHomeAtmosphere();
@@ -5716,11 +5748,35 @@ function returnToColony(){
   updateCameraTransform();
   saveGame();
 }
+/* pBolts/eBolts were pure {x,y,z,vx,vz,...} data with no mesh ever created for them anywhere —
+   every ship's weapon fire (not just the Fighter's) has been completely invisible this whole
+   time, which is the real reason firing looked like nothing was happening. A thin glowing
+   cylinder oriented along the bolt's own velocity, synced to its position every frame, is all
+   that was ever missing. */
+function makeBoltMesh(color,len,rad){
+  var mesh=new THREE.Mesh(new THREE.CylinderGeometry(rad,rad,len,6),new THREE.MeshBasicMaterial({color:color}));
+  spaceScene.add(mesh);
+  return mesh;
+}
+function orientBoltMesh(mesh,vx,vz){
+  var dir=new THREE.Vector3(vx,0,vz).normalize();
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+}
+function clearBolts(){
+  pBolts.forEach(function(b){ if(b.mesh)spaceScene.remove(b.mesh); });
+  eBolts.forEach(function(b){ if(b.mesh)spaceScene.remove(b.mesh); });
+  pBolts=[]; eBolts=[];
+}
 function fireShipBolt(){
   var cos=Math.sin(pShip.yaw), sin=Math.cos(pShip.yaw);
   /* bolt speed must comfortably outrun the ship's own top speed (see SHIP_STATS) or firing while
      at speed looks like the bolt drifting backwards out of the muzzle */
-  pBolts.push({x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:cos*6300,vz:sin*6300,dmg:pShip.dmg,life:1.4});
+  var vx=cos*11340, vz=sin*11340;
+  var bolt={x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:vx,vz:vz,dmg:pShip.dmg,life:1.4};
+  bolt.mesh=makeBoltMesh(0x6fe8ff,55,2.2);
+  bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
+  orientBoltMesh(bolt.mesh,vx,vz);
+  pBolts.push(bolt);
   sfx.click();
 }
 var bombs=[];
@@ -5863,11 +5919,14 @@ function updateSpace(dt){
       pShip.vel.lerp(tv,k);
       pShip.pos.addScaledVector(pShip.vel,dt);
       /* Q/E freely raise or lower altitude — this is what actually lets you fly a landing in,
-         instead of the old instant snap-to-ground the moment the lock circle filled. The old
-         flat dt*11 climb rate was tuned for a ~30-unit/sec cruise ship and became imperceptible
-         once ship speeds jumped into the hundreds — tying it to a cut of pShip.spd keeps vertical
-         movement feeling proportionate to how fast the ship actually flies. */
-      var vertSpd=pShip.spd*0.6;
+         instead of the old instant snap-to-ground the moment the lock circle filled. 0.6x of
+         pShip.spd was a serious overcorrection — for a 5000+ spd ship that's 3000+ units/sec of
+         vertical thrust, which throws pShip.pos.y around so fast per frame that the chase camera
+         (even at its faster catch-up rate) reads as flying wildly out of control, and the ship's
+         modest visual tilt no longer has anything to do with how fast it's actually climbing.
+         0.05x keeps vertical movement fast enough to matter at the new scale without overpowering
+         everything else that's tuned to the ship's actual forward cruise speed. */
+      var vertSpd=pShip.spd*0.05;
       if(keys.q)pShip.pos.y-=dt*vertSpd;
       if(keys.e)pShip.pos.y+=dt*vertSpd;
       var half=SPACE_SIZE/2;
@@ -5888,12 +5947,16 @@ function updateSpace(dt){
       var targetPitch=((keys.e?1:0)-(keys.q?1:0))*-0.4;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       var moving=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z)>1;
-      if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.75:0.3)){
+      /* a few-unit, sub-half-scale particle trail was tuned for the original ~30-unit/sec, 1x
+         scale ship — next to the current 3x-scale hull moving thousands of units a second it was
+         basically invisible. Bigger, farther-flung, and more frequent so the engines actually
+         read as doing something at this scale. */
+      if(pShip.mesh.userData.engineGlow&&moving&&Math.random()<(boosting?0.9:0.55)){
         var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
         var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
-        var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(3,6));
-        eback.x+=rnd(-.5,.5); eback.y+=rnd(-.5,.5); eback.z+=rnd(-.5,.5);
-        spawnThrustParticle(ewp,eback,rnd(0.22,0.4)*(boosting?1.4:1),boosting?0xfff0c0:0x6fd8ff);
+        var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(18,40));
+        eback.x+=rnd(-3,3); eback.y+=rnd(-3,3); eback.z+=rnd(-3,3);
+        spawnThrustParticle(ewp,eback,rnd(1.6,3.2)*(boosting?1.6:1),boosting?0xfff0c0:0x6fd8ff);
       }
     }
     pShip.mesh.position.copy(pShip.pos);
@@ -5948,7 +6011,12 @@ function updateSpace(dt){
       if(e.cd<=0&&d<810){
         e.cd=rnd(1.2,1.8);
         var ea=Math.atan2(pShip.pos.x-e.mesh.position.x,pShip.pos.z-e.mesh.position.z);
-        eBolts.push({x:e.mesh.position.x,y:e.mesh.position.y,z:e.mesh.position.z,vx:Math.sin(ea)*360,vz:Math.cos(ea)*360,dmg:e.dmg,life:2.4});
+        var evx=Math.sin(ea)*360, evz=Math.cos(ea)*360;
+        var ebolt={x:e.mesh.position.x,y:e.mesh.position.y,z:e.mesh.position.z,vx:evx,vz:evz,dmg:e.dmg,life:2.4};
+        ebolt.mesh=makeBoltMesh(0xff4d5e,14,1.4);
+        ebolt.mesh.position.set(ebolt.x,ebolt.y,ebolt.z);
+        orientBoltMesh(ebolt.mesh,evx,evz);
+        eBolts.push(ebolt);
       }
     }
   }
@@ -5959,25 +6027,30 @@ function updateSpace(dt){
   updateBombs(dt);
   for(var i2=pBolts.length-1;i2>=0;i2--){
     var b=pBolts[i2]; b.x+=b.vx*dt; b.z+=b.vz*dt; b.life-=dt;
+    if(b.mesh)b.mesh.position.set(b.x,b.y,b.z);
     var hit=false;
     for(var j=enemyShips.length-1;j>=0;j--){
       var e2=enemyShips[j], edx=b.x-e2.mesh.position.x,edz=b.z-e2.mesh.position.z;
-      if(Math.sqrt(edx*edx+edz*edz)<1.6){
+      /* the old 1.6-unit hit radius was sized for the old bolt speed — at 6300 units/sec a bolt
+         covers ~100 units per frame at 60fps, so a point-radius check that tight let most shots
+         tunnel straight through a target between frames without ever registering a hit */
+      if(Math.sqrt(edx*edx+edz*edz)<40){
         e2.hp-=b.dmg; e2.hitT=0.12; hit=true;
         if(e2.hp<=0)killEnemyShip(e2,j);
         break;
       }
     }
-    if(hit||b.life<=0)pBolts.splice(i2,1);
+    if(hit||b.life<=0){ if(b.mesh)spaceScene.remove(b.mesh); pBolts.splice(i2,1); }
   }
   for(var i3=eBolts.length-1;i3>=0;i3--){
     var eb=eBolts[i3]; eb.x+=eb.vx*dt; eb.z+=eb.vz*dt; eb.life-=dt;
+    if(eb.mesh)eb.mesh.position.set(eb.x,eb.y,eb.z);
     var gone=eb.life<=0;
     if(pShip&&pShip.alive){
       var pdx=eb.x-pShip.pos.x,pdz=eb.z-pShip.pos.z;
-      if(Math.sqrt(pdx*pdx+pdz*pdz)<1.8){ damagePShip(eb.dmg); gone=true; }
+      if(Math.sqrt(pdx*pdx+pdz*pdz)<8){ damagePShip(eb.dmg); gone=true; }
     }
-    if(gone)eBolts.splice(i3,1);
+    if(gone){ if(eb.mesh)spaceScene.remove(eb.mesh); eBolts.splice(i3,1); }
   }
 
   if(pShip){
@@ -7069,7 +7142,7 @@ function returnToTitle(){
   if(pausedFrom==="space"){
     if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
     enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
-    pBolts=[]; eBolts=[];
+    clearBolts();
   }
   saveGame();
   state="title";
