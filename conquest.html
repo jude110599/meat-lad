@@ -68,6 +68,8 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 #hud,#hudSpace{position:absolute;top:0;left:0;right:0;pointer-events:none;z-index:6;
   padding:calc(9px + env(safe-area-inset-top,0px)) 12px 0;display:none}
 #hud.show,#hudSpace.show{display:block}
+#throttleHud{display:none}
+#throttleHud.show{display:flex}
 .hudrow{display:flex;align-items:center;gap:8px;max-width:720px;margin:0 auto 6px;flex-wrap:wrap;
   background:linear-gradient(#0b0f18ee,#0b0f18cc);border:1px solid var(--line);border-radius:10px;
   padding:8px 10px;pointer-events:auto}
@@ -83,7 +85,7 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 .barlbl{position:absolute;left:5px;top:-1px;font-size:8px;letter-spacing:.12em;color:#0008;font-weight:800}
 /* throttle lever, docked to the right edge of the screen while flying in space — a plain vertical
    gauge that fills bottom-up so "more filled" reads the same way the hull/shield bars already do */
-#throttleHud{position:fixed;right:16px;top:50%;transform:translateY(-50%);display:flex;
+#throttleHud{position:fixed;right:16px;top:50%;transform:translateY(-50%);
   flex-direction:row;align-items:flex-end;gap:12px;z-index:4;pointer-events:none}
 .thrGauge{display:flex;flex-direction:column;align-items:center;gap:6px}
 .thrLbl{font-size:9px;letter-spacing:.12em;color:var(--dim);font-weight:800}
@@ -398,17 +400,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="res" id="spWaveTxt">WAVE 0</div>
       <button class="hudbtn" id="bPauseSpace">&#10073;&#10073;</button>
     </div>
-    <div id="throttleHud">
-      <div class="thrGauge">
-        <div class="thrLbl">THR</div>
-        <div class="thrBar thr"><i id="thrFill"></i></div>
-        <div class="thrPct" id="thrPct">75%</div>
-      </div>
-      <div class="thrGauge">
-        <div class="thrLbl">SPD</div>
-        <div class="thrBar spd"><i id="spdFill"></i></div>
-        <div class="thrPct" id="spdPct">75%</div>
-      </div>
+  </div>
+  <div id="throttleHud">
+    <div class="thrGauge">
+      <div class="thrLbl">THR</div>
+      <div class="thrBar thr"><i id="thrFill"></i></div>
+      <div class="thrPct" id="thrPct">75%</div>
+    </div>
+    <div class="thrGauge">
+      <div class="thrLbl">SPD</div>
+      <div class="thrBar spd"><i id="spdFill"></i></div>
+      <div class="thrPct" id="spdPct">75%</div>
     </div>
   </div>
 
@@ -650,8 +652,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.47.3";
+var VERSION="1.47.4";
 var CHANGELOG=[
+  {v:"1.47.4",t:"Fixed Q/E's fake left/right tilt, throttle/speed gauges now show everywhere",items:[
+    "Q/E pitching the nose up/down looked fine right after launch but started visibly tilting left/right the moment you'd turned at all — in both space and low-altitude flight over a world. That wasn't roll (nothing was ever setting one), it was a rotation-order artifact: pitch and yaw were composing in an order where pitching the nose no longer happened purely around the ship's own local axis once yaw had changed. Reordered to yaw-then-pitch-then-roll, the standard order for exactly this kind of flight control, which eliminates the cross-coupling entirely — confirmed directly: with 90° of yaw and a hard pitch both applied, the ship's local \"right\" direction stays dead level (effectively exactly 0 tilt) instead of skewing",
+    "The throttle and speed gauges only ever showed up during main space cruise — they vanished the instant you dropped into low-altitude flight over a world, even though you're just as much flying. They now show in every flying context, space or surface, and the speed gauge reads real current speed relative to whatever the actual top speed is in that context instead of freezing at a stale value"
+  ]},
   {v:"1.47.3",t:"Throttle is now a real lever, not a hold-to-go key",items:[
     "W/S used to also move the throttle (it decayed back to 0 on its own whenever neither was held), which fights the entire point of a throttle you can set once and leave — the ship never actually held a steady cruise speed on its own. W/S no longer touch the throttle at all: only the up/down arrows and the scroll wheel move it now, and it holds exactly wherever you leave it with no automatic decay. Set it to 30% with the down arrow and the ship settles there and stays there — actual capped cruise control instead of something that quietly crept back toward zero the moment you let go"
   ]},
@@ -1853,6 +1859,7 @@ function updateSurfaceFlight(dt){
   }
   /* climb high enough and you break for space — the other half of "fly it out yourself" */
   else if(alt>SURF_EXIT_ALT)exitToSpace();
+  updateHudSpace();
 }
 var surfaceParts=[];
 function spawnSurfaceParticle(pos,vel,scale,colorTint){
@@ -6002,6 +6009,18 @@ function buildShipMesh(model){
      up to a full 3x — a Group transform carries all the children's local offsets along with it,
      so the extra greebles added above scale up cleanly with the rest of the hull */
   g.scale.setScalar(3);
+  /* every rotation.set(pitch,yaw,roll) call on this mesh (space cruise, surface flight, launch,
+     arrival, landing, crash — all of them) used the default XYZ Euler order, which composes pitch
+     as the innermost rotation and yaw as the middle one. That means once yaw is anything other
+     than its starting value, pitching the nose up/down (Q/E) no longer happens purely around the
+     ship's own local left-right axis — it visibly drags in an apparent left/right lean too, purely
+     as an artifact of the composition order, with zero roll actually being set anywhere. It's why
+     Q/E looked fine right after launch (yaw still at its spawn value) and only started looking
+     "tilted" once you'd turned at all, in both space and low-altitude surface flight — same mesh,
+     same bug, both contexts. YXZ order (yaw outermost, pitch and roll purely local to whichever
+     way the ship is already facing) is the standard order for exactly this yaw-then-pitch-then-
+     roll aircraft/camera setup, and eliminates the cross-coupling entirely. */
+  g.rotation.order="YXZ";
   return g;
 }
 function buildEnemyMesh(){
@@ -6505,7 +6524,14 @@ function updateHudSpace(){
   var thrPc=clamp(pShip.throttle==null?0:pShip.throttle,0,1);
   $("thrFill").style.height=(thrPc*100)+"%";
   $("thrPct").textContent=Math.round(thrPc*100)+"%";
-  var spdPc=clamp(pShip.curSpeedFrac==null?0:pShip.curSpeedFrac,0,1);
+  /* space cruise has a real throttle-vs-speed distinction (see curSpeedFrac), but low-altitude
+     surface flight is still direct instant control with no throttle lag of its own — computing
+     SPD straight from actual current velocity over whatever the current top speed is (space
+     cruise/boost speed, or the much slower shipSurfSpd() while flying over a world) keeps it
+     accurate in both places instead of freezing at a stale space-only value the moment you land. */
+  var curMaxSpd=state==="surface"?shipSurfSpd():pShip.spd*(shipBoosting?1.7:1);
+  var curSpeed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+  var spdPc=clamp(curMaxSpd>0?curSpeed/curMaxSpd:0,0,1);
   $("spdFill").style.height=(spdPc*100)+"%";
   $("spdPct").textContent=Math.round(spdPc*100)+"%";
 }
@@ -7847,6 +7873,13 @@ function frame(now){
     if(state!=="space")$("planetTarget").classList.add("hide");
     var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
+    /* the throttle/speed gauges used to live inside #hudSpace, which is hidden the moment you're
+       not in main space cruise — so they vanished the instant you dropped into low-altitude
+       surface flight over a world, even though the ship is still very much flying and the same
+       gauges would still be meaningful there. Driven independently here off "is there a ship and
+       are you actually piloting it" (space/launching, or surface flight specifically, not just
+       walking around on foot) so it shows in every flying context, not just one of them. */
+    $("throttleHud").classList.toggle("show",!!pShip&&(spaceStates||(state==="surface"&&surfaceFlying)));
     /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
        keeps running whenever a menu is open on top of the surface — only WASD movement itself
        is gated to state==="surface" inside updateSurface, so you can't walk around blind under
@@ -8112,6 +8145,12 @@ window.__cq={
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
   touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb, boardParkedShip:boardParkedShip, exitToSpace:exitToSpace,
   turretState:function(){ return turrets.map(function(t){return {x:t.x,z:t.z,hp:t.hp,alive:t.alive};}); },
+  debugShipAxes:function(){
+    if(!pShip)return null;
+    var right=new THREE.Vector3(1,0,0).applyQuaternion(pShip.mesh.quaternion);
+    var up=new THREE.Vector3(0,1,0).applyQuaternion(pShip.mesh.quaternion);
+    return {right:right.toArray(),up:up.toArray(),order:pShip.mesh.rotation.order,pitch:pShip.pitch,yaw:pShip.yaw,roll:pShip.roll};
+  },
   debugLandCheck:function(){
     if(!pShip)return null;
     var target=findNearestTarget();
