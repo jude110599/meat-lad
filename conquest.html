@@ -82,7 +82,17 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 .bar.hull i{background:linear-gradient(90deg,#a3101c,var(--amber))}
 .bar.shield i{background:linear-gradient(90deg,#1c5a7a,var(--blue))}
 .bar.base i{background:linear-gradient(90deg,#2f6b12,var(--green))}
+.bar.boss i{background:linear-gradient(90deg,#4a1030,#ff2a6a)}
 .barlbl{position:absolute;left:5px;top:-1px;font-size:8px;letter-spacing:.12em;color:#0008;font-weight:800}
+/* the guardian boss's own health bar — top-center, classic boss-fight placement, well away from
+   the player's own HULL/SHIELD/BASE readout in the corner so the two are never confused for the
+   same thing. Hidden entirely whenever there's no boss actually engaged (see updateHudSpace). */
+#bossHud{position:fixed;left:50%;top:14px;transform:translateX(-50%);width:340px;max-width:70vw;
+  display:none;flex-direction:column;align-items:center;gap:4px;z-index:6;pointer-events:none}
+#bossHud.show{display:flex}
+.bossName{font-size:11px;font-weight:800;letter-spacing:.14em;color:#ff6a90;
+  text-shadow:0 1px 3px #000}
+#bossHud .bar{width:100%;height:13px}
 /* throttle lever, docked to the right edge of the screen while flying in space — a plain vertical
    gauge that fills bottom-up so "more filled" reads the same way the hull/shield bars already do */
 #throttleHud{position:fixed;right:16px;top:50%;transform:translateY(-50%);
@@ -401,6 +411,10 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <button class="hudbtn" id="bPauseSpace">&#10073;&#10073;</button>
     </div>
   </div>
+  <div id="bossHud">
+    <div class="bossName">THE SENTINEL</div>
+    <div class="bar boss"><i id="bossHpFill"></i></div>
+  </div>
   <div id="throttleHud">
     <div class="thrGauge">
       <div class="thrLbl">THR</div>
@@ -652,8 +666,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.48.4";
+var VERSION="1.49.0";
 var CHANGELOG=[
+  {v:"1.49.0",t:"Obsidian Moon: a guardian boss, a new ore, and the Vanguard",items:[
+    "A fourth world, Obsidian Moon, now sits in the one quadrant of space that was empty — a small, jagged, violet-hazed moon guarded by a boss ship (\"The Sentinel\") that has to be shot down before landing will even lock on. Confirmed live: flying in and trying to settle while it's alive keeps the targeting hint pinned on \"DEFEAT THE GUARDIAN\" and landing progress refuses to advance no matter how close, slow, or low you are; killing it flips a persistent guardianDefeated flag, the hint switches to the normal LOCKING ON sequence, and the same approach that was stuck at 0% rides straight through to touchdown",
+    "The Sentinel has its own top-of-screen boss health bar (separate from your own HULL/SHIELD/BASE readout), spawns once you fly within range of the moon and despawns again if you fly far enough away, fires back at you on its own cooldown, and its defeat is saved permanently — reloading a save made after the kill confirmed the moon stays clear rather than resetting the guardian",
+    "The moon's own ore, Obsidian Shard, mines and belts through every existing system (Miners, Storage, Splitters, Mergers, Shipment Launcher/Hub) the same as any other ore — but doesn't feed the regular Constructor/Refinery recipes. Its only use is commissioning the new Vanguard-class ship at the Shipyard (extra to the usual Parts cost), so actually flying one means having beaten the guardian and mined its moon yourself first — confirmed the Shipyard correctly blocks the purchase with a clear \"Not enough Obsidian Shard\" message if you're short, and deducts both costs correctly on success",
+    "The Vanguard is the strongest hull in the fleet (200 HP / 70 shield) and fires a railgun instead of the usual bolt or bomb — a distinct larger, faster, violet shot dealing its higher damage through the same hit-detection every other weapon already uses against both regular enemy ships and the boss itself",
+    "Fixed a real bug surfaced while testing this: loading an existing save (rather than starting a new colony) copied its stock over exactly as saved, so any resource key added after that save was written — Obsidian Shard included — was simply missing from stock after loading, which would have made mining or crafting it silently break as 0+n=NaN. Loading now backfills any resource the running game knows about but the save predates, defaulting it to 0"
+  ]},
   {v:"1.48.4",t:"Diving now hits a lot harder",items:[
     "Last patch's camera swing tracked the ship's own visual pitch — which is deliberately kept modest so the hull itself never looks absurd, so at any real cruising speed the swing stayed fairly subtle too. Added a second, separate camera swing driven directly by whether you're actively holding Q, decoupled from the ship's own restrained body angle, so it can push a lot harder without making the ship itself look like it's tumbling — confirmed the camera's relative height above the ship jumps from about 26 to about 97 units the moment you dive. Also added a widening FOV kick while diving (smaller than the boost kick, same idea), the classic rush-of-speed cue on top of the camera swing"
   ]},
@@ -1335,7 +1356,19 @@ var WORLDS=[
     floor:0x1e4a28,mid:0x123a1c,rock:0x0e2414,
     ore:"spore_pod",oreNm:"Spore Pod",decor:"jungle",
     sky:{low:0x0a2a18,high:0x041a0c,sunCol:0xa0ffb0,sunI:3.75,rimCol:0x40ff90,ambCol:0x2a6a3a},
-    discovered:false,hasHive:true,hasRing:false }
+    discovered:false,hasHive:true,hasRing:false },
+  /* a genuinely small moon (radius 2400 against 4950-5850 for the other three) sitting in the
+     one quadrant that was empty, guarded by a boss ship that has to be shot down before landing
+     ever locks on — see hasGuardian/guardianDefeated, checked in updatePlanetTargeting. Its ore
+     is exotic enough that it unlocks its own ship (the Vanguard, see SHIP_MODELS) instead of
+     just feeding the usual constructor/refinery recipes. */
+  { id:"obsidian", nm:"Obsidian Moon",
+    sx:73710,sz:73710,radius:2400,col:0x2a1a3a,atmoCol:0x8a4aff,ringCol:0x3a2050,
+    cx:20000,cz:-20000,zoneR:300,
+    floor:0x241a30,mid:0x1a1224,rock:0x0e0a18,
+    ore:"obsidian_shard",oreNm:"Obsidian Shard",decor:"volcanic",
+    sky:{low:0x1a1028,high:0x0a0614,sunCol:0xc0a0ff,sunI:3.6,rimCol:0x9a5aff,ambCol:0x4a2a6a},
+    discovered:false,hasHive:false,hasRing:true,hasGuardian:true,guardianDefeated:false }
 ];
 var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:3150,isHome:true,discovered:true};
 function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
@@ -2674,6 +2707,7 @@ var RES={
   iron_ore:{nm:"Iron Ore",col:0xb5b5c2}, copper_ore:{nm:"Copper Ore",col:0xff9d5c}, coal:{nm:"Coal",col:0x8a8a92},
   frost_crystal:{nm:"Frost Crystal",col:0x9fe0f0}, magma_shard:{nm:"Magma Shard",col:0xff6a2a}, spore_pod:{nm:"Spore Pod",col:0x7aff6a},
   ice_core:{nm:"Ice Core",col:0xeaf7ff}, sulfur_vein:{nm:"Sulfur Vein",col:0xe8d840},
+  obsidian_shard:{nm:"Obsidian Shard",col:0x9a5aff},
   iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545}
 };
 var RES_ICONS={
@@ -2685,6 +2719,7 @@ var RES_ICONS={
   spore_pod:'<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7" fill="#7aff6a" stroke="#1a5a10" stroke-width="1"/></svg>',
   ice_core:'<svg viewBox="0 0 24 24"><path d="M12 3l7 4v10l-7 4-7-4V7Z" fill="#eaf7ff" stroke="#1a3a52" stroke-width="1"/><path d="M12 3v18M5 7l7 4 7-4M5 17l7-4 7 4" stroke="#3a9adf" stroke-width="0.8" fill="none"/></svg>',
   sulfur_vein:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#e8d840" stroke="#7a6a10" stroke-width="1"/></svg>',
+  obsidian_shard:'<svg viewBox="0 0 24 24"><path d="M12 2l5 7-2 13-6 0-2-13Z" fill="#9a5aff" stroke="#3a1a5a" stroke-width="1"/></svg>',
   iron:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#e8eaf0" stroke="#9a9aa5" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#c8cad2"/></svg>',
   copper:'<svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2" fill="#ff8a4c" stroke="#a84c14" stroke-width="1"/><rect x="5" y="11" width="14" height="1.6" fill="#ffb27a"/></svg>',
   parts:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" fill="#1a2233" stroke="#ffb545" stroke-width="1.4"/><path d="M12 6v2.4M12 15.6V18M6 12h2.4M15.6 12H18M7.8 7.8l1.7 1.7M14.5 14.5l1.7 1.7M7.8 16.2l1.7-1.7M14.5 9.5l1.7-1.7" stroke="#ffb545" stroke-width="1.2"/><circle cx="12" cy="12" r="2.6" fill="#ffb545"/></svg>'
@@ -2695,7 +2730,7 @@ function costStr(cost){
     return '<i style="background:'+hexStr(RES[k].col)+'"></i> '+cost[k]+' '+RES[k].nm;
   }).join(' &nbsp;+&nbsp; ');
 }
-var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
+var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,obsidian_shard:0,iron:0,copper:0,parts:0};
 /* gates the Hub's unlockable buildings/belt tier out of the Build menu until the player has
    actually paid to unlock them at the Hub console */
 var UPGRADES={
@@ -2911,24 +2946,24 @@ var BUILD_DEFS={
   pylon:{nm:"Power Pole",cat:"Power",ds:"A physical relay. Cables must be run to and from it — it does not connect to anything on its own.",cost:{iron_ore:8},powerDraw:0,radius:1.6,produces:[],accepts:[]},
   solar:{nm:"Solar Panel",cat:"Power",ds:"Generates 22 MW. No fuel needed, but still needs a cable run out of it.",cost:{iron_ore:15},powerDraw:0,radius:2.6,produces:[],accepts:[],generates:22},
   cable:{nm:"Power Cable",cat:"Power",ds:"A physical power cable. Select the tool, then pick two power-capable buildings to link them. Nothing gets power without one.",cost:{copper_ore:4},tool:true,range:26},
-  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],accepts:[],mineRate:0.5,mineCap:120},
-  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],accepts:[],mineRate:2,mineCap:240},
+  miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard"],accepts:[],mineRate:0.5,mineCap:120},
+  miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard"],accepts:[],mineRate:2,mineCap:240},
   smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
   constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"]},
   storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
-    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
+    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"]},
   splitter:{nm:"Splitter",cat:"Logistics",ds:"One belt in, up to two belts out. Splits the incoming flow between whatever you connect.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"]},
   merger:{nm:"Merger",cat:"Logistics",ds:"Up to two belts in, one belt out. Combines multiple lines into a single output.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   belt2:{nm:"Conveyor Belt Mk.2",cat:"Logistics",ds:"Twice the throughput of a Mk.1 belt. Aim at an existing Mk.1 belt and click to upgrade it in place — no need to remove it first — or connect two buildings like a normal belt.",cost:{iron:4,copper:2},tool:true,range:240,unlockable:true},
   hub:{nm:"Command Hub",cat:"Command",ds:"Your forward operations center. Once built, this is where you respawn. Interact to open the upgrade console and unlock new buildings and belt tiers.",cost:{iron:40,copper:20,parts:10},powerDraw:15,radius:5.5,uniq:true,produces:[],accepts:[]},
   refinery:{nm:"Refinery",cat:"Production",ds:"A dedicated processing line for exotic ores. Choose a recipe after placing it — better yield per ore than running it through a Constructor.",cost:{iron:35,copper:20,parts:15},powerDraw:18,radius:3.6,produces:[],accepts:["iron","copper","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"],unlockable:true},
   shipyard:{nm:"Shipyard",cat:"Ship Production",ds:"Interact to design and launch a ship. One per colony.",cost:{iron:30,copper:20},powerDraw:20,radius:7.5,uniq:true,produces:[],accepts:[]},
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
-  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper","parts"]},
-  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","iron","copper","parts"],accepts:[]},
+  shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","parts"]},
+  shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","parts"],accepts:[]},
   landingpad:{nm:"Landing Pad",cat:"Ship Production",ds:"A marked pad with docking lights. Purely a landmark to aim for — flying low and slow anywhere flat still lands you, but this gives you a deliberate spot to fly in on, on any world.",cost:{iron_ore:20,copper_ore:8},powerDraw:0,radius:7,noCollide:true,produces:[],accepts:[]}
 };
 var BUILD_ORDER=["hub","foundation","wall","window","door","railing","plant","lightpost","floorlight","pylon","solar","cable","miner","miner2","smelter","constructor","refinery","storage","splitter","merger","belt","belt2","shipyard","landingpad","workshop","shiplauncher","shiphub"];
@@ -3986,7 +4021,8 @@ var NODE_STYLE={
   magma_shard:{rockCol:0x2a1614,crystalCol:0xff6a2a,emit:0xaa3010,shape:"shard"},
   spore_pod:{rockCol:0x1e3a20,crystalCol:0x7aff6a,emit:0x1a6a10,shape:"blob"},
   ice_core:{rockCol:0x1a3a52,crystalCol:0xeaf7ff,emit:0x3a9adf,shape:"chunk"},
-  sulfur_vein:{rockCol:0x3a3418,crystalCol:0xe8d840,emit:0x9a8a10,shape:"blob"}
+  sulfur_vein:{rockCol:0x3a3418,crystalCol:0xe8d840,emit:0x9a8a10,shape:"blob"},
+  obsidian_shard:{rockCol:0x1a1024,crystalCol:0x9a5aff,emit:0x6a2aa0,shape:"shard"}
 };
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
@@ -4444,7 +4480,7 @@ function updatePortArrowVisibility(){
 function makeBeltItemMesh(res){
   var col=RES[res]?RES[res].col:0xffb545;
   var g=new THREE.Group();
-  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"||res==="magma_shard"||res==="spore_pod"||res==="ice_core"||res==="sulfur_vein"){
+  if(res==="iron_ore"||res==="copper_ore"||res==="coal"||res==="frost_crystal"||res==="magma_shard"||res==="spore_pod"||res==="ice_core"||res==="sulfur_vein"||res==="obsidian_shard"){
     var mat=new THREE.MeshStandardMaterial({color:col,roughness:0.95,metalness:0.05,flatShading:true});
     var core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.15,0),mat);
     core.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
@@ -4895,7 +4931,12 @@ var SHIP_MODELS=[
   {key:"scout",nm:"Scout",ds:"Fast and fragile — hit and run.",partsCost:10,buildTime:4,stats:{maxhp:70,spd:22,dmg:9,rate:.28}},
   {key:"fighter",nm:"Fighter",ds:"Balanced all-rounder.",partsCost:16,buildTime:6,stats:{maxhp:100,spd:16,dmg:12,rate:.34}},
   {key:"frigate",nm:"Frigate",ds:"Slow, but heavily armored.",partsCost:24,buildTime:9,stats:{maxhp:150,spd:11,dmg:16,rate:.42}},
-  {key:"bomber",nm:"Bomber",ds:"Drops heavy bombs instead of firing bolts — click to release one on whatever's below.",partsCost:22,buildTime:8,stats:{maxhp:130,spd:13,dmg:32,rate:.9}}
+  {key:"bomber",nm:"Bomber",ds:"Drops heavy bombs instead of firing bolts — click to release one on whatever's below.",partsCost:22,buildTime:8,stats:{maxhp:130,spd:13,dmg:32,rate:.9}},
+  /* the reward for beating Obsidian Moon's guardian — needs real obsidian_shard in stock on top
+     of parts (see commissionShip/renderShipyard), which in practice means actually having landed
+     there and mined it yourself. Fires a railgun instead of the usual bolt/bomb — see weapon:"rail"
+     and fireRailShot. */
+  {key:"vanguard",nm:"Vanguard",ds:"Railgun-armed guardian-killer, forged from Obsidian Shard. The strongest hull in the fleet.",partsCost:30,oreCost:{obsidian_shard:15},buildTime:14,stats:{maxhp:180,spd:18,dmg:48,rate:.6}}
 ];
 var shipBuilt=false, shipModelKey=null;
 function shipyard(){ return buildings.filter(function(b){return b.type==="shipyard";})[0]||null; }
@@ -4912,9 +4953,20 @@ function commissionShip(modelKey){
   if(b.job){ toast("Shipyard is already busy"); return; }
   var m=SHIP_MODELS.filter(function(x){return x.key===modelKey;})[0];
   if(stock.parts<m.partsCost){ toast("Not enough parts"); return; }
+  /* the Vanguard is the only model with an oreCost — an extra resource (beyond plain parts) the
+     Shipyard has to have in stock too. It's the reward for beating Obsidian Moon's guardian, and
+     since obsidian_shard can only ever be mined by actually standing on that moon (which the
+     guardian blocks landing on in the first place), this check is mostly a clear error message
+     rather than a real gate — the real gate already happened out in space. */
+  if(m.oreCost){
+    for(var k in m.oreCost){
+      if((stock[k]||0)<m.oreCost[k]){ toast("Not enough "+(RES[k]?RES[k].nm:k)); return; }
+    }
+  }
   computePowerNetworks();
   if(!b.powered){ toast("Shipyard needs power before construction can start"); return; }
   stock.parts-=m.partsCost;
+  if(m.oreCost)for(var k2 in m.oreCost)stock[k2]-=m.oreCost[k2];
   b.job={model:modelKey,timeLeft:m.buildTime,total:m.buildTime,started:true};
   sfx.build(); toast("Building "+m.nm+" — "+m.buildTime+"s");
   saveGame();
@@ -4996,6 +5048,7 @@ function saveGame(){
          "spawn at the corner of the planet" in space, or "spawn away from my ship" over a world. */
       flying:state==="space"?"space":(surfaceFlying?"surface":null),
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
+      guardiansDefeated:WORLDS.map(function(w){return w.hasGuardian&&w.guardianDefeated?w.id:null;}).filter(function(x){return x;}),
       unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets
     };
     var json=JSON.stringify(data);
@@ -5011,7 +5064,7 @@ function saveGame(){
 }
 function newColony(){
   clearWorld();
-  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
+  stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,obsidian_shard:0,iron:0,copper:0,parts:0};
   shipBuilt=false; shipModelKey=null;
   unlocked={belt2:false,refinery:false};
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
@@ -5024,7 +5077,8 @@ function newColony(){
   atOutpost=false; currentWorld=null; surfaceFlying=false; arrivalAnim=null; landingAnim=null;
   shipCrashing=false; shipWrecked=false;
   syncBuildPlane(null);
-  WORLDS.forEach(function(w){ w.discovered=false; });
+  WORLDS.forEach(function(w){ w.discovered=false; if(w.hasGuardian)w.guardianDefeated=false; });
+  if(moonBoss){ spaceScene.remove(moonBoss.mesh); moonBoss=null; }
   restoreHomeAtmosphere();
   if(pShip){ spaceScene.remove(pShip.mesh); surfaceScene.remove(pShip.mesh); pShip=null; }
   $("hiveHud").classList.add("hide");
@@ -5046,7 +5100,11 @@ var loadedPlayerPos=null;
 var pendingLoadState=null;
 function applySaveData(data){
   clearWorld();
-  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
+  stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,obsidian_shard:0,iron:0,copper:0,parts:0};
+  /* an existing save predates whichever resource keys got added after it was written (obsidian_shard
+     being the newest) — without this, stock just carries over exactly what was saved, silently
+     missing those keys, so mining/crafting a new resource becomes 0+n=NaN instead of starting at 0 */
+  for(var resKey in RES){ if(stock[resKey]==null)stock[resKey]=0; }
   (data.nodes||[]).forEach(function(n){
     /* older saves may have nodes scattered before the buildable-radius fix, sitting out in a
        world's unbuildable outer band — pull those back inside worldBuildR so a Miner can still
@@ -5111,6 +5169,7 @@ function applySaveData(data){
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
   (data.discoveredWorlds||[]).forEach(function(id){ var w=worldById(id); if(w)w.discovered=true; });
+  (data.guardiansDefeated||[]).forEach(function(id){ var w=worldById(id); if(w)w.guardianDefeated=true; });
   atOutpost=!!data.atOutpost;
   syncBuildPlane(null);
   pendingLoadState=null;
@@ -5582,6 +5641,35 @@ WORLDS.forEach(function(w){
     var atmo=new THREE.Mesh(new THREE.SphereGeometry(w.radius*1.16,28,20),
       new THREE.MeshBasicMaterial({color:w.atmoCol,transparent:true,opacity:0.18,side:THREE.BackSide}));
     g.add(atmo);
+  } else if(w.id==="obsidian"){
+    /* the guardian moon — jagged black-purple crystal spikes (echoing its own obsidian_shard ore)
+       instead of a smooth surface, a hazy violet atmosphere, and a broken debris ring rather than
+       a clean machined one, reading as a wrecked, dangerous place worth having a boss guard it */
+    var shardMat=new THREE.MeshStandardMaterial({color:0x2a1444,emissive:0x6a2aa0,emissiveIntensity:0.7,roughness:0.25,metalness:0.35,flatShading:true});
+    for(var oi=0;oi<22;oi++){
+      var oa=rnd(0,Math.PI*2), op=rnd(-1,1), or_=Math.sqrt(1-op*op);
+      var odir=new THREE.Vector3(Math.cos(oa)*or_,op,Math.sin(oa)*or_);
+      var oh=rnd(w.radius*0.1,w.radius*0.28);
+      var oshard=new THREE.Mesh(new THREE.ConeGeometry(w.radius*0.04,oh,4),shardMat);
+      oshard.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),odir);
+      oshard.rotation.z+=rnd(0,6.28);
+      oshard.position.copy(odir).multiplyScalar(w.radius*0.98+oh*0.4);
+      g.add(oshard);
+    }
+    var ohaze=new THREE.Mesh(new THREE.SphereGeometry(w.radius*1.08,24,16),
+      new THREE.MeshBasicMaterial({color:w.atmoCol,transparent:true,opacity:0.22,depthWrite:false}));
+    g.add(ohaze); g.userData.clouds=ohaze;
+    var oatmo=new THREE.Mesh(new THREE.SphereGeometry(w.radius*1.18,28,20),
+      new THREE.MeshBasicMaterial({color:w.atmoCol,transparent:true,opacity:0.15,side:THREE.BackSide}));
+    g.add(oatmo);
+    var debrisMat=new THREE.MeshStandardMaterial({color:0x241a34,emissive:0x4a1a6a,emissiveIntensity:0.4,roughness:0.6,metalness:0.2,flatShading:true});
+    for(var di=0;di<26;di++){
+      var da2=rnd(0,Math.PI*2), dr2=w.radius*rnd(1.6,2.0);
+      var deb=new THREE.Mesh(new THREE.IcosahedronGeometry(w.radius*rnd(0.03,0.07),0),debrisMat);
+      deb.position.set(Math.cos(da2)*dr2,rnd(-w.radius*0.05,w.radius*0.05),Math.sin(da2)*dr2);
+      deb.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
+      g.add(deb);
+    }
   } else {
     /* verdance — an organic hive world: a hazy spore-cloud shell and a lumpy ring built from
        clustered growths instead of a clean, machined planetary ring */
@@ -5698,7 +5786,11 @@ function updatePlanetTargeting(dt){
      descent buffer) instead of an independent fraction of the radius keeps the two systems from
      drifting apart like that again, for every world, not just home. */
   var lowEnough=pShip.pos.y<target.radius+SHIP_COLLISION_PAD+600;
-  var settling=near&&lowEnough;
+  /* Obsidian Moon can't be locked onto at all while its guardian is still alive — near/lowEnough
+     don't matter if the boss hasn't been dealt with yet, same way a door stays a door even once
+     you're standing right in front of it. */
+  var guarded=!!(target.hasGuardian&&!target.guardianDefeated);
+  var settling=near&&lowEnough&&!guarded;
   landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
   if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
@@ -5708,7 +5800,8 @@ function updatePlanetTargeting(dt){
     elTarget.style.left=sx+"px"; elTarget.style.top=sy+"px";
     var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
     var hint="";
-    if(settling)hint=" — LOCKING ON";
+    if(guarded)hint=" — DEFEAT THE GUARDIAN";
+    else if(settling)hint=" — LOCKING ON";
     else if(near&&!lowEnough)hint=" — DESCEND (Q)";
     else hint=" — FLY CLOSER TO LAND";
     elTarget.querySelector(".ptName").textContent=nameTxt+hint;
@@ -6068,6 +6161,46 @@ function buildShipMesh(model){
     var navR=navLight(0x3fff70); navR.position.set(2.9,0.1,-0.4); g.add(navR);
     g.userData.engineGlow=[glowL,glowR];
     g.userData.navLights=[navL,navR];
+  } else if(model==="vanguard"){
+    /* the reward for beating the Sentinel — twin railgun barrels up front instead of a gun port,
+       an angular obsidian-dark hull with violet trim to match its own ore, and a bulkier twin-pod
+       tail befitting the strongest hull in the fleet rather than just a recolor of an existing
+       ship. */
+    var hull=matStd(0x2a1f3a,0.35,0.6), trim=matStd(0x9a5aff,0.4,0.5), dark=matStd(0x120a1c,0.5,0.65);
+    var nose=new THREE.Mesh(new THREE.ConeGeometry(0.5,1.6,6),hull);
+    nose.rotation.x=Math.PI/2; nose.position.z=2.0; g.add(nose);
+    var railL=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.2,8),dark);
+    railL.rotation.x=Math.PI/2; railL.position.set(-0.3,0.0,2.6); g.add(railL);
+    var railR=railL.clone(); railR.position.x=0.3; g.add(railR);
+    var railTipL=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.11,0.3,8),trim);
+    railTipL.rotation.x=Math.PI/2; railTipL.position.set(-0.3,0.0,3.7); g.add(railTipL);
+    var railTipR=railTipL.clone(); railTipR.position.x=0.3; g.add(railTipR);
+    var body=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.65,2.6),hull); body.position.z=0.2; g.add(body);
+    boltRow(g,0.85,2.2,0.35,dark,6);
+    var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.34,10,7),canopyMat);
+    canopy.scale.set(0.85,0.6,1.3); canopy.position.set(0,0.42,0.9); g.add(canopy);
+    var canopyFrame=new THREE.Mesh(new THREE.TorusGeometry(0.28,0.03,5,12),trim);
+    canopyFrame.rotation.x=Math.PI/2; canopyFrame.position.set(0,0.42,0.6); g.add(canopyFrame);
+    var wingL=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.1,1.3),hull); wingL.position.set(-1.5,-0.05,-0.6); wingL.rotation.y=0.18; g.add(wingL);
+    var wingR=wingL.clone(); wingR.position.x=1.5; wingR.rotation.y=-0.18; g.add(wingR);
+    var wingStripeL=hazardBar(2.3,0.08,0.4); wingStripeL.position.set(-1.5,0.0,-0.6); wingStripeL.rotation.y=0.18; g.add(wingStripeL);
+    var wingStripeR=wingStripeL.clone(); wingStripeR.position.x=1.5; wingStripeR.rotation.y=-0.18; g.add(wingStripeR);
+    var finTipL=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.5,0.65),trim);
+    finTipL.position.set(-2.7,0.24,-1.0); finTipL.rotation.y=0.18; g.add(finTipL);
+    var finTipR=finTipL.clone(); finTipR.position.x=2.7; finTipR.rotation.y=-0.18; g.add(finTipR);
+    var finDorsal=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.7,1.1),trim); finDorsal.position.set(0,0.65,-1.2); g.add(finDorsal);
+    var podL=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.27,1.5,8),trim);
+    podL.rotation.x=Math.PI/2; podL.position.set(-0.55,-0.15,-1.55); g.add(podL);
+    var podR=podL.clone(); podR.position.x=0.55; g.add(podR);
+    var podRingL=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.04,5,12),dark);
+    podRingL.rotation.x=Math.PI/2; podRingL.position.set(-0.55,-0.15,-1.05); g.add(podRingL);
+    var podRingR=podRingL.clone(); podRingR.position.x=0.55; g.add(podRingR);
+    var glowL=new THREE.Mesh(new THREE.SphereGeometry(0.3,8,6),accent); glowL.position.set(-0.55,-0.15,-2.3); g.add(glowL);
+    var glowR=glowL.clone(); glowR.position.x=0.55; g.add(glowR);
+    var navL=navLight(0xff3040); navL.position.set(-2.7,0.24,-1.0); g.add(navL);
+    var navR=navLight(0x3fff70); navR.position.set(2.7,0.24,-1.0); g.add(navR);
+    g.userData.engineGlow=[glowL,glowR];
+    g.userData.navLights=[navL,navR];
   } else {
     var hull=matStd(0x9fb4c9,0.4,0.55), trim=matStd(0x2a3f55,0.5,0.4), dark=matStd(0x131b26,0.5,0.6);
     var fuselageFront=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.4,6),hull);
@@ -6169,6 +6302,46 @@ function buildEnemyMesh(){
   g.scale.setScalar(5);
   return g;
 }
+/* the Sentinel — the guardian ship blocking Obsidian Moon. Deliberately not just a scaled-up
+   regular enemy: an angular armored hull, six spikes, four turret pods, and one big glowing core
+   so it actually reads as "a boss" and not "a bigger version of the small red diamonds" at a
+   glance, even from the distance a player first spots it at. */
+function buildBossMesh(){
+  var g=new THREE.Group();
+  var hullMat=new THREE.MeshStandardMaterial({color:0x2a2230,roughness:0.5,metalness:0.6,flatShading:true});
+  var trimMat=new THREE.MeshStandardMaterial({color:0x6a2aa0,roughness:0.4,metalness:0.5,flatShading:true});
+  var hull=new THREE.Mesh(new THREE.IcosahedronGeometry(2.3,0),hullMat);
+  hull.rotation.set(rnd(0,1),rnd(0,1),rnd(0,1));
+  g.add(hull);
+  for(var i=0;i<6;i++){
+    var a=i/6*Math.PI*2;
+    var dir=new THREE.Vector3(Math.cos(a),Math.sin(a*1.7)*0.5,Math.sin(a));
+    dir.normalize();
+    var spike=new THREE.Mesh(new THREE.ConeGeometry(0.5,2.6,5),trimMat);
+    spike.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    spike.position.copy(dir).multiplyScalar(2.6);
+    g.add(spike);
+  }
+  var podMat=new THREE.MeshStandardMaterial({color:0x1a1622,roughness:0.5,metalness:0.55,flatShading:true});
+  for(var p=0;p<4;p++){
+    var pa=p/4*Math.PI*2;
+    var pod=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.65,1.4,8),podMat);
+    pod.position.set(Math.cos(pa)*2.5,rnd(-0.6,0.6),Math.sin(pa)*2.5);
+    pod.rotation.z=Math.PI/2; pod.rotation.y=pa;
+    g.add(pod);
+    var podGlow=new THREE.Mesh(new THREE.SphereGeometry(0.32,8,6),
+      new THREE.MeshStandardMaterial({color:0xff2a4a,emissive:0xff2a4a,emissiveIntensity:1.6}));
+    podGlow.position.set(Math.cos(pa)*3.3,pod.position.y,Math.sin(pa)*3.3);
+    g.add(podGlow);
+  }
+  var coreMat=new THREE.MeshStandardMaterial({color:0x1a0a24,emissive:0xff3a6a,emissiveIntensity:2.2});
+  var core=new THREE.Mesh(new THREE.SphereGeometry(1.0,12,10),coreMat);
+  core.position.z=2.0;
+  g.add(core);
+  g.userData.coreGlow=core;
+  g.scale.setScalar(26);
+  return g;
+}
 
 /* worlds are now spread ~5x farther apart (see WORLDS above) — ship speed and accel got bumped
    to match so the extra distance means a fast, dramatic flight instead of just more empty travel
@@ -6181,7 +6354,8 @@ var SHIP_STATS={
   scout:{maxhp:70,maxshield:20,spd:9072,dmg:9,rate:.3,accel:2835,clearance:1.35,surfSpd:100},
   fighter:{maxhp:100,maxshield:35,spd:7371,dmg:12,rate:.36,accel:2268,clearance:1.65,surfSpd:85},
   frigate:{maxhp:160,maxshield:60,spd:5387,dmg:18,rate:.5,accel:1588,clearance:1.95,surfSpd:58},
-  bomber:{maxhp:120,maxshield:30,spd:5670,dmg:38,rate:1.0,accel:1701,weapon:"bomb",clearance:4.05,surfSpd:65}
+  bomber:{maxhp:120,maxshield:30,spd:5670,dmg:38,rate:1.0,accel:1701,weapon:"bomb",clearance:4.05,surfSpd:65},
+  vanguard:{maxhp:200,maxshield:70,spd:6800,dmg:48,rate:.6,accel:2100,weapon:"rail",clearance:2.1,surfSpd:75}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 /* low-altitude flight over a landed world's own compact terrain (still a fixed 300-unit zoneR,
@@ -6193,6 +6367,74 @@ function shipSurfSpd(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&
 var pShip=null; // active flight state, created on launch
 var enemyShips=[], pBolts=[], eBolts=[], spaceParts=[];
 var wave=0, waveTimer=5, waveState="clear", enemiesToSpawn=0, spawnTimer=0;
+/* Obsidian Moon's guardian — a single persistent boss, not part of the wave system, that spawns
+   once the player's ship gets within range of the moon and stays until either defeated (see
+   killMoonBoss) or the player flies far enough away that it despawns again. Its hp/AI live
+   entirely separately from enemyShips/wave so it can't get swept up by wave-clear logic or
+   accidentally reset by anything tuned for the unrelated home-defense fight. */
+var moonBoss=null;
+var BOSS_SPAWN_RANGE=9000, BOSS_DESPAWN_RANGE=13000, BOSS_MAXHP=900;
+function ensureMoonBoss(){
+  var moon=worldById("obsidian");
+  if(!moon||moon.guardianDefeated||!pShip||!pShip.alive)return;
+  var dx=pShip.pos.x-moon.sx, dz=pShip.pos.z-moon.sz, d=Math.sqrt(dx*dx+dz*dz);
+  if(!moonBoss&&d<BOSS_SPAWN_RANGE){
+    var mesh=buildBossMesh();
+    var sa=rnd(0,Math.PI*2);
+    mesh.position.set(moon.sx+Math.cos(sa)*moon.radius*2,rnd(-400,400),moon.sz+Math.sin(sa)*moon.radius*2);
+    spaceScene.add(mesh);
+    moonBoss={mesh:mesh,hp:BOSS_MAXHP,max:BOSS_MAXHP,dmg:26,cd:0,standoff:900,hitT:0,facing:0};
+    toast("THE SENTINEL AWAKENS — defeat it to land on Obsidian Moon");
+    sfx.build();
+  } else if(moonBoss&&d>BOSS_DESPAWN_RANGE){
+    spaceScene.remove(moonBoss.mesh); moonBoss=null;
+  }
+}
+function updateMoonBoss(dt){
+  if(!moonBoss)return;
+  var e=moonBoss;
+  if(e.hitT>0)e.hitT-=dt;
+  if(e.mesh.userData.coreGlow)e.mesh.userData.coreGlow.material.emissiveIntensity=1.8+Math.sin(performance.now()/140)*0.6;
+  var targetPos=(pShip&&pShip.alive)?pShip.pos:e.mesh.position;
+  var dx=targetPos.x-e.mesh.position.x, dz=targetPos.z-e.mesh.position.z;
+  var d=Math.sqrt(dx*dx+dz*dz);
+  var ang=Math.atan2(dx,dz);
+  var dirMul=d>e.standoff+120?1:(d<e.standoff-120?-1:0);
+  e.mesh.position.x+=Math.sin(ang)*90*dirMul*dt;
+  e.mesh.position.z+=Math.cos(ang)*90*dirMul*dt;
+  var da=((ang-e.facing+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  e.facing+=da*Math.min(1,dt*2.5);
+  e.mesh.rotation.y=e.facing;
+  if(pShip&&pShip.alive){
+    e.cd-=dt;
+    if(e.cd<=0&&d<1400){
+      e.cd=rnd(0.7,1.1);
+      var ea=Math.atan2(pShip.pos.x-e.mesh.position.x,pShip.pos.z-e.mesh.position.z);
+      var evx=Math.sin(ea)*480, evz=Math.cos(ea)*480;
+      var ebolt={x:e.mesh.position.x,y:e.mesh.position.y,z:e.mesh.position.z,vx:evx,vz:evz,dmg:e.dmg,life:3.0};
+      ebolt.mesh=makeBoltMesh(0xff2a6a,20,2.0);
+      ebolt.mesh.position.set(ebolt.x,ebolt.y,ebolt.z);
+      orientBoltMesh(ebolt.mesh,evx,evz);
+      eBolts.push(ebolt);
+    }
+  }
+}
+function damageMoonBoss(dmg){
+  if(!moonBoss)return;
+  moonBoss.hp-=dmg; moonBoss.hitT=0.12;
+  if(moonBoss.hp<=0)killMoonBoss();
+}
+function killMoonBoss(){
+  if(!moonBoss)return;
+  spawnExplosionFX(spawnThrustParticle,moonBoss.mesh.position.clone(),22);
+  spaceScene.remove(moonBoss.mesh);
+  moonBoss=null;
+  var moon=worldById("obsidian");
+  if(moon)moon.guardianDefeated=true;
+  toast("The Sentinel is destroyed — Obsidian Moon is clear to land");
+  sfx.build();
+  saveGame();
+}
 function spEnemyHP(w){ return Math.round(24*Math.pow(1.12,w)); }
 function spEnemyDmg(w){ return Math.round(5+w*0.5); }
 function spWaveCount(w){ return 2+Math.floor(w*1.1); }
@@ -6241,6 +6483,10 @@ function returnToColony(){
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
   landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
+  /* ensureMoonBoss's own despawn check needs pShip to measure distance from, which this function
+     just set to null — without an explicit cleanup here the boss mesh would be orphaned in
+     spaceScene forever, never removed since nothing could compute "is it far enough away" again */
+  if(moonBoss){ spaceScene.remove(moonBoss.mesh); moonBoss=null; }
   clearBolts();
   atOutpost=false; currentWorld=null; surfaceFlying=false;
   syncBuildPlane(null);
@@ -6286,6 +6532,20 @@ function fireShipBolt(){
   pBolts.push(bolt);
   sfx.click();
 }
+/* the Vanguard's weapon — reuses the exact same pBolts array and hit-detection as a regular bolt
+   (already checks enemyShips and moonBoss), just visibly bigger, faster, and a distinct violet to
+   match the ship's own obsidian-forged theme, with damage coming from the ship's own (higher)
+   dmg stat rather than any special multiplier here. */
+function fireRailShot(){
+  var cos=Math.sin(pShip.yaw), sin=Math.cos(pShip.yaw);
+  var vx=cos*16000, vz=sin*16000;
+  var bolt={x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:vx,vz:vz,dmg:pShip.dmg,life:1.2};
+  bolt.mesh=makeBoltMesh(0xb060ff,90,3.2);
+  bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
+  orientBoltMesh(bolt.mesh,vx,vz);
+  pBolts.push(bolt);
+  sfx.click();
+}
 var bombs=[];
 function dropBomb(){
   var mesh=makeBombMesh();
@@ -6306,6 +6566,14 @@ function bombBlast(b){
   if(hiveRuntime&&hiveRuntime.alive){
     var hdx=hiveRuntime.pos.x-b.x, hdz=hiveRuntime.pos.z-b.z;
     if(Math.sqrt(hdx*hdx+hdz*hdz)<R)damageHive(b.dmg*1.4);
+  }
+  if(moonBoss){
+    /* the boss's own hull is ~200 units across (see the 200-unit bolt hit radius above) — a
+       9-unit blast radius meant for regular enemy-ship-sized targets would almost never actually
+       land on something that huge, so the blast check against it uses its own real size instead
+       of the bomb's tiny one, same idea as a direct-hit bolt already gets. */
+    var mdx=moonBoss.mesh.position.x-b.x, mdz=moonBoss.mesh.position.z-b.z, md=Math.sqrt(mdx*mdx+mdz*mdz);
+    if(md<R+200)damageMoonBoss(b.dmg*Math.max(0.3,1-md/(R+200)));
   }
   sfx.build();
 }
@@ -6542,13 +6810,16 @@ function updateSpace(dt){
     updateShipNavLights(pShip.mesh);
 
     pShip.cd-=dt;
-    if(!landedPlanet&&firing&&pShip.cd<=0){ if(pShip.weapon==="bomb")dropBomb(); else fireShipBolt(); pShip.cd=pShip.rate; }
+    if(!landedPlanet&&firing&&pShip.cd<=0){ if(pShip.weapon==="bomb")dropBomb(); else if(pShip.weapon==="rail")fireRailShot(); else fireShipBolt(); pShip.cd=pShip.rate; }
     if(pShip.shieldRegenT>0)pShip.shieldRegenT-=dt;
     else if(pShip.shield<pShip.maxshield)pShip.shield=Math.min(pShip.maxshield,pShip.shield+pShip.maxshield*0.25*dt);
   } else if(pShip){
     pShip.respawnT-=dt;
     if(pShip.respawnT<=0){ pShip.alive=true; pShip.pos.set(0,HOME_COMBAT_Y,20); pShip.hp=Math.round(pShip.maxhp*0.5); pShip.shield=0; pShip.mesh.visible=true; toast("Rescue ship deployed"); }
   }
+
+  ensureMoonBoss();
+  updateMoonBoss(dt);
 
   if(waveState==="clear"){
     waveTimer-=dt;
@@ -6624,6 +6895,10 @@ function updateSpace(dt){
         break;
       }
     }
+    if(!hit&&moonBoss){
+      var bdx=b.x-moonBoss.mesh.position.x, bdz=b.z-moonBoss.mesh.position.z;
+      if(Math.sqrt(bdx*bdx+bdz*bdz)<200){ damageMoonBoss(b.dmg); hit=true; }
+    }
     if(hit||b.life<=0){ if(b.mesh)spaceScene.remove(b.mesh); pBolts.splice(i2,1); }
   }
   for(var i3=eBolts.length-1;i3>=0;i3--){
@@ -6697,6 +6972,8 @@ function updateHudSpace(){
   $("spBaseFill").style.width=(clamp(homeBase.hp/homeBase.maxhp,0,1)*100)+"%";
   $("spWaveTxt").textContent=waveState==="clear"?("NEXT WAVE "+Math.ceil(waveTimer)+"s"):("WAVE "+wave);
   $("vig").style.opacity=pShip.alive?Math.max(0,(1-hpPc)*0.6-0.05):0;
+  $("bossHud").classList.toggle("show",!!moonBoss);
+  if(moonBoss)$("bossHpFill").style.width=(clamp(moonBoss.hp/moonBoss.max,0,1)*100)+"%";
   var thrPc=clamp(pShip.throttle==null?0:pShip.throttle,0,1);
   $("thrFill").style.height=(thrPc*100)+"%";
   $("thrPct").textContent=Math.round(thrPc*100)+"%";
@@ -7075,10 +7352,17 @@ function renderShipyard(){
   SHIP_MODELS.forEach(function(m){
     var current=shipModelKey===m.key;
     var afford=stock.parts>=m.partsCost;
+    var oreLabel="";
+    if(m.oreCost){
+      for(var k in m.oreCost){
+        if((stock[k]||0)<m.oreCost[k])afford=false;
+        oreLabel+=" + "+m.oreCost[k]+" "+(RES[k]?RES[k].nm:k);
+      }
+    }
     html+='<div class="upg"><div class="top"><span class="nm">'+m.nm+(current?" — current":"")+'</span></div>'+
       '<div class="ds">'+m.ds+' &middot; HP '+m.stats.maxhp+' &middot; SPD '+m.stats.spd+' &middot; DMG '+m.stats.dmg+'</div>'+
       '<button class="buy" data-k="'+m.key+'" '+((b.job||!afford)?"disabled":"")+'>'+
-      ('Design — '+m.partsCost+' Parts'+(shipBuilt?" (replaces ship)":""))+'</button></div>';
+      ('Design — '+m.partsCost+' Parts'+oreLabel+(shipBuilt?" (replaces ship)":""))+'</button></div>';
   });
   if(b.job){
     var m2=SHIP_MODELS.filter(function(x){return x.key===b.job.model;})[0];
@@ -7784,6 +8068,7 @@ function returnToTitle(){
   if(pausedFrom==="space"){
     if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
     enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
+    if(moonBoss){ spaceScene.remove(moonBoss.mesh); moonBoss=null; }
     clearBolts();
   }
   saveGame();
@@ -8334,12 +8619,13 @@ window.__cq={
         shield:pShip.shield,maxshield:pShip.maxshield,alive:pShip.alive,vel:{x:pShip.vel.x,z:pShip.vel.z}}:null,
       enemies:enemyShips.map(function(e){return {x:e.mesh.position.x,z:e.mesh.position.z,hp:e.hp,max:e.max};}),
       pBolts:pBolts.length, eBolts:eBolts.length, bombs:bombs.length, stock:JSON.parse(JSON.stringify(stock)),
-      worlds:WORLDS.map(function(w){return {id:w.id,nm:w.nm,sx:w.sx,sz:w.sz,radius:w.radius,discovered:w.discovered};}),
+      worlds:WORLDS.map(function(w){return {id:w.id,nm:w.nm,sx:w.sx,sz:w.sz,radius:w.radius,discovered:w.discovered,hasGuardian:!!w.hasGuardian,guardianDefeated:!!w.guardianDefeated};}),
       currentTarget:currentTarget?{id:currentTarget.id,nm:currentTarget.nm,isHome:!!currentTarget.isHome}:null,
       landed:landedPlanet?landedPlanet.id:null, landProgress:landProgress, atOutpost:atOutpost,
       currentWorld:currentWorld?currentWorld.id:null,
       hive:hiveRuntime?{alive:hiveRuntime.alive,hp:hiveRuntime.hp}:null, monsterCount:monsters.length,
-      playerHp:playerHp, shipBoosting:shipBoosting};
+      playerHp:playerHp, shipBoosting:shipBoosting,
+      moonBoss:moonBoss?{x:moonBoss.mesh.position.x,z:moonBoss.mesh.position.z,hp:moonBoss.hp,max:moonBoss.max}:null};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
@@ -8364,6 +8650,8 @@ window.__cq={
   },
   terrainHeightAt:function(x,z){ return terrainHeight(x,z); },
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
+  setPShipYaw:function(yaw){ if(pShip)pShip.yaw=yaw; },
+  debugDamageMoonBoss:function(dmg){ damageMoonBoss(dmg); },
   setPShipY:function(y){ if(pShip)pShip.pos.y=y; },
   damagePShip:damagePShip, killAllEnemies:function(){ enemyShips.forEach(function(e){spaceScene.remove(e.mesh);}); enemyShips=[]; },
   forceKillEnemy:function(idx){ idx=idx||0; if(enemyShips[idx])killEnemyShip(enemyShips[idx],idx); },
