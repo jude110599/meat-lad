@@ -650,8 +650,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.47.2";
+var VERSION="1.47.3";
 var CHANGELOG=[
+  {v:"1.47.3",t:"Throttle is now a real lever, not a hold-to-go key",items:[
+    "W/S used to also move the throttle (it decayed back to 0 on its own whenever neither was held), which fights the entire point of a throttle you can set once and leave — the ship never actually held a steady cruise speed on its own. W/S no longer touch the throttle at all: only the up/down arrows and the scroll wheel move it now, and it holds exactly wherever you leave it with no automatic decay. Set it to 30% with the down arrow and the ship settles there and stays there — actual capped cruise control instead of something that quietly crept back toward zero the moment you let go"
+  ]},
   {v:"1.47.2",t:"Throttle vs. speed are now actually different things, with a real speed gauge",items:[
     "Throttle is how much power you're commanding, not how fast you're going — but the ship's velocity used to snap to match the throttle setting instantly every single frame, so there was never any real difference between the two. The ship now actually has to accelerate: pin the throttle to 100% and speed genuinely ramps up toward it over about a second and a half instead of teleporting there, and easing off the throttle bleeds speed back down gradually instead of cutting it immediately",
     "Added a second gauge (SPD, in blue) next to the throttle gauge (THR, now amber) on the right edge of the screen, so you can actually see the ship's real speed chasing whatever you've set the throttle to instead of just watching one number that was secretly both things at once"
@@ -6234,12 +6237,12 @@ function updateLaunchAnim(dt){
     launchAnim=null; state="space";
     pShip.throttle=0.75;
     pShip.vel.copy(dir.multiplyScalar(pShip.spd*0.75));
-    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, W/S/arrows/scroll for throttle, Q/E altitude, right-click to fire":"Defend the sector");
+    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, up/down arrows or scroll for throttle, Q/E altitude, right-click to fire":"Defend the sector");
   }
 }
 /* how fast the throttle ramps per second of W/S (or the arrow-key equivalents) held down, and how
    much a single scroll-wheel notch nudges it directly */
-var THROTTLE_RATE=0.7, THROTTLE_WHEEL_STEP=0.08, THROTTLE_DECAY=1.1, SPEED_CATCHUP_RATE=0.9;
+var THROTTLE_RATE=0.7, THROTTLE_WHEEL_STEP=0.08, SPEED_CATCHUP_RATE=0.9;
 function updateSpace(dt){
   updateSpaceParts(dt);
   if(state==="launching"){ updateLaunchAnim(dt); return; }
@@ -6262,24 +6265,21 @@ function updateSpace(dt){
            persistent throttle value up or down instead (the scroll wheel nudges the same value
            directly, see the wheel listener), and that throttle is what actually drives velocity
            below, so easing off doesn't cut speed to zero instantly, it eases down instead.
-           The first version of this left the throttle completely alone whenever neither key was
-           held, which sounds reasonable for a real throttle lever but was a disaster in practice:
-           the ship launches at 0.75 throttle, and if you're not actively holding W (which is most
-           of the time in a dogfight, where turning/dodging matters more than constantly holding
-           forward) it just kept cruising at that speed forever with nothing to stop it — it flew
-           itself tens of thousands of units off into empty space in a few seconds of normal play.
-           Decaying back toward 0 whenever neither throttle key is held brings the ship to a stop
-           on its own once you let go, like every version of these controls before the throttle
-           existed, while still keeping the smooth ramp (instead of an instant snap) while you're
-           actually holding a key. */
+           This is a real throttle lever, not a "hold to go" key: it only ever moves when you
+           explicitly move it (the up/down arrows here, or the scroll wheel), and holds exactly
+           wherever you leave it otherwise — W/S don't touch it at all, and it does not drift back
+           down on its own. Set it to 30% and it stays at 30%, capping your speed there, until you
+           deliberately bring it back down yourself. (An earlier version of this decayed back to 0
+           automatically whenever no throttle key was held, on the theory that a real lever left
+           untouched should feel like coasting — that's not what a throttle lever actually does,
+           and it fought the deliberate "set your cruise speed and leave it" use case this is for.) */
         pShip.throttle=pShip.throttle==null?0.75:pShip.throttle;
         var throttleIn=0;
-        if(keys.w||keys.arrowup)throttleIn+=1;
-        if(keys.s||keys.arrowdown)throttleIn-=1;
-        /* no reverse — S/down now only ever bring the throttle back down to a dead stop at 0,
-           they can't push it negative, so "backwards" isn't a thing the ship does anymore */
+        if(keys.arrowup)throttleIn+=1;
+        if(keys.arrowdown)throttleIn-=1;
+        /* no reverse — down/arrowdown only ever brings the throttle to a dead stop at 0, it can't
+           push it negative, so "backwards" isn't a thing the ship does anymore */
         if(throttleIn!==0)pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,0,1);
-        else pShip.throttle+=(0-pShip.throttle)*Math.min(1,dt*THROTTLE_DECAY);
         /* throttle is how much power you're commanding, not how fast you're actually going —
            pinning it to 100% doesn't teleport you to top speed, the ship has to actually
            accelerate there. curSpeedFrac chases the throttle setting instead of matching it
