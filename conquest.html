@@ -652,8 +652,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.47.5";
+var VERSION="1.48.0";
 var CHANGELOG=[
+  {v:"1.48.0",t:"Saving mid-flight now actually restores mid-flight",items:[
+    "Closing the game while actually flying — out in open space, or still airborne over a world/home and not yet touched down — always reloaded you back on foot at your stale pre-boarding position instead, since the save format had no concept of \"the ship was in the air\" at all, only ever a parked ship's resting spot. In space that read as spawning at a random corner of whichever world was nearest; over a world it read as spawning away from your own ship, which was quietly restored parked wherever it happened to be flying at save time while you reappeared somewhere else entirely. Saves made mid-flight now capture that the ship was actually airborne (plus its real altitude, not just x/z), and reloading drops you straight back into flying it — in open space at its exact last position, or still gliding over the exact same world, with the same on-the-ground parked-ship restore untouched for genuinely parked saves"
+  ]},
   {v:"1.47.5",t:"Throttle now actually works over a world, Q/E altitude keeps up with the ship",items:[
     "The throttle/speed gauges showed up while flying low over a world (fixed last patch) but were only ever wired to space flight — down on a world, the up/down arrows and scroll wheel that are supposed to drive them did nothing, since low-altitude flight was still on the old direct instant W/S control from before the throttle system existed. It now shares the exact same throttle lever as space (only up/down arrows or the wheel move it, W/S don't, no auto-decay)",
     "Q/E altitude was a flat 9 units/sec no matter the ship — next to how much faster ships now cover ground horizontally, 9 read as barely doing anything at all: crossing the ~45-unit altitude band took 5 real seconds. It now scales with the ship's own surface speed, so climbing/descending actually keeps pace with everything else instead of feeling like it's not responding"
@@ -4946,7 +4949,15 @@ function saveGame(){
          last stood, which was only ever actually correct the instant after touchDown() (which
          plants the player right next to it). Walk away and save before reboarding and the ship
          would "teleport" to your new position on reload instead of staying put. */
-      shipX:pShip?pShip.pos.x:null, shipZ:pShip?pShip.pos.z:null, shipYaw:pShip?pShip.yaw:null,
+      shipX:pShip?pShip.pos.x:null, shipY:pShip?pShip.pos.y:null, shipZ:pShip?pShip.pos.z:null, shipYaw:pShip?pShip.yaw:null,
+      /* whether the ship was actually airborne (mid-cruise in open space, or still flying low over
+         a world/home and not yet touched down) rather than sitting parked when this save was made.
+         Restoring used to have no concept of this at all — it always treated shipX/shipZ as a
+         parked resting spot and dumped the PLAYER back at their stale pre-boarding on-foot
+         position regardless, so saving while actually flying put you back on foot somewhere miles
+         from where the ship (and you, conceptually, since you were inside it) actually were —
+         "spawn at the corner of the planet" in space, or "spawn away from my ship" over a world. */
+      flying:state==="space"?"space":(surfaceFlying?"surface":null),
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
       unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets
     };
@@ -4992,6 +5003,10 @@ function validSpawn(p){
   return p&&isFinite(p.x)&&isFinite(p.z)&&Math.abs(p.x)<50000&&Math.abs(p.z)<50000;
 }
 var loadedPlayerPos=null;
+/* set by applySaveData when the save was made mid-flight — "space" or "surface-flying" — so
+   enterGame can drop the player straight back into flying instead of always defaulting to the
+   plain on-foot surface state regardless of what was actually happening when they saved. */
+var pendingLoadState=null;
 function applySaveData(data){
   clearWorld();
   stock=data.stock||{iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,iron:0,copper:0,parts:0};
@@ -5061,40 +5076,87 @@ function applySaveData(data){
   (data.discoveredWorlds||[]).forEach(function(id){ var w=worldById(id); if(w)w.discovered=true; });
   atOutpost=!!data.atOutpost;
   syncBuildPlane(null);
-  /* a save made mid-flight (surfaceFlying true, mid-glide down or just after boarding to take
-     off) always restores as if you'd already landed and parked — but player.visible/playerShadow
-     were switched off for that flight and nothing here ever switched them back on, so reloading
-     one of those saves left the player permanently invisible, standing wherever their on-foot
-     position last was before boarding (which, for a world visited for the first time, could be
-     an unset/default spot nowhere near the parked ship). */
-  if(atOutpost&&shipModelKey){ player.visible=true; playerShadow.visible=true; }
-  if(atOutpost&&shipModelKey){
-    /* prefer the ship's own saved resting spot — falling back to "near the player" only for
-       saves made before shipX/shipZ existed, which is only ever actually right the instant
-       after touchDown() and wrong the moment you walk off to do something else before saving */
-    var hasShipPos=isFinite(data.shipX)&&isFinite(data.shipZ);
+  pendingLoadState=null;
+  var hasShipPos=isFinite(data.shipX)&&isFinite(data.shipZ);
+  if(data.flying==="space"&&shipModelKey&&hasShipPos){
+    /* was actually out in open space, not landed or parked anywhere — restoring had no concept of
+       this at all, so it always fell through to dumping you on foot at your stale pre-boarding
+       position (atOutpost is false out here, so the parked-ship branch below never even ran),
+       which read as spawning at a random corner of whichever world happened to be nearest. Puts
+       the ship right back where it actually was and drops you straight into flying it again. */
+    restoreSpaceShip(data.shipX,isFinite(data.shipY)?data.shipY:HOME_COMBAT_Y,data.shipZ,data.shipYaw);
+    pendingLoadState="space";
+  } else if(atOutpost&&shipModelKey){
+    var flyingHere=data.flying==="surface";
+    /* a save made mid-flight over a world/home (mid-glide down, or just after boarding to take
+       off, not yet touched down) always restored as if you'd already landed and parked — but
+       player.visible/playerShadow were switched off for that flight and nothing here ever
+       switched them back on, so reloading one of those saves left the player permanently
+       invisible, standing wherever their on-foot position last was before boarding. Flying saves
+       now put the ship back in the air exactly where it was and keep the player tucked away
+       inside it, same as during the actual flight; only a genuinely parked save shows the player
+       standing next to it. */
+    player.visible=!flyingHere; playerShadow.visible=!flyingHere;
     if(data.atWorldId){
-      /* landed on one of the alien worlds */
+      /* landed on (or flying over) one of the alien worlds */
       var restoreWorld=worldById(data.atWorldId)||WORLDS[0];
-      currentWorld=restoreWorld; surfaceFlying=false;
+      currentWorld=restoreWorld;
       var rgx=hasShipPos?data.shipX:(validSpawn(data.player)?data.player.x:restoreWorld.cx);
       var rgz=hasShipPos?data.shipZ:(validSpawn(data.player)?data.player.z-2.6:restoreWorld.cz);
-      restoreLandedShip(restoreWorld,rgx,rgz,data.shipYaw);
+      if(flyingHere){
+        surfaceFlying=true;
+        restoreFlyingShip(restoreWorld,rgx,isFinite(data.shipY)?data.shipY:terrainHeight(rgx,rgz)+40,rgz,data.shipYaw);
+        pendingLoadState="surface-flying";
+      } else {
+        surfaceFlying=false;
+        restoreLandedShip(restoreWorld,rgx,rgz,data.shipYaw);
+      }
       syncBuildPlane(restoreWorld);
       applyWorldAtmosphere(restoreWorld);
       if(restoreWorld.hasHive)$("hiveHud").classList.remove("hide");
     } else {
-      /* landed back at the colony via ship (atWorldId null, not missing/corrupt data — home was
-         never a member of WORLDS so it never had an id to save here) */
-      currentWorld=null; surfaceFlying=false;
+      /* landed on (or flying over) the colony itself (atWorldId null, not missing/corrupt data —
+         home was never a member of WORLDS so it never had an id to save here) */
+      currentWorld=null;
       var sp=homeSpawnPoint();
       var rgx=hasShipPos?data.shipX:(validSpawn(data.player)?data.player.x:sp.x);
       var rgz=hasShipPos?data.shipZ:(validSpawn(data.player)?data.player.z-2.6:sp.z);
-      restoreLandedShip(null,rgx,rgz,data.shipYaw);
+      if(flyingHere){
+        surfaceFlying=true;
+        restoreFlyingShip(null,rgx,isFinite(data.shipY)?data.shipY:terrainHeight(rgx,rgz)+40,rgz,data.shipYaw);
+        pendingLoadState="surface-flying";
+      } else {
+        surfaceFlying=false;
+        restoreLandedShip(null,rgx,rgz,data.shipYaw);
+      }
       syncBuildPlane(null);
       restoreHomeAtmosphere();
     }
   }
+}
+function restoreFlyingShip(world,gx,gy,gz,yaw){
+  var stats=SHIP_STATS[shipModelKey];
+  pShip={
+    pos:new THREE.Vector3(gx,gy,gz), vel:new THREE.Vector3(0,0,0), yaw:yaw!=null?yaw:Math.PI,
+    hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
+    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0, weapon:stats.weapon||"bolt",
+    alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey), liftedOff:true
+  };
+  surfaceScene.add(pShip.mesh);
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
+  landedPlanet=null; landProgress=0; landedNormal=null;
+}
+function restoreSpaceShip(gx,gy,gz,yaw){
+  var stats=SHIP_STATS[shipModelKey];
+  pShip={
+    pos:new THREE.Vector3(gx,gy,gz), vel:new THREE.Vector3(0,0,0), yaw:yaw!=null?yaw:Math.PI,
+    hp:stats.maxhp,maxhp:stats.maxhp, shield:stats.maxshield,maxshield:stats.maxshield,shieldRegenT:0,
+    spd:stats.spd, accel:stats.accel, dmg:stats.dmg, rate:stats.rate, cd:0, weapon:stats.weapon||"bolt",
+    alive:true, respawnT:0, mesh:buildShipMesh(shipModelKey)
+  };
+  spaceScene.add(pShip.mesh);
+  pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
+  landedPlanet=null; landProgress=0; landedNormal=null;
 }
 function restoreLandedShip(world,gx,gz,yaw){
   var stats=SHIP_STATS[shipModelKey];
@@ -7964,9 +8026,30 @@ function enterGame(loaded){
   loadedPlayerPos=null;
   camYaw=0; camPitch=0.55;
   updateCameraTransform();
-  state="surface";
-  $("hud").classList.add("show");
-  $("mobActions").classList.add("show");
+  /* a save made while actually flying (open space, or still airborne over a world/home) used to
+     always land here in the plain on-foot state no matter what applySaveData had just set up —
+     pendingLoadState is how it tells this function which flying state (if any) to actually drop
+     the player into instead. */
+  if(loaded&&pendingLoadState==="space"){
+    state="space";
+    $("hud").classList.remove("show"); $("hudSpace").classList.add("show"); $("mobActions").classList.remove("show");
+    if(pShip){
+      var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
+      camera.position.copy(pShip.pos).add(camOff);
+      camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
+    }
+  } else if(loaded&&pendingLoadState==="surface-flying"){
+    state="surface";
+    $("hud").classList.add("show"); $("hudSpace").classList.remove("show"); $("mobActions").classList.remove("show");
+    /* no explicit camera placement needed here — updateSurfaceFlight's own chase cam hard-clamps
+       to within a fixed distance of the ship on its very first tick regardless of where the
+       camera started, so it snaps into place immediately without needing to be pre-aimed */
+  } else {
+    state="surface";
+    $("hud").classList.add("show");
+    $("mobActions").classList.add("show");
+  }
+  pendingLoadState=null;
   show(null);
 }
 $("bStart").onclick=function(){
