@@ -638,8 +638,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.47.0";
+var VERSION="1.47.1";
 var CHANGELOG=[
+  {v:"1.47.1",t:"Fixed landing on home being impossible after the last altitude fix",items:[
+    "The altitude ceiling added last patch to stop combat from accidentally triggering a landing used a flat 65% of a world's radius — for home specifically (radius 3150) that ceiling sat at 2047, which is BELOW the 3180-altitude line where the ship's own solid-planet collision physically shoves it back out. There was no legal altitude left where the ship could be both close enough to lock on and not colliding with home's own surface, so flying home and landing normally stopped working entirely. The ceiling is now anchored to that same solid-collision boundary plus a real descent buffer instead of an independent fraction of the radius, so the two can't drift apart like that again — confirmed combat altitude is still excluded and a normal landing approach works again"
+  ]},
   {v:"1.47.0",t:"Collision matches the actual models, a visible throttle gauge, no more accidental home-landing mid-fight",items:[
     "Found a serious one: home-defense combat happens at a fixed altitude almost directly above the colony, and last patch's proximity-only landing lock-on checked distance in a flat plane with no altitude limit at all — so simply fighting a wave kept the lock-on timer filling the entire time, and would silently force-land you out of the fight roughly every 1.3 seconds. Landing near a world now also requires being reasonably low relative to that world's own size (generous enough that normal approach flying is unaffected — this isn't the old 6-unit hard floor), which keeps combat altitude clearly out of range everywhere",
     "Foundation tiles and the Landing Pad were flagged solid along with everything else, which is exactly backwards — a Foundation is the flat floor you're meant to stand on, and the Landing Pad is a raised deck on thin legs, not a solid drum. Both are walk/fly-through again",
@@ -5538,10 +5541,16 @@ function updatePlanetTargeting(dt){
      a purely horizontal x/z check — the combat arena sits almost exactly above home's own (x,z)
      position the entire time by design. With no altitude gate at all, that meant simply fighting
      a wave was enough to satisfy "near" continuously, so the lock-on timer kept filling and
-     force-landed the player mid-fight roughly every 1.3 seconds. A generous, radius-relative
-     altitude ceiling (nothing like the old fixed 6-unit one) keeps combat altitude clearly outside
-     landing range for every world while still being far looser than "basically on the ground". */
-  var lowEnough=pShip.pos.y<target.radius*0.65;
+     force-landed the player mid-fight roughly every 1.3 seconds.
+     A flat radius*0.65 ceiling seemed generous until home's own solid-planet collision (radius+
+     SHIP_COLLISION_PAD, see resolvePlanetCollision) got involved: for home specifically, 65% of
+     its 3150 radius is only 2047, which is BELOW the 3180 altitude where the ship physically gets
+     shoved back out by its own solid surface — there was no altitude left where you could be both
+     "close enough to land" and "not colliding with the planet", so flying home could never
+     actually lock on at all. Anchoring the ceiling to the solid boundary itself (plus a real
+     descent buffer) instead of an independent fraction of the radius keeps the two systems from
+     drifting apart like that again, for every world, not just home. */
+  var lowEnough=pShip.pos.y<target.radius+SHIP_COLLISION_PAD+600;
   var settling=near&&lowEnough;
   landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
@@ -8076,6 +8085,16 @@ window.__cq={
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
   touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb, boardParkedShip:boardParkedShip, exitToSpace:exitToSpace,
   turretState:function(){ return turrets.map(function(t){return {x:t.x,z:t.z,hp:t.hp,alive:t.alive};}); },
+  debugLandCheck:function(){
+    if(!pShip)return null;
+    var target=findNearestTarget();
+    if(!target)return {target:null};
+    var dx=target.sx-pShip.pos.x, dz=target.sz-pShip.pos.z;
+    var dist=Math.sqrt(dx*dx+dz*dz);
+    var near=dist<target.radius*2.4;
+    var lowEnough=pShip.pos.y<target.radius+SHIP_COLLISION_PAD+600;
+    return {target:target.id,dist:dist,near:near,lowEnough:lowEnough,threshold:target.radius+SHIP_COLLISION_PAD+600,pShipY:pShip.pos.y,landedPlanet:landedPlanet?landedPlanet.id:null,landTransitioning:landTransitioning,landProgress:landProgress};
+  },
   terrainHeightAt:function(x,z){ return terrainHeight(x,z); },
   setPShipPos:function(x,z){ if(pShip){ pShip.pos.x=x; pShip.pos.z=z; } },
   setPShipY:function(y){ if(pShip)pShip.pos.y=y; },
