@@ -652,8 +652,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.48.2";
+var VERSION="1.48.3";
 var CHANGELOG=[
+  {v:"1.48.3",t:"Diving in space actually looks like diving now",items:[
+    "The ship's actual altitude was always changing correctly with Q/E in space (confirmed — it even reaches the hard floor if you hold Q long enough), but two things made it look like it wasn't going anywhere. First, the engine particle trail direction was computed from yaw alone, completely ignoring pitch, so nose-down and diving still shot the exhaust out dead-level instead of up-and-behind the ship — pulling the real backward axis off the ship's own orientation instead fixes this in space, low-altitude surface flight, and the launch climb. Second, and bigger: the chase camera's offset was also yaw-only, so it held the exact same relative position no matter how hard the ship pitched, and diving swung the ship increasingly edge-on to a camera that never adjusted to follow. The camera now factors pitch into its own offset too (deliberately not roll, so it doesn't bank with the ship), swinging up and back during a dive to keep it in clear view instead of going edge-on — confirmed numerically: a 17° dive now measurably lifts the camera's relative height from +16 to +26 units above the ship"
+  ]},
   {v:"1.48.2",t:"Pitch angle stays visible at speed, arrival glide isn't a 140-unit plummet anymore",items:[
     "Last patch's real flight-path pitch angle correctly shrinks toward level at high speed (that's the actual physics of it), but it shrank all the way down to just a couple degrees at or near top throttle — which read as \"the ship barely tilts even though I'm clearly climbing\", not as a correctly shallow climb. The angle now has a floor: it still grows steeper at low speed and shrinks at high speed same as before, but it never drops low enough to look like it's barely doing anything while Q or E is actually held",
     "The glide down when arriving at a world or the colony dropped 140 units in 1.8 seconds — a peak fall speed of about 117 units/sec, which is enormous relative to how small this world actually is (a 300-unit zoneR, a ~45-unit flight ceiling), and read as an out-of-control plummet no matter how gently it eased in and out. Cut to 60 units over the same time (peak speed roughly halved, ~50 units/sec, comparable to the ship's own cruising speed) — still levels off at the same genuinely-medium altitude, just without free-falling most of the way there first"
@@ -1873,7 +1876,14 @@ function updateSurfaceFlight(dt){
     if(moving&&Math.random()<0.5){
       var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
       var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
-      var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(3,6));
+      /* was computed from yaw alone, ignoring pitch/roll entirely — the nozzle's own world
+         position already correctly followed the pitched-and-rolled ship (it comes straight off
+         the mesh hierarchy), but the trail then shot out in a fixed, purely-horizontal direction
+         regardless of which way the ship was actually pointed. Nose-down and diving looked like
+         the exhaust trailing straight up instead of up-and-behind, which read as the ship not
+         really going anywhere. Pulling the true backward axis off the mesh's own quaternion keeps
+         the trail pointed the way the engines are actually facing. */
+      var eback=new THREE.Vector3(0,0,-1).applyQuaternion(pShip.mesh.quaternion).multiplyScalar(rnd(3,6));
       eback.x+=rnd(-.5,.5); eback.y+=rnd(-.3,.3); eback.z+=rnd(-.5,.5);
       spawnSurfaceParticle(ewp,eback,rnd(0.22,0.4),0x6fd8ff);
     }
@@ -6365,7 +6375,10 @@ function updateLaunchAnim(dt){
   if(pShip.mesh.userData.engineGlow&&Math.random()<0.85){
     var g=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
     var wp=new THREE.Vector3(); g.getWorldPosition(wp);
-    var back=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(6,13));
+    /* pulled off the mesh's own quaternion rather than yaw alone, matching the same fix in
+       updateSpace/updateSurfaceFlight — the launch climb pitches the nose up on its way out, so a
+       yaw-only trail direction would already be slightly off here too. */
+    var back=new THREE.Vector3(0,0,-1).applyQuaternion(pShip.mesh.quaternion).multiplyScalar(rnd(6,13));
     back.x+=rnd(-1,1); back.y+=rnd(-0.5,1); back.z+=rnd(-1,1);
     spawnThrustParticle(wp,back,rnd(0.4,0.85)*(0.6+ease),t<0.75?0xffcc66:0x9fd8ff);
   }
@@ -6502,7 +6515,14 @@ function updateSpace(dt){
         for(var bi=0;bi<burst;bi++){
           var eg=pShip.mesh.userData.engineGlow[ri(0,pShip.mesh.userData.engineGlow.length-1)];
           var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
-          var eback=new THREE.Vector3(-Math.sin(pShip.yaw),0,-Math.cos(pShip.yaw)).multiplyScalar(rnd(18,44));
+          /* was computed from yaw alone, ignoring pitch entirely — the nozzle's own world position
+             already correctly tracked the pitched ship, but the trail then shot out in a fixed,
+             purely-horizontal direction no matter which way the nose was actually pointed. Diving
+             hard with Q looked like the exhaust trailing straight up above the ship instead of
+             up-and-behind it, which read as the ship not really descending even when it genuinely
+             was. Pulling the true backward axis off the mesh's own quaternion keeps the trail
+             pointed the way the engines are actually facing, pitch included. */
+          var eback=new THREE.Vector3(0,0,-1).applyQuaternion(pShip.mesh.quaternion).multiplyScalar(rnd(18,44));
           eback.x+=rnd(-3,3); eback.y+=rnd(-3,3); eback.z+=rnd(-3,3);
           spawnThrustParticle(ewp,eback,rnd(1.6,3.2)*(boosting?1.9:1),boosting?0xff4fd8:0x6fd8ff);
         }
@@ -6616,7 +6636,17 @@ function updateSpace(dt){
       camOff.y+=9;
       lookY=pShip.pos.y+1.2;
     } else {
-      camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
+      /* was purely yaw-based — the camera held the exact same relative position no matter how
+         hard the ship was pitched, so diving with Q swung the ship edge-on to a camera that never
+         moved to follow, collapsing the silhouette down to a thin line and making it read as
+         barely moving rather than as diving away from you. Deriving the offset from the ship's
+         real forward vector (yaw AND pitch, not yaw alone — roll is deliberately left out so the
+         camera doesn't bank with the ship, which reads as nauseating rather than helpful) swings
+         the camera up and back during a dive and down and back during a climb, the way an actual
+         chase camera keeps a diving/climbing target in clear view instead of going edge-on. */
+      var camPitch2=pShip.pitch||0;
+      var fwdX=Math.sin(pShip.yaw)*Math.cos(camPitch2), fwdY=-Math.sin(camPitch2), fwdZ=Math.cos(pShip.yaw)*Math.cos(camPitch2);
+      camOff=new THREE.Vector3(-fwdX*34,-fwdY*34+16,-fwdZ*34);
       lookY=pShip.pos.y+1;
     }
     var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
