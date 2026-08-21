@@ -666,8 +666,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.49.0";
+var VERSION="1.49.1";
 var CHANGELOG=[
+  {v:"1.49.1",t:"Q/E camera no longer swings to a near-vertical top-down view",items:[
+    "Climb/dive pitch has always had a floor but no ceiling, and at any real ship speed it's floored/scaled by forward speed vs vertical speed — hold Q or E while barely moving forward (hovering, just launched, slowed down) and the pitch angle pins itself near 90 degrees. The chase camera's horizontal offset used to scale down with that same angle, so at 90 degrees it collapsed to almost nothing, leaving the camera floating almost directly above the ship looking straight down with no sense of motion or direction — exactly the \"hard to see\" complaint. The camera's behind-the-ship distance is now derived from yaw alone, so it never collapses no matter how steep the pitch gets, and pitch itself only lifts/drops it a bounded amount on top of that — confirmed directly: holding Q while stationary now still pegs the ship's own pitch near 90 degrees, but the camera holds a steady, natural ~27 degree look-down angle throughout instead of swinging toward vertical"
+  ]},
   {v:"1.49.0",t:"Obsidian Moon: a guardian boss, a new ore, and the Vanguard",items:[
     "A fourth world, Obsidian Moon, now sits in the one quadrant of space that was empty — a small, jagged, violet-hazed moon guarded by a boss ship (\"The Sentinel\") that has to be shot down before landing will even lock on. Confirmed live: flying in and trying to settle while it's alive keeps the targeting hint pinned on \"DEFEAT THE GUARDIAN\" and landing progress refuses to advance no matter how close, slow, or low you are; killing it flips a persistent guardianDefeated flag, the hint switches to the normal LOCKING ON sequence, and the same approach that was stuck at 0% rides straight through to touchdown",
     "The Sentinel has its own top-of-screen boss health bar (separate from your own HULL/SHIELD/BASE readout), spawns once you fly within range of the moon and despawns again if you fly far enough away, fires back at you on its own cooldown, and its defeat is saved permanently — reloading a save made after the kill confirmed the moon stays clear rather than resetting the guardian",
@@ -6929,19 +6932,25 @@ function updateSpace(dt){
          the camera up and back during a dive and down and back during a climb, the way an actual
          chase camera keeps a diving/climbing target in clear view instead of going edge-on. */
       var camPitch2=pShip.pitch||0;
-      var fwdX=Math.sin(pShip.yaw)*Math.cos(camPitch2), fwdY=-Math.sin(camPitch2), fwdZ=Math.cos(pShip.yaw)*Math.cos(camPitch2);
-      camOff=new THREE.Vector3(-fwdX*34,-fwdY*34+16,-fwdZ*34);
-      /* the swing above tracks the ship's own visual pitch, which is intentionally floored/capped
-         so the HULL itself never looks absurd — but that means at any real cruising speed the
-         pitch (and so the swing) is pinned near its modest floor the whole time you're diving,
-         which still didn't sell "falling" strongly enough. This second, separate swing is driven
-         directly by whether Q/E is actually being held right now, not by the ship's (deliberately
-         restrained) body angle, so it can be far more aggressive without making the ship model
-         itself look like it's tumbling. */
+      /* horizontal offset used to scale with cos(pitch), which collapses toward zero as the pitch
+         angle approaches vertical — and pitch itself has no ceiling, only a floor, so holding Q/E
+         while barely moving forward (hovering, just launched, slowed to a stop) pins it near 90°.
+         The camera then ends up almost directly above the ship with nothing behind it in frame,
+         reading as "pointing straight down" rather than as a chase cam. Yaw-only horizontal offset
+         means there's always a real behind-the-ship view no matter how steep the nose gets. */
+      var backX=-Math.sin(pShip.yaw)*34, backZ=-Math.cos(pShip.yaw)*34;
+      /* pitch still lifts/drops the camera so a dive or climb still reads as one, just capped well
+         short of the near-vertical case above instead of scaling all the way up with it */
+      var pitchRise=clamp(-Math.sin(camPitch2),-0.6,0.6)*34;
+      camOff=new THREE.Vector3(backX,pitchRise+16,backZ);
+      /* a second, separate swing driven directly by whether Q/E is actually held right now (not the
+         ship's own restrained body angle) so a dive/climb still reads as more dramatic than the
+         pitch alone sells — toned down from its original 55 so it no longer stacks with the pitch
+         rise above into the same near-vertical problem this whole block exists to avoid */
       pShip.camDiveT=pShip.camDiveT==null?0:pShip.camDiveT;
       var diveTarget=vyS<0?1:(vyS>0?-1:0);
       pShip.camDiveT+=(diveTarget-pShip.camDiveT)*Math.min(1,dt*3);
-      camOff.y+=pShip.camDiveT*55;
+      camOff.y+=pShip.camDiveT*22;
       lookY=pShip.pos.y+1;
     }
     var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
