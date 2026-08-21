@@ -652,8 +652,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.47.4";
+var VERSION="1.47.5";
 var CHANGELOG=[
+  {v:"1.47.5",t:"Throttle now actually works over a world, Q/E altitude keeps up with the ship",items:[
+    "The throttle/speed gauges showed up while flying low over a world (fixed last patch) but were only ever wired to space flight — down on a world, the up/down arrows and scroll wheel that are supposed to drive them did nothing, since low-altitude flight was still on the old direct instant W/S control from before the throttle system existed. It now shares the exact same throttle lever as space (only up/down arrows or the wheel move it, W/S don't, no auto-decay)",
+    "Q/E altitude was a flat 9 units/sec no matter the ship — next to how much faster ships now cover ground horizontally, 9 read as barely doing anything at all: crossing the ~45-unit altitude band took 5 real seconds. It now scales with the ship's own surface speed, so climbing/descending actually keeps pace with everything else instead of feeling like it's not responding"
+  ]},
   {v:"1.47.4",t:"Fixed Q/E's fake left/right tilt, throttle/speed gauges now show everywhere",items:[
     "Q/E pitching the nose up/down looked fine right after launch but started visibly tilting left/right the moment you'd turned at all — in both space and low-altitude flight over a world. That wasn't roll (nothing was ever setting one), it was a rotation-order artifact: pitch and yaw were composing in an order where pitching the nose no longer happened purely around the ship's own local axis once yaw had changed. Reordered to yaw-then-pitch-then-roll, the standard order for exactly this kind of flight control, which eliminates the cross-coupling entirely — confirmed directly: with 90° of yaw and a hard pitch both applied, the ship's local \"right\" direction stays dead level (effectively exactly 0 tilt) instead of skewing",
     "The throttle and speed gauges only ever showed up during main space cruise — they vanished the instant you dropped into low-altitude flight over a world, even though you're just as much flying. They now show in every flying context, space or surface, and the speed gauge reads real current speed relative to whatever the actual top speed is in that context instead of freezing at a stale value"
@@ -1777,9 +1781,21 @@ function updateSurfaceFlight(dt){
   var pc=document.body.classList.contains("pc-mode");
   var fwd=0,strafe=0,turn=0;
   if(pc){
-    if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
     if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
     pShip.yaw+=turn*SHIP_TURN_RATE*dt;
+    /* same throttle lever as space flight, sharing the same pShip.throttle/curSpeedFrac fields —
+       it used to be direct instant W/S control here (a leftover from before the throttle system
+       existed), so the gauges shown while flying over a world displayed a value that up/down and
+       the scroll wheel had no actual effect on. Only the up/down arrows and the wheel move it,
+       same as in space; W/S don't touch it, and it holds wherever you leave it. */
+    pShip.throttle=pShip.throttle==null?0.75:pShip.throttle;
+    var throttleIn=0;
+    if(keys.arrowup)throttleIn+=1;
+    if(keys.arrowdown)throttleIn-=1;
+    if(throttleIn!==0)pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,0,1);
+    pShip.curSpeedFrac=pShip.curSpeedFrac==null?pShip.throttle:pShip.curSpeedFrac;
+    pShip.curSpeedFrac+=(pShip.throttle-pShip.curSpeedFrac)*Math.min(1,dt*SPEED_CATCHUP_RATE);
+    fwd=pShip.curSpeedFrac;
   } else {
     if(keys.w||keys.arrowup)fwd+=1; if(keys.s||keys.arrowdown)fwd-=1;
     if(keys.d||keys.arrowright)strafe+=1; if(keys.a||keys.arrowleft)strafe-=1;
@@ -1792,8 +1808,14 @@ function updateSurfaceFlight(dt){
   var k=Math.min(1,pShip.accel*dt);
   pShip.vel.lerp(tv,k);
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
-  if(keys.q)pShip.pos.y-=dt*9;
-  if(keys.e)pShip.pos.y+=dt*9;
+  /* was a flat 9 units/sec regardless of ship — next to shipSurfSpd() now running 58-100
+     units/sec horizontally, 9 vertical read as barely doing anything: crossing the ~45-unit
+     altitude band took 5 real seconds while the ship covered 500+ units sideways in that same
+     time. Scaling it off the ship's own surface speed keeps climbing/descending feeling as
+     responsive as the horizontal movement it's paired with. */
+  var vertSpd=shipSurfSpd()*0.6;
+  if(keys.q)pShip.pos.y-=dt*vertSpd;
+  if(keys.e)pShip.pos.y+=dt*vertSpd;
   /* the ship used to fly straight through every building with nothing stopping it — only ever
      low enough to matter for a landing approach or ground-level buzzing, so this only kicks in
      under roughly rooftop height rather than treating buildings as infinitely tall towers that'd
@@ -6569,10 +6591,13 @@ window.addEventListener("keydown",function(e){
   if("wasd".indexOf(k)>=0||k===" ")e.preventDefault();
 });
 window.addEventListener("keyup",function(e){ keys[e.key.toLowerCase()]=0; });
-/* scroll wheel doubles as a throttle lever while actually piloting the ship in space — scoped to
-   state==="space" specifically so it never hijacks normal page/panel scrolling anywhere else */
+/* scroll wheel doubles as a throttle lever while actually piloting the ship — space cruise or
+   low-altitude flight over a world, both share the same throttle. Scoped tightly (not just
+   "there's a pShip") so it never hijacks normal page/panel scrolling anywhere else, including
+   while just walking around on foot with a ship parked nearby. */
 window.addEventListener("wheel",function(e){
-  if(state!=="space"||!pShip||!pShip.alive)return;
+  if(!pShip||!pShip.alive)return;
+  if(!(state==="space"||(state==="surface"&&surfaceFlying)))return;
   e.preventDefault();
   pShip.throttle=clamp((pShip.throttle==null?0.75:pShip.throttle)+(e.deltaY<0?1:-1)*THROTTLE_WHEEL_STEP,0,1);
 },{passive:false});
