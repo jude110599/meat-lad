@@ -97,6 +97,14 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
    gauge that fills bottom-up so "more filled" reads the same way the hull/shield bars already do */
 #throttleHud{position:fixed;right:16px;top:50%;transform:translateY(-50%);
   flex-direction:row;align-items:flex-end;gap:12px;z-index:4;pointer-events:none}
+/* the space flight reticle — a rough, jagged ring rather than a clean circle so it reads as a
+   targeting reticle (roughly here, not exactly here) instead of a UI dot. Its own scale is set
+   directly in JS every frame (see updateHudSpace/pShip.zoomT) so it can shrink continuously as you
+   zoom in, matching the real fire spread it stands for rather than snapping between two sizes. */
+#spaceCrosshair{position:fixed;left:50%;top:50%;width:70px;height:70px;margin:-35px 0 0 -35px;
+  display:none;z-index:5;pointer-events:none}
+#spaceCrosshair.show{display:block}
+#spaceCrosshair svg{width:100%;height:100%;display:block;overflow:visible}
 .thrGauge{display:flex;flex-direction:column;align-items:center;gap:6px}
 .thrLbl{font-size:9px;letter-spacing:.12em;color:var(--dim);font-weight:800}
 .thrBar{width:16px;height:150px;border-radius:8px;background:rgba(0,0,0,.55);
@@ -374,6 +382,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   <div class="aimLabel hide" id="aimLabel"></div>
   <div class="saveInd" id="saveInd"><span class="dot"></span><span id="saveIndTxt">Saved</span></div>
   <div id="vig"></div>
+  <div id="spaceCrosshair">
+    <svg viewBox="0 0 100 100">
+      <path d="M 50.0 10.0 L 62.2 20.4 L 78.3 21.7 L 79.6 37.8 L 90.0 50.0 L 79.6 62.2 L 78.3 78.3 L 62.2 79.6 L 50.0 90.0 L 37.8 79.6 L 21.7 78.3 L 20.4 62.2 L 10.0 50.0 L 20.4 37.8 L 21.7 21.7 L 37.8 20.4 Z"
+        fill="none" stroke="#4fe0d3" stroke-width="2.4" stroke-linejoin="round" opacity="0.9"/>
+      <line x1="50" y1="0" x2="50" y2="7" stroke="#4fe0d3" stroke-width="2.6"/>
+      <line x1="50" y1="93" x2="50" y2="100" stroke="#4fe0d3" stroke-width="2.6"/>
+      <line x1="0" y1="50" x2="7" y2="50" stroke="#4fe0d3" stroke-width="2.6"/>
+      <line x1="93" y1="50" x2="100" y2="50" stroke="#4fe0d3" stroke-width="2.6"/>
+      <circle cx="50" cy="50" r="2" fill="#4fe0d3"/>
+    </svg>
+  </div>
 
   <div id="hud">
     <div class="hudrow">
@@ -666,8 +685,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.49.1";
+var VERSION="1.50.0";
 var CHANGELOG=[
+  {v:"1.50.0",t:"A real crosshair and aim-down-sights zoom for space combat, plus a fire-direction bug fix",items:[
+    "Space flight had no reticle at all — no indication of where fire was actually going to land, which made aiming mostly guesswork. There's now a jagged targeting ring at screen center that shows the actual cone a shot can land in (see the new spread mechanic below), instead of a UI element that's just decorative",
+    "Left click now fires (used to be right click) and right click zooms in — a real aim-down-sights: FOV narrows, fire rate drops to about 59% of normal, and the reticle itself shrinks to about 40% its normal size, all easing in together rather than snapping. Both buttons can be held at once (fire while zoomed) — they used to share a single \"which button is down\" value, so holding one while pressing the other would silently cancel the first; each is now tracked independently",
+    "Regular (non-zoomed) fire now has a real spread cone instead of a laser-straight line every time, matching what the reticle shows — the whole point of a reticle is \"roughly here,\" and zooming is the payoff for actually needing \"exactly here\"",
+    "Fixed a real bug: bolts fired at a fixed absolute speed along the nose with no regard for the ship's own current velocity. At full boost (1.7x) some ships' own top speed could get close to or exceed that fixed bolt speed, so the ship could nearly catch up to or overtake its own shots — the \"bullets don't fly right\" symptom. Bolts now inherit the ship's current velocity on top of their own muzzle speed (the same thing dropped bombs already correctly did), which guarantees a shot is always genuinely outrunning whatever ship fired it, boosting or not",
+    "Shooting effects got a real pass: bolts are now a bright core inside a glowing additive shell instead of one flat-colored cylinder, plus a spark burst right at the muzzle when a shot fires and another wherever it actually lands, instead of shots silently appearing and hits silently deleting the bolt with nothing to show for it"
+  ]},
   {v:"1.49.1",t:"Q/E camera no longer swings to a near-vertical top-down view",items:[
     "Climb/dive pitch has always had a floor but no ceiling, and at any real ship speed it's floored/scaled by forward speed vs vertical speed — hold Q or E while barely moving forward (hovering, just launched, slowed down) and the pitch angle pins itself near 90 degrees. The chase camera's horizontal offset used to scale down with that same angle, so at 90 degrees it collapsed to almost nothing, leaving the camera floating almost directly above the ship looking straight down with no sense of motion or direction — exactly the \"hard to see\" complaint. The camera's behind-the-ship distance is now derived from yaw alone, so it never collapses no matter how steep the pitch gets, and pitch itself only lifts/drops it a bounded amount on top of that — confirmed directly: holding Q while stationary now still pegs the ship's own pitch near 90 degrees, but the camera holds a steady, natural ~27 degree look-down angle throughout instead of swinging toward vertical"
   ]},
@@ -1249,7 +1275,7 @@ renderer.toneMappingExposure=1.3;
    to flicker the planet's tightly-nested core/cloud/atmo shells at any real viewing distance.
    10/95000 is under a tenth of that ratio and nothing in this game is ever rendered closer than
    a few units from the camera anyway, so raising it costs nothing visually. */
-var BASE_FOV=58, BOOST_FOV=70, DIVE_FOV=64;
+var BASE_FOV=58, BOOST_FOV=70, DIVE_FOV=64, ZOOM_FOV=36;
 var camera=new THREE.PerspectiveCamera(BASE_FOV,W/H,10,430000);
 /* set true/false each frame from updateSpace while the ship is actually thrusting on boost — the
    frame loop reads it to ease the camera's FOV wider, the classic "everything rushing past" push
@@ -1259,6 +1285,9 @@ var shipBoosting=false;
    since a dive isn't full afterburner, just another push toward "this actually feels like falling"
    on top of the bigger camera-swing fix. */
 var shipDiving=false;
+/* right-click aim-down-sights in open space — narrows the FOV opposite of a boost/dive kick, and
+   drives the reticle/spread tightening in fireShipBolt/fireRailShot (see pShip.zoomT) */
+var shipZooming=false;
 
 function resize(){
   W=innerWidth; H=innerHeight; DPR=computeDPR();
@@ -6509,44 +6538,77 @@ function returnToColony(){
    time, which is the real reason firing looked like nothing was happening. A thin glowing
    cylinder oriented along the bolt's own velocity, synced to its position every frame, is all
    that was ever missing. */
+/* a bright white core plus a fatter, additive-blended glow shell around it, instead of one flat
+   flat-shaded cylinder — reads as an actual charged energy bolt instead of a solid colored stick */
 function makeBoltMesh(color,len,rad){
-  var mesh=new THREE.Mesh(new THREE.CylinderGeometry(rad,rad,len,6),new THREE.MeshBasicMaterial({color:color}));
-  spaceScene.add(mesh);
-  return mesh;
+  var g=new THREE.Group();
+  var core=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.45,rad*0.45,len,6),
+    new THREE.MeshBasicMaterial({color:0xffffff}));
+  g.add(core);
+  var glow=new THREE.Mesh(new THREE.CylinderGeometry(rad,rad,len*0.88,6),
+    new THREE.MeshBasicMaterial({color:color,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false}));
+  g.add(glow);
+  spaceScene.add(g);
+  return g;
 }
 function orientBoltMesh(mesh,vx,vz){
   var dir=new THREE.Vector3(vx,0,vz).normalize();
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+}
+/* a quick burst right at the muzzle so firing reads as a weapon actually going off — one bright
+   near-stationary flash plus a few small sparks kicked out along the shot's own path — and a
+   smaller matching burst wherever a shot actually lands, reusing the same helper for both. */
+function spawnBoltSpark(pos,dirx,dirz,color,big){
+  spawnThrustParticle(pos,new THREE.Vector3(dirx,0,dirz).multiplyScalar(big?0.04:0.08),big?3.2:2.0,0xffffff);
+  var n=big?4:3;
+  for(var i=0;i<n;i++){
+    var dir=new THREE.Vector3(dirx,0,dirz);
+    if(dir.lengthSq()>0)dir.normalize().multiplyScalar(rnd(30,big?90:60));
+    dir.x+=rnd(-25,25); dir.y+=rnd(-16,16); dir.z+=rnd(-25,25);
+    spawnThrustParticle(pos.clone(),dir,rnd(0.6,1.3),color);
+  }
 }
 function clearBolts(){
   pBolts.forEach(function(b){ if(b.mesh)spaceScene.remove(b.mesh); });
   eBolts.forEach(function(b){ if(b.mesh)spaceScene.remove(b.mesh); });
   pBolts=[]; eBolts=[];
 }
-function fireShipBolt(){
-  var cos=Math.sin(pShip.yaw), sin=Math.cos(pShip.yaw);
-  /* bolt speed must comfortably outrun the ship's own top speed (see SHIP_STATS) or firing while
-     at speed looks like the bolt drifting backwards out of the muzzle */
-  var vx=cos*11340, vz=sin*11340;
+function fireShipBolt(spread){
+  /* a small random deviation off the ship's own facing, sized by spread — tight while cruising
+     normally, tighter still while zoomed (see pShip.zoomT/SPREAD_ZOOM) — so the reticle shown on
+     screen actually matches the cone a shot can land in, instead of a reticle that's just for show */
+  var aimYaw=pShip.yaw+rnd(-spread,spread);
+  var cos=Math.sin(aimYaw), sin=Math.cos(aimYaw);
+  /* the bolt now inherits the ship's own current velocity on top of its muzzle speed, instead of
+     firing at a fixed absolute speed along the nose no matter how fast the ship itself is already
+     going. At full boost (1.7x, see SHIP_STATS) some ships' own top speed could get close to or
+     past the old fixed 11340, so the ship could nearly catch up to or overtake its own shots —
+     exactly the "bullets don't fly right" symptom. Adding the platform's velocity is how a real
+     projectile fired from a moving ship behaves (dropBomb already does this for bombs), and
+     guarantees the bolt is always genuinely outrunning whatever fired it. */
+  var vx=pShip.vel.x+cos*9500, vz=pShip.vel.z+sin*9500;
   var bolt={x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:vx,vz:vz,dmg:pShip.dmg,life:1.4};
   bolt.mesh=makeBoltMesh(0x6fe8ff,55,2.2);
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
   orientBoltMesh(bolt.mesh,vx,vz);
   pBolts.push(bolt);
+  spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0x6fe8ff,false);
   sfx.click();
 }
 /* the Vanguard's weapon — reuses the exact same pBolts array and hit-detection as a regular bolt
    (already checks enemyShips and moonBoss), just visibly bigger, faster, and a distinct violet to
    match the ship's own obsidian-forged theme, with damage coming from the ship's own (higher)
    dmg stat rather than any special multiplier here. */
-function fireRailShot(){
-  var cos=Math.sin(pShip.yaw), sin=Math.cos(pShip.yaw);
-  var vx=cos*16000, vz=sin*16000;
+function fireRailShot(spread){
+  var aimYaw=pShip.yaw+rnd(-spread,spread);
+  var cos=Math.sin(aimYaw), sin=Math.cos(aimYaw);
+  var vx=pShip.vel.x+cos*15500, vz=pShip.vel.z+sin*15500;
   var bolt={x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:vx,vz:vz,dmg:pShip.dmg,life:1.2};
   bolt.mesh=makeBoltMesh(0xb060ff,90,3.2);
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
   orientBoltMesh(bolt.mesh,vx,vz);
   pBolts.push(bolt);
+  spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0xb060ff,true);
   sfx.click();
 }
 var bombs=[];
@@ -6623,6 +6685,15 @@ var SHIP_TURN_RATE=2.1;
    actually holding Q or E — level flight still eases to exactly 0) keeps Q/E always visibly doing
    something while still letting the angle grow steeper at low speed and shrink at high speed. */
 var PITCH_ANGLE_FLOOR=0.3;
+/* the half-angle (radians) of the random cone regular fire scatters within, and how much tighter
+   that cone gets while zoomed (right-click) — SPREAD_NORMAL is loose enough to actually miss at
+   range, which is the whole point of a reticle showing "roughly here, not exactly here"; zooming
+   trades rate of fire (see ZOOM_RATE_MULT) for shrinking it down to nearly a laser */
+var SPREAD_NORMAL=0.1, SPREAD_ZOOM=0.018;
+/* zoomed fire's cooldown is multiplied by this — a real accuracy/rate tradeoff, not just a free
+   upgrade, so holding right-click is a deliberate choice rather than the obviously-correct thing
+   to always do */
+var ZOOM_RATE_MULT=1.7;
 var launchAnim=null;
 function beginLaunchAnim(){
   if(!pShip)return;
@@ -6681,8 +6752,9 @@ function updateSpace(dt){
   if(state==="launching"){ updateLaunchAnim(dt); return; }
   shipBoosting=false;
   shipDiving=false;
+  shipZooming=false;
   if(pShip&&pShip.alive){
-    var boosting=false, firing=false;
+    var boosting=false, firing=false, zooming=false;
     if(landedPlanet){
       pShip.vel.set(0,0,0);
       updateEngineFlames(pShip.mesh,dt,0,false);
@@ -6692,7 +6764,12 @@ function updateSpace(dt){
       if(pc){
         if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
         pShip.yaw+=turn*SHIP_TURN_RATE*dt;
-        firing=mouse.downBtn===2;
+        /* left click fires, right click zooms (aim down sights) — used to be right-click-fires
+           with no zoom at all, which also meant the only mouse button doing anything was the one
+           least associated with "shoot" in basically every other shooter */
+        firing=mouse.left;
+        zooming=mouse.right;
+        shipZooming=zooming;
         /* W/S and the up/down arrows used to snap fwd straight to +1/-1/0 every frame, so the
            ship was either at a dead stop or already at full (boosted or not) speed the instant a
            key went down — no way to just cruise at, say, half throttle. They now ramp a
@@ -6760,6 +6837,11 @@ function updateSpace(dt){
       pShip.roll=pShip.roll==null?0:pShip.roll;
       var targetRoll=pc?-turn*0.5:0;
       pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
+      /* eases toward 1 while zoomed and back toward 0 when not, instead of an instant snap — feeds
+         the FOV kick, the fire-rate/spread tradeoff, and the reticle's own size (see fireShipBolt,
+         fireRailShot, updateHudSpace) so all three tighten up together instead of some lagging */
+      pShip.zoomT=pShip.zoomT==null?0:pShip.zoomT;
+      pShip.zoomT+=((zooming?1:0)-pShip.zoomT)*Math.min(1,dt*8);
       /* Q/E now visibly pitch the nose up/down while climbing/descending, matching the same
          (climb -> negative pitch) convention low-altitude surface flight already uses, instead
          of the ship staying dead level while silently sliding up and down */
@@ -6813,7 +6895,13 @@ function updateSpace(dt){
     updateShipNavLights(pShip.mesh);
 
     pShip.cd-=dt;
-    if(!landedPlanet&&firing&&pShip.cd<=0){ if(pShip.weapon==="bomb")dropBomb(); else if(pShip.weapon==="rail")fireRailShot(); else fireShipBolt(); pShip.cd=pShip.rate; }
+    if(!landedPlanet&&firing&&pShip.cd<=0){
+      var zoomT=pShip.zoomT||0;
+      var spread=SPREAD_NORMAL+(SPREAD_ZOOM-SPREAD_NORMAL)*zoomT;
+      var rateMult=1+zoomT*(ZOOM_RATE_MULT-1);
+      if(pShip.weapon==="bomb")dropBomb(); else if(pShip.weapon==="rail")fireRailShot(spread); else fireShipBolt(spread);
+      pShip.cd=pShip.rate*rateMult;
+    }
     if(pShip.shieldRegenT>0)pShip.shieldRegenT-=dt;
     else if(pShip.shield<pShip.maxshield)pShip.shield=Math.min(pShip.maxshield,pShip.shield+pShip.maxshield*0.25*dt);
   } else if(pShip){
@@ -6902,6 +6990,9 @@ function updateSpace(dt){
       var bdx=b.x-moonBoss.mesh.position.x, bdz=b.z-moonBoss.mesh.position.z;
       if(Math.sqrt(bdx*bdx+bdz*bdz)<200){ damageMoonBoss(b.dmg); hit=true; }
     }
+    /* a hit used to just silently delete the bolt with nothing to show for it — a small spark
+       burst right where it actually landed makes a hit read as an impact, not a disappearance */
+    if(hit)spawnBoltSpark(new THREE.Vector3(b.x,b.y,b.z),0,0,0xffcf6a,false);
     if(hit||b.life<=0){ if(b.mesh)spaceScene.remove(b.mesh); pBolts.splice(i2,1); }
   }
   for(var i3=eBolts.length-1;i3>=0;i3--){
@@ -6996,6 +7087,18 @@ function updateHudSpace(){
   var spdPc=clamp(curMaxSpd>0?curSpeed/curMaxSpd:0,0,1);
   $("spdFill").style.height=(spdPc*100)+"%";
   $("spdPct").textContent=Math.round(spdPc*100)+"%";
+  /* the reticle only makes sense during actual open-space piloting with a mouse to aim with — on
+     foot, over a world at low altitude, or on mobile (which aims by pointing the ship itself, not
+     a fixed screen-center reticle) it would just be a meaningless jagged ring sitting on screen */
+  var showCrosshair=state==="space"&&pShip.alive&&!landedPlanet&&document.body.classList.contains("pc-mode");
+  $("spaceCrosshair").classList.toggle("show",showCrosshair);
+  if(showCrosshair){
+    /* scales from 1 (full spread) down to ~0.4 (fully zoomed) so the ring's own size always
+       matches the cone a shot can actually land in — see SPREAD_NORMAL/SPREAD_ZOOM */
+    var zoomT=pShip.zoomT||0;
+    var scale=1-zoomT*0.6;
+    $("spaceCrosshair").style.transform="scale("+scale.toFixed(3)+")";
+  }
 }
 
 /* ═════════════ INPUT ═════════════ */
@@ -7044,7 +7147,7 @@ window.addEventListener("wheel",function(e){
 
 function resetMovementKeys(){
   for(var k in keys)keys[k]=0;
-  if(typeof mouse!=="undefined"&&mouse)mouse.downBtn=-1;
+  if(typeof mouse!=="undefined"&&mouse){ mouse.downBtn=-1; mouse.left=false; mouse.right=false; }
   if(typeof camDragEnd==="function")camDragEnd();
   if(typeof moveStick!=="undefined"&&moveStick){ moveStick.on=false; moveStick.dx=0; moveStick.dy=0; $("artL").style.display="none"; }
   if(typeof aimStick!=="undefined"&&aimStick){ aimStick.on=false; aimStick.dx=0; aimStick.dy=0; }
@@ -7161,9 +7264,15 @@ function updatePlacementGhost(sx,sy){
 }
 
 /* PC: drag with left mouse anywhere on the canvas (when not placing something that wants a click-to-place) */
-var mouse={x:innerWidth/2,y:innerHeight/2,downBtn:-1};
+/* left/right are tracked as their own independent flags, not just the single downBtn scalar below
+   (kept only for the other, single-button uses of it) — space flight needs both held at once (left
+   to fire, right to zoom), and a single "which button is down" value can't represent that: pressing
+   the second button while the first is still held would silently overwrite it, and releasing
+   either button would clear both. */
+var mouse={x:innerWidth/2,y:innerHeight/2,downBtn:-1,left:false,right:false};
 cv.addEventListener("mousedown",function(e){
   audioOn(); mouse.downBtn=e.button;
+  if(e.button===0)mouse.left=true; if(e.button===2)mouse.right=true;
   if(placing){
     if(e.button===0){
       var p=groundPointFromScreen(e.clientX,e.clientY);
@@ -7174,6 +7283,9 @@ cv.addEventListener("mousedown",function(e){
   }
   if(e.button===0&&atOutpost&&!surfaceFlying&&equipment.weapon&&state==="surface"){ fireGun(); return; }
   if(surfaceFlying&&e.button===2)return; /* updateSurfaceFlight reads mouse.downBtn continuously to drop bombs */
+  /* updateSpace reads mouse.downBtn continuously — left click fires, right click zooms — so
+     neither button should also kick off a free-look camera drag while actually piloting */
+  if(state==="space")return;
   if(e.button===0||e.button===2)camDragStart(e.clientX,e.clientY,"m");
 });
 window.addEventListener("mousemove",function(e){
@@ -7181,7 +7293,11 @@ window.addEventListener("mousemove",function(e){
   camDragMove(e.clientX,e.clientY);
   if(placing)updatePlacementGhost(e.clientX,e.clientY);
 });
-window.addEventListener("mouseup",function(e){ mouse.downBtn=-1; camDragEnd(); });
+window.addEventListener("mouseup",function(e){
+  if(e.button===0)mouse.left=false; if(e.button===2)mouse.right=false;
+  mouse.downBtn=mouse.left?0:(mouse.right?2:-1);
+  camDragEnd();
+});
 window.addEventListener("contextmenu",function(e){ e.preventDefault(); });
 
 /* Mobile: the right-side zone is camera-drag on the surface, and an aim+fire stick in space */
@@ -8379,7 +8495,10 @@ function frame(now){
     var wantNear=spaceStates?10:0.3;
     if(camera.near!==wantNear){ camera.near=wantNear; camera.updateProjectionMatrix(); }
     var wantFov=BASE_FOV;
-    if(spaceStates){ if(shipBoosting)wantFov=BOOST_FOV; else if(shipDiving)wantFov=DIVE_FOV; }
+    /* zoom takes priority over boost/dive's wider kicks — they're both about speed sensation,
+       zoom is the opposite intent (a deliberate, precise look down the sights), so the two should
+       never fight each other for which FOV wins */
+    if(spaceStates){ if(shipZooming)wantFov=ZOOM_FOV; else if(shipBoosting)wantFov=BOOST_FOV; else if(shipDiving)wantFov=DIVE_FOV; }
     if(Math.abs(camera.fov-wantFov)>0.02){
       camera.fov+=(wantFov-camera.fov)*Math.min(1,dt*7);
       camera.updateProjectionMatrix();
@@ -8594,7 +8713,8 @@ window.__cq={
     return {doorMode:b.doorMode,doorOpenT:b.doorOpenT,_doorAnim:b._doorAnim,truthy:truthy,leafLx:lx,leafRx:rx};
   },
   debugCamInfo:function(){ return {pos:camera.position.toArray(),near:camera.near,far:camera.far,fov:camera.fov,fogNear:surfaceScene.fog?surfaceScene.fog.near:null,fogFar:surfaceScene.fog?surfaceScene.fog.far:null,fogColor:surfaceScene.fog?"#"+surfaceScene.fog.color.getHexString():null}; },
-  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null,throttle:pShip.throttle,curSpeedFrac:pShip.curSpeedFrac,glowEmissive:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?pShip.mesh.userData.engineGlow[0].material.emissiveIntensity:null,glowColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.emissive.getHexString():null,glowBaseColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.color.getHexString():null,lightIntensity:fl&&fl[0]&&fl[0].light?fl[0].light.intensity:null,lightDistance:fl&&fl[0]&&fl[0].light?fl[0].light.distance:null,coreScale:fl&&fl[0]&&fl[0].core?fl[0].core.scale.x:null,coreOpacity:fl&&fl[0]&&fl[0].core?fl[0].core.material.opacity:null}; },
+  debugShipFlight:function(){ if(!pShip)return null; var fl=pShip.mesh.userData.engineFlames; return {roll:pShip.roll,pitch:pShip.pitch,rot:pShip.mesh.rotation.toArray(),vel:pShip.vel.toArray(),surfacePartsCount:surfaceParts.length,flameT:pShip.mesh.userData.flameT,flameOuterScale:fl&&fl[0]?fl[0].outer.scale.toArray():null,flameOuterOpacity:fl&&fl[0]?fl[0].outer.material.opacity:null,flameOuterColor:fl&&fl[0]?"#"+fl[0].outer.material.color.getHexString():null,throttle:pShip.throttle,curSpeedFrac:pShip.curSpeedFrac,glowEmissive:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?pShip.mesh.userData.engineGlow[0].material.emissiveIntensity:null,glowColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.emissive.getHexString():null,glowBaseColor:pShip.mesh.userData.engineGlow&&pShip.mesh.userData.engineGlow[0]?"#"+pShip.mesh.userData.engineGlow[0].material.color.getHexString():null,lightIntensity:fl&&fl[0]&&fl[0].light?fl[0].light.intensity:null,lightDistance:fl&&fl[0]&&fl[0].light?fl[0].light.distance:null,coreScale:fl&&fl[0]&&fl[0].core?fl[0].core.scale.x:null,coreOpacity:fl&&fl[0]&&fl[0].core?fl[0].core.material.opacity:null,
+    cd:pShip.cd,rate:pShip.rate,zoomT:pShip.zoomT}; },
   debugCycleSnap:function(){ cycleSnapMult(); return snapMult; },
   debugBuildPlane:function(){ return {pos:buildPlaneMesh.position.toArray(), visible:buildPlaneMesh.visible, inScene:surfaceScene.children.indexOf(buildPlaneMesh)>=0}; },
   debugBuildingUnderScreen:function(sx,sy){ renderer.render(surfaceScene,camera); var b=buildingUnderScreen(sx,sy); return b?{id:b.id,type:b.type}:null; },
@@ -8637,7 +8757,8 @@ window.__cq={
       moonBoss:moonBoss?{x:moonBoss.mesh.position.x,z:moonBoss.mesh.position.z,hp:moonBoss.hp,max:moonBoss.max}:null};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
-  setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; },
+  setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; mouse.left=down&&(btn==null||btn===0); mouse.right=down&&btn===2; },
+  setSpaceMouseButtons:function(left,right){ mouse.left=!!left; mouse.right=!!right; mouse.downBtn=mouse.left?0:(mouse.right?2:-1); },
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
   touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb, boardParkedShip:boardParkedShip, exitToSpace:exitToSpace,
   turretState:function(){ return turrets.map(function(t){return {x:t.x,z:t.z,hp:t.hp,alive:t.alive};}); },
