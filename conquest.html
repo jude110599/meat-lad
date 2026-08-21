@@ -98,10 +98,12 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 #throttleHud{position:fixed;right:16px;top:50%;transform:translateY(-50%);
   flex-direction:row;align-items:flex-end;gap:12px;z-index:4;pointer-events:none}
 /* the space flight reticle — a rough, jagged ring rather than a clean circle so it reads as a
-   targeting reticle (roughly here, not exactly here) instead of a UI dot. Its own scale is set
-   directly in JS every frame (see updateHudSpace/pShip.zoomT) so it can shrink continuously as you
-   zoom in, matching the real fire spread it stands for rather than snapping between two sizes. */
-#spaceCrosshair{position:fixed;left:50%;top:50%;width:70px;height:70px;margin:-35px 0 0 -35px;
+   targeting reticle (roughly here, not exactly here) instead of a UI dot. Its own position AND
+   scale are set directly in JS every frame (see updateHudSpace/pShip.zoomT) — position tracks the
+   actual mouse cursor (that's where the ship's own facing eases toward, see pcUpdateAimYaw), and scale
+   shrinks continuously as you zoom in, matching the real fire spread it stands for. left/top:0 here
+   is just an anchor for the JS translate() to build on, not a resting position of its own. */
+#spaceCrosshair{position:fixed;left:0;top:0;width:70px;height:70px;
   display:none;z-index:5;pointer-events:none}
 #spaceCrosshair.show{display:block}
 #spaceCrosshair svg{width:100%;height:100%;display:block;overflow:visible}
@@ -685,8 +687,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.50.0";
+var VERSION="1.51.0";
 var CHANGELOG=[
+  {v:"1.51.0",t:"Mouse-aim space combat: the ship actually turns to face the crosshair now",items:[
+    "Last patch's crosshair moved with the mouse, but the ship itself still only ever turned with A/D — the reticle was purely cosmetic, disconnected from where shots actually went. Movement and aiming are now properly split, the classic mouse-look-plus-WASD-strafe space-shooter setup: the ship's nose eases toward wherever the crosshair sits (so fire genuinely goes where the reticle points), A/D is now a real sideways strafe relative to wherever the nose is currently facing instead of turning, and W/S now work as throttle up/down too, alongside the existing up/down arrows and scroll wheel",
+    "Fixed a real bug caught while building this: the first version computed the aim target fresh every single frame from the live chase camera, which re-centers behind the ship's nose almost immediately after any turn — so a mouse sitting anywhere off-center kept meaning \"turn further still\" forever, and the ship never actually stopped rotating. Confirmed live: yaw ran up past -670 radians (over 100 full turns) from just leaving the mouse resting off-center for a couple of seconds. The aim target is now only recomputed when the mouse actually moves, captured as a fixed heading at that moment — the ship eases toward it and holds once it arrives, instead of chasing a target that runs away in lockstep with its own turning"
+  ]},
   {v:"1.50.0",t:"A real crosshair and aim-down-sights zoom for space combat, plus a fire-direction bug fix",items:[
     "Space flight had no reticle at all — no indication of where fire was actually going to land, which made aiming mostly guesswork. There's now a jagged targeting ring at screen center that shows the actual cone a shot can land in (see the new spread mechanic below), instead of a UI element that's just decorative",
     "Left click now fires (used to be right click) and right click zooms in — a real aim-down-sights: FOV narrows, fire rate drops to about 59% of normal, and the reticle itself shrinks to about 40% its normal size, all easing in together rather than snapping. Both buttons can be held at once (fire while zoomed) — they used to share a single \"which button is down\" value, so holding one while pressing the other would silently cancel the first; each is now tracked independently",
@@ -6741,7 +6747,7 @@ function updateLaunchAnim(dt){
     launchAnim=null; state="space";
     pShip.throttle=0.75;
     pShip.vel.copy(dir.multiplyScalar(pShip.spd*0.75));
-    toast(document.body.classList.contains("pc-mode")?"Defend the sector — A/D turn, up/down arrows or scroll for throttle, Q/E altitude, right-click to fire":"Defend the sector");
+    toast(document.body.classList.contains("pc-mode")?"Defend the sector — aim with the mouse, A/D strafe, W/S or scroll for throttle, Q/E altitude, left-click to fire, right-click to zoom":"Defend the sector");
   }
 }
 /* how fast the throttle ramps per second of W/S (or the arrow-key equivalents) held down, and how
@@ -6760,10 +6766,22 @@ function updateSpace(dt){
       updateEngineFlames(pShip.mesh,dt,0,false);
     } else {
       var pc=document.body.classList.contains("pc-mode");
-      var fwd=0,strafe=0,turn=0;
+      var fwd=0,strafe=0;
       if(pc){
-        if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
-        pShip.yaw+=turn*SHIP_TURN_RATE*dt;
+        /* A/D used to turn the whole ship; now the mouse owns facing (see below) so A/D is free
+           to be an actual strafe — sideways thrust relative to wherever the nose is currently
+           pointed, the classic mouse-look-plus-WASD-strafe space-shooter split: movement is
+           keyboard, aim is mouse, and the two are independent instead of one key doing both. */
+        if(keys.d)strafe+=1; if(keys.a)strafe-=1;
+        /* the ship's facing eases toward pcTargetYaw (see pcUpdateAimYaw, set from the mouse
+           cursor) instead of only ever turning via A/D — the crosshair now marks a real heading,
+           and the ship (and so its fire direction) tracks it, the same way the mobile aim-stick
+           already turns the ship to face wherever it's pushed. Eased rather than snapped instantly
+           so it settles smoothly instead of the nose whipping straight to the new heading. */
+        if(pcTargetYaw!=null){
+          var dyaw=((pcTargetYaw-pShip.yaw+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+          pShip.yaw+=dyaw*Math.min(1,dt*10);
+        }
         /* left click fires, right click zooms (aim down sights) — used to be right-click-fires
            with no zoom at all, which also meant the only mouse button doing anything was the one
            least associated with "shoot" in basically every other shooter */
@@ -6777,19 +6795,19 @@ function updateSpace(dt){
            directly, see the wheel listener), and that throttle is what actually drives velocity
            below, so easing off doesn't cut speed to zero instantly, it eases down instead.
            This is a real throttle lever, not a "hold to go" key: it only ever moves when you
-           explicitly move it (the up/down arrows here, or the scroll wheel), and holds exactly
-           wherever you leave it otherwise — W/S don't touch it at all, and it does not drift back
-           down on its own. Set it to 30% and it stays at 30%, capping your speed there, until you
-           deliberately bring it back down yourself. (An earlier version of this decayed back to 0
-           automatically whenever no throttle key was held, on the theory that a real lever left
-           untouched should feel like coasting — that's not what a throttle lever actually does,
-           and it fought the deliberate "set your cruise speed and leave it" use case this is for.) */
+           explicitly move it (W/S, the up/down arrows, or the scroll wheel), and holds exactly
+           wherever you leave it otherwise — it does not drift back down on its own. Set it to 30%
+           and it stays at 30%, capping your speed there, until you deliberately bring it back down
+           yourself. (An earlier version of this decayed back to 0 automatically whenever no
+           throttle key was held, on the theory that a real lever left untouched should feel like
+           coasting — that's not what a throttle lever actually does, and it fought the deliberate
+           "set your cruise speed and leave it" use case this is for.) */
         pShip.throttle=pShip.throttle==null?0.75:pShip.throttle;
         var throttleIn=0;
-        if(keys.arrowup)throttleIn+=1;
-        if(keys.arrowdown)throttleIn-=1;
-        /* no reverse — down/arrowdown only ever brings the throttle to a dead stop at 0, it can't
-           push it negative, so "backwards" isn't a thing the ship does anymore */
+        if(keys.arrowup||keys.w)throttleIn+=1;
+        if(keys.arrowdown||keys.s)throttleIn-=1;
+        /* no reverse — down/S only ever brings the throttle to a dead stop at 0, it can't push it
+           negative, so "backwards" isn't a thing the ship does anymore */
         if(throttleIn!==0)pShip.throttle=clamp(pShip.throttle+throttleIn*THROTTLE_RATE*dt,0,1);
         /* throttle is how much power you're commanding, not how fast you're actually going —
            pinning it to 100% doesn't teleport you to top speed, the ship has to actually
@@ -6809,7 +6827,11 @@ function updateSpace(dt){
       boosting=!!(keys[" "]||spaceBoostHeld);
       shipBoosting=boosting;
       var spd=pShip.spd*(boosting?1.7:1);
-      var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
+      /* strafe is relative to the ship's own current facing (perpendicular to yaw), not a fixed
+         world axis — now that the mouse independently owns yaw, "sideways" has to mean sideways
+         from wherever the nose is actually pointed right now for A/D to feel like strafing rather
+         than sliding along some arbitrary compass direction */
+      var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd+Math.cos(pShip.yaw)*strafe*spd,0,Math.cos(pShip.yaw)*fwd*spd-Math.sin(pShip.yaw)*strafe*spd)
                :new THREE.Vector3(strafe*spd,0,-fwd*spd);
       var k=Math.min(1,pShip.accel*dt);
       pShip.vel.lerp(tv,k);
@@ -6835,7 +6857,10 @@ function updateSpace(dt){
       }
       updatePlanetTargeting(dt);
       pShip.roll=pShip.roll==null?0:pShip.roll;
-      var targetRoll=pc?-turn*0.5:0;
+      /* used to bank into a turn (A/D); now A/D is strafe, not turning, so it banks into the
+         strafe instead — still a visual read on "which way I'm sliding", just off the input that
+         actually causes sideways motion now */
+      var targetRoll=pc?-strafe*0.5:0;
       pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
       /* eases toward 1 while zoomed and back toward 0 when not, instead of an instant snap — feeds
          the FOV kick, the fire-rate/spread tradeoff, and the reticle's own size (see fireShipBolt,
@@ -7051,7 +7076,7 @@ function updateSpace(dt){
   updateHudSpace();
 }
 function spaceAimPoint(){
-  /* mobile only — PC turns with A/D and fires with right-click, see updateSpace() */
+  /* mobile only — PC aims with the mouse cursor instead, see pcUpdateAimYaw() */
   if(!aimStick.on)return null;
   var mag=Math.sqrt(aimStick.dx*aimStick.dx+aimStick.dy*aimStick.dy);
   if(mag<0.2)return null;
@@ -7062,6 +7087,32 @@ function spaceAimPoint(){
     x:pShip.pos.x+camDir.x*(-aimStick.dy)*10+camRight.x*aimStick.dx*10,
     z:pShip.pos.z+camDir.z*(-aimStick.dy)*10+camRight.z*aimStick.dx*10
   };
+}
+/* the heading the ship's nose eases toward in open space, set by pcUpdateAimYaw() below — null
+   means no mouse input has set one yet (e.g. right after launch), so the ship just keeps whatever
+   heading it already had instead of snapping somewhere on the very first frame. */
+var pcTargetYaw=null;
+/* recomputed ONLY when the mouse actually moves (called from the mousemove listener), not once a
+   frame — this is the fix for a real bug caught while building it: computing the target fresh
+   every frame from the CURRENT camera looked right in isolation, but the chase camera itself
+   re-centers behind the ship's nose almost immediately after any turn, so a fixed screen offset
+   from center kept meaning "turn further still" forever — the ship never stopped rotating once
+   the cursor sat anywhere off-center, confirmed live: yaw ran up past -670 radians (over 100 full
+   turns) just from leaving the mouse resting off-center for a couple seconds. Capturing the
+   camera's heading at the MOMENT the mouse moves, adding the cursor's angular offset once, and
+   holding that as a fixed target angle from then on has no such loop — the ship eases toward a
+   number that only changes when you actually move the mouse again, so it settles on a heading and
+   holds it, instead of chasing a target that runs away from it in lockstep. */
+function pcUpdateAimYaw(){
+  if(!pShip||state!=="space"||landedPlanet)return;
+  if(!document.body.classList.contains("pc-mode"))return;
+  var camDir=new THREE.Vector3(); camera.getWorldDirection(camDir);
+  var camYaw=Math.atan2(camDir.x,camDir.z);
+  var ndcX=(mouse.x/W)*2-1;
+  var halfFovY=camera.fov*Math.PI/360;
+  var halfFovX=Math.atan(Math.tan(halfFovY)*camera.aspect);
+  var angleOffset=Math.atan(ndcX*Math.tan(halfFovX));
+  pcTargetYaw=camYaw+angleOffset;
 }
 var spaceFiring=false, spaceBoostHeld=false;
 function updateHudSpace(){
@@ -7089,15 +7140,18 @@ function updateHudSpace(){
   $("spdPct").textContent=Math.round(spdPc*100)+"%";
   /* the reticle only makes sense during actual open-space piloting with a mouse to aim with — on
      foot, over a world at low altitude, or on mobile (which aims by pointing the ship itself, not
-     a fixed screen-center reticle) it would just be a meaningless jagged ring sitting on screen */
+     a mouse cursor) it would just be a meaningless jagged ring sitting on screen */
   var showCrosshair=state==="space"&&pShip.alive&&!landedPlanet&&document.body.classList.contains("pc-mode");
   $("spaceCrosshair").classList.toggle("show",showCrosshair);
   if(showCrosshair){
     /* scales from 1 (full spread) down to ~0.4 (fully zoomed) so the ring's own size always
-       matches the cone a shot can actually land in — see SPREAD_NORMAL/SPREAD_ZOOM */
+       matches the cone a shot can actually land in — see SPREAD_NORMAL/SPREAD_ZOOM. Position
+       tracks the real cursor (mouse.x/mouse.y) rather than sitting fixed at screen center — the
+       ship's own facing eases toward wherever this sits (see pcUpdateAimYaw), so the reticle marks an
+       actual aim point instead of just decorating the middle of the screen. */
     var zoomT=pShip.zoomT||0;
     var scale=1-zoomT*0.6;
-    $("spaceCrosshair").style.transform="scale("+scale.toFixed(3)+")";
+    $("spaceCrosshair").style.transform="translate("+(mouse.x-35)+"px,"+(mouse.y-35)+"px) scale("+scale.toFixed(3)+")";
   }
 }
 
@@ -7292,6 +7346,7 @@ window.addEventListener("mousemove",function(e){
   mouse.x=e.clientX; mouse.y=e.clientY;
   camDragMove(e.clientX,e.clientY);
   if(placing)updatePlacementGhost(e.clientX,e.clientY);
+  pcUpdateAimYaw();
 });
 window.addEventListener("mouseup",function(e){
   if(e.button===0)mouse.left=false; if(e.button===2)mouse.right=false;
@@ -8757,7 +8812,7 @@ window.__cq={
       moonBoss:moonBoss?{x:moonBoss.mesh.position.x,z:moonBoss.mesh.position.z,hp:moonBoss.hp,max:moonBoss.max}:null};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
-  setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; mouse.left=down&&(btn==null||btn===0); mouse.right=down&&btn===2; },
+  setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; mouse.left=down&&(btn==null||btn===0); mouse.right=down&&btn===2; pcUpdateAimYaw(); },
   setSpaceMouseButtons:function(left,right){ mouse.left=!!left; mouse.right=!!right; mouse.downBtn=mouse.left?0:(mouse.right?2:-1); },
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
   touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb, boardParkedShip:boardParkedShip, exitToSpace:exitToSpace,
