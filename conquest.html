@@ -652,8 +652,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.48.1";
+var VERSION="1.48.2";
 var CHANGELOG=[
+  {v:"1.48.2",t:"Pitch angle stays visible at speed, arrival glide isn't a 140-unit plummet anymore",items:[
+    "Last patch's real flight-path pitch angle correctly shrinks toward level at high speed (that's the actual physics of it), but it shrank all the way down to just a couple degrees at or near top throttle — which read as \"the ship barely tilts even though I'm clearly climbing\", not as a correctly shallow climb. The angle now has a floor: it still grows steeper at low speed and shrinks at high speed same as before, but it never drops low enough to look like it's barely doing anything while Q or E is actually held",
+    "The glide down when arriving at a world or the colony dropped 140 units in 1.8 seconds — a peak fall speed of about 117 units/sec, which is enormous relative to how small this world actually is (a 300-unit zoneR, a ~45-unit flight ceiling), and read as an out-of-control plummet no matter how gently it eased in and out. Cut to 60 units over the same time (peak speed roughly halved, ~50 units/sec, comparable to the ship's own cruising speed) — still levels off at the same genuinely-medium altitude, just without free-falling most of the way there first"
+  ]},
   {v:"1.48.1",t:"Real flight-path pitch angle, arrival glide levels off much higher up",items:[
     "Q/E pitch was a fixed cosmetic tilt whenever held — the exact same angle whether crawling forward or at full throttle, and unrelated to the actual (now speed-scaled) climb/descend rate. It's the real flight-path angle now — arctangent of vertical speed over horizontal speed — so changing the throttle visibly changes how steep the climb/dive looks for the same Q/E input: slow and climbing reads as a steep nose-up, fast and climbing reads as a shallow one, matching how an actual aircraft's pitch relates to its climb angle. Confirmed directly: the same climb input measured 13.7° of pitch at low throttle and just 2.9° at full throttle",
     "The glide-in when arriving at a world or the colony used to level off just 9 units above the ground — right on top of the terrain the instant it finished. It now levels off at a genuinely medium altitude (25 units, confirmed exactly), so you're still comfortably high up and have room to actually look around before choosing to descend the rest of the way yourself"
@@ -1860,7 +1864,7 @@ function updateSurfaceFlight(dt){
      instead of the same fixed tilt every time. */
   var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
   var vy=(keys.e?1:0)*vertSpd-(keys.q?1:0)*vertSpd;
-  var targetPitch=-Math.atan2(vy,Math.max(speed,1));
+  var targetPitch=vy!==0?-Math.sign(vy)*Math.max(Math.abs(Math.atan2(vy,Math.max(speed,1))),PITCH_ANGLE_FLOOR):0;
   pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
   pShip.mesh.rotation.set(pShip.pitch,pShip.yaw,pShip.roll);
   if(pShip.mesh.userData.engineGlow){
@@ -5751,7 +5755,14 @@ function landOnPlanet(world){
    drop no longer needs hundreds of units of empty air above the landing spot to read as a real
    descent, so the spawn height came down a lot too. */
 function beginArrivalDescent(gx,gz,hoverY,worldBounds){
-  var descHeight=140, descDist=170;
+  /* was 140 — dropping 140 units in 1.8s (peak speed ~117 units/sec mid-glide, even with the
+     smoothstep easing softening both ends) is a huge fall relative to this world's own tiny
+     scale (a 300-unit zoneR, a ~45-unit flight ceiling), so it read as an uncontrolled plummet
+     regardless of how gentle the actual easing curve was, and made leveling off at a genuinely
+     medium altitude feel like "barely off the ground" by comparison to how far it had just
+     fallen. 60 units over the same 1.8s brings peak speed down to a much gentler ~50 units/sec,
+     comparable to the ship's own cruising speed instead of dwarfing it. */
+  var descHeight=60, descDist=170;
   var dirX=Math.sin(pShip.yaw), dirZ=Math.cos(pShip.yaw);
   var startX=gx-dirX*descDist, startZ=gz-dirZ*descDist;
   if(worldBounds){
@@ -6317,6 +6328,13 @@ function killEnemyShip(e,i){
   var gain=ri(2,5); stock.parts+=gain;
 }
 var SHIP_TURN_RATE=2.1;
+/* the real flight-path angle (arctangent of vertical over horizontal speed) shrinks toward
+   nothing at cruising speed — at or near top throttle it can drop to just a couple degrees, which
+   reads as "the ship barely tilts even though I'm clearly climbing" rather than as "the angle
+   correctly reflects a shallow climb". Flooring the MAGNITUDE (never the sign, and only while
+   actually holding Q or E — level flight still eases to exactly 0) keeps Q/E always visibly doing
+   something while still letting the angle grow steeper at low speed and shrink at high speed. */
+var PITCH_ANGLE_FLOOR=0.3;
 var launchAnim=null;
 function beginLaunchAnim(){
   if(!pShip)return;
@@ -6463,7 +6481,7 @@ function updateSpace(dt){
          forward + climbing = shallow; slow forward + climbing = steep), and the angle actually
          reads as "the rate you're going up or down" instead of an arbitrary constant. */
       var vyS=(keys.e?1:0)*vertSpd-(keys.q?1:0)*vertSpd;
-      var targetPitch=-Math.atan2(vyS,Math.max(curSpeed,1));
+      var targetPitch=vyS!==0?-Math.sign(vyS)*Math.max(Math.abs(Math.atan2(vyS,Math.max(curSpeed,1))),PITCH_ANGLE_FLOOR):0;
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       /* the engine flame/glow used to just be on or off based on whether the ship was moving at
          all — now it tracks actual current speed as a fraction of top speed, so easing the
