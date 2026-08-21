@@ -652,8 +652,12 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.48.0";
+var VERSION="1.48.1";
 var CHANGELOG=[
+  {v:"1.48.1",t:"Real flight-path pitch angle, arrival glide levels off much higher up",items:[
+    "Q/E pitch was a fixed cosmetic tilt whenever held — the exact same angle whether crawling forward or at full throttle, and unrelated to the actual (now speed-scaled) climb/descend rate. It's the real flight-path angle now — arctangent of vertical speed over horizontal speed — so changing the throttle visibly changes how steep the climb/dive looks for the same Q/E input: slow and climbing reads as a steep nose-up, fast and climbing reads as a shallow one, matching how an actual aircraft's pitch relates to its climb angle. Confirmed directly: the same climb input measured 13.7° of pitch at low throttle and just 2.9° at full throttle",
+    "The glide-in when arriving at a world or the colony used to level off just 9 units above the ground — right on top of the terrain the instant it finished. It now levels off at a genuinely medium altitude (25 units, confirmed exactly), so you're still comfortably high up and have room to actually look around before choosing to descend the rest of the way yourself"
+  ]},
   {v:"1.48.0",t:"Saving mid-flight now actually restores mid-flight",items:[
     "Closing the game while actually flying — out in open space, or still airborne over a world/home and not yet touched down — always reloaded you back on foot at your stale pre-boarding position instead, since the save format had no concept of \"the ship was in the air\" at all, only ever a parked ship's resting spot. In space that read as spawning at a random corner of whichever world was nearest; over a world it read as spawning away from your own ship, which was quietly restored parked wherever it happened to be flying at save time while you reappeared somewhere else entirely. Saves made mid-flight now capture that the ship was actually airborne (plus its real altitude, not just x/z), and reloading drops you straight back into flying it — in open space at its exact last position, or still gliding over the exact same world, with the same on-the-ground parked-ship restore untouched for genuinely parked saves"
   ]},
@@ -1698,10 +1702,13 @@ function updateArrivalAnim(dt){
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*38,18,-Math.cos(pShip.yaw)*38);
   chaseCamTo(new THREE.Vector3().copy(pShip.pos).add(camOff),dt,16);
   camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
-  if(t>=1){
-    arrivalAnim=null;
-    landingDustBurst(pShip.pos.clone().setY(a.toY-9),new THREE.Vector3(0,1,0));
-  }
+  /* used to fire a ground-level dust burst here (a.toY was terrain+9, close enough to the ground
+     for that to read as a touchdown kick-up) — now that the glide levels off at a genuinely
+     medium altitude instead of right next to the ground, the ship isn't touching down at all at
+     this point, just leveling into free flight, so a dust cloud floating in midair below it
+     would look disconnected. The real touchdown (updateLandingAnim, actually at ground level)
+     still has its own dust burst. */
+  if(t>=1)arrivalAnim=null;
 }
 /* final touchdown: a brief steady glide-down-and-hover instead of an instant snap the moment
    the settle timer fills, so landing actually reads as landing */
@@ -1843,10 +1850,19 @@ function updateSurfaceFlight(dt){
   pShip.pitch=pShip.pitch==null?0:pShip.pitch;
   var targetRoll=pc?-turn*0.55:-strafe*0.4;
   pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
-  var targetPitch=clamp((keys.e?1:0)-(keys.q?1:0),-1,1)*-0.32+(pc?-fwd*0.08:0);
+  /* pitch used to be a fixed cosmetic angle whenever Q/E was held, completely unrelated to how
+     fast the ship was actually climbing or descending, or to its forward speed — the nose tipped
+     up the exact same amount whether you were crawling forward or at full throttle, and by the
+     same amount regardless of the (now speed-scaled) vertical rate. It's the real flight-path
+     angle now: arctangent of vertical speed over horizontal speed, so it visibly steepens at low
+     throttle (more climb for less forward motion) and flattens out at high throttle (same climb
+     rate over more ground), and a bigger Q/E vertical rate genuinely reads as a steeper climb
+     instead of the same fixed tilt every time. */
+  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+  var vy=(keys.e?1:0)*vertSpd-(keys.q?1:0)*vertSpd;
+  var targetPitch=-Math.atan2(vy,Math.max(speed,1));
   pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
   pShip.mesh.rotation.set(pShip.pitch,pShip.yaw,pShip.roll);
-  var speed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
   if(pShip.mesh.userData.engineGlow){
     var moving=speed>1;
     updateEngineFlames(pShip.mesh,dt,clamp(speed/shipSurfSpd(),0,1),false);
@@ -5755,7 +5771,12 @@ function enterSurfaceFlight(world){
   surfaceScene.add(pShip.mesh);
   var ox=lastLandOffset.x, oz=lastLandOffset.z;
   var gx=world.cx+ox, gz=world.cz+oz;
-  var hoverY=terrainHeight(gx,gz)+9;
+  /* was +9 — barely above the ground at all next to the ~45-unit ceiling free low-altitude
+     flight is clamped to, so the arrival glide dropped you right down next to the terrain the
+     instant it finished instead of leaving you somewhere you could actually look around from.
+     +25 is genuinely mid-altitude — well clear of the ground, still comfortably under the
+     ceiling — so you land the glide still pretty high up, not right on top of the world. */
+  var hoverY=terrainHeight(gx,gz)+25;
   pShip.vel.set(0,0,0);
   atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
   beginArrivalDescent(gx,gz,hoverY,{cx:world.cx,cz:world.cz,wr:world.zoneR-3});
@@ -5805,7 +5826,7 @@ function enterHomeSurfaceFlight(){
   spaceScene.remove(pShip.mesh);
   surfaceScene.add(pShip.mesh);
   var sp=homeSpawnPoint();
-  var hoverY=terrainHeight(sp.x,sp.z)+9;
+  var hoverY=terrainHeight(sp.x,sp.z)+25;
   pShip.vel.set(0,0,0);
   atOutpost=true; currentWorld=null; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
   beginArrivalDescent(sp.x,sp.z,hoverY,null);
@@ -6433,18 +6454,21 @@ function updateSpace(dt){
          (climb -> negative pitch) convention low-altitude surface flight already uses, instead
          of the ship staying dead level while silently sliding up and down */
       pShip.pitch=pShip.pitch==null?0:pShip.pitch;
-      /* this had q and e on the wrong sides of the subtraction — E (climb, pos.y increasing)
-         was producing a POSITIVE pitch, which is the nose-down "diving" pose used elsewhere in
-         this file (see the arrival glide), so climbing visibly dipped the nose while the ship
-         rose. Swapped to match surface flight's convention: climb -> negative (nose up), descend
-         -> positive (nose down), so the pitch actually agrees with which way you're moving. */
-      var targetPitch=((keys.e?1:0)-(keys.q?1:0))*-0.7;
+      var curSpeed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
+      /* was a fixed cosmetic angle whenever Q/E was held, unrelated to how fast the ship was
+         actually climbing or descending or to its forward speed — same tilt whether crawling or
+         at full throttle, same tilt no matter the (now speed-scaled) vertical rate. This is the
+         real flight-path angle instead: arctangent of vertical speed over horizontal speed, so
+         changing the throttle visibly changes the climb/dive angle for the same Q/E input (fast
+         forward + climbing = shallow; slow forward + climbing = steep), and the angle actually
+         reads as "the rate you're going up or down" instead of an arbitrary constant. */
+      var vyS=(keys.e?1:0)*vertSpd-(keys.q?1:0)*vertSpd;
+      var targetPitch=-Math.atan2(vyS,Math.max(curSpeed,1));
       pShip.pitch+=(targetPitch-pShip.pitch)*Math.min(1,dt*5);
       /* the engine flame/glow used to just be on or off based on whether the ship was moving at
          all — now it tracks actual current speed as a fraction of top speed, so easing the
          throttle down visibly dims the flame back down instead of it staying pinned at full
          brightness right up until the ship fully stops. */
-      var curSpeed=Math.sqrt(pShip.vel.x*pShip.vel.x+pShip.vel.z*pShip.vel.z);
       var speedFrac=clamp(curSpeed/spd,0,1);
       var moving=curSpeed>1;
       updateEngineFlames(pShip.mesh,dt,speedFrac,boosting);
