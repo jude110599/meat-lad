@@ -688,8 +688,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.53.0";
+var VERSION="1.53.1";
 var CHANGELOG=[
+  {v:"1.53.1",t:"Muzzle flash no longer looks like extra stray bullets",items:[
+    "Verified the actual shot itself is a genuinely straight line — sampled a live bolt's velocity across several ticks mid-flight and it's bit-for-bit identical the whole way, so nothing is steering or curving it toward the cursor after it's fired. The odd sideways-then-forward, swarm-like motion was the muzzle flash: firing used to also kick out 3-4 small spark particles with their own randomized velocity roughly along the shot's path, which at a glance read as several extra small projectiles scattering off in their own directions rather than effects tied to the one real shot. That's now a single flash that expands and fades in place at the muzzle (and at the impact point on a hit) with no velocity of its own, so there's nothing left that could be mistaken for a second, oddly-moving bullet"
+  ]},
   {v:"1.53.0",t:"Fixed shots firing the wrong way, and added real vertical aim",items:[
     "Fixed a real bug: the crosshair's horizontal aim was mirrored — pointing right sent shots left and vice versa. It was computed by hand from the screen-X offset and a manual FOV/tan formula, and that formula had the sign backwards. Rebuilt it on THREE's own camera.setFromCamera raycast instead of hand-rolled trig, which can't have that class of sign bug",
     "Vertical aim now actually works too — pointing the crosshair at the top or bottom of the screen sends shots up or down, not just left or right. Bolts can now genuinely travel off the flat plane they used to be stuck on (hit-detection against enemy ships and the boss now checks vertical distance too, so a shot aimed steeply up or down can actually miss a target it's merely horizontally lined up with, the same way it always could miss left-right)",
@@ -6570,18 +6573,16 @@ function orientBoltMesh(mesh,vx,vz,vy){
   var dir=new THREE.Vector3(vx,vy||0,vz).normalize();
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
 }
-/* a quick burst right at the muzzle so firing reads as a weapon actually going off — one bright
-   near-stationary flash plus a few small sparks kicked out along the shot's own path — and a
-   smaller matching burst wherever a shot actually lands, reusing the same helper for both. */
+/* a quick, stationary flash right at the muzzle (or wherever a shot actually lands, reusing the
+   same helper for both) so firing reads as a weapon actually going off, without implying any
+   motion of its own — this used to also kick out a handful of small sparks with randomized
+   velocity in roughly the shot's direction, which at a glance looked like several additional
+   small "bullets" scattering sideways off the real one, especially once aim stopped being tied to
+   the ship's own facing and a stream of shots could point anywhere. A single flash that expands
+   and fades in place reads as an impact/discharge without anything that could be mistaken for a
+   second, oddly-moving projectile. */
 function spawnBoltSpark(pos,dirx,dirz,color,big){
-  spawnThrustParticle(pos,new THREE.Vector3(dirx,0,dirz).multiplyScalar(big?0.04:0.08),big?3.2:2.0,0xffffff);
-  var n=big?4:3;
-  for(var i=0;i<n;i++){
-    var dir=new THREE.Vector3(dirx,0,dirz);
-    if(dir.lengthSq()>0)dir.normalize().multiplyScalar(rnd(30,big?90:60));
-    dir.x+=rnd(-25,25); dir.y+=rnd(-16,16); dir.z+=rnd(-25,25);
-    spawnThrustParticle(pos.clone(),dir,rnd(0.6,1.3),color);
-  }
+  spawnThrustParticle(pos,new THREE.Vector3(0,0,0),big?2.4:1.5,color);
 }
 function clearBolts(){
   pBolts.forEach(function(b){ if(b.mesh)spaceScene.remove(b.mesh); });
