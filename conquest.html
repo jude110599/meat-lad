@@ -688,8 +688,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.53.1";
+var VERSION="1.53.2";
 var CHANGELOG=[
+  {v:"1.53.2",t:"Found the actual source of the erratic-looking shots: spread was too loose",items:[
+    "The last two patches confirmed the shot itself always was a perfectly straight line and simplified the muzzle flash, but the underlying complaint was still real — tracked it down by firing a stream of shots while smoothly sweeping the mouse and comparing each shot's actual angle: instead of tracking the sweep, the angles jumped around non-monotonically (one sample went -13°, -19°, -12°, -16°, -19° in a row while the mouse moved smoothly the whole time). Regular fire's random spread cone (meant to be a \"roughly here, not exactly here\" reticle) was about 5.7° wide — bigger than the smooth angle change between shots while tracking a target, so shot-to-shot jitter was swamping the actual aim signal, reading as an erratic scatter or swarm instead of a stream of shots landing where the reticle pointed. Both regular and zoomed spread are now roughly 6x tighter (about 0.9° and 0.2°) — confirmed the same sweep test now produces smoothly, monotonically changing shot angles that track the mouse the whole way, matching \"a turret looking at the cursor and shooting directly at it\""
+  ]},
   {v:"1.53.1",t:"Muzzle flash no longer looks like extra stray bullets",items:[
     "Verified the actual shot itself is a genuinely straight line — sampled a live bolt's velocity across several ticks mid-flight and it's bit-for-bit identical the whole way, so nothing is steering or curving it toward the cursor after it's fired. The odd sideways-then-forward, swarm-like motion was the muzzle flash: firing used to also kick out 3-4 small spark particles with their own randomized velocity roughly along the shot's path, which at a glance read as several extra small projectiles scattering off in their own directions rather than effects tied to the one real shot. That's now a single flash that expands and fades in place at the muzzle (and at the impact point on a hit) with no velocity of its own, so there's nothing left that could be mistaken for a second, oddly-moving bullet"
   ]},
@@ -6716,11 +6719,18 @@ var SHIP_TURN_RATE=2.1;
    actually holding Q or E — level flight still eases to exactly 0) keeps Q/E always visibly doing
    something while still letting the angle grow steeper at low speed and shrink at high speed. */
 var PITCH_ANGLE_FLOOR=0.3;
-/* the half-angle (radians) of the random cone regular fire scatters within, and how much tighter
-   that cone gets while zoomed (right-click) — SPREAD_NORMAL is loose enough to actually miss at
-   range, which is the whole point of a reticle showing "roughly here, not exactly here"; zooming
-   trades rate of fire (see ZOOM_RATE_MULT) for shrinking it down to nearly a laser */
-var SPREAD_NORMAL=0.1, SPREAD_ZOOM=0.018;
+/* the half-angle (radians) of the random cone fire scatters within — regular and zoomed. Used to
+   be 0.1/0.018 (~5.7°/~1°), loose enough that it was the actual cause of a real complaint: aim is
+   now independent of the ship's own facing, so a player naturally keeps the mouse moving to track
+   whatever they're shooting at, and each shot's own random jitter on top of that continuous small
+   movement made a stream of shots look like it was scattering/swarming rather than landing where
+   the reticle actually pointed — confirmed by sampling 5 shots fired while smoothly sweeping the
+   mouse: the pitch of each shot jumped up and down non-monotonically (-13°,-19°,-12°,-16°,-19°)
+   instead of tracking the smooth sweep, because the jitter was bigger than the sweep itself. Both
+   values are now small enough to read as "shoots exactly where the reticle is" the way the user
+   asked for, while still leaving a real (if now subtle) reason for the reticle to visibly tighten
+   when zoomed. */
+var SPREAD_NORMAL=0.015, SPREAD_ZOOM=0.004;
 /* zoomed fire's cooldown is multiplied by this — a real accuracy/rate tradeoff, not just a free
    upgrade, so holding right-click is a deliberate choice rather than the obviously-correct thing
    to always do */
@@ -8833,6 +8843,20 @@ window.__cq={
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; mouse.left=down&&(btn==null||btn===0); mouse.right=down&&btn===2; pcUpdateAimYaw(); },
   setSpaceMouseButtons:function(left,right){ mouse.left=!!left; mouse.right=!!right; mouse.downBtn=mouse.left?0:(mouse.right?2:-1); },
+  debugTraceLastBolt:function(steps,dt){
+    dt=dt||0.05;
+    var b=pBolts[pBolts.length-1];
+    if(!b)return null;
+    var pts=[];
+    for(var i=0;i<steps;i++){
+      var m=new THREE.Mesh(new THREE.SphereGeometry(6,6,6),new THREE.MeshBasicMaterial({color:0xff0000}));
+      m.position.set(b.x,b.y,b.z);
+      spaceScene.add(m);
+      pts.push({x:b.x,y:b.y,z:b.z});
+      b.x+=b.vx*dt; b.y+=(b.vy||0)*dt; b.z+=b.vz*dt;
+    }
+    return pts;
+  },
   launchFromLandedShip:launchFromLandedShip, beginLaunchAnim:beginLaunchAnim, fireGun:fireGun, craftItem:craftItem,
   touchDown:touchDown, dropSurfaceBomb:dropSurfaceBomb, boardParkedShip:boardParkedShip, exitToSpace:exitToSpace,
   turretState:function(){ return turrets.map(function(t){return {x:t.x,z:t.z,hp:t.hp,alive:t.alive};}); },
