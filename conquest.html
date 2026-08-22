@@ -100,7 +100,7 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 /* the space flight reticle — a rough, jagged ring rather than a clean circle so it reads as a
    targeting reticle (roughly here, not exactly here) instead of a UI dot. Its own position AND
    scale are set directly in JS every frame (see updateHudSpace/pShip.zoomT) — position tracks the
-   actual mouse cursor (that's the direction fire actually goes, see pcUpdateAimYaw/pcFireYaw —
+   actual mouse cursor (that's the direction fire actually goes, see pcUpdateAimYaw/pcFireDir —
    the mouse only ever aims shots, it never touches the ship's own heading), and scale
    shrinks continuously as you zoom in, matching the real fire spread it stands for. left/top:0 here
    is just an anchor for the JS translate() to build on, not a resting position of its own. */
@@ -688,8 +688,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="1.52.0";
+var VERSION="1.53.0";
 var CHANGELOG=[
+  {v:"1.53.0",t:"Fixed shots firing the wrong way, and added real vertical aim",items:[
+    "Fixed a real bug: the crosshair's horizontal aim was mirrored — pointing right sent shots left and vice versa. It was computed by hand from the screen-X offset and a manual FOV/tan formula, and that formula had the sign backwards. Rebuilt it on THREE's own camera.setFromCamera raycast instead of hand-rolled trig, which can't have that class of sign bug",
+    "Vertical aim now actually works too — pointing the crosshair at the top or bottom of the screen sends shots up or down, not just left or right. Bolts can now genuinely travel off the flat plane they used to be stuck on (hit-detection against enemy ships and the boss now checks vertical distance too, so a shot aimed steeply up or down can actually miss a target it's merely horizontally lined up with, the same way it always could miss left-right)",
+    "Shots now fly in a dead-straight line to exactly where the crosshair points, instead of blending in the ship's own velocity — with aim fully independent of the ship's heading (see 1.52.0), the ship can easily be moving in a totally different direction than the crosshair, and that blend was visibly bending shots away from the reticle. A shot now always outruns whatever fired it purely by flying fast enough (18,000/24,000 for the regular bolt and railgun respectively, both comfortably above any ship's own top boosted speed) rather than by inheriting velocity"
+  ]},
   {v:"1.52.0",t:"Corrected course: the mouse only aims the crosshair now, it doesn't steer the ship",items:[
     "Last patch had the mouse turn the ship's own heading to face the crosshair — wrong call. The mouse now ONLY aims where shots go; it never touches the ship's heading or movement, which are back to being entirely WASD/QE (A/D turns, W/S or the up/down arrows or scroll wheel for throttle, Q/E altitude). The crosshair still tracks the cursor and still marks exactly where fire actually goes — that part was right — it's just genuinely independent of the ship's own nose now, like a turret rather than steering. Confirmed live: turning the ship with A/D no longer touches pcTargetYaw at all, and a shot fired while the mouse and the ship's own heading pointed in very different directions landed within the normal spread tolerance of the crosshair's direction, not the ship's"
   ]},
@@ -6561,8 +6566,8 @@ function makeBoltMesh(color,len,rad){
   spaceScene.add(g);
   return g;
 }
-function orientBoltMesh(mesh,vx,vz){
-  var dir=new THREE.Vector3(vx,0,vz).normalize();
+function orientBoltMesh(mesh,vx,vz,vy){
+  var dir=new THREE.Vector3(vx,vy||0,vz).normalize();
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
 }
 /* a quick burst right at the muzzle so firing reads as a weapon actually going off — one bright
@@ -6583,33 +6588,40 @@ function clearBolts(){
   eBolts.forEach(function(b){ if(b.mesh)spaceScene.remove(b.mesh); });
   pBolts=[]; eBolts=[];
 }
-/* fire direction on PC comes from the crosshair (pcTargetYaw, set purely by mouse movement — see
-   pcUpdateAimYaw), NOT the ship's own heading — the mouse only ever aims the reticle for shooting,
-   it never touches the ship's own facing or movement (that's WASD/QE, full stop). Falls back to
-   the ship's own yaw before the first mouse move, or on mobile where there's no cursor to aim
-   with (mobile fires straight down its own nose, same as it always has). */
-function pcFireYaw(){
-  if(document.body.classList.contains("pc-mode")&&pcTargetYaw!=null)return pcTargetYaw;
-  return pShip.yaw;
+/* fire direction on PC comes from the crosshair (pcAimDir, a 3D unit vector set purely by mouse
+   movement — see pcUpdateAimYaw), NOT the ship's own heading — the mouse only ever aims the
+   reticle for shooting, it never touches the ship's own facing or movement (that's WASD/QE, full
+   stop). spread jitters BOTH the horizontal and vertical angle of that direction (tighter while
+   zoomed — see pShip.zoomT/SPREAD_ZOOM), so a shot lands somewhere in the cone the reticle shows
+   rather than always dead-on. Falls back to the ship's own level yaw before the first mouse move,
+   or on mobile where there's no cursor to aim with (mobile fires straight down its own nose, same
+   as it always has). */
+function pcFireDir(spread){
+  var dx,dy,dz;
+  if(document.body.classList.contains("pc-mode")&&pcAimDir){ dx=pcAimDir.x; dy=pcAimDir.y; dz=pcAimDir.z; }
+  else { dx=Math.sin(pShip.yaw); dy=0; dz=Math.cos(pShip.yaw); }
+  var yaw=Math.atan2(dx,dz);
+  var horizLen=Math.sqrt(dx*dx+dz*dz);
+  var pitch=Math.atan2(dy,horizLen);
+  yaw+=rnd(-spread,spread); pitch+=rnd(-spread,spread);
+  var cosP=Math.cos(pitch);
+  return {x:Math.sin(yaw)*cosP,y:Math.sin(pitch),z:Math.cos(yaw)*cosP};
 }
 function fireShipBolt(spread){
-  /* a small random deviation off the aim direction, sized by spread — tight while cruising
-     normally, tighter still while zoomed (see pShip.zoomT/SPREAD_ZOOM) — so the reticle shown on
-     screen actually matches the cone a shot can land in, instead of a reticle that's just for show */
-  var aimYaw=pcFireYaw()+rnd(-spread,spread);
-  var cos=Math.sin(aimYaw), sin=Math.cos(aimYaw);
-  /* the bolt now inherits the ship's own current velocity on top of its muzzle speed, instead of
-     firing at a fixed absolute speed along the nose no matter how fast the ship itself is already
-     going. At full boost (1.7x, see SHIP_STATS) some ships' own top speed could get close to or
-     past the old fixed 11340, so the ship could nearly catch up to or overtake its own shots —
-     exactly the "bullets don't fly right" symptom. Adding the platform's velocity is how a real
-     projectile fired from a moving ship behaves (dropBomb already does this for bombs), and
-     guarantees the bolt is always genuinely outrunning whatever fired it. */
-  var vx=pShip.vel.x+cos*9500, vz=pShip.vel.z+sin*9500;
-  var bolt={x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:vx,vz:vz,dmg:pShip.dmg,life:1.4};
+  var dir=pcFireDir(spread);
+  /* a straight line along the aim direction at a fixed speed — deliberately NOT blended with the
+     ship's own velocity. Aim is now independent of the ship's heading (a turret, not steering —
+     see pcFireDir), and the ship can easily be moving in some completely different direction than
+     the crosshair points; adding that velocity in would visibly bend the shot away from where the
+     reticle actually is, which is the opposite of "shoot exactly where I'm aiming". 18000 is
+     comfortably above every ship's own top boosted speed (scout's 9072*1.7=15422 is the fastest,
+     see SHIP_STATS) purely as a fixed number, so a shot always outruns whatever fired it without
+     needing to inherit its velocity to guarantee that. */
+  var vx=dir.x*18000, vy=dir.y*18000, vz=dir.z*18000;
+  var bolt={x:pShip.pos.x+dir.x*2,y:pShip.pos.y+dir.y*2,z:pShip.pos.z+dir.z*2,vx:vx,vy:vy,vz:vz,dmg:pShip.dmg,life:1.4};
   bolt.mesh=makeBoltMesh(0x6fe8ff,55,2.2);
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
-  orientBoltMesh(bolt.mesh,vx,vz);
+  orientBoltMesh(bolt.mesh,vx,vz,vy);
   pBolts.push(bolt);
   spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0x6fe8ff,false);
   sfx.click();
@@ -6619,13 +6631,12 @@ function fireShipBolt(spread){
    match the ship's own obsidian-forged theme, with damage coming from the ship's own (higher)
    dmg stat rather than any special multiplier here. */
 function fireRailShot(spread){
-  var aimYaw=pcFireYaw()+rnd(-spread,spread);
-  var cos=Math.sin(aimYaw), sin=Math.cos(aimYaw);
-  var vx=pShip.vel.x+cos*15500, vz=pShip.vel.z+sin*15500;
-  var bolt={x:pShip.pos.x+cos*2,y:pShip.pos.y,z:pShip.pos.z+sin*2,vx:vx,vz:vz,dmg:pShip.dmg,life:1.2};
+  var dir=pcFireDir(spread);
+  var vx=dir.x*24000, vy=dir.y*24000, vz=dir.z*24000;
+  var bolt={x:pShip.pos.x+dir.x*2,y:pShip.pos.y+dir.y*2,z:pShip.pos.z+dir.z*2,vx:vx,vy:vy,vz:vz,dmg:pShip.dmg,life:1.2};
   bolt.mesh=makeBoltMesh(0xb060ff,90,3.2);
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
-  orientBoltMesh(bolt.mesh,vx,vz);
+  orientBoltMesh(bolt.mesh,vx,vz,vy);
   pBolts.push(bolt);
   spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0xb060ff,true);
   sfx.click();
@@ -6782,7 +6793,7 @@ function updateSpace(dt){
       var fwd=0,strafe=0,turn=0;
       if(pc){
         /* A/D still turns the ship itself — WASD/QE fly the ship, full stop. The mouse only ever
-           aims the crosshair (see pcTargetYaw/pcUpdateAimYaw below) for where SHOTS go; it never
+           aims the crosshair (see pcAimDir/pcUpdateAimYaw below) for where SHOTS go; it never
            touches the ship's own heading or movement. */
         if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
         pShip.yaw+=turn*SHIP_TURN_RATE*dt;
@@ -6994,23 +7005,28 @@ function updateSpace(dt){
 
   updateBombs(dt);
   for(var i2=pBolts.length-1;i2>=0;i2--){
-    var b=pBolts[i2]; b.x+=b.vx*dt; b.z+=b.vz*dt; b.life-=dt;
+    /* bolts can now travel vertically too (see fireShipBolt/fireRailShot's 3D aim direction), not
+       just across the flat plane they always used to stay on — b.y actually moves now instead of
+       staying pinned at spawn height */
+    var b=pBolts[i2]; b.x+=b.vx*dt; b.y+=(b.vy||0)*dt; b.z+=b.vz*dt; b.life-=dt;
     if(b.mesh)b.mesh.position.set(b.x,b.y,b.z);
     var hit=false;
     for(var j=enemyShips.length-1;j>=0;j--){
-      var e2=enemyShips[j], edx=b.x-e2.mesh.position.x,edz=b.z-e2.mesh.position.z;
+      var e2=enemyShips[j], edx=b.x-e2.mesh.position.x,edy=b.y-e2.mesh.position.y,edz=b.z-e2.mesh.position.z;
       /* the old 1.6-unit hit radius was sized for the old bolt speed — at 6300 units/sec a bolt
          covers ~100 units per frame at 60fps, so a point-radius check that tight let most shots
-         tunnel straight through a target between frames without ever registering a hit */
-      if(Math.sqrt(edx*edx+edz*edz)<40){
+         tunnel straight through a target between frames without ever registering a hit. Now checks
+         vertical distance too (edy) — a bolt aimed steeply up/down can genuinely miss a target
+         it's horizontally lined up with, the same way it always could miss left/right. */
+      if(Math.sqrt(edx*edx+edy*edy+edz*edz)<40){
         e2.hp-=b.dmg; e2.hitT=0.12; hit=true;
         if(e2.hp<=0)killEnemyShip(e2,j);
         break;
       }
     }
     if(!hit&&moonBoss){
-      var bdx=b.x-moonBoss.mesh.position.x, bdz=b.z-moonBoss.mesh.position.z;
-      if(Math.sqrt(bdx*bdx+bdz*bdz)<200){ damageMoonBoss(b.dmg); hit=true; }
+      var bdx=b.x-moonBoss.mesh.position.x, bdy=b.y-moonBoss.mesh.position.y, bdz=b.z-moonBoss.mesh.position.z;
+      if(Math.sqrt(bdx*bdx+bdy*bdy+bdz*bdz)<200){ damageMoonBoss(b.dmg); hit=true; }
     }
     /* a hit used to just silently delete the bolt with nothing to show for it — a small spark
        burst right where it actually landed makes a hit read as an impact, not a disappearance */
@@ -7085,30 +7101,35 @@ function spaceAimPoint(){
     z:pShip.pos.z+camDir.z*(-aimStick.dy)*10+camRight.z*aimStick.dx*10
   };
 }
-/* the heading the crosshair currently marks — used ONLY as the fire direction in fireShipBolt/
-   fireRailShot (see pcFireYaw), NEVER the ship's own heading or movement, which stay entirely
-   under WASD/QE control. null means no mouse input has set one yet (e.g. right after launch), so
-   shots just go straight out the nose until the mouse first moves.
+/* the full 3D direction the crosshair currently marks (a unit vector, {x,y,z}) — used ONLY as the
+   fire direction in fireShipBolt/fireRailShot (see pcFireDir), NEVER the ship's own heading or
+   movement, which stay entirely under WASD/QE control. Includes a vertical component (from the
+   cursor's Y position on screen) as well as horizontal, so aiming at the top or bottom of the
+   screen actually sends shots up or down, not just left/right. null means no mouse input has set
+   one yet (e.g. right after launch), so shots just go straight out the nose until the mouse first
+   moves.
+   Built with THREE's own camera.setFromCamera raycast rather than hand-rolled trig — an earlier
+   version computed the horizontal angle by hand (screen-X offset times a manual FOV/tan formula)
+   and had the sign backwards, so aiming right sent shots left and vice versa. Letting the actual
+   camera unproject the cursor avoids hand-rolling that math wrong a second time.
    Recomputed ONLY when the mouse actually moves (called from the mousemove listener), not once a
    frame — an earlier version recomputed it fresh every frame from the current camera, which
    looked right in isolation but caused a real bug: back when this used to also drive the ship's
    own heading, the chase camera re-centered behind the ship's nose almost immediately after any
    turn, so a fixed screen offset from center kept meaning "turn further still" forever and the
    ship never stopped rotating — confirmed live, yaw ran up past -670 radians (over 100 full turns)
-   from just leaving the mouse resting off-center for a couple seconds. Capturing the camera's
-   heading at the MOMENT the mouse moves and holding that as a fixed value until it moves again
-   has no such loop, and is kept even now that this only feeds fire direction. */
-var pcTargetYaw=null;
+   from just leaving the mouse resting off-center for a couple seconds. Capturing the direction at
+   the MOMENT the mouse moves and holding it fixed until it moves again has no such loop, and is
+   kept even now that this only feeds fire direction. */
+var pcAimDir=null;
+var pcAimRaycaster=new THREE.Raycaster();
 function pcUpdateAimYaw(){
   if(!pShip||state!=="space"||landedPlanet)return;
   if(!document.body.classList.contains("pc-mode"))return;
-  var camDir=new THREE.Vector3(); camera.getWorldDirection(camDir);
-  var camYaw=Math.atan2(camDir.x,camDir.z);
-  var ndcX=(mouse.x/W)*2-1;
-  var halfFovY=camera.fov*Math.PI/360;
-  var halfFovX=Math.atan(Math.tan(halfFovY)*camera.aspect);
-  var angleOffset=Math.atan(ndcX*Math.tan(halfFovX));
-  pcTargetYaw=camYaw+angleOffset;
+  var ndcX=(mouse.x/W)*2-1, ndcY=-(mouse.y/H)*2+1;
+  pcAimRaycaster.setFromCamera({x:ndcX,y:ndcY},camera);
+  var d=pcAimRaycaster.ray.direction;
+  pcAimDir={x:d.x,y:d.y,z:d.z};
 }
 var spaceFiring=false, spaceBoostHeld=false;
 function updateHudSpace(){
@@ -7143,7 +7164,7 @@ function updateHudSpace(){
     /* scales from 1 (full spread) down to ~0.4 (fully zoomed) so the ring's own size always
        matches the cone a shot can actually land in — see SPREAD_NORMAL/SPREAD_ZOOM. Position
        tracks the real cursor (mouse.x/mouse.y) rather than sitting fixed at screen center — shots
-       fire toward wherever this sits (see pcFireYaw), so the reticle marks an actual aim point
+       fire toward wherever this sits (see pcFireDir), so the reticle marks an actual aim point
        instead of just decorating the middle of the screen. */
     var zoomT=pShip.zoomT||0;
     var scale=1-zoomT*0.6;
@@ -8799,7 +8820,7 @@ window.__cq={
         shield:pShip.shield,maxshield:pShip.maxshield,alive:pShip.alive,vel:{x:pShip.vel.x,z:pShip.vel.z}}:null,
       enemies:enemyShips.map(function(e){return {x:e.mesh.position.x,z:e.mesh.position.z,hp:e.hp,max:e.max};}),
       pBolts:pBolts.length, eBolts:eBolts.length, bombs:bombs.length, stock:JSON.parse(JSON.stringify(stock)),
-      pBoltsDetail:pBolts.map(function(b){return {vx:b.vx,vz:b.vz};}), pcTargetYaw:pcTargetYaw,
+      pBoltsDetail:pBolts.map(function(b){return {vx:b.vx,vy:b.vy,vz:b.vz};}), pcAimDir:pcAimDir,
       worlds:WORLDS.map(function(w){return {id:w.id,nm:w.nm,sx:w.sx,sz:w.sz,radius:w.radius,discovered:w.discovered,hasGuardian:!!w.hasGuardian,guardianDefeated:!!w.guardianDefeated};}),
       currentTarget:currentTarget?{id:currentTarget.id,nm:currentTarget.nm,isHome:!!currentTarget.isHome}:null,
       landed:landedPlanet?landedPlanet.id:null, landProgress:landProgress, atOutpost:atOutpost,
