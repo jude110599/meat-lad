@@ -1,0 +1,2834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#E7EBEF">
+<title>LINEWORK — day & night metro</title>
+<style>
+:root{
+  --paper:#E7EBEF; --panel:#F6F8FA; --raise:#FFFFFF; --ink:#15181D; --soft:#5C6672;
+  --hair:#C9D1D9; --signal:#D8402E; --veil:rgba(231,235,239,.87);
+  --l0:#E2503F;--l1:#1E6FBF;--l2:#F0A81C;--l3:#158F6B;--l4:#7B4FC0;--l5:#D8407F;--l6:#43596B;
+  --font-ui:"Helvetica Neue",Helvetica,Arial,ui-sans-serif,system-ui,sans-serif;
+  --font-num:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --tap:34px;
+}
+body.night{
+  --paper:#0D1117; --panel:#141A21; --raise:#1C242E; --ink:#E9EEF4; --soft:#8A97A6;
+  --hair:#2B343F; --signal:#FF6B54; --veil:rgba(13,17,23,.89);
+  --l0:#FF6B54;--l1:#4FA8FF;--l2:#FFC24D;--l3:#3EDBA6;--l4:#B18BFF;--l5:#FF6FA8;--l6:#93A9BE;
+}
+@media (pointer:coarse){:root{--tap:40px}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:var(--paper);color:var(--ink);
+  font-family:var(--font-ui);-webkit-text-size-adjust:100%;position:fixed;width:100%;
+  -webkit-user-select:none;user-select:none}
+body,#bar,#dock,.card,.pop,button,.res,.chip,.st,.stats{transition:background-color .5s ease,color .5s ease,border-color .5s ease}
+#app{position:fixed;inset:0;height:100dvh;display:flex;flex-direction:column;touch-action:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+
+/* ── top bar ── */
+#bar{position:relative;display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--hair);
+  background:var(--panel);flex:0 0 auto;z-index:6}
+.tally{display:flex;align-items:baseline;gap:5px;min-width:0}
+.tally b{font-family:var(--font-num);font-size:19px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  transition:transform .12s ease}
+.tally b.bump{transform:scale(1.22)}
+.tally span{font-size:8.5px;letter-spacing:.15em;color:var(--soft);text-transform:uppercase}
+.tally.wait b{font-size:15px;opacity:.75;transition:color .3s}
+.tally.wait.hot b{color:var(--signal);opacity:1}
+@media (max-width:430px){.tally.wait{display:none}}
+.clock{display:flex;align-items:center;gap:7px;margin:0 auto 0 6px}
+#dial{width:24px;height:24px;border-radius:50%;flex:0 0 auto;
+  -webkit-mask:radial-gradient(circle,transparent 6.5px,#000 7.5px);mask:radial-gradient(circle,transparent 6.5px,#000 7.5px)}
+.clock-txt{line-height:1.2}
+.clock-txt .wk{font-size:9.5px;letter-spacing:.16em;font-weight:700;white-space:nowrap}
+.clock-txt .tm{font-family:var(--font-num);font-size:9.5px;color:var(--soft);font-variant-numeric:tabular-nums}
+.ctrls{display:flex;gap:4px;align-items:center}
+button{font-family:inherit;color:var(--ink);background:transparent;border:1px solid var(--hair);border-radius:8px;
+  cursor:pointer;font-size:11px;letter-spacing:.08em;padding:0}
+button:hover:not(:disabled){border-color:var(--ink)}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.ctrls button{width:var(--tap);height:var(--tap);display:grid;place-items:center;background:var(--raise);font-size:13px}
+.ctrls button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ctrls button:disabled{opacity:.32;cursor:default}
+#btnSpeed{font-family:var(--font-num);font-size:12px}
+
+/* ── settings popover ── */
+.pop{position:absolute;top:calc(100% + 7px);right:8px;width:236px;background:var(--panel);border:1px solid var(--hair);
+  border-radius:12px;padding:11px;display:none;box-shadow:0 16px 34px -18px rgba(0,0,0,.45);z-index:9}
+.pop.show{display:block}
+.pop-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 2px}
+.pop-lbl{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--soft);font-weight:700}
+.seg{display:flex;border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;height:28px;padding:0 9px;font-size:10px;letter-spacing:.06em;background:var(--raise)}
+.seg button+button{border-left:1px solid var(--hair)}
+.seg button.on{background:var(--ink);color:var(--paper)}
+.pop-full{width:100%;height:32px;margin-top:6px;background:var(--raise);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;font-weight:600}
+
+/* ── stage ── */
+#stage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;touch-action:none}
+canvas{position:absolute;inset:0;display:block;touch-action:none;-webkit-touch-callout:none}
+
+/* ── dock ── */
+#dock{flex:0 0 auto;border-top:1px solid var(--hair);background:var(--panel);padding:6px 8px 8px;display:flex;
+  flex-direction:column;gap:6px}
+#chips{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px;touch-action:pan-x}
+#chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;display:flex;align-items:center;gap:7px;height:var(--tap);padding:0 12px 0 8px;border-radius:20px;
+  border:1px solid var(--hair);background:var(--raise);cursor:pointer}
+.chip:active{transform:scale(.97)}
+.chip .tag{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:10px;
+  font-weight:700;font-family:var(--font-num);transition:background-color .5s ease}
+body.night .chip .tag{color:#0D1117}
+.chip .n{font-family:var(--font-num);font-size:11px;color:var(--soft);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.chip.empty{border-style:dashed;opacity:.55}
+.chip.empty .tag{color:var(--soft);font-size:13px}
+.chip.empty.armed{opacity:1;border-style:solid;border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.chip.empty .tag{background:var(--hair)}
+.chip .warn{color:var(--signal);font-size:10px;font-weight:700;letter-spacing:.04em}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--signal);flex:0 0 auto;animation:blip 1.1s ease-in-out infinite}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
+.chip .loop{font-size:11px;color:var(--soft)}
+/* The depot chips and the selected-line panel occupy the same fixed-width
+   slot (CSS grid stacking) and cross-fade between each other, so choosing a
+   line never nudges the buttons that follow — nothing you're about to tap
+   moves out from under your finger. */
+.depotSlot{display:grid}
+.depotSlot>*{grid-area:1/1;align-self:center}
+.depotRow{display:flex;align-items:center;gap:4px;opacity:1;transition:opacity .16s ease}
+.depotRow.hide{visibility:hidden;opacity:0;pointer-events:none}
+.lineinfo{display:flex;align-items:center;gap:7px;height:28px;padding:0 10px 0 6px;border-radius:14px;
+  background:var(--raise);border:1px solid var(--hair);visibility:hidden;opacity:0;pointer-events:none;
+  transition:opacity .16s ease}
+.lineinfo.show{visibility:visible;opacity:1;pointer-events:auto}
+.lineinfo .tag{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:10px;
+  font-weight:700;font-family:var(--font-num)}
+body.night .lineinfo .tag{color:#0D1117}
+.lineinfo .meta{font-family:var(--font-num);font-size:11px;color:var(--soft);white-space:nowrap}
+.res.hide,.act.hide{display:none}
+.act b{font-family:var(--font-num);font-weight:600;opacity:.55;margin-left:4px}
+.act b:empty{margin-left:0}
+#tools{display:flex;align-items:center;gap:5px;overflow-x:auto;scrollbar-width:none;touch-action:pan-x}
+#tools::-webkit-scrollbar{display:none}
+.res{display:flex;align-items:center;gap:4px;height:28px;padding:0 7px;border-radius:14px;background:var(--raise);
+  border:1px solid var(--hair)}
+.res b{font-family:var(--font-num);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.res .lbl{font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--soft)}
+@media (max-width:520px){.res .lbl{display:none}}
+.res.zero{opacity:.35}
+.res.rare{border-color:#C9A227}
+.res.rare svg *{stroke:#C9A227}
+.res.rare b{color:#C9A227}
+.res.rare.zero{opacity:.5;border-color:var(--hair)}
+.res.rare.zero svg *{stroke:var(--ink)}
+.res.rare.zero b{color:var(--ink)}
+.res svg{display:block;overflow:visible}
+.res svg *{stroke:var(--ink);transition:stroke .5s ease}
+.spacer{flex:1 1 auto}
+/* The whole action-button group is only there once it means something — with
+   no line selected there's nothing to Train/Car/Loop/Remove, so the dock
+   stays uncluttered until you actually tap a line, then it slides in. */
+.actGroup{display:flex;gap:5px;align-items:center;max-width:0;opacity:0;overflow:hidden;
+  transition:max-width .24s ease,opacity .16s ease}
+.actGroup.show{max-width:420px;opacity:1}
+.act{height:var(--tap);padding:0 9px;background:var(--raise);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  font-weight:600;white-space:nowrap}
+.act:disabled{opacity:.28;cursor:default}
+.act.danger{color:var(--signal);border-color:var(--signal);opacity:.9}
+.act.danger:disabled{opacity:.28;color:var(--signal);border-color:var(--hair)}
+#tools .act{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+/* ── overlays ── */
+.veil{position:absolute;inset:0;display:none;place-items:center;padding:16px;z-index:5;touch-action:pan-y;
+  background:var(--veil);backdrop-filter:blur(4px);animation:fade .25s ease both;overflow:auto}
+.veil{align-items:safe center}
+.veil.full{padding:0;background:var(--paper)}
+.fullpage{width:100%;height:100%;display:flex;flex-direction:column;max-width:560px;margin:0 auto}
+.fphead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  padding:calc(14px + env(safe-area-inset-top)) 18px 14px;border-bottom:1px solid var(--hair);flex:0 0 auto}
+.fphead h2{margin:6px 0 0;font-size:22px}
+.fpclose{width:34px;height:34px;border-radius:50%;background:var(--raise);font-size:14px;flex:0 0 auto}
+.fpbody{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px}
+.fpbody .howto{font-size:14px;line-height:1.75}
+.fpbody .howto li{padding:9px 0;border-bottom:1px solid var(--hair)}
+.fpbody .howto li:last-child{border-bottom:0}
+.fpbody .howto i{font-size:12.5px}
+.veil.show{display:grid}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.card{background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:20px 18px;max-width:392px;width:100%;
+  box-shadow:0 22px 50px -26px rgba(0,0,0,.5);animation:rise .3s ease both}
+.eyebrow{font-size:8.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--soft);font-weight:700}
+h1{margin:7px 0 0;font-size:clamp(26px,8vw,36px);letter-spacing:.14em;font-weight:700;line-height:1}
+.sub{margin-top:6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft)}
+h2{margin:5px 0 0;font-size:18px;letter-spacing:.04em;font-weight:700}
+.rule{height:1px;background:var(--hair);margin:14px 0}
+.howto{font-size:12.5px;line-height:1.6;color:var(--soft);margin:0;padding:0;list-style:none}
+.howto li{display:flex;gap:9px;padding:3px 0}
+.howto i{font-style:normal;color:var(--ink);font-weight:700;font-family:var(--font-num);font-size:11px;padding-top:1px}
+.howto b{color:var(--ink);font-weight:600}
+.big{width:100%;height:46px;margin-top:14px;background:var(--ink);color:var(--paper);border-color:var(--ink);
+  font-size:11px;letter-spacing:.2em;font-weight:700;text-transform:uppercase}
+.ghost{width:100%;height:38px;margin-top:8px;background:transparent;font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;font-weight:600;color:var(--soft)}
+.maplist{display:flex;flex-direction:column;gap:7px;max-height:44vh;overflow-y:auto;margin-top:9px;
+  -webkit-overflow-scrolling:touch}
+.mapcard{display:flex;align-items:center;gap:11px;padding:8px;border-radius:12px;background:var(--raise);
+  border:1px solid var(--hair);text-align:left;width:100%}
+.mapcard:hover{border-color:var(--acc)}
+.mapcard.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc);background:var(--panel)}
+.mapcard .prev{flex:0 0 auto;line-height:0;border-radius:8px;overflow:hidden;box-shadow:0 0 0 1px var(--hair)}
+.mapcard .body{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mapcard .mtop{display:flex;align-items:center;gap:7px}
+.mapcard b{font-size:12.5px;letter-spacing:.04em}
+.mapcard .badge2{font-size:8px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 6px;
+  border-radius:20px;background:var(--acc);color:#fff}
+.mapcard .mdesc{font-size:10.5px;line-height:1.35;color:var(--soft)}
+.mapcard .mbest{font-family:var(--font-num);font-size:9.5px;color:var(--soft);opacity:.75}
+.picks{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+.pick{background:var(--raise);border:1px solid var(--hair);border-radius:12px;padding:13px 11px;text-align:left;
+  display:flex;flex-direction:column;gap:5px;min-height:118px}
+.pick:hover{border-color:var(--ink)}
+.pick .ttl{font-size:11.5px;letter-spacing:.07em;font-weight:700;text-transform:uppercase}
+.pick .dsc{font-size:11px;line-height:1.4;color:var(--soft);letter-spacing:0;text-transform:none}
+.pick svg{margin-bottom:2px}
+.pick svg *{stroke:var(--ink);transition:stroke .5s}
+.pick.rare{border-color:#C9A227;background:linear-gradient(160deg,var(--raise),color-mix(in srgb,#C9A227 10%,var(--raise)))}
+.pick.rare .ttl{color:#9E7C10}
+.pick.rare svg *{stroke:#C9A227}
+.pick.rare .eff{color:#9E7C10;opacity:1}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--hair);border:1px solid var(--hair);
+  border-radius:12px;overflow:hidden;margin-top:12px}
+.st{background:var(--panel);padding:10px 11px}
+.st b{display:block;font-family:var(--font-num);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.st span{font-size:8.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--soft)}
+.st.wide{grid-column:1/-1;background:var(--ink)}
+.st.wide b{color:var(--paper);font-size:30px}
+.st.wide span{color:var(--paper);opacity:.55}
+.badge{display:inline-block;margin-top:8px;padding:4px 9px;border-radius:20px;background:var(--signal);color:#fff;
+  font-size:9px;letter-spacing:.18em;font-weight:700;text-transform:uppercase}
+.badge.hide{display:none}
+#ticker{position:absolute;top:9px;left:9px;max-width:74%;padding:7px 12px 7px 10px;border-radius:16px;
+  background:var(--panel);border:1px solid var(--hair);font-size:10.5px;letter-spacing:.05em;color:var(--soft);
+  opacity:0;transform:translateY(-7px);transition:opacity .35s ease,transform .35s ease;pointer-events:none;z-index:3;
+  display:flex;align-items:center;gap:7px;box-shadow:0 8px 20px -14px rgba(0,0,0,.5)}
+#ticker.show{opacity:1;transform:none}
+#ticker.urgent{color:var(--signal);border-color:var(--signal)}
+#ticker::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;flex:0 0 auto;opacity:.85}
+#cityTag{position:absolute;left:11px;bottom:9px;font-size:8.5px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--soft);opacity:.45;pointer-events:none;z-index:2;font-weight:600}
+.pick .eff{font-family:var(--font-num);font-size:10px;letter-spacing:0;color:var(--ink);opacity:.7;margin-top:auto;
+  padding-top:6px;text-transform:none}
+.pick{animation:rise .32s ease both}
+.picks .pick:nth-child(2){animation-delay:.07s}
+.act:active,.big:active,.ghost:active,.pick:active,.ctrls button:active,.res:active{transform:scale(.965)}
+.pick,.act,.big,.ctrls button{transition:transform .09s ease,background-color .5s ease,color .5s ease,border-color .15s ease}
+.statlist{margin-top:12px;border:1px solid var(--hair);border-radius:12px;overflow:hidden}
+.strow{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--panel);border-top:1px solid var(--hair)}
+.strow:first-child{border-top:0}
+.strow.head{background:var(--raise)}
+.strow .sn{flex:1 1 auto;font-size:11.5px;letter-spacing:.02em}
+.strow .sv{font-family:var(--font-num);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.strow .sx{font-family:var(--font-num);font-size:9.5px;color:var(--soft);min-width:26px;text-align:right}
+.strow.off .sn,.strow.off .sv{opacity:.4}
+.strow .sv.good{color:var(--acc2,var(--ink))}
+.loglist{margin-top:12px;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px;
+  -webkit-overflow-scrolling:touch}
+.logentry .lv{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+.logentry .lv b{font-family:var(--font-num);font-size:12.5px;letter-spacing:.02em}
+.logentry .lv span{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.logentry ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.logentry li{font-size:11.5px;line-height:1.45;color:var(--soft);padding-left:13px;position:relative}
+.logentry li::before{content:"";position:absolute;left:1px;top:7px;width:4px;height:4px;border-radius:50%;background:var(--soft)}
+.reason{margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--soft)}
+#zoomCtrl{position:absolute;right:9px;bottom:9px;display:flex;flex-direction:column;
+  border-radius:14px;overflow:hidden;border:1px solid var(--hair);box-shadow:0 8px 18px -12px rgba(0,0,0,.4);z-index:3}
+#zoomCtrl button{width:32px;height:32px;background:var(--panel);color:var(--ink);font-size:16px;font-weight:600;
+  line-height:1;border:0;border-radius:0}
+#zoomCtrl button:first-child{border-bottom:1px solid var(--hair)}
+#zoomCtrl button:active{background:var(--raise)}
+#zoomCtrl button:disabled{opacity:.35}
+#toast{position:absolute;left:50%;bottom:14px;transform:translate(-50%,10px);background:var(--ink);color:var(--paper);
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;padding:9px 14px;border-radius:20px;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:4;max-width:88%;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+@media (max-width:370px){
+  .tally span{display:none}
+  .ctrls button{width:36px;height:36px}
+  .clock-txt .wk,.clock-txt .tm{font-size:9px}
+}
+@media (max-height:640px){
+  .card{padding:15px 14px}.rule{margin:10px 0}.howto li{padding:2px 0;font-size:12px}
+  .big{height:42px;margin-top:10px}.pick{min-height:104px}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="bar">
+    <div class="tally"><b id="scoreVal">0</b><span>carried</span></div>
+    <div class="tally wait" id="waitBox"><b id="waitVal">0</b><span>waiting</span></div>
+    <div class="clock">
+      <div id="dial"></div>
+      <div class="clock-txt"><div class="wk" id="weekLbl">WEEK 1</div><div class="tm" id="timeLbl">0:00</div></div>
+    </div>
+    <div class="ctrls">
+      <button id="btnUndo" title="Undo (U)" aria-label="Undo">↶</button>
+      <button id="btnPause" title="Pause (space)" aria-label="Pause">❚❚</button>
+      <button id="btnSpeed" title="Speed (1/2/3)" aria-label="Speed">1×</button>
+      <button id="btnStats" title="Upgrades in effect" aria-label="Upgrades">
+        <svg width="13" height="12" viewBox="0 0 13 12" fill="none"><path d="M1.5 11V7M6.5 11V4M11.5 11V1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btnGear" title="Settings" aria-label="Settings">☰</button>
+    </div>
+    <div class="pop" id="gearMenu">
+      <div class="pop-row"><span class="pop-lbl">Theme</span>
+        <div class="seg" id="segTheme">
+          <button data-th="day">Day</button><button data-th="night">Night</button><button data-th="auto">Auto</button>
+        </div>
+      </div>
+      <div class="pop-row"><span class="pop-lbl">Sound</span>
+        <div class="seg" id="segSound"><button data-snd="1">On</button><button data-snd="0">Off</button></div>
+      </div>
+      <button class="pop-full" id="btnRules">How to play</button>
+      <button class="pop-full" id="btnChangelog">What's new</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="ticker"><span id="tickerTxt"></span></div>
+    <div id="cityTag"></div>
+    <div id="zoomCtrl">
+      <button id="btnZoomIn" aria-label="Zoom in">+</button>
+      <button id="btnZoomOut" aria-label="Zoom out">−</button>
+    </div>
+    <div id="toast"></div>
+
+    <div class="veil show" id="menuVeil">
+      <div class="card">
+        <div class="eyebrow">Minimalist metro strategy</div>
+        <h1>LINEWORK</h1>
+        <div class="sub" id="menuSub">LINEWORK Transit · day &amp; night service</div>
+        <div class="rule"></div>
+        <div class="eyebrow">Choose a network</div>
+        <div class="maplist" id="mapList"></div>
+        <button class="big" id="btnPlay" disabled>Play</button>
+        <button class="ghost" id="btnRulesMenu">How to play</button>
+      </div>
+    </div>
+
+    <div class="veil" id="statsVeil">
+      <div class="card">
+        <div class="eyebrow" id="statsEyebrow">Network status</div>
+        <h2>Upgrades in effect</h2>
+        <div class="statlist" id="statList"></div>
+        <button class="big" id="btnCloseStats">Back to the city</button>
+      </div>
+    </div>
+
+    <div class="veil" id="changeVeil">
+      <div class="card">
+        <div class="eyebrow">Service bulletin</div>
+        <h2>What's new</h2>
+        <div class="loglist" id="logList"></div>
+        <button class="big" id="btnCloseLog">Back to the city</button>
+      </div>
+    </div>
+
+    <div class="veil full" id="rulesVeil">
+      <div class="fullpage">
+        <div class="fphead">
+          <div><div class="eyebrow">Reference</div><h2>How to play</h2></div>
+          <button class="fpclose" id="btnCloseRules" aria-label="Close">✕</button>
+        </div>
+        <div class="fpbody">
+          <ul class="howto" id="rulesList2"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="veil" id="weekVeil">
+      <div class="card">
+        <div class="eyebrow" id="weekEyebrow">End of week 1</div>
+        <h2>Choose one upgrade</h2>
+        <div class="reason" id="weekSum"></div>
+        <div class="rule"></div>
+        <div class="picks" id="picks"></div>
+      </div>
+    </div>
+
+    <div class="veil" id="overVeil">
+      <div class="card">
+        <div class="eyebrow" id="overEyebrow">Service suspended</div>
+        <h2 id="overWhy">A platform overflowed</h2>
+        <div class="reason" id="overSub"></div>
+        <div class="badge hide" id="bestBadge">New best</div>
+        <div class="stats">
+          <div class="st wide"><b id="fScore">0</b><span>final score</span></div>
+          <div class="st"><b id="fPax">0</b><span>passengers carried</span></div>
+          <div class="st"><b id="fTime">0:00</b><span>time in service</span></div>
+          <div class="st"><b id="fSta">0</b><span>stations served</span></div>
+          <div class="st"><b id="fBest">0</b><span>best score</span></div>
+        </div>
+        <button class="big" id="btnAgain">Run it again</button>
+        <button class="ghost" id="btnPickMap">Choose another network</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dock">
+    <div id="chips"></div>
+    <div id="tools">
+      <div class="depotSlot">
+        <div class="depotRow" id="depotRow">
+          <div class="res" id="resTrain" title="Locomotives in the depot">
+            <svg width="17" height="10" viewBox="0 0 17 10"><rect x=".5" y=".5" width="16" height="9" rx="3.5" fill="none"/></svg><b id="nTrain">0</b><span class="lbl">trains</span>
+          </div>
+          <div class="res" id="resCar" title="Carriages in the depot">
+            <svg width="17" height="10" viewBox="0 0 17 10"><rect x=".5" y=".5" width="7" height="9" rx="2.5" fill="none"/><rect x="9.5" y=".5" width="7" height="9" rx="2.5" fill="none"/></svg><b id="nCar">0</b><span class="lbl">cars</span>
+          </div>
+          <div class="res" id="resTun" title="Tunnels for water crossings">
+            <svg width="14" height="11" viewBox="0 0 14 11"><path d="M1 10.5V6a6 6 0 0 1 12 0v4.5" fill="none"/></svg><b id="nTun">0</b><span class="lbl">tunnels</span>
+          </div>
+        </div>
+        <div class="lineinfo" id="lineInfo">
+          <span class="tag" id="liTag">A</span><span class="meta" id="liMeta"></span>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="actGroup" id="actGroup">
+        <button class="act" id="btnTrain" disabled>Train<b id="btnTrainCt"></b></button>
+        <button class="act" id="btnCar" disabled>Car<b id="btnCarCt"></b></button>
+        <button class="act" id="btnLoop" disabled>Loop</button>
+        <button class="act danger" id="btnDel" disabled>Remove</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+const TAU=Math.PI*2;
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+const dst=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const rand=(a,b)=>a+Math.random()*(b-a);
+const pickOne=a=>a[(Math.random()*a.length)|0];
+const plural=(n,word)=>n+" "+word+(n===1?"":"s");
+const TOUCH=(()=>{try{return window.matchMedia&&window.matchMedia("(pointer:coarse)").matches;}catch(e){return false;}})();
+
+/* ══════════════ config ══════════════ */
+const CFG={
+  stationR:TOUCH?10.8:10, hitR:TOUCH?34:26, nubGap:TOUCH?24:18, nubR:TOUCH?28:15,
+  paxR:TOUCH?3.1:2.9, paxGap:TOUCH?7.8:7.4,
+  trainSpeed:132, dwell:.40, baseCap:6, dwellPerPax:.05,
+  platformCap:6, overloadSecs:34, recoverSecs:9, weekSecs:56
+};
+const COMMON=["circle","triangle","square"], SPECIAL=["diamond","plus","pentagon","star"];
+const LETTERS="ABCDEFG";
+const NOTES=[523.25,587.33,659.25,783.99,880,1046.5,1174.66];
+const SHAPE_ORDER=["circle","triangle","square","diamond","plus","pentagon","star"];
+/* upgrade effects live here so every card changes how the network actually runs */
+const MODS={speed:1,cap:0,board:1,spawn:1,tol:1,recover:1,rush:1,nightCalm:1,
+  n:{speed:0,cap:0,board:0,spawn:0,tol:0,recover:0,rush:0,nightCalm:0,line:0,train:0,car:0,tunnel:0,rolling:0}};
+/* Five worlds. Terrain decides how hard the geography is; rush hours decide
+   how hard the crowds are. */
+const MAPS=[
+  {id:"flats",  name:"Grendale Flats", diff:"Gentle", rivers:0, rush:0, demand:.80, tunnels:2, tol:1.30, parks:1.5, blocks:.95,
+   accent:"#2A9D8F", desc:"Open ground. Nothing in your way but the city itself."},
+  {id:"millbrook",name:"Millbrook",    diff:"Gentle", rivers:1, rush:0, demand:.75, tunnels:3, tol:1.35, parks:1.4, blocks:1.0,
+   accent:"#5B8C5A", desc:"A single gentle river. A soft place to learn what a tunnel is for."},
+  {id:"banks",  name:"Twin Banks",     diff:"Steady", rivers:1, rush:1, demand:.97, tunnels:4, tol:1.14, parks:1,   blocks:1.1,
+   accent:"#1E6FBF", desc:"A river through the middle. Every crossing spends a tunnel."},
+  {id:"kesridge",name:"Kesridge",      diff:"Steady", rivers:2, rush:1, demand:1.05, tunnels:5, tol:1.08, parks:.8,  blocks:.85,
+   accent:"#4A7A96", desc:"Two rivers cut through the city. Every crossing spends a tunnel."},
+  {id:"ironpeak",name:"Ironpeak",      diff:"Hard",   rivers:1, rush:2, demand:1.10, tunnels:5, tol:.98,  parks:.7,  blocks:1.05,
+   accent:"#E2503F", desc:"One river to cross, and rush hours that keep coming."},
+  {id:"rushgate",name:"Rushgate",      diff:"Hard",   rivers:1, rush:3, demand:1.08, tunnels:4, tol:.95,  parks:.65, blocks:1.0,
+   accent:"#D97B29", desc:"Just one river — but the rush hours never really stop."},
+  {id:"delta",  name:"Three Rivers",   diff:"Hard",   rivers:3, rush:2, demand:1.08, tunnels:6, tol:.98,  parks:.6,  blocks:1.1,
+   accent:"#0F8B8D", desc:"The city is cut into islands. Every route is a question of where to spend a tunnel."},
+  {id:"storm",  name:"Stormdelta",     diff:"Brutal", rivers:2, rush:3, demand:1.30,tunnels:6, tol:.80,  parks:.55, blocks:1.2,
+   accent:"#7B4FC0", desc:"Two rivers to cross, and rush hours that barely let up."},
+  {id:"saltmarsh",name:"Saltmarsh",    diff:"Brutal", rivers:3, rush:3, demand:1.26,tunnels:8, tol:.82,  parks:.5,  blocks:1.25,
+   accent:"#3C5A48", desc:"Three rivers. The city is more water than land."},
+  {id:"wilds",  name:"The Wilds",      diff:"Extreme",rivers:2, rush:4, demand:1.40, tunnels:6, tol:.70,  parks:.45, blocks:1.3,
+   accent:"#C1440E", desc:"Two rivers, and rush hours that never really end. For the fearless."}
+];
+const CITY_A=["Ash","Bram","Carn","Dun","Elm","Fen","Gil","Har","Kes","Mar","Nor","Ost","Pell","Rho","Sel","Tarn","Vel","Wex","Yar","Corn","Alder","Brind"];
+const CITY_B=["bourne","holm","gate","ford","mere","stead","wick","haven","reach","field","cross","port","dale","moor","cester","bridge"];
+const ST_A=["Old","New","North","South","East","West","High","Low","Great","Little","King's","Queen's","Market","Abbey","Mill","Bridge","Harbour","Garden","Foundry","Chapel","Amber","Cedar","Iron","Silver","Bishop's","Canal","Weaver's","Priory"];
+const ST_B=["Park","Cross","Gate","Wharf","Row","Yard","Green","Bridge","Hill","Fields","Quay","Court","Terrace","Halt","Junction","Square","Sidings","Reach","Vale","Works","Common","Lane"];
+
+/* ══════════════ themes ══════════════ */
+const THEMES={
+  day:{
+    paper:"#E7EBEF", grid:"#15181D", gridA:.038, water:"#BCD2DE", ink:"#15181D",
+    fill:"#FFFFFF", stroke:"#15181D", pax:"#15181D", inTrain:"#FFFFFF", bloom:0, shadowA:.10,
+    park:"#D8E4D4", block:"#DBE1E8", bridge:"#B9C4CE", shore:"#CFDDE6", waterEdge:"#8FAFC2", waterLight:"#E1EEF4",
+    pal:["#E2503F","#1E6FBF","#F0A81C","#158F6B","#7B4FC0","#D8407F","#43596B"]
+  },
+  night:{
+    paper:"#0D1117", grid:"#8FA6BC", gridA:.055, water:"#131D27", ink:"#E9EEF4",
+    fill:"#0D1117", stroke:"#E9EEF4", pax:"#E9EEF4", inTrain:"#0D1117", bloom:1, shadowA:.45,
+    park:"#0F1A16", block:"#161D26", bridge:"#26313D", shore:"#16222D", waterEdge:"#2C4B60", waterLight:"#3A6280",
+    pal:["#FF6B54","#4FA8FF","#FFC24D","#3EDBA6","#B18BFF","#FF6FA8","#93A9BE"]
+  }
+};
+const hex2rgb=h=>{h=h.replace("#","");return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
+for(const k in THEMES){
+  const T=THEMES[k];
+  T.rgb={}; ["paper","grid","water","ink","fill","stroke","pax","inTrain"].forEach(n=>T.rgb[n]=hex2rgb(T[n]));
+  T.rgbPal=T.pal.map(hex2rgb);
+}
+const mixN=(a,b,t)=>a+(b-a)*t;
+const mixC=(a,b,t,al)=>{
+  const r=Math.round(mixN(a[0],b[0],t)),g=Math.round(mixN(a[1],b[1],t)),bl=Math.round(mixN(a[2],b[2],t));
+  return al===undefined?`rgb(${r},${g},${bl})`:`rgba(${r},${g},${bl},${al})`;
+};
+let themeMode="day", nightT=0, nightTarget=0, T=null, lastBlend=-1;
+function blend(){
+  const t=nightT;
+  if(Math.abs(t-lastBlend)<0.002 && T) return; lastBlend=t;
+  const A=THEMES.day,B=THEMES.night;
+  T={
+    paper:mixC(A.rgb.paper,B.rgb.paper,t),
+    grid:mixC(A.rgb.grid,B.rgb.grid,t,mixN(A.gridA,B.gridA,t)),
+    water:mixC(A.rgb.water,B.rgb.water,t),
+    ink:mixC(A.rgb.ink,B.rgb.ink,t),
+    fill:mixC(A.rgb.fill,B.rgb.fill,t),
+    stroke:mixC(A.rgb.stroke,B.rgb.stroke,t),
+    pax:mixC(A.rgb.pax,B.rgb.pax,t),
+    inTrain:mixC(A.rgb.inTrain,B.rgb.inTrain,t),
+    shadow:mixC([21,24,29],[0,0,0],t,mixN(A.shadowA,B.shadowA,t)),
+    inkRGB:[mixN(A.rgb.ink[0],B.rgb.ink[0],t),mixN(A.rgb.ink[1],B.rgb.ink[1],t),mixN(A.rgb.ink[2],B.rgb.ink[2],t)],
+    bloom:t,
+    pal:A.rgbPal.map((c,i)=>mixC(c,B.rgbPal[i],t))
+  };
+}
+function inkA(a){ const c=T.inkRGB; return `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a})`; }
+function setTheme(mode,instant){
+  themeMode=mode;
+  applyNight(mode==="night"||(mode==="auto"&&week%2===0),instant);
+  document.querySelectorAll("#segTheme button").forEach(b=>b.classList.toggle("on",b.dataset.th===mode));
+  saveSettings();
+}
+function applyNight(on,instant){
+  nightTarget=on?1:0;
+  if(instant) nightT=nightTarget;
+  document.body.classList.toggle("night",on);
+  const pal=THEMES[on?"night":"day"].pal;
+  pal.forEach((c,i)=>document.documentElement.style.setProperty("--l"+i,c));
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.setAttribute("content",THEMES[on?"night":"day"].paper);
+}
+
+/* ══════════════ audio ══════════════ */
+const Snd={
+  ctx:null, master:null, on:true, lastNote:0, lastArr:0, lastVip:0,
+  boot(){
+    if(this.ctx||!this.on) return;
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+      this.ctx=new AC(); this.master=this.ctx.createGain();
+      this.master.gain.value=.14; this.master.connect(this.ctx.destination);
+    }catch(e){}
+  },
+  resume(){ try{ if(this.ctx&&this.ctx.state==="suspended") this.ctx.resume(); }catch(e){} },
+  tone(freq,dur,type,vol,delay){
+    if(!this.on||!this.ctx) return;
+    try{
+      const t0=this.ctx.currentTime+(delay||0);
+      const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+      o.type=type||"sine"; o.frequency.setValueAtTime(freq,t0);
+      g.gain.setValueAtTime(.0001,t0);
+      g.gain.exponentialRampToValueAtTime(vol||.4,t0+.014);
+      g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+      o.connect(g); g.connect(this.master); o.start(t0); o.stop(t0+dur+.04);
+    }catch(e){}
+  },
+  deliver(shape){
+    const now=performance.now(); if(now-this.lastNote<45) return; this.lastNote=now;
+    const i=Math.max(0,SHAPE_ORDER.indexOf(shape));
+    this.tone(NOTES[i%NOTES.length],.5,"triangle",.30);
+    this.tone(NOTES[i%NOTES.length]*2,.28,"sine",.09,.01);
+  },
+  link(){ this.tone(392,.09,"square",.16); this.tone(587.33,.11,"square",.13,.05); },
+  tick(f){ this.tone(f||880,.05,"square",.09); },
+  open(){ this.tone(523.25,.22,"sine",.18); this.tone(783.99,.3,"sine",.14,.09); },
+  vip(){
+    const now=performance.now(); if(now-this.lastVip<220) return; this.lastVip=now;
+    this.tone(880,.14,"triangle",.24); this.tone(1174.66,.16,"triangle",.2,.07); this.tone(1567.98,.3,"sine",.15,.14);
+  },
+  arrive(){
+    const now=performance.now();
+    if(now-this.lastArr<190||speed>2) return; this.lastArr=now;
+    this.tone(196,.09,"sine",.10);
+  },
+  upgrade(){ this.tone(440,.18,"triangle",.22); this.tone(659.25,.26,"triangle",.18,.08); this.tone(880,.34,"sine",.12,.16); },
+  cut(){ this.tone(261.63,.12,"square",.13); },
+  deny(){ this.tone(150,.16,"sawtooth",.13); },
+  week(){ this.tone(659.25,.3,"triangle",.24); this.tone(987.77,.45,"triangle",.2,.13); },
+  alert(){ this.tone(116,.5,"sine",.2); },
+  over(){ [523.25,392,311.13,261.63].forEach((f,i)=>this.tone(f,.6,"triangle",.26,i*.16)); }
+};
+function buzz(ms){ try{ if(navigator.vibrate&&TOUCH) navigator.vibrate(ms); }catch(e){} }
+
+/* ══════════════ dom ══════════════ */
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d"), stage=document.getElementById("stage");
+const $=id=>document.getElementById(id);
+let W=0,H=0;                   // screen, in CSS pixels
+let statsVeil;
+let WW=0,WH=0;                 // the true, current size of the world
+let viewWW=0,viewWH=0;         // what the camera is actually fitted to right now —
+                                // eases toward WW/WH on a spring so growth is a
+let viewVelW=0,viewVelH=0;     // visible, slightly springy glide, not a linear slide
+let growPulseT=0,growPulseX=0,growPulseY=0;   // a soft ring marks the moment it happens
+let VIEW=1;                    // final render scale: fit-to-world × the player's own zoom
+let camZoom=1, camCX=0, camCY=0;   // manual zoom/pan on top of the fit-to-world baseline
+const CAM_MAX=3.2;
+/* Sizes that must stay legible as the world zooms out: they shrink with the
+   fit-to-world scale, but only by fitScale^0.55, so a zoomed-out city never
+   turns to confetti. Recomputed fresh from CFG every call — never from their
+   own previous value, or repeated calls would compound into nonsense. */
+const V={sr:11,pax:3,gap:8,hit:34,nubGap:24,nubR:28,lw:1};
+function applyView(){
+  const fitScale=(viewWW&&viewWH)?Math.min(W/viewWW,H/viewWH):1;
+  VIEW=fitScale*clamp(camZoom,1,CAM_MAX);
+  const zc=Math.pow(fitScale||1,-.45);
+  V.lw=zc;
+  V.sr=CFG.stationR*zc; V.pax=CFG.paxR*zc; V.gap=CFG.paxGap*zc;
+  V.nubGap=CFG.nubGap*zc;
+  V.hit=CFG.hitR/(fitScale||1); V.nubR=CFG.nubR/(fitScale||1);   // touch targets stay put
+  clampCamera();
+}
+function clampCamera(){
+  if(!WW||!WH||!VIEW) return;
+  const spanX=W/VIEW, spanY=H/VIEW;
+  camCX = spanX>=WW ? WW/2 : clamp(camCX,spanX/2,WW-spanX/2);
+  camCY = spanY>=WH ? WH/2 : clamp(camCY,spanY/2,WH-spanY/2);
+}
+function resetCamera(){ camZoom=1; camCX=WW/2; camCY=WH/2; }
+
+/* ══════════════ state ══════════════ */
+let stations=[], lines=[], barriers=[], particles=[], ripples=[], flyers=[], undoStack=[];
+let MAP=null, rushT=0, rushLeft=0, nextZoom=500, zoomSteps=0, vipTimer=45, vipDelivered=0;
+let city={name:"",downtown:{x:0,y:0},parks:[],blocks:[],bridges:[],avenues:[]};
+let usedNames=new Set(), overT=0, failedId=null;
+let hintT=0, hintPair=null, weekPax0=0;
+const RM=(()=>{try{return window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(e){return false;}})();
+let res={lines:3,trains:3,cars:0,tunnels:2};
+let mode="menu", paused=false, speed=1;
+let clock=0, week=1, weekT=0, delivered=0, best=0, bests={}, selected=null, pending=null;
+let stationTimer=0, uid=1, shakeT=0, endReason="", alertCool=0, hintedExtend=false, newLineArmed=false, hintedNew=false;
+
+/* ══════════════ geometry ══════════════ */
+function segDist(p,a,b){
+  const vx=b.x-a.x, vy=b.y-a.y, L=vx*vx+vy*vy;
+  if(L<1e-6) return Math.hypot(p.x-a.x,p.y-a.y);
+  const t=clamp(((p.x-a.x)*vx+(p.y-a.y)*vy)/L,0,1);
+  return Math.hypot(p.x-(a.x+vx*t),p.y-(a.y+vy*t));
+}
+function segCross(a,b,c,d){
+  const s=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+  const d1=s(c,d,a),d2=s(c,d,b),d3=s(a,b,c),d4=s(a,b,d);
+  return ((d1>0)!==(d2>0))&&((d3>0)!==(d4>0));
+}
+function lineHit(p1,p2,p3,p4){
+  const dn=(p2.x-p1.x)*(p4.y-p3.y)-(p2.y-p1.y)*(p4.x-p3.x);
+  if(Math.abs(dn)<1e-6) return null;
+  const t=((p3.x-p1.x)*(p4.y-p3.y)-(p3.y-p1.y)*(p4.x-p3.x))/dn;
+  return {x:p1.x+(p2.x-p1.x)*t, y:p1.y+(p2.y-p1.y)*t};
+}
+const ease=t=>1-Math.pow(1-clamp(t,0,1),3);
+
+/* ══════════════ shapes ══════════════ */
+function shapePath(c,shape,x,y,r){
+  const pts=[]; const add=(a,rad)=>pts.push([x+Math.cos(a)*rad,y+Math.sin(a)*rad]);
+  const trace=()=>{c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0],pts[i][1]);c.closePath();};
+  switch(shape){
+    case "circle": c.beginPath(); c.arc(x,y,r,0,TAU); return;
+    case "square": {const s=r*.85; c.beginPath(); c.rect(x-s,y-s,s*2,s*2); return;}
+    case "triangle": {for(let i=0;i<3;i++) add(-Math.PI/2+i*TAU/3,r*1.2); trace(); return;}
+    case "diamond": {for(let i=0;i<4;i++) add(-Math.PI/2+i*TAU/4,r*1.24); trace(); return;}
+    case "pentagon": {for(let i=0;i<5;i++) add(-Math.PI/2+i*TAU/5,r*1.12); trace(); return;}
+    case "star": {for(let i=0;i<10;i++) add(-Math.PI/2+i*Math.PI/5,i%2?r*.5:r*1.3); trace(); return;}
+    case "plus": {const a=r*.4,b=r*1.05; c.beginPath();
+      c.moveTo(x-a,y-b);c.lineTo(x+a,y-b);c.lineTo(x+a,y-a);c.lineTo(x+b,y-a);c.lineTo(x+b,y+a);c.lineTo(x+a,y+a);
+      c.lineTo(x+a,y+b);c.lineTo(x-a,y+b);c.lineTo(x-a,y+a);c.lineTo(x-b,y+a);c.lineTo(x-b,y-a);c.lineTo(x-a,y-a);
+      c.closePath(); return;}
+  }
+}
+
+/* ══════════════ city ══════════════ */
+/* Terrain is a list of barriers — rivers a line must tunnel under to cross. */
+function makeBarrier(kind,vertical,centre,wide){
+  const pts=[], n=6, wob=rand(.05,.11), phase=rand(0,6);
+  for(let i=0;i<n;i++){
+    const t=i/(n-1);
+    if(vertical) pts.push({x:centre+Math.sin(i*1.2+phase)*WW*wob, y:-60+t*(WH+120)});
+    else pts.push({x:-60+t*(WW+120), y:centre+Math.sin(i*1.2+phase)*WH*wob});
+  }
+  return {kind,pts,width:wide,vertical};
+}
+function makeTerrain(){
+  barriers=[];
+  const rivers=MAP?MAP.rivers:1;
+  const used=[];
+  for(let i=0;i<rivers;i++){
+    const vert=Math.random()<.5;
+    let c, guard=0;
+    do{ c=(vert?WW:WH)*rand(.26,.74); guard++; }
+    while(guard<30&&used.some(u=>u.vert===vert&&Math.abs(u.c-c)<(vert?WW:WH)*.24));
+    used.push({vert,c});
+    barriers.push(makeBarrier("water",vert,c,rand(50,80)));
+  }
+}
+/* Every city gets a downtown, a couple of parks, a scatter of blocks and a
+   road bridge or two. Purely scenic — none of it blocks a line. */
+function makeCity(){
+  city.name=pickOne(CITY_A)+pickOne(CITY_B);
+  let d={x:WW*.5,y:WH*.5};
+  for(let i=0;i<60;i++){
+    const c={x:rand(WW*.28,WW*.72),y:rand(WH*.28,WH*.72)};
+    if(!inRiver(c.x,c.y,40)){ d=c; break; }
+  }
+  city.downtown=d;
+  city.parks=[]; city.blocks=[]; city.bridges=[]; city.avenues=[];
+  const parkN=Math.max(0,Math.round((2+((Math.random()*3)|0))*(MAP?MAP.parks:1)));
+  for(let i=0;i<parkN&&city.parks.length<parkN;i++){
+    for(let k=0;k<30;k++){
+      const p={x:rand(WW*.1,WW*.9),y:rand(WH*.12,WH*.9),rx:rand(28,66),ry:rand(22,52),a:rand(0,TAU)};
+      if(inRiver(p.x,p.y,p.rx*.6)) continue;
+      if(Math.hypot(p.x-d.x,p.y-d.y)<90) continue;
+      if(city.parks.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<q.rx+p.rx+30)) continue;
+      city.parks.push(p); break;
+    }
+  }
+  const target=clamp(Math.round(WW*H/2600*(MAP?MAP.blocks:1)),70,340);
+  for(let k=0;k<target*7&&city.blocks.length<target;k++){
+    const ang=Math.random()*TAU, rr=Math.pow(Math.random(),.55)*Math.min(WW,WH)*.72;
+    const x=d.x+Math.cos(ang)*rr, y=d.y+Math.sin(ang)*rr*.85;
+    if(x<8||y<8||x>WW-8||y>WH-8) continue;
+    if(inRiver(x,y,7)||inPark(x,y,4)) continue;
+    const near=1-clamp(Math.hypot(x-d.x,y-d.y)/(Math.min(WW,WH)*.5),0,1);
+    if(Math.random()>.25+near*.75) continue;
+    const w=rand(4,9)+near*rand(2,7), h=rand(4,9)+near*rand(2,7);
+    city.blocks.push({x:x-w/2,y:y-h/2,w,h,t:near});
+  }
+  for(const B of barriers){
+    if(B.kind!=="water") continue;
+    for(const f of [rand(.25,.45),rand(.58,.8)]){
+      if(Math.random()<.25) continue;
+      const i=clamp(Math.floor(f*(B.pts.length-1)),0,B.pts.length-2);
+      const a=B.pts[i], b=B.pts[i+1], t=(f*(B.pts.length-1))-i;
+      const cx=a.x+(b.x-a.x)*t, cy=a.y+(b.y-a.y)*t;
+      if(cx<20||cy<20||cx>WW-20||cy>WH-20) continue;
+      const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+      city.bridges.push({x:cx,y:cy,nx:-dy/len,ny:dx/len,len:B.width*.62+16});
+    }
+  }
+  for(let i=0;i<2;i++)
+    city.avenues.push({x:d.x,y:d.y,a:rand(0,Math.PI),len:Math.max(WW,WH)});
+}
+function inPark(x,y,pad){
+  for(const p of city.parks){
+    const dx=(x-p.x)/(p.rx+(pad||0)), dy=(y-p.y)/(p.ry+(pad||0));
+    if(dx*dx+dy*dy<1) return true;
+  }
+  return false;
+}
+function inRiver(x,y,pad){
+  const p={x,y};
+  for(const B of barriers)
+    for(let i=0;i<B.pts.length-1;i++)
+      if(segDist(p,B.pts[i],B.pts[i+1])<B.width/2+pad) return true;
+  return false;
+}
+function crossesRiver(a,b){                      // crosses any barrier at all
+  for(const B of barriers)
+    for(let i=0;i<B.pts.length-1;i++) if(segCross(a,b,B.pts[i],B.pts[i+1])) return true;
+  return false;
+}
+const minGap=()=>clamp(Math.sqrt(W*H)/(TOUCH?7.0:8.0),TOUCH?74:68,112);
+function spawnSpot(){
+  const m=52, gap=minGap(), d=city.downtown;
+  const spread=clamp(.30+week*.12,.30,1.15);      // the city creeps outward each week
+  let bestP=null, bestS=-1;
+  for(let k=0;k<90;k++){
+    let x,y;
+    if(Math.random()<.78){
+      const ang=Math.random()*TAU, rr=Math.pow(Math.random(),.6)*Math.min(WW,WH)*spread;
+      x=d.x+Math.cos(ang)*rr; y=d.y+Math.sin(ang)*rr*.88;
+    } else { x=rand(m,WW-m); y=rand(m,WH-m); }      // the occasional outlying suburb
+    x=clamp(x,m,WW-m); y=clamp(y,m,WH-m);
+    if(inRiver(x,y,19)||inPark(x,y,6)) continue;
+    const dtd=Math.hypot(x-d.x,y-d.y);
+    const localGap=gap*(dtd<Math.min(WW,WH)*.2?.8:1);   // downtown packs in tighter
+    let near=Infinity;
+    for(const s of stations) near=Math.min(near,Math.hypot(s.x-x,s.y-y));
+    if(near<localGap) continue;
+    const sc=(near===Infinity?1:1/(1+Math.abs(near-localGap*1.45)/70))+.4/(1+dtd/240);
+    if(sc>bestS){bestS=sc;bestP={x,y};}
+  }
+  return bestP;
+}
+function stationName(x,y,first){
+  if(first) return city.name+" Central";
+  for(let k=0;k<40;k++){
+    const n=(Math.random()<.14&&barriers.length&&inRiver(x,y,90))?pickOne(["Harbour","Quay","Wharf","Ferry"])+" "+pickOne(["Road","Gate","Halt","Steps"])
+            :pickOne(ST_A)+" "+pickOne(ST_B);
+    if(!usedNames.has(n)){ usedNames.add(n); return n; }
+  }
+  return "Halt "+stations.length;
+}
+function shapeForNew(){
+  const chance=clamp(.02+week*.022,0,.19);
+  if(stations.length>4&&Math.random()<chance){
+    const missing=SPECIAL.filter(s=>!stations.some(t=>t.shape===s));
+    return missing.length&&Math.random()<.7?pickOne(missing):pickOne(SPECIAL);
+  }
+  const r=Math.random();
+  return r<.6?"circle":r<.82?"triangle":"square";
+}
+function addStation(shape,pos,quiet){
+  const p=pos||spawnSpot(); if(!p) return null;
+  const st={id:uid++,x:p.x,y:p.y,shape:shape||shapeForNew(),queue:[],load:0,pop:0,
+            timer:rand(9,17),alerted:false,critAlerted:false,pulse:0,flash:0,through:0,name:stationName(p.x,p.y,!stations.length),lineCount:0};
+  stations.push(st);
+  ripples.push({x:p.x,y:p.y,t:0});
+  if(!quiet){ Snd.open(); announce(st.name+" opened"); }
+  return st;
+}
+function newCity(){
+  stations=[];lines=[];particles=[];ripples=[];flyers=[];undoStack=[];uid=1;barriers=[];
+  WW=W; WH=H; viewWW=W; viewWH=H; viewVelW=0; viewVelH=0; growPulseT=0; camZoom=1; camCX=W/2; camCY=H/2; applyView();
+  usedNames=new Set(); failedId=null; overT=0;
+  makeTerrain(); makeCity();
+  const m=66, d=city.downtown;
+  addStation("circle",{x:clamp(d.x,m,WW-m),y:clamp(d.y,m,WH-m)},true);
+  const ring=[{a:-.7,r:1},{a:1.9,r:1.05},{a:3.6,r:.95},{a:5.3,r:1.15}];
+  const shapes=["triangle","square","circle","triangle"];
+  ring.forEach((o,i)=>{
+    const base=Math.min(WW,WH)*.26*o.r;
+    for(let k=0;k<26;k++){
+      const rr=base*(1+k*.05), p={x:clamp(d.x+Math.cos(o.a)*rr,m,WW-m),y:clamp(d.y+Math.sin(o.a)*rr*.9,m,WH-m)};
+      if(inRiver(p.x,p.y,24)||inPark(p.x,p.y,8)) continue;
+      if(stations.some(s=>Math.hypot(s.x-p.x,s.y-p.y)<minGap())) continue;
+      addStation(shapes[i],p,true); break;
+    }
+  });
+  while(stations.length<5) if(!addStation("circle",null,true)) break;
+  stations.forEach(s=>{s.pop=1;s.timer=rand(11,20);});
+  ripples=[]; bgDirty=true;
+}
+
+/* ══════════════ scenery layer ══════════════
+   The city itself never moves, so it is painted once into two offscreen
+   layers — day and night — and cross-faded. Keeps the per-frame work to
+   lines, trains and stations no matter how big the city gets. */
+let bgDay=null, bgNight=null, bgDirty=true, bgDPR=1;
+function paintCity(g,TH){
+  g.fillStyle=TH.paper; g.fillRect(0,0,WW,WH);
+  const d=city.downtown;
+  g.lineCap="butt";
+  g.strokeStyle=TH.grid; g.lineWidth=1;
+  const gap=46;
+  for(let x=gap;x<WW;x+=gap){
+    const near=1-clamp(Math.abs(x-d.x)/(WW*.55),0,1);
+    g.globalAlpha=TH.gridA*(.55+near*1.2);
+    g.beginPath(); g.moveTo(x+.5,0); g.lineTo(x+.5,WH); g.stroke();
+  }
+  for(let y=gap;y<WH;y+=gap){
+    const near=1-clamp(Math.abs(y-d.y)/(WH*.55),0,1);
+    g.globalAlpha=TH.gridA*(.55+near*1.2);
+    g.beginPath(); g.moveTo(0,y+.5); g.lineTo(WW,y+.5); g.stroke();
+  }
+  g.lineWidth=1.5;
+  for(const av of city.avenues){                       // two diagonal avenues
+    g.globalAlpha=TH.gridA*1.6;
+    g.beginPath();
+    g.moveTo(av.x-Math.cos(av.a)*av.len,av.y-Math.sin(av.a)*av.len);
+    g.lineTo(av.x+Math.cos(av.a)*av.len,av.y+Math.sin(av.a)*av.len);
+    g.stroke();
+  }
+  g.globalAlpha=1;
+  g.fillStyle=TH.park;
+  for(const p of city.parks){
+    g.save(); g.translate(p.x,p.y); g.rotate(p.a); g.scale(1,p.ry/p.rx);
+    g.beginPath(); g.arc(0,0,p.rx,0,TAU); g.fill(); g.restore();
+  }
+  g.fillStyle=TH.block;
+  for(const b of city.blocks){ g.globalAlpha=.5+b.t*.5; g.fillRect(b.x,b.y,b.w,b.h); }
+  g.globalAlpha=1;
+  function offsetPolyline(pts,off){
+    const out=[];
+    for(let i=0;i<pts.length;i++){
+      const a=pts[Math.max(0,i-1)], b=pts[Math.min(pts.length-1,i+1)];
+      const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+      out.push({x:pts[i].x-dy/len*off, y:pts[i].y+dx/len*off});
+    }
+    return out;
+  }
+  for(const B of barriers){
+    const trace=(pts)=>{ g.beginPath(); g.moveTo(pts[0].x,pts[0].y);
+      for(let i=1;i<pts.length;i++) g.lineTo(pts[i].x,pts[i].y); };
+    g.lineCap="round"; g.lineJoin="round";
+    g.strokeStyle=TH.shore; g.lineWidth=B.width+13; trace(B.pts); g.stroke();     // waterfront
+    g.strokeStyle=TH.water; g.lineWidth=B.width; trace(B.pts); g.stroke();
+    // crisp banks, so the water reads as a defined channel rather than a blur
+    g.strokeStyle=TH.waterEdge; g.lineWidth=1.6; g.globalAlpha=.55;
+    trace(offsetPolyline(B.pts,B.width/2-1.5)); g.stroke();
+    trace(offsetPolyline(B.pts,-(B.width/2-1.5))); g.stroke();
+    // a soft glint of current down the middle
+    g.strokeStyle=TH.waterLight; g.lineWidth=B.width*.2; g.globalAlpha=.4; g.lineCap="round";
+    trace(offsetPolyline(B.pts,B.width*.1)); g.stroke();
+    g.globalAlpha=1;
+    // short flow ticks along the length hint at a current without being noisy
+    g.strokeStyle=TH.waterEdge; g.globalAlpha=.3; g.lineWidth=1.3; g.lineCap="round";
+    for(let i=0;i<B.pts.length-1;i++){
+      const a=B.pts[i], b=B.pts[i+1];
+      const len=Math.hypot(b.x-a.x,b.y-a.y), ux=(b.x-a.x)/len, uy=(b.y-a.y)/len;
+      const steps=Math.max(1,Math.floor(len/27));
+      for(let s=1;s<steps;s++){
+        const cx=a.x+ux*len*(s/steps), cy=a.y+uy*len*(s/steps);
+        g.beginPath();
+        g.moveTo(cx-ux*7-uy*2,cy-uy*7+ux*2);
+        g.lineTo(cx+ux*3-uy*2,cy+uy*3+ux*2);
+        g.stroke();
+      }
+    }
+    g.globalAlpha=1;
+  }
+  if(barriers.length){
+    g.strokeStyle=TH.bridge; g.lineCap="butt";
+    for(const b of city.bridges){                                            // road bridges
+      g.lineWidth=7;
+      g.beginPath();
+      g.moveTo(b.x-b.nx*b.len,b.y-b.ny*b.len); g.lineTo(b.x+b.nx*b.len,b.y+b.ny*b.len);
+      g.stroke();
+      g.lineWidth=2; g.globalAlpha=.6;
+      g.beginPath();
+      g.moveTo(b.x-b.nx*b.len*.75,b.y-b.ny*b.len*.75); g.lineTo(b.x+b.nx*b.len*.75,b.y+b.ny*b.len*.75);
+      g.stroke(); g.globalAlpha=1;
+    }
+  }
+}
+function buildBG(){
+  bgDirty=false;
+  const fitScale=(viewWW&&viewWH)?Math.min(W/viewWW,H/viewWH):1;
+  bgDPR=Math.min(window.devicePixelRatio||1,TOUCH?2:2.5)*(fitScale||1);   // tracks the world-fit scale, not manual zoom
+  try{
+    const mk=TH=>{
+      const c=document.createElement("canvas");
+      c.width=Math.max(1,Math.round(viewWW*bgDPR)); c.height=Math.max(1,Math.round(viewWH*bgDPR));
+      const g=c.getContext("2d");
+      g.setTransform(bgDPR,0,0,bgDPR,0,0);
+      paintCity(g,TH);
+      return c;
+    };
+    bgDay=mk(THEMES.day); bgNight=mk(THEMES.night);
+  }catch(e){ bgDay=bgNight=null; }
+}
+
+/* ══════════════ line paths ══════════════ */
+const key=(a,b)=>a<b?a+"|"+b:b+"|"+a;
+const byId=id=>stations.find(s=>s.id===id);
+const lineById=id=>lines.find(l=>l.id===id);
+function octo(a,b){
+  const dx=b.x-a.x, dy=b.y-a.y, ax=Math.abs(dx), ay=Math.abs(dy);
+  if(ax>ay) return [{x:a.x,y:a.y},{x:b.x-Math.sign(dx)*ay,y:a.y},{x:b.x,y:b.y}];
+  return [{x:a.x,y:a.y},{x:a.x,y:b.y-Math.sign(dy)*ax},{x:b.x,y:b.y}];
+}
+function offsetSeg(p,q,o){
+  const dx=q.x-p.x, dy=q.y-p.y, L=Math.hypot(dx,dy);
+  if(L<.001) return null;
+  const nx=-dy/L*o, ny=dx/L*o;
+  return [{x:p.x+nx,y:p.y+ny},{x:q.x+nx,y:q.y+ny}];
+}
+function offsetPath(pts,o){
+  if(!o) return pts.map(p=>({x:p.x,y:p.y}));
+  const s1=offsetSeg(pts[0],pts[1],o), s2=offsetSeg(pts[1],pts[2],o);
+  if(!s1&&!s2) return pts.map(p=>({x:p.x,y:p.y}));
+  if(!s1) return [s2[0],s2[0],s2[1]];
+  if(!s2) return [s1[0],s1[1],s1[1]];
+  const ip=lineHit(s1[0],s1[1],s2[0],s2[1])||s1[1];
+  return [s1[0],ip,s2[1]];
+}
+function usageMap(){
+  const m=new Map();
+  for(const L of lines){
+    const seq=L.loop?[...L.stations,L.stations[0]]:L.stations;
+    for(let i=0;i<seq.length-1;i++){
+      const k=key(seq[i],seq[i+1]);
+      if(!m.has(k)) m.set(k,[]);
+      const arr=m.get(k); if(!arr.includes(L.id)) arr.push(L.id);
+    }
+  }
+  return m;
+}
+function buildPaths(){
+  const usage=usageMap();
+  for(const L of lines){
+    const n=L.stations.length;
+    L.path={pts:[],cum:[0],total:0,stops:[],segs:[]};
+    if(n<2) continue;
+    const seq=L.loop?[...L.stations,L.stations[0]]:L.stations;
+    const pts=[], stops=[], segs=[];
+    for(let i=0;i<seq.length-1;i++){
+      const A=byId(seq[i]), B=byId(seq[i+1]);
+      if(!A||!B) continue;
+      const lo=A.id<B.id?A:B, hi=A.id<B.id?B:A;
+      const arr=usage.get(key(A.id,B.id))||[L.id];
+      const k=arr.indexOf(L.id);
+      const o=(k-(arr.length-1)/2)*5.4;
+      let p=offsetPath(octo(lo,hi),o);
+      if(lo!==A) p=[p[2],p[1],p[0]];
+      if(i===0) stops.push(0);
+      pts.push(p[0],p[1],p[2]);
+      segs.push({idx:i,a:seq[i],b:seq[i+1],p:[p[0],p[1],p[2]]});
+      stops.push(pts.length-1);
+    }
+    const cum=[0]; let tot=0;
+    for(let i=1;i<pts.length;i++){ tot+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y); cum.push(tot); }
+    L.path={pts,cum,total:tot,segs,stops:stops.map(i=>cum[i])};
+  }
+}
+function pointAt(L,d){
+  const P=L.path; if(!P||!P.pts.length) return {x:0,y:0,a:0};
+  d=clamp(d,0,P.total);
+  let lo=0,hi=P.cum.length-1;
+  while(lo<hi-1){ const mid=(lo+hi)>>1; if(P.cum[mid]<=d) lo=mid; else hi=mid; }
+  const a=P.pts[lo], b=P.pts[lo+1]||P.pts[lo];
+  const len=(P.cum[lo+1]||P.cum[lo])-P.cum[lo];
+  const t=len>0?(d-P.cum[lo])/len:0;
+  return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, a:Math.atan2(b.y-a.y,b.x-a.x)};
+}
+function stopDist(L,i){
+  if(L.loop&&i>=L.stations.length) return L.path.total;
+  return L.path.stops[i]!==undefined?L.path.stops[i]:0;
+}
+
+/* ══════════════ routing ══════════════ */
+let graph=new Map();
+function rebuildGraph(){
+  graph=new Map();
+  for(const s of stations) graph.set(s.id,new Set());
+  for(const L of lines){
+    const seq=L.loop?[...L.stations,L.stations[0]]:L.stations;
+    for(let i=0;i<seq.length-1;i++){
+      if(!graph.has(seq[i])||!graph.has(seq[i+1])) continue;
+      graph.get(seq[i]).add(seq[i+1]); graph.get(seq[i+1]).add(seq[i]);
+    }
+  }
+  const shapes=[...new Set(stations.map(s=>s.shape))];
+  for(const s of stations){ s.dist={}; s.lineCount=0; }
+  for(const L of lines) for(const id of new Set(L.stations)){ const s=byId(id); if(s) s.lineCount++; }
+  for(const sh of shapes){
+    const q=[], seen=new Map();
+    for(const s of stations) if(s.shape===sh){ q.push(s.id); seen.set(s.id,0); }
+    for(let i=0;i<q.length;i++){
+      const id=q[i], d=seen.get(id);
+      for(const nb of (graph.get(id)||[])) if(!seen.has(nb)){ seen.set(nb,d+1); q.push(nb); }
+    }
+    for(const s of stations) s.dist[sh]=seen.has(s.id)?seen.get(s.id):Infinity;
+  }
+}
+const distTo=(st,shape)=>(st.dist&&st.dist[shape]!==undefined)?st.dist[shape]:Infinity;
+
+/* ══════════════ line edits ══════════════ */
+function freeColorIndex(){
+  for(let i=0;i<7;i++) if(!lines.some(l=>l.ci===i)) return i;
+  return 0;
+}
+function tunnelsFor(ids,loop){
+  let n=0; const seq=loop?[...ids,ids[0]]:ids;
+  for(let i=0;i<seq.length-1;i++){
+    const a=byId(seq[i]), b=byId(seq[i+1]);
+    if(a&&b&&crossesRiver(a,b)) n++;
+  }
+  return n;
+}
+function tunnelsUsed(except){ let n=0; for(const L of lines) if(L!==except) n+=tunnelsFor(L.stations,L.loop); return n; }
+function canAfford(L,ids,loop){
+  if(tunnelsFor(ids,loop)+tunnelsUsed(L)>res.tunnels){ toast("Needs a tunnel to cross"); shakeT=.4; Snd.deny(); buzz(30); return false; }
+  return true;
+}
+function snapshot(){
+  return {lines:lines.map(L=>({id:L.id,ci:L.ci,stations:[...L.stations],loop:L.loop,carried:L.carried,cars:L.trains.map(t=>t.cars)})),
+    res:{...res}, sel:selected};
+}
+function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length>30) undoStack.shift(); }
+function restore(s){
+  lines=s.lines.map(d=>({id:d.id,ci:d.ci,stations:[...d.stations],loop:d.loop,trains:[],path:null,grow:1,carried:d.carried||0}));
+  res={...s.res}; buildPaths();
+  s.lines.forEach((spec,i)=>spec.cars.forEach(c=>addTrainTo(lines[i],c,true)));
+  selected=lines.some(l=>l.id===s.sel)?s.sel:null;
+  rebuildGraph(); syncUI();
+}
+function doUndo(){
+  if(!undoStack.length||mode!=="play") return;
+  restore(undoStack.pop()); pending=null; toast("Undone"); Snd.cut();
+}
+function nextIdx(L,a,dir){
+  const n=L.stations.length;
+  if(n<2) return {b:0,dir:1};
+  if(L.loop) return {b:(a+1)%n,dir:1};
+  let d=dir; if(a+d>n-1||a+d<0) d=-d;
+  return {b:clamp(a+d,0,n-1),dir:d};
+}
+function addTrainTo(L,cars,silent){
+  const t={line:L.id,a:0,b:0,u:0,dir:1,dwell:0,cars:cars||0,pax:[]};
+  const n=L.stations.length, f=L.trains.length/(L.trains.length+1);
+  if(n>1&&L.path&&L.path.total>0){
+    const target=L.path.total*f, legs=L.loop?n:n-1;
+    for(let i=0;i<legs;i++){
+      const dA=stopDist(L,i), dB=stopDist(L,i+1);
+      if(target<=dB||i===legs-1){ t.a=i; t.u=dB>dA?clamp((target-dA)/(dB-dA),0,.95):0; break; }
+    }
+  }
+  const nx=nextIdx(L,t.a,1); t.b=nx.b; t.dir=nx.dir;
+  L.trains.push(t);
+  if(!silent){ toast("Train assigned"); Snd.link(); }
+  return t;
+}
+function remapTrains(L,oldIds){
+  for(const t of L.trains){
+    let ni=L.stations.indexOf(oldIds[t.a]);
+    if(ni<0) ni=0;
+    t.a=ni; t.u=0; t.dwell=Math.max(t.dwell,.1);
+    const nx=nextIdx(L,t.a,t.dir); t.b=nx.b; t.dir=nx.dir;
+  }
+}
+const createLine=(aId,bId)=>createLineChain([aId,bId],false);
+function createLineChain(arr,loop){
+  if(arr.length<2) return false;
+  if(lines.length>=res.lines){ toast("No spare line"); shakeT=.4; Snd.deny(); return false; }
+  if(!canAfford(null,arr,loop)) return false;
+  pushUndo();
+  const L={id:uid++,ci:freeColorIndex(),stations:[...arr],loop:!!loop,trains:[],path:null,grow:0,carried:0};
+  lines.push(L); buildPaths();
+  if(depotTrains()>0) addTrainTo(L,0,true); else toast("Line open — no train in depot");
+  selected=L.id; newLineArmed=false; rebuildGraph(); syncUI(); Snd.link(); buzz(12);
+  for(const id of arr){ const st=byId(id); if(st) st.flash=1; }
+  announce("Line "+LETTERS[L.ci]+" opened");
+  if(arr.length>2) toast(arr.length+" stations connected");
+  if(!hintedExtend){ hintedExtend=true; setTimeout(()=>{ if(mode==="play") toast(TOUCH?"Drag from a line's end station to continue it":"Drag from a line's end station to continue it"); },1700); }
+  return true;
+}
+function editLine(L,ids,loop){
+  const old=[...L.stations];
+  if(!canAfford(L,ids,loop)) return false;
+  pushUndo();
+  const fresh=ids.filter(id=>!old.includes(id));
+  L.stations=ids; L.loop=loop;
+  buildPaths(); remapTrains(L,old); rebuildGraph(); syncUI(); Snd.link(); buzz(10);
+  for(const id of fresh){ const st=byId(id); if(st) st.flash=1; }
+  return true;
+}
+function deleteLine(L){
+  pushUndo();
+  lines=lines.filter(l=>l!==L);
+  if(selected===L.id) selected=null;
+  buildPaths(); rebuildGraph(); syncUI(); Snd.cut();
+}
+function depotTrains(){ let u=0; for(const L of lines) u+=L.trains.length; return res.trains-u; }
+function depotCars(){ let u=0; for(const L of lines) for(const t of L.trains) u+=t.cars; return res.cars-u; }
+function depotTunnels(){ return res.tunnels-tunnelsUsed(null); }
+
+/* ══════════════ announcements ══════════════
+   The network talks to the player in short status lines, never more than
+   one at a time and never in a hurry. */
+let annT=0, annCool=0, annQ=[], ambientT=40, milestone=0;
+function announce(msg,urgent){
+  if(!msg) return;
+  if(!urgent&&annCool>0){ if(annQ.length<2&&!annQ.includes(msg)) annQ.push(msg); return; }
+  showAnn(msg,urgent);
+}
+function showAnn(msg,urgent){
+  const el=$("ticker"); if(!el) return;
+  const txt=$("tickerTxt"); if(txt) txt.textContent=msg;
+  el.classList.add("show");
+  el.classList.toggle("urgent",!!urgent);
+  annT=3.6; annCool=urgent?6:12;
+}
+function tickAnnounce(dt){
+  annCool=Math.max(0,annCool-dt);
+  if(annT>0){
+    annT-=dt;
+    if(annT<=0){ const el=$("ticker"); if(el) el.classList.remove("show"); }
+  } else if(annQ.length&&annCool<=0){ showAnn(annQ.shift()); }
+  ambientT-=dt;
+  if(ambientT<=0){ ambientT=rand(38,62); ambientLine(); }
+  if(delivered>=milestone+120){
+    milestone=Math.floor(delivered/120)*120;
+    announce(plural(delivered,"rider")+" carried so far");
+  }
+}
+function ambientLine(){
+  const crowded=stations.filter(s=>s.queue.length>=CFG.platformCap-1);
+  if(crowded.length&&Math.random()<.5){ announce(pickOne(crowded).name+" is filling up"); return; }
+  const busy=lines.filter(L=>L.trains.length&&L.stations.length>2);
+  if(busy.length&&Math.random()<.6){
+    const L=busy.reduce((a,b)=>((b.carried||0)>(a.carried||0)?b:a),busy[0]);
+    if((L.carried||0)>6){ announce("Line "+LETTERS[L.ci]+" is running smoothly"); return; }
+  }
+  const idle=stations.filter(s=>!s.lineCount);
+  if(idle.length>2){ announce(plural(idle.length,"station")+" still off the network"); return; }
+  announce(nightT>.5?"Night service running":"Service running on time");
+}
+
+/* ══════════════ passengers ══════════════ */
+function targetShape(from){
+  const pool=[];
+  const nightlife=1+nightT*.9;                     // after dark the rare stops draw crowds
+  for(const s of stations){
+    if(s.shape===from.shape) continue;
+    const w=Math.max(1,Math.round(SPECIAL.includes(s.shape)?3*nightlife:1));
+    for(let i=0;i<w;i++) pool.push(s.shape);
+  }
+  return pool.length?pickOne(pool):null;
+}
+function spawnPassenger(st){
+  const sh=targetShape(st); if(!sh) return;
+  st.queue.push({shape:sh,t:0,pop:0});
+  st.pulse=Math.min(1.2,st.pulse+.35);
+}
+function rushFactor(){ return rushLeft>0?1+1.15*MODS.rush:1; }
+function tickRush(dt){
+  if(!MAP||!MAP.rush) return;
+  if(rushLeft>0){
+    rushLeft-=dt;
+    if(rushLeft<=0) announce("Rush hour over");
+    return;
+  }
+  rushT-=dt;
+  if(rushT<=0){
+    rushLeft=(11+MAP.rush*3.5)*MODS.rush;
+    rushT=rand(70,105)/MAP.rush;
+    const hot=stations.length?pickOne(stations).name:city.name;
+    announce((nightT>.5?"Late rush":"Rush hour")+" — crowds building at "+hot,true);
+    Snd.alert(); buzz(20);
+  }
+}
+function stationInterval(){
+  const warmup=clamp(2.6-clock/110,1,2.6);         // demand ramps up over the first ~3 minutes
+  const calm=1+nightT*.22*MODS.nightCalm;           // quieter nights
+  const load=1+week*.15+delivered*.0005;
+  const world=MAP?MAP.demand:1;
+  return (15.5*MODS.spawn*warmup*calm/(load*world*rushFactor()))*rand(.55,1.5);
+}
+/* A VIP is just an ordinary passenger with a deadline. Deliver them before it
+   runs out and the network earns a real bonus; miss it and they simply
+   become an ordinary rider again — no penalty, so it's pure upside to chase. */
+function tierVipBoost(){
+  if(!MAP) return 1;
+  return MAP.diff==="Extreme"?1.55:MAP.diff==="Brutal"?1.3:MAP.diff==="Hard"?1.15:1;
+}
+function tickVip(dt){
+  vipTimer-=dt;
+  if(vipTimer>0) return;
+  vipTimer=rand(48,72)/tierVipBoost();
+  const candidates=stations.filter(s=>s.queue.some(p=>!p.vip));
+  if(!candidates.length) return;
+  const st=pickOne(candidates);
+  const p=st.queue.find(p=>!p.vip);
+  p.vip=true; p.vipDur=p.vipT=rand(28,40);
+  st.pulse=Math.min(1.3,st.pulse+.5);
+  announce(st.name+" has a VIP rider — get them there in time",true);
+  Snd.vip();
+}
+function tickVipHolder(p,dt){
+  if(!p.vip) return;
+  p.vipT-=dt;
+  if(p.vipT<=0){ p.vip=false; }
+}
+const capOf=t=>(CFG.baseCap+MODS.cap)*(1+t.cars);
+function queueSlot(st,i){
+  const col=i%3, row=(i/3)|0, g=V.gap;
+  const left=st.x>WW-(V.sr+10+g*3);      // flip to the free side near an edge
+  let x=left? st.x-V.sr-7-col*g : st.x+V.sr+7+col*g;
+  x=clamp(x,6,WW-6);                     // never off the world's own edge, whatever V.gap is doing
+  const y=clamp(st.y-9,10,WH-26)+row*(g+.6);
+  return {x,y};
+}
+
+/* ══════════════ update ══════════════ */
+function update(dt){
+  clock+=dt; weekT+=dt; shakeT=Math.max(0,shakeT-dt); alertCool=Math.max(0,alertCool-dt);
+  tickAnnounce(dt); tickRush(dt); tickVip(dt);
+  if(weekT>=CFG.weekSecs){ weekT=0; week++; openWeek(); return; }
+
+  if(!lines.length) hintT+=dt;
+  if(delivered>=nextZoom){
+    zoomSteps++; nextZoom+=500;
+    const sheer=MAP&&(MAP.diff==="Hard"||MAP.diff==="Brutal"||MAP.diff==="Extreme");
+    let f;
+    if(zoomSteps===1) f=sheer?1.55:1.24;         // 500: a bigger pull-back on harder maps
+    else if(zoomSteps===2) f=1.7;                // 1000: a big pull-back for everyone
+    else f=1+.22/Math.sqrt(zoomSteps-1);         // every 500 after that, tapering off
+    growWorld(f);
+    growPulseT=1.5; growPulseX=camCX; growPulseY=camCY;
+    announce("City limits extended — the map pulls back",true);
+    Snd.upgrade();
+  }
+  stationTimer-=dt;
+  if(stationTimer<=0){
+    stationTimer=clamp(22-week*1.0,11,22)*rand(.85,1.15);
+    const maxSt=clamp(Math.round(WW*WH/23500),11,42);
+    if(stations.length<maxSt && addStation()) rebuildGraph();
+  }
+
+  for(const st of stations){
+    st.pop=Math.min(1,st.pop+dt*3.2);
+    st.pulse=Math.max(0,st.pulse-dt*2.1);
+    st.flash=Math.max(0,st.flash-dt*1.6);
+    st.timer-=dt;
+    if(st.timer<=0){ st.timer=stationInterval(); spawnPassenger(st); }
+    for(const p of st.queue){ p.t+=dt; p.pop=Math.min(1,p.pop+dt*4); tickVipHolder(p,dt); }
+    const over=st.queue.length-CFG.platformCap;
+    if(over>0){
+      const grace=clamp(1.6-clock/240,1,1.6)*(MAP?MAP.tol:1);   // early crowds forgive you, and the map sets the mood
+      const rate=(1+over*.13)/(clamp(CFG.overloadSecs-week*1.0,18,CFG.overloadSecs)*MODS.tol*grace);
+      st.load=Math.min(1.0001,st.load+dt*rate);
+      if(st.load>.4&&!st.alerted&&alertCool<=0){
+        st.alerted=true; alertCool=5; Snd.alert(); buzz(25);
+        announce(st.name+" is getting crowded",true);
+      }
+      if(st.load>.55&&!st.critAlerted){
+        st.critAlerted=true;
+        if(camZoom>1.03&&!drag){
+          camZoom=1; applyView(); syncZoomButtons();
+          announce(st.name+" needs attention — view reset",true);
+        }
+      }
+      if(st.load>=1){ failedId=st.id; endReason=st.name; gameOver(); return; }
+    } else {
+      st.load=Math.max(0,st.load-dt/CFG.recoverSecs*MODS.recover);
+      if(st.load<.2) st.alerted=false;
+      if(st.load<.35) st.critAlerted=false;
+    }
+  }
+  for(const L of lines){
+    if(L.grow<1) L.grow=Math.min(1,L.grow+dt*2.6);
+    if(L.stations.length<2||!L.path||!L.path.total) continue;
+    for(const t of L.trains){ stepTrain(L,t,dt); for(const p of t.pax) tickVipHolder(p,dt); }
+  }
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.t+=dt; p.y-=dt*26; if(p.t>.75) particles.splice(i,1); }
+  for(let i=ripples.length-1;i>=0;i--){ ripples[i].t+=dt; if(ripples[i].t>.9) ripples.splice(i,1); }
+  for(let i=flyers.length-1;i>=0;i--){ flyers[i].t+=dt; if(flyers[i].t>=flyers[i].dur) flyers.splice(i,1); }
+}
+/* While paused the world holds still, but anything the player is drawing
+   still needs to animate. */
+function cosmeticTick(dt){
+  shakeT=Math.max(0,shakeT-dt);
+  for(const L of lines) if(L.grow<1) L.grow=Math.min(1,L.grow+dt*2.6);
+  for(const st of stations){
+    st.pop=Math.min(1,st.pop+dt*3.2);
+    st.pulse=Math.max(0,st.pulse-dt*2.1);
+    st.flash=Math.max(0,st.flash-dt*1.6);
+  }
+  for(let i=ripples.length-1;i>=0;i--){ ripples[i].t+=dt; if(ripples[i].t>.9) ripples.splice(i,1); }
+  for(let i=flyers.length-1;i>=0;i--){ flyers[i].t+=dt; if(flyers[i].t>=flyers[i].dur) flyers.splice(i,1); }
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.t+=dt; p.y-=dt*26; if(p.t>.75) particles.splice(i,1); }
+}
+/* Every 500 riders the map pushes its edges out: existing city stays put in
+   the middle, fresh ground appears around it, and the view zooms to suit. */
+function growWorld(f){
+  const nw=WW*f, nh=WH*f, dx=(nw-WW)/2, dy=(nh-WH)/2;
+  for(const s of stations){ s.x+=dx; s.y+=dy; }
+  for(const B of barriers) for(const p of B.pts){ p.x+=dx; p.y+=dy; }
+  for(const p of city.parks){ p.x+=dx; p.y+=dy; }
+  for(const b of city.blocks){ b.x+=dx; b.y+=dy; }
+  for(const b of city.bridges){ b.x+=dx; b.y+=dy; }
+  for(const a of city.avenues){ a.x+=dx; a.y+=dy; a.len*=f; }
+  city.downtown.x+=dx; city.downtown.y+=dy;
+  WW=nw; WH=nh;
+  for(const B of barriers){                       // run the terrain out to the new edges
+    const ext=(p,q,d)=>{ const L=Math.hypot(p.x-q.x,p.y-q.y)||1;
+      return {x:p.x+(p.x-q.x)/L*d, y:p.y+(p.y-q.y)/L*d}; };
+    B.pts.unshift(ext(B.pts[0],B.pts[1],Math.max(dx,dy)+120));
+    B.pts.push(ext(B.pts[B.pts.length-1],B.pts[B.pts.length-2],Math.max(dx,dy)+120));
+  }
+  const d=city.downtown, want=Math.round((dx+dy)*1.1);
+  let added=0,guard=0;
+  while(added<want&&guard++<want*24){             // build out the new ring
+    const x=rand(6,WW-6), y=rand(6,WH-6);
+    if(x>dx&&x<WW-dx&&y>dy&&y<WH-dy) continue;
+    if(inRiver(x,y,7)||inPark(x,y,4)) continue;
+    const near=1-clamp(Math.hypot(x-d.x,y-d.y)/(Math.min(WW,WH)*.5),0,1);
+    const w=rand(4,9)+near*rand(2,6), h=rand(4,9)+near*rand(2,6);
+    city.blocks.push({x:x-w/2,y:y-h/2,w,h,t:near}); added++;
+  }
+  for(let k=0;k<2;k++){
+    for(let a=0;a<24;a++){
+      const p={x:rand(30,WW-30),y:rand(30,WH-30),rx:rand(26,58),ry:rand(20,46),a:rand(0,TAU)};
+      if(p.x>dx&&p.x<WW-dx&&p.y>dy&&p.y<WH-dy) continue;
+      if(inRiver(p.x,p.y,p.rx*.6)) continue;
+      if(stations.some(s=>Math.hypot(s.x-p.x,s.y-p.y)<p.rx+20)) continue;
+      city.parks.push(p); break;
+    }
+  }
+  buildPaths(); bgDirty=true;
+}
+function upcoming(L,a,dir,count){
+  const n=L.stations.length, out=[];
+  let i=a,d=dir;
+  for(let k=0;k<count;k++){
+    if(L.loop) i=(i+1)%n;
+    else { if(i+d>n-1||i+d<0) d=-d; i=i+d; }
+    out.push(L.stations[i]);
+    if(out.length>=n*2) break;
+  }
+  return out;
+}
+function stepTrain(L,t,dt){
+  const n=L.stations.length;
+  if(t.a>=n) t.a=0;
+  if(t.dwell>0){ t.dwell-=dt; return; }
+  const dA=stopDist(L,t.a);
+  const wrap=L.loop&&t.b===0&&t.a===n-1;
+  const dB=wrap?L.path.total:stopDist(L,t.b);
+  const len=Math.abs(dB-dA);
+  if(len<1){ arrive(L,t); return; }
+  const cap=capOf(t);
+  const loadFac=1-Math.min(.16,t.pax.length/cap*.16);
+  const glide=.5+.5*Math.sin(Math.PI*clamp(t.u,0,1));    // ease out of and into each stop
+  t.u+=CFG.trainSpeed*MODS.speed*loadFac*glide*dt/len;
+  if(t.u>=1){ t.u=0; arrive(L,t); }
+}
+function arrive(L,t){
+  const n=L.stations.length;
+  t.a=t.b;
+  const nx=nextIdx(L,t.a,t.dir); t.b=nx.b; t.dir=nx.dir;
+  const st=byId(L.stations[t.a]); if(!st){ t.dwell=CFG.dwell; return; }
+  const ahead=upcoming(L,t.a,t.dir,Math.min(14,n*2)).map(byId).filter(Boolean);
+  const at=trainPos(L,t);
+  let moved=0;
+  st.pulse=Math.min(1.3,st.pulse+.45);
+  Snd.arrive();
+  for(let i=t.pax.length-1;i>=0;i--){
+    const p=t.pax[i];
+    if(st.shape===p.shape){                                   // home
+      t.pax.splice(i,1); delivered++; moved++; L.carried=(L.carried||0)+1;
+      if(p.vip&&p.vipT>0){
+        delivered+=3; vipDelivered++;
+        particles.push({x:st.x+rand(-5,5),y:st.y-4,shape:p.shape,t:0,vip:true});
+        announce("VIP delivered on time — nice work",true);
+        Snd.vip();
+      } else {
+        particles.push({x:st.x+rand(-5,5),y:st.y-4,shape:p.shape,t:0});
+      }
+      flyers.push({shape:p.shape,x:at.x,y:at.y,tx:st.x,ty:st.y-2,t:0,dur:.26,vip:p.vip});
+      st.flash=1; Snd.deliver(p.shape);
+      continue;
+    }
+    let bestAhead=Infinity;
+    for(const u of ahead) bestAhead=Math.min(bestAhead,distTo(u,p.shape));
+    if(distTo(st,p.shape)<bestAhead){                         // changing here
+      t.pax.splice(i,1); moved++;
+      const slot=queueSlot(st,st.queue.length);
+      const np={shape:p.shape,t:0,pop:0}; if(p.vip){ np.vip=true; np.vipT=p.vipT; np.vipDur=p.vipDur; }
+      st.queue.push(np);
+      flyers.push({shape:p.shape,x:at.x,y:at.y,tx:slot.x,ty:slot.y,t:0,dur:.3,vip:p.vip});
+    }
+  }
+  const cap=capOf(t);
+  for(let i=0;i<st.queue.length&&t.pax.length<cap;i++){
+    const p=st.queue[i];
+    let bestAhead=Infinity;
+    for(const u of ahead) bestAhead=Math.min(bestAhead,distTo(u,p.shape));
+    if(bestAhead<distTo(st,p.shape)){
+      const slot=queueSlot(st,i);
+      flyers.push({shape:p.shape,x:slot.x,y:slot.y,tx:at.x,ty:at.y,t:0,dur:.24,vip:p.vip});
+      const np={shape:p.shape}; if(p.vip){ np.vip=true; np.vipT=p.vipT; np.vipDur=p.vipDur; }
+      t.pax.push(np); st.queue.splice(i,1); i--; moved++;
+    }
+  }
+  st.through+=moved;
+  t.full=t.pax.length>=cap;
+  if(t.full&&st.queue.length){                    // left riders behind
+    st.pulse=Math.min(1.4,st.pulse+.6);
+    if(st.queue.length>CFG.platformCap&&alertCool<=0){ alertCool=6; announce("Trains are leaving "+st.name+" full",true); }
+  }
+  t.dwell=(CFG.dwell+moved*CFG.dwellPerPax)*MODS.board;
+}
+function trainPos(L,t){
+  const n=L.stations.length;
+  if(n<2||!L.path||!L.path.total) return {x:0,y:0,a:0,d:0};
+  const dA=stopDist(L,t.a);
+  const wrap=L.loop&&t.b===0&&t.a===n-1;
+  const dB=wrap?L.path.total:stopDist(L,t.b);
+  const d=dA+(dB-dA)*t.u;
+  const p=pointAt(L,d); p.d=d;
+  return p;
+}
+
+/* ══════════════ render ══════════════ */
+function draw(){
+  blend();
+  ctx.save();
+  ctx.clearRect(0,0,W,H);
+  if(shakeT>0) ctx.translate(Math.sin(shakeT*70)*3*shakeT/.4,0);
+  ctx.translate(W/2,H/2); ctx.scale(VIEW,VIEW); ctx.translate(-camCX,-camCY);
+  if(bgDirty) buildBG();
+  if(bgDay){                                   // scenery is pre-painted; just cross-fade
+    ctx.drawImage(bgDay,0,0,viewWW,viewWH);
+    if(nightT>.004){ ctx.globalAlpha=nightT; ctx.drawImage(bgNight,0,0,viewWW,viewWH); ctx.globalAlpha=1; }
+  } else { ctx.fillStyle=T.paper; ctx.fillRect(-12,-12,WW+24,WH+24); drawRiver(1); }
+  for(const L of lines) drawLine(L);
+  if(drag&&drag.mode!=="pan") drawDrag();
+  for(const L of lines) for(const t of L.trains) drawTrain(L,t);
+  drawRiver(.5);                               // lines and trains dip under the water
+  for(const L of lines) drawCrossings(L);
+  for(const r of ripples) drawRipple(r);
+  for(const st of stations) drawStation(st);
+  for(const f of flyers) drawFlyer(f);
+  for(const p of particles) drawParticle(p);
+  for(const L of lines) drawLineLetters(L,selected===L.id);
+  if(!lines.length) drawHint();
+  if(rushLeft>0) drawRush();
+  drawGrowPulse();
+  if(mode==="over") drawFailure();
+  ctx.restore();
+  if(paused&&mode==="play") drawPaused();
+}
+function drawRiver(alpha){
+  if(!barriers.length) return;
+  ctx.save();
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.globalAlpha=alpha; ctx.strokeStyle=T.water;
+  for(const B of barriers){
+    ctx.lineWidth=B.width;
+    ctx.beginPath(); ctx.moveTo(B.pts[0].x,B.pts[0].y);
+    for(let i=1;i<B.pts.length;i++) ctx.lineTo(B.pts[i].x,B.pts[i].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function tracePath(P){
+  ctx.beginPath(); ctx.moveTo(P.pts[0].x,P.pts[0].y);
+  for(let i=1;i<P.pts.length;i++) ctx.lineTo(P.pts[i].x,P.pts[i].y);
+}
+function strokePartial(P,frac){                 // a new line draws itself in
+  const target=P.total*clamp(frac,0,1);
+  ctx.beginPath(); ctx.moveTo(P.pts[0].x,P.pts[0].y);
+  for(let i=1;i<P.pts.length;i++){
+    if(P.cum[i]<=target){ ctx.lineTo(P.pts[i].x,P.pts[i].y); continue; }
+    const seg=P.cum[i]-P.cum[i-1], t=seg>0?(target-P.cum[i-1])/seg:0;
+    ctx.lineTo(P.pts[i-1].x+(P.pts[i].x-P.pts[i-1].x)*t,P.pts[i-1].y+(P.pts[i].y-P.pts[i-1].y)*t);
+    break;
+  }
+  ctx.stroke();
+}
+function riverHit(a,b){
+  for(const B of barriers)
+    for(let i=0;i<B.pts.length-1;i++)
+      if(segCross(a,b,B.pts[i],B.pts[i+1])) {
+        const p=lineHit(a,b,B.pts[i],B.pts[i+1]);
+        if(p){ p.width=B.width; return p; }
+      }
+  return null;
+}
+function drawCrossings(L){                      // tunnel mouths either side of the water
+  if(!barriers.length||!L.path) return;
+  ctx.save();
+  ctx.strokeStyle=T.stroke; ctx.lineWidth=2.4; ctx.lineCap="round"; ctx.globalAlpha=.5;
+  for(const sg of L.path.segs){
+    const a=byId(sg.a), b=byId(sg.b); if(!a||!b) continue;
+    const hit=riverHit(a,b); if(!hit) continue;
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+    const ux=dx/len, uy=dy/len, off=(hit.width||60)*.5+4;
+    for(const s of [-1,1]){
+      const cx=hit.x+ux*off*s, cy=hit.y+uy*off*s;
+      ctx.beginPath();
+      ctx.moveTo(cx-uy*5,cy+ux*5); ctx.lineTo(cx+uy*5,cy-ux*5);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+function drawLine(L){
+  const P=L.path; if(!P||P.pts.length<2) return;
+  const sel=selected===L.id, col=T.pal[L.ci];
+  ctx.save();
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.globalAlpha=(selected&&!sel)?.5:1;
+  if(T.bloom>.02){                     // night: cheap bloom pass beneath the line
+    ctx.globalAlpha*=.16*T.bloom;
+    ctx.strokeStyle=col; ctx.lineWidth=15; tracePath(P); ctx.stroke();
+    ctx.globalAlpha=(selected&&!sel)?.5:1;
+  }
+  ctx.strokeStyle=col; ctx.lineWidth=(sel?6.8:5.4)*V.lw;
+  if(L.grow<1) strokePartial(P,ease(L.grow)); else { tracePath(P); ctx.stroke(); }
+  if(!L.loop&&L.stations.length>=2){ drawNub(L,"head"); drawNub(L,"tail"); }
+  ctx.restore();
+}
+function nubPos(L,end){
+  const n=L.stations.length;
+  const st=byId(L.stations[end==="head"?0:n-1]), inner=byId(L.stations[end==="head"?1:n-2]);
+  if(!st||!inner) return null;
+  const dx=st.x-inner.x, dy=st.y-inner.y, len=Math.hypot(dx,dy)||1;
+  return {x:st.x+dx/len*V.nubGap, y:st.y+dy/len*V.nubGap};
+}
+function drawNub(L,end){
+  const p=nubPos(L,end); if(!p) return;
+  const held=drag&&drag.mode==="extend"&&drag.lineId===L.id&&drag.end===end;
+  const armed=pending&&pending.lineId===L.id&&pending.end===end;
+  ctx.save();
+  ctx.fillStyle=(held||armed)?T.pal[L.ci]:T.paper;
+  ctx.strokeStyle=T.pal[L.ci]; ctx.lineWidth=3;
+  const sel=selected===L.id;
+  ctx.beginPath(); ctx.arc(p.x,p.y,(TOUCH?6.5:5)+(sel?1.5:0),0,TAU); ctx.fill(); ctx.stroke();
+  if(held||armed){ ctx.globalAlpha=.25; ctx.beginPath(); ctx.arc(p.x,p.y,(TOUCH?15:11),0,TAU); ctx.fill(); }
+  ctx.restore();
+}
+function drawLineLetters(L,strong){
+  if(!L||!L.path||!L.path.pts.length) return;
+  const ends=L.loop?[0]:[0,L.stations.length-1];
+  const rad=(strong?8:6.4)*V.lw;
+  ctx.save();
+  ctx.globalAlpha=strong?1:.62;                       // every line stays identifiable
+  ctx.font="700 "+((strong?10:8.5)*V.lw).toFixed(1)+"px ui-monospace,Menlo,monospace";
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  for(const i of ends){
+    const st=byId(L.stations[i]); if(!st) continue;
+    const y=Math.max(11,st.y-V.sr-14);
+    ctx.fillStyle=T.pal[L.ci];
+    ctx.beginPath(); ctx.arc(st.x,y,rad,0,TAU); ctx.fill();
+    ctx.fillStyle=T.paper; ctx.fillText(LETTERS[L.ci],st.x,y+.5);
+  }
+  ctx.restore();
+}
+/* The opening move, shown once: two stations and a dashed route between them. */
+function drawHint(){
+  if(mode!=="play"||hintT>36||stations.length<2) return;
+  if(!hintPair){
+    let bd=1e9;
+    for(let i=0;i<stations.length;i++) for(let j=i+1;j<stations.length;j++){
+      const d=dst(stations[i],stations[j]);
+      if(d<bd&&!crossesRiver(stations[i],stations[j])){ bd=d; hintPair=[stations[i].id,stations[j].id]; }
+    }
+    if(!hintPair) hintPair=[stations[0].id,stations[1].id];
+  }
+  const a=byId(hintPair[0]), b=byId(hintPair[1]); if(!a||!b) return;
+  const fade=clamp(Math.min(hintT,36-hintT)/1.5,0,1);
+  const k=RM?.5:(Math.sin(clock*2.2)*.5+.5);
+  const q=octo(a,b);
+  ctx.save();
+  ctx.globalAlpha=fade*(.22+.18*k);
+  ctx.strokeStyle=T.pal[0]; ctx.lineWidth=5; ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.setLineDash([6,9]); ctx.lineDashOffset=-clock*14;
+  ctx.beginPath(); ctx.moveTo(q[0].x,q[0].y); ctx.lineTo(q[1].x,q[1].y); ctx.lineTo(q[2].x,q[2].y); ctx.stroke();
+  ctx.setLineDash([]); ctx.lineDashOffset=0;
+  ctx.globalAlpha=fade*.55;
+  ctx.fillStyle=T.pax;
+  ctx.font='600 9.5px "Helvetica Neue",Helvetica,Arial,sans-serif';
+  ctx.textAlign="center"; ctx.textBaseline="bottom";
+  ctx.fillText(TOUCH?"swipe across both stations":"drag across both stations",
+               (a.x+b.x)/2,(a.y+b.y)/2-14);
+  ctx.restore();
+}
+function drawStation(st){
+  const r=V.sr*(.4+.6*ease(st.pop))*(1+st.pulse*.09);
+  const hovered=drag&&drag.hover===st.id;
+  const armed=(pending&&pending.stationId===st.id)||(drag&&drag.chain&&drag.chain.includes(st.id));
+  ctx.save();
+  if(st.pulse>.02){                                  // a rider arrived on the platform
+    ctx.globalAlpha=.22*st.pulse; ctx.strokeStyle=T.stroke; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(st.x,st.y,r+6+(1-st.pulse)*10,0,TAU); ctx.stroke(); ctx.globalAlpha=1;
+  }
+  if(st.flash>.02){                                  // someone reached their destination
+    ctx.globalAlpha=.3*st.flash; ctx.fillStyle=T.stroke;
+    shapePath(ctx,st.shape,st.x,st.y,r+5+st.flash*4); ctx.fill(); ctx.globalAlpha=1;
+  }
+  if(st.load>0){
+    const sev=st.load;
+    ctx.strokeStyle=`rgba(226,80,63,${.25+.75*sev})`;
+    ctx.lineWidth=3+sev*1.6; ctx.lineCap="round";
+    ctx.beginPath(); ctx.arc(st.x,st.y,r+7,-Math.PI/2,-Math.PI/2+TAU*sev); ctx.stroke();
+    if(sev>.45){
+      const pulse=(RM?.5:(Math.sin(clock*(5+sev*5))*.5+.5))*(sev-.45)/.55;
+      ctx.globalAlpha=.24*pulse; ctx.fillStyle="#E2503F";
+      ctx.beginPath(); ctx.arc(st.x,st.y,r+13+pulse*5,0,TAU); ctx.fill();
+      ctx.globalAlpha=.5*pulse; ctx.strokeStyle="#E2503F"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(st.x,st.y,r+13+pulse*7,0,TAU); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+  }
+  if(hovered||armed){
+    ctx.strokeStyle=T.stroke; ctx.globalAlpha=armed?.5+.3*Math.sin(clock*6):.35;
+    ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.arc(st.x,st.y,r+(armed?11:9),0,TAU); ctx.stroke(); ctx.globalAlpha=1;
+  }
+  if(st.lineCount>1){                       // interchange
+    ctx.strokeStyle=inkA(.3); ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.arc(st.x,st.y,r+4.5,0,TAU); ctx.stroke();
+    if(st.lineCount>2){ ctx.globalAlpha=.6; ctx.beginPath(); ctx.arc(st.x,st.y,r+7.5,0,TAU); ctx.stroke(); ctx.globalAlpha=1; }
+  }
+  if(nightT>.05){                           // platform lighting after dark
+    ctx.globalAlpha=.13*nightT; ctx.fillStyle="#FFE9B8";
+    ctx.beginPath(); ctx.arc(st.x,st.y,r+13,0,TAU); ctx.fill(); ctx.globalAlpha=1;
+  }
+  if(T.bloom>.02){                          // night: soft halo instead of a drop shadow
+    ctx.globalAlpha=.09*T.bloom; ctx.fillStyle=T.stroke;
+    shapePath(ctx,st.shape,st.x,st.y,r+4.5); ctx.fill(); ctx.globalAlpha=1;
+  }
+  if(T.bloom<.98){
+    ctx.globalAlpha=1-T.bloom; ctx.fillStyle=T.shadow;
+    shapePath(ctx,st.shape,st.x,st.y+1.5,r); ctx.fill(); ctx.globalAlpha=1;
+  }
+  ctx.fillStyle=T.fill; ctx.strokeStyle=T.stroke; ctx.lineWidth=2.6;
+  shapePath(ctx,st.shape,st.x,st.y,r); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  if(st.name&&(st.load>.28||hovered||armed||(selected&&lineById(selected)&&lineById(selected).stations.includes(st.id)))){
+    ctx.save();
+    ctx.font='600 '+(8.5*V.lw).toFixed(1)+'px "Helvetica Neue",Helvetica,Arial,sans-serif';
+    ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.globalAlpha=st.load>.28?.9:.6;
+    ctx.fillStyle=st.load>.28?"#E2503F":T.pax;
+    ctx.fillText(st.name,clamp(st.x,44,WW-44),Math.min(st.y+r+5,WH-12));
+    ctx.restore();
+  }
+  drawQueue(st,r);
+}
+const VIP_GOLD="#C9A227";
+function drawQueue(st,r){
+  const q=st.queue, show=Math.min(q.length,9);
+  for(let i=0;i<show;i++){
+    const p=q[i], s=queueSlot(st,i);
+    const impatient=(p.t>26&&!RM)?.72+.28*Math.sin(clock*5):1;
+    const over=q.length>CFG.platformCap&&i>=CFG.platformCap;
+    if(p.vip){
+      const frac=clamp(p.vipT/p.vipDur,0,1);
+      ctx.save();
+      ctx.strokeStyle=VIP_GOLD; ctx.lineWidth=1.6; ctx.globalAlpha=.85;
+      ctx.beginPath(); ctx.arc(s.x,s.y,V.pax*1.9,-Math.PI/2,-Math.PI/2+TAU*frac); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.fillStyle=p.vip?VIP_GOLD:(over?"#E2503F":T.pax);
+    ctx.globalAlpha=(over&&!p.vip?.85:1)*impatient;
+    shapePath(ctx,p.shape,s.x,s.y,V.pax*(.4+.6*ease(p.pop)));
+    ctx.fill(); ctx.globalAlpha=1;
+  }
+  if(q.length>9){
+    const s=queueSlot(st,9);
+    ctx.fillStyle="#E2503F"; ctx.font="700 8.5px ui-monospace,Menlo,monospace";
+    ctx.textAlign=st.x>WW-60?"right":"left"; ctx.textBaseline="middle";
+    ctx.fillText("+"+(q.length-9),s.x-2,s.y);
+  }
+}
+function drawFlyer(f){                            // riders stepping on and off
+  const k=clamp(f.t/f.dur,0,1), e=k*k*(3-2*k);
+  const x=f.x+(f.tx-f.x)*e, y=f.y+(f.ty-f.y)*e-Math.sin(k*Math.PI)*5;
+  ctx.save(); ctx.globalAlpha=.85*(1-k*.5); ctx.fillStyle=f.vip?VIP_GOLD:T.pax;
+  shapePath(ctx,f.shape,x,y,V.pax*(1-k*.25)); ctx.fill(); ctx.restore();
+}
+function drawTrain(L,t){
+  const n=L.stations.length; if(n<2||!L.path.total) return;
+  const pos=trainPos(L,t);
+  const dA=stopDist(L,t.a), wrap=L.loop&&t.b===0&&t.a===n-1;
+  const dB=wrap?L.path.total:stopDist(L,t.b);
+  const sign=Math.sign(dB-dA)||1;
+  const cap=capOf(t), unit=1+t.cars, per=Math.ceil(cap/unit);
+  const col=T.pal[L.ci];
+  const LOCO=18*V.lw, CAR=11.5*V.lw, GAP=3.2*V.lw;
+  const dwelling=t.dwell>0;
+  for(let c=unit-1;c>=0;c--){                     // carriages trail the locomotive
+    const back=c===0?0:LOCO/2+GAP+CAR/2+(c-1)*(CAR+GAP);
+    let d=pos.d-back*sign;
+    if(L.loop){ const tot=L.path.total; d=((d%tot)+tot)%tot; }
+    const p=c===0?pos:pointAt(L,clamp(d,0,L.path.total));
+    const len=c===0?LOCO:CAR, wid=(c===0?10:9)*V.lw;
+    ctx.save();
+    ctx.translate(p.x,p.y); ctx.rotate(p.a);
+    if(c===0&&nightT>.05){                        // headlights
+      ctx.globalAlpha=.16*nightT; ctx.fillStyle="#FFE7AE";
+      ctx.beginPath(); ctx.moveTo(len/2,-2.5); ctx.lineTo(len/2+30,-9);
+      ctx.lineTo(len/2+30,9); ctx.lineTo(len/2,2.5); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    if(T.bloom<.98){ ctx.fillStyle=T.shadow; roundRect(-len/2,-wid/2+2,len,wid,4); ctx.fill(); }
+    if(T.bloom>.02){ ctx.globalAlpha=.2*T.bloom; ctx.fillStyle=col; roundRect(-len/2-3,-wid/2-3,len+6,wid+6,6); ctx.fill(); ctx.globalAlpha=1; }
+    ctx.fillStyle=col; roundRect(-len/2,-wid/2,len,wid,c===0?4:3); ctx.fill();
+    if(c===0){                                    // cab window
+      ctx.globalAlpha=.35; ctx.fillStyle=T.inTrain;
+      roundRect(len/2-5,-wid/2+2.5,3,wid-5,1.4); ctx.fill(); ctx.globalAlpha=1;
+    }
+    const slice=t.pax.slice(c*per,(c+1)*per);     // who is riding in this car
+    const cols=Math.ceil(per/2), sw=(len-6)/cols;
+    for(let i=0;i<slice.length;i++){
+      const cx=-len/2+3+sw*((i%cols)+.5), cy=(i/cols|0)?2.3:-2.3;
+      ctx.fillStyle=slice[i].vip?VIP_GOLD:T.inTrain;
+      shapePath(ctx,slice[i].shape,cx,cy,slice[i].vip?2.3:1.85);
+      ctx.fill();
+    }
+    if(t.full&&c===0){                            // no room left aboard
+      ctx.strokeStyle="#E2503F"; ctx.lineWidth=1.4;
+      ctx.globalAlpha=.55+.35*Math.sin(clock*6);
+      roundRect(-len/2-2,-wid/2-2,len+4,wid+4,5); ctx.stroke(); ctx.globalAlpha=1;
+    }
+    if(dwelling&&c===0){                          // doors open
+      ctx.globalAlpha=.5*Math.min(1,t.dwell*3); ctx.strokeStyle=T.fill; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(-2,-wid/2); ctx.lineTo(-2,wid/2);
+      ctx.moveTo(2,-wid/2); ctx.lineTo(2,wid/2); ctx.stroke(); ctx.globalAlpha=1;
+    }
+    ctx.restore();
+  }
+}
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function drawParticle(p){
+  const k=p.t/.75;
+  ctx.save(); ctx.globalAlpha=(1-k)*.9; ctx.fillStyle=p.vip?VIP_GOLD:T.pax;
+  shapePath(ctx,p.shape,p.x,p.y,(p.vip?4.6:3.6)*(1-k*.4)); ctx.fill();
+  if(p.vip){ ctx.globalAlpha=(1-k)*.5; ctx.strokeStyle=VIP_GOLD; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.arc(p.x,p.y,6+k*10,0,TAU); ctx.stroke(); }
+  ctx.restore();
+}
+function drawRipple(r){
+  const k=r.t/.9;
+  ctx.save(); ctx.globalAlpha=(1-k)*.5; ctx.strokeStyle=T.stroke; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(r.x,r.y,10+k*26,0,TAU); ctx.stroke(); ctx.restore();
+}
+function drawGrowPulse(){
+  if(growPulseT<=0) return;
+  const k=1-growPulseT/1.5, ease=1-Math.pow(1-k,3);
+  const rMax=Math.max(WW,WH)*.62;
+  ctx.save();
+  for(let i=0;i<2;i++){                          // two soft rings, staggered, feel richer than one
+    const kk=clamp(ease-i*.16,0,1); if(kk<=0) continue;
+    ctx.globalAlpha=(1-kk)*.28;
+    ctx.strokeStyle=T.stroke; ctx.lineWidth=(1-kk)*3.5+.6;
+    ctx.beginPath(); ctx.arc(growPulseX,growPulseY,30+kk*rMax,0,TAU); ctx.stroke();
+  }
+  ctx.restore();
+}
+function strokeThrough(ids){
+  ctx.beginPath();
+  let started=false;
+  for(let i=0;i<ids.length-1;i++){
+    const a=byId(ids[i]), b=byId(ids[i+1]); if(!a||!b) continue;
+    const q=octo(a,b);
+    if(!started){ ctx.moveTo(q[0].x,q[0].y); started=true; } else ctx.lineTo(q[0].x,q[0].y);
+    ctx.lineTo(q[1].x,q[1].y); ctx.lineTo(q[2].x,q[2].y);
+  }
+  ctx.stroke();
+}
+function drawDrag(){
+  const d=drag;
+  const L=d.lineId?lineById(d.lineId):null;
+  const col=L?T.pal[L.ci]:T.pal[freeColorIndex()];
+  ctx.save(); ctx.lineCap="round"; ctx.lineJoin="round";
+  if(d.mode==="extend"&&d.trim&&L){                       // what the swipe would drop
+    const seq=orientedSeq(L,d.end);
+    ctx.setLineDash([4,7]); ctx.globalAlpha=.45; ctx.strokeStyle=T.stroke; ctx.lineWidth=3.5;
+    strokeThrough(seq.slice(Math.max(0,seq.length-d.trim-1)));
+    ctx.setLineDash([]);
+  }
+  const p=prospective(d);
+  if(p&&p.arr.length>=2){                                 // the route as it stands
+    ctx.globalAlpha=.9; ctx.strokeStyle=col; ctx.lineWidth=5.5;
+    strokeThrough(p.loop?[...p.arr,p.arr[0]]:p.arr);
+  }
+  const act=activeList(d);
+  const tail=act.length?byId(act[act.length-1]):null;
+  const from=tail||d.anchor;
+  if(from&&!d.loop&&(!d.hover||!tail||d.hover!==tail.id)){ // rubber band to the finger
+    const q=octo(from,d.cur);
+    ctx.setLineDash([7,7]); ctx.globalAlpha=.45; ctx.strokeStyle=col; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(q[0].x,q[0].y); ctx.lineTo(q[1].x,q[1].y); ctx.lineTo(q[2].x,q[2].y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+function drawRush(){                              // the city leans on you for a while
+  const k=clamp(rushLeft/2,0,1)*(RM?.6:(.55+.45*Math.sin(clock*3)));
+  ctx.save();
+  ctx.globalAlpha=.16*k; ctx.strokeStyle="#E2503F"; ctx.lineWidth=14;
+  ctx.strokeRect(7,7,WW-14,WH-14);
+  ctx.globalAlpha=.5; ctx.fillStyle="#E2503F";
+  ctx.font='700 9px "Helvetica Neue",Helvetica,Arial,sans-serif';
+  ctx.textAlign="right"; ctx.textBaseline="top";
+  ctx.fillText("RUSH HOUR",WW-14,12);
+  ctx.restore();
+}
+function drawFailure(){
+  const k=clamp(overT/1.4,0,1);
+  ctx.save();
+  ctx.globalAlpha=.45*k; ctx.fillStyle=T.paper; ctx.fillRect(0,0,WW,WH);
+  const st=failedId?byId(failedId):null;
+  if(st){
+    ctx.globalAlpha=1;
+    for(let i=0;i<3;i++){
+      const w=clamp(overT*.9-i*.22,0,1);
+      if(w<=0) continue;
+      ctx.globalAlpha=(1-w)*.5;
+      ctx.strokeStyle="#E2503F"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(st.x,st.y,V.sr+8+w*70,0,TAU); ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    ctx.fillStyle="#E2503F";
+    shapePath(ctx,st.shape,st.x,st.y,V.sr*(1+.12*Math.sin(overT*7))); ctx.fill();
+  }
+  ctx.restore();
+}
+/* Paused is a planning mode, not a lockout: the map stays readable and every
+   line tool keeps working. Only the clock stops. */
+function drawPaused(){
+  ctx.save();
+  ctx.globalAlpha=.16; ctx.fillStyle=T.paper; ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha=1;
+  const label="PAUSED — LINES CAN STILL BE REDRAWN";
+  ctx.font='700 9.5px "Helvetica Neue",Helvetica,Arial,sans-serif';
+  const tw=(ctx.measureText(label).width||190)+22, x=(W-tw)/2, y=H-34;
+  ctx.fillStyle=T.ink; ctx.globalAlpha=.92;
+  roundRect(x,y,tw,22,11); ctx.fill();
+  ctx.globalAlpha=1; ctx.fillStyle=T.paper;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(label,W/2,y+11.5);
+  ctx.restore();
+}
+
+/* ══════════════ input ══════════════ */
+let drag=null, down=null;
+const local=e=>{ const r=cv.getBoundingClientRect();
+  return {x:(e.clientX-r.left-W/2)/(VIEW||1)+camCX, y:(e.clientY-r.top-H/2)/(VIEW||1)+camCY}; };
+const screenXY=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
+function pickStation(p,rad){
+  let b=null,bd=rad;
+  for(const s of stations){ const d=dst(s,p); if(d<bd){bd=d;b=s;} }
+  return b;
+}
+function pickNub(p){
+  let b=null,bd=V.nubR;
+  for(const L of lines){
+    if(L.loop||L.stations.length<2) continue;
+    for(const end of ["head","tail"]){
+      const np=nubPos(L,end); if(!np) continue;
+      const d=dst(np,p); if(d<bd){bd=d;b={lineId:L.id,end};}
+    }
+  }
+  return b;
+}
+function pickSegment(p,rad){
+  let b=null,bd=rad;
+  for(const L of lines){
+    if(!L.path) continue;
+    for(const sg of L.path.segs){
+      const d=Math.min(segDist(p,sg.p[0],sg.p[1]),segDist(p,sg.p[1],sg.p[2]));
+      if(d<bd){bd=d;b={lineId:L.id,idx:sg.idx};}
+    }
+  }
+  return b;
+}
+/* ── the route being drawn ──────────────────────────────────────────────
+   A drag builds a chain: every station the finger passes over is added on
+   the spot, so one swipe can lay a whole route. Sliding back over the last
+   station takes it off again, and sliding back along an existing line trims
+   it. Nothing is committed until the finger lifts, so it's all one undo. */
+function orientedSeq(L,end){ return end==="head"?[...L.stations].reverse():[...L.stations]; }
+function activeList(d){
+  if(!d) return [];
+  if(d.mode==="extend"){
+    const L=lineById(d.lineId); if(!L) return [];
+    const seq=orientedSeq(L,d.end);
+    return seq.slice(0,Math.max(0,seq.length-d.trim)).concat(d.chain);
+  }
+  if(d.mode==="new") return [d.originId,...d.chain];
+  return d.chain.slice();
+}
+function prospective(d){
+  if(d.mode==="new") return {L:null,arr:[d.originId,...d.chain],loop:d.loop};
+  const L=lineById(d.lineId); if(!L) return null;
+  if(d.mode==="extend"){
+    let arr=activeList(d);
+    if(d.end==="head") arr=[...arr].reverse();
+    return {L,arr,loop:d.loop};
+  }
+  const arr=[...L.stations]; arr.splice(d.idx+1,0,...d.chain);
+  return {L,arr,loop:L.loop};
+}
+function canAddToChain(d,id){
+  if(d.mode==="splice"){ const L=lineById(d.lineId); if(L&&L.stations.includes(id)) return false; }
+  d.chain.push(id);
+  const p=prospective(d);
+  d.chain.pop();
+  if(!p||p.arr.length<2) return false;
+  return tunnelsFor(p.arr,p.loop)+tunnelsUsed(p.L)<=res.tunnels;
+}
+let lastFeed=0;
+function feed(kind){
+  const now=performance.now();
+  if(kind!=="deny"&&now-lastFeed<50) return;
+  lastFeed=now;
+  if(kind==="add"){ Snd.tick(880); buzz(7); }
+  else if(kind==="back"){ Snd.tick(540); buzz(5); }
+  else if(kind==="loop"){ Snd.tick(1174); buzz(12); }
+  else { Snd.deny(); shakeT=.22; }
+}
+function chainHover(d,st){
+  const act=activeList(d), n=act.length;
+  if(n&&st.id===act[n-1]) return;
+  if(n>=2&&st.id===act[n-2]){                       // slid backwards — take one off
+    if(d.loop){ d.loop=false; feed("back"); return; }
+    if(d.chain.length){ d.chain.pop(); feed("back"); return; }
+    if(d.mode==="extend"){
+      const L=lineById(d.lineId);
+      if(L&&L.stations.length-d.trim>1){ d.trim++; feed("back"); }
+    }
+    return;
+  }
+  if(act.includes(st.id)){                          // back to the far end = close the loop
+    if(!d.loop&&d.mode!=="splice"&&n>=3&&st.id===act[0]){ d.loop=true; feed("loop"); }
+    return;
+  }
+  if(d.loop) return;
+  if(!canAddToChain(d,st.id)){
+    if(tunnelsFor([act[n-1],st.id],false)&&depotTunnels()<=0){ feed("deny"); toast("Needs a tunnel to cross"); }
+    return;
+  }
+  d.chain.push(st.id); feed("add");
+}
+function commitDrag(d){
+  const p=prospective(d); if(!p) return;
+  if(d.mode==="new"){ if(p.arr.length>=2) createLineChain(p.arr,d.loop); return; }
+  const L=p.L; if(!L) return;
+  if(p.arr.length<2){ deleteLine(L); toast("Line removed"); return; }
+  const same=p.arr.length===L.stations.length&&p.arr.every((v,i)=>v===L.stations[i])&&p.loop===L.loop;
+  if(same) return;
+  const added=d.chain.length, trimmed=d.trim, looped=p.loop&&!L.loop;
+  if(!editLine(L,p.arr,p.loop)) return;
+  toast(looped?"Loop closed":
+        added?(added===1?"Station added":added+" stations added"):
+        trimmed?(trimmed===1?"End trimmed":trimmed+" stops trimmed"):"Line updated");
+}
+/* ── starting a gesture ── */
+function terminalsAt(id){
+  const out=[];
+  for(const L of lines){
+    if(L.loop||L.stations.length<2) continue;
+    if(L.stations[0]===id) out.push({L,end:"head"});
+    else if(L.stations[L.stations.length-1]===id) out.push({L,end:"tail"});
+  }
+  return out;
+}
+function startExtend(lineId,end,p){
+  const L=lineById(lineId); if(!L) return false;
+  const st=byId(L.stations[end==="head"?0:L.stations.length-1]); if(!st) return false;
+  drag={mode:"extend",lineId,end,originId:st.id,anchor:{x:st.x,y:st.y},cur:p,hover:st.id,chain:[],trim:0,loop:false};
+  selected=lineId; newLineArmed=false; syncUI();
+  return true;
+}
+function onDown(e){
+  if(mode!=="play") return;
+  if(gearOpen()||performance.now()-gearClosedAt<250){ closeGear(); return; }
+  if(statsVeil.classList.contains("show")) return;
+  if($("changeVeil").classList.contains("show")) return;
+  const p=local(e);
+  down={t:performance.now(),p};
+  const nub=newLineArmed?null:pickNub(p);      // an armed slot outranks the end handles
+  if(nub){ startExtend(nub.lineId,nub.end,p); return; }
+  const st=pickStation(p,V.hit);
+  if(st){
+    /* A line's end station is itself a grab handle: pressing it continues that
+       line. To start a fresh line from a station that already ends one, arm an
+       empty line slot in the dock first. */
+    if(!newLineArmed){
+      const terms=terminalsAt(st.id);
+      const pickT=terms.find(t=>t.L.id===selected)||terms[0];
+      if(pickT&&startExtend(pickT.L.id,pickT.end,p)){
+        if(!hintedNew&&lines.length<res.lines){
+          hintedNew=true;
+          toast("Continuing line "+LETTERS[pickT.L.ci]+" — tap a + slot for a new one");
+        }
+        return;
+      }
+    }
+    drag={mode:"new",originId:st.id,anchor:{x:st.x,y:st.y},cur:p,hover:st.id,chain:[],trim:0,loop:false};
+    return;
+  }
+  const sg=pickSegment(p,TOUCH?20:16);
+  if(sg){
+    selected=sg.lineId;
+    drag={mode:"splice",lineId:sg.lineId,idx:sg.idx,anchor:p,cur:p,hover:null,chain:[],trim:0,loop:false};
+    syncUI(); return;
+  }
+  /* Empty ground used to just eat the touch. Now it pans the camera — safe to
+     do unconditionally, since clampCamera() collapses pan to dead-center the
+     moment the view is fully zoomed out, so this is a no-op until you've
+     actually zoomed in. */
+  const raw=screenXY(e);
+  drag={mode:"pan",anchor:p,cur:p,hover:null,chain:[],trim:0,loop:false,panRaw:raw,panCX0:camCX,panCY0:camCY};
+}
+function onMove(e){
+  if(!drag) return;
+  if(drag.mode==="pan"){
+    const raw=screenXY(e);
+    camCX=drag.panCX0-(raw.x-drag.panRaw.x)/VIEW;
+    camCY=drag.panCY0-(raw.y-drag.panRaw.y)/VIEW;
+    clampCamera();
+    drag.cur=local(e);
+    return;
+  }
+  drag.cur=local(e);
+  const st=pickStation(drag.cur,V.hit+(TOUCH?12:6));   // generous snap while drawing
+  drag.hover=st?st.id:null;
+  if(st) chainHover(drag,st);
+}
+const dragIdle=d=>!d||(!d.chain.length&&!d.trim&&!d.loop);
+function onUp(){
+  const d=drag, dn=down; drag=null; down=null;
+  if(mode!=="play") return;
+  const moved=(d&&dn)?dst(dn.p,d.cur):0;
+  const quick=dn&&(performance.now()-dn.t)<450;
+  if(dragIdle(d)){
+    if(dn&&quick&&moved<12){ handleTap(dn.p,d); return; }
+    if(d&&d.mode==="new"){                              // dropped a station onto a line
+      const sg=pickSegment(d.cur,TOUCH?24:20);
+      if(sg){
+        const L=lineById(sg.lineId);
+        if(L&&!L.stations.includes(d.originId)){
+          const arr=[...L.stations]; arr.splice(sg.idx+1,0,d.originId);
+          if(editLine(L,arr,L.loop)) toast("Station spliced in");
+        }
+      }
+    }
+    return;
+  }
+  commitDrag(d);
+}
+function applyExtend(L,end,target){
+  const n=L.stations.length, head=end==="head";
+  const neighbour=L.stations[head?1:n-2], far=L.stations[head?n-1:0];
+  if(target.id===neighbour){
+    if(n<=2){ deleteLine(L); toast("Line removed"); }
+    else { const arr=[...L.stations]; head?arr.shift():arr.pop(); if(editLine(L,arr,false)) toast("End trimmed"); }
+    return true;
+  }
+  if(target.id===far&&n>=3){ if(editLine(L,[...L.stations],true)) toast("Loop closed"); return true; }
+  if(L.stations.includes(target.id)) return false;
+  return editLine(L,head?[target.id,...L.stations]:[...L.stations,target.id],false);
+}
+/* tap-to-connect — the no-drag fallback */
+function handleTap(p,d){
+  const nub=(d&&d.mode==="extend")?{lineId:d.lineId,end:d.end}:pickNub(p);
+  if(nub&&!newLineArmed){
+    const L=lineById(nub.lineId);
+    if(L){
+      const st=byId(L.stations[nub.end==="head"?0:L.stations.length-1]);
+      pending={stationId:st.id,lineId:L.id,end:nub.end,forceNew:false};
+      selected=L.id; syncUI(); toast("Now tap the next station"); return;
+    }
+  }
+  const st=pickStation(p,V.hit);
+  if(!st){
+    if(pending){ pending=null; toast("Cancelled"); return; }
+    const sg=pickSegment(p,TOUCH?22:16);         // tapping the line itself selects it
+    if(sg){ selected=sg.lineId; newLineArmed=false; syncUI(); return; }
+    selected=null; newLineArmed=false; syncUI();
+    return;
+  }
+  if(pending&&pending.stationId===st.id){ pending=null; return; }
+  if(pending){
+    const from=pending; pending=null;
+    if(from.forceNew&&lines.length<res.lines){ createLine(from.stationId,st.id); return; }
+    if(from.lineId){
+      const L=lineById(from.lineId);
+      if(L&&applyExtend(L,from.end,st)) return;
+    }
+    connect(from.stationId,st.id);
+    return;
+  }
+  const terms=newLineArmed?[]:terminalsAt(st.id);
+  if(terms.length){
+    const t=terms.find(x=>x.L.id===selected)||terms[0];
+    pending={stationId:st.id,lineId:t.L.id,end:t.end,forceNew:false};
+    selected=t.L.id; syncUI();
+  } else {
+    pending={stationId:st.id,lineId:null,end:null,forceNew:newLineArmed};
+  }
+  toast(!terms.length&&!newLineArmed&&lines.length>=res.lines?"No spare line — extend an existing one":"Now tap the next station");
+}
+function connect(aId,bId){
+  const aTerm=terminalsAt(aId);
+  for(const t of aTerm) if(!t.L.stations.includes(bId)){ applyExtend(t.L,t.end,byId(bId)); return; }
+  if(lines.length<res.lines){ createLine(aId,bId); return; }
+  const bTerm=terminalsAt(bId);
+  for(const t of bTerm) if(!t.L.stations.includes(aId)){ applyExtend(t.L,t.end,byId(aId)); return; }
+  toast("No spare line"); Snd.deny(); shakeT=.4;
+}
+/* Touch plumbing.
+   The map must never hand a gesture back to the browser as a scroll, so we
+   claim the pointer on the canvas, follow it on window (a finger that slides
+   off the canvas keeps dragging), and swallow the raw touch gestures. */
+let activeId=null;
+const stop=e=>{ if(e.cancelable) e.preventDefault(); };
+/* A second finger used to only ever mean "abort" (kept — it still cancels
+   any route being drawn) and was otherwise ignored. Now it also opens a
+   pinch: zoom and pan together, anchored on the point between the two
+   fingers so the map stays under your hands rather than sliding away. */
+let pointers=new Map(), pinch=null;
+const pinchDist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function startPinch(id1,id2){
+  const a=pointers.get(id1), b=pointers.get(id2); if(!a||!b) return;
+  pinch={ids:[id1,id2], d0:Math.max(24,pinchDist(a,b)),
+    worldX0:camCX+((a.x+b.x)/2-W/2)/VIEW, worldY0:camCY+((a.y+b.y)/2-H/2)/VIEW, zoom0:camZoom};
+}
+function updatePinch(){
+  const a=pointers.get(pinch.ids[0]), b=pointers.get(pinch.ids[1]); if(!a||!b) return;
+  camZoom=clamp(pinch.zoom0*(pinchDist(a,b)/pinch.d0),1,CAM_MAX);
+  applyView();
+  const cx=(a.x+b.x)/2, cy=(a.y+b.y)/2;
+  camCX=pinch.worldX0-(cx-W/2)/VIEW; camCY=pinch.worldY0-(cy-H/2)/VIEW;
+  clampCamera();
+}
+function evtDown(e){
+  const id=(e.pointerId!==undefined)?e.pointerId:0;
+  const raw=screenXY(e);
+  if(activeId!==null&&activeId!==id&&!pinch){        // a genuine second finger
+    if(drag&&!dragIdle(drag)){ cancelDrag("Route cancelled"); }
+    drag=null; down=null;                             // a lone pan-candidate gets superseded by the pinch
+    pointers.set(id,raw);
+    stop(e);
+    startPinch(activeId,id);
+    return;
+  }
+  if(pinch){ if(pinch.ids.includes(id)) pointers.set(id,raw); stop(e); return; }   // a third finger: ignore
+  activeId=id; pointers.set(id,raw);
+  stop(e); onDown(e);
+}
+function evtMove(e){
+  const id=(e.pointerId!==undefined)?e.pointerId:0;
+  if(pinch){
+    if(!pinch.ids.includes(id)) return;
+    pointers.set(id,screenXY(e)); stop(e);
+    updatePinch(); syncZoomButtons();
+    return;
+  }
+  if(activeId===null||id!==activeId) return;
+  pointers.set(id,screenXY(e));
+  stop(e); onMove(e);
+}
+function evtUp(e){
+  const id=(e.pointerId!==undefined)?e.pointerId:0;
+  if(pinch&&pinch.ids.includes(id)){
+    pointers.delete(id); pinch=null;
+    if(id===activeId){ activeId=null; drag=null; down=null; }   // require a fresh press to draw again
+    return;
+  }
+  if(activeId===null||id!==activeId) return;
+  pointers.delete(id);
+  stop(e); activeId=null; onUp();
+}
+/* The browser aborts the gesture (scroll guess, notification, call). Don't
+   throw the player's half-finished line away — hand it to the tap flow. */
+function cancelDrag(msg){
+  if(!drag) return;
+  drag=null; down=null; pending=null;
+  Snd.cut(); toast(msg||"Cancelled");
+}
+function evtCancel(e){
+  const id=(e.pointerId!==undefined)?e.pointerId:0;
+  if(pinch&&pinch.ids.includes(id)){ pointers.delete(id); pinch=null; if(id===activeId) activeId=null; drag=null; down=null; return; }
+  if(activeId===null||id!==activeId) return;
+  activeId=null; pointers.delete(id);
+  if(drag&&drag.mode==="pan"){ drag=null; down=null; return; }
+  if(drag&&(!dragIdle(drag)||drag.hover)){ onUp(); return; }
+  if(drag&&drag.mode==="extend"){
+    pending={stationId:drag.originId,lineId:drag.lineId,end:drag.end};
+    toast("Now tap the next station");
+  }
+  drag=null; down=null;
+}
+if(window.PointerEvent){
+  cv.addEventListener("pointerdown",evtDown,{passive:false});
+  window.addEventListener("pointermove",evtMove,{passive:false});
+  window.addEventListener("pointerup",evtUp,{passive:false});
+  window.addEventListener("pointercancel",evtCancel,{passive:false});
+} else {                                            // older mobile Safari / WebView
+  const wrap=(t,fn)=>e=>{ const p=e.changedTouches&&e.changedTouches[0]; if(!p) return;
+    fn({clientX:p.clientX,clientY:p.clientY,pointerId:0,cancelable:e.cancelable,preventDefault:()=>e.preventDefault()}); };
+  cv.addEventListener("touchstart",wrap("s",evtDown),{passive:false});
+  window.addEventListener("touchmove",wrap("m",evtMove),{passive:false});
+  window.addEventListener("touchend",wrap("e",evtUp),{passive:false});
+  window.addEventListener("touchcancel",wrap("c",evtCancel),{passive:false});
+  cv.addEventListener("mousedown",evtDown); window.addEventListener("mousemove",evtMove);
+  window.addEventListener("mouseup",evtUp);
+}
+/* Swallow the raw gesture so neither this page nor any host frame scrolls. */
+["touchstart","touchmove","touchend"].forEach(t=>
+  cv.addEventListener(t,e=>{ if(e.cancelable) e.preventDefault(); },{passive:false}));
+document.addEventListener("touchmove",e=>{ if(activeId!==null&&e.cancelable) e.preventDefault(); },{passive:false});
+document.addEventListener("gesturestart",e=>e.preventDefault());
+cv.addEventListener("contextmenu",e=>e.preventDefault());
+function zoomBy(f){
+  if(mode!=="play") return;
+  camZoom=clamp(camZoom*f,1,CAM_MAX);
+  applyView();
+  syncZoomButtons();
+}
+function syncZoomButtons(){
+  const out=$("btnZoomOut"), inn=$("btnZoomIn");
+  if(out) out.disabled=camZoom<=1.02;
+  if(inn) inn.disabled=camZoom>=CAM_MAX-0.02;
+}
+$("btnZoomIn").onclick=()=>zoomBy(1.4);
+$("btnZoomOut").onclick=()=>zoomBy(1/1.4);
+cv.addEventListener("wheel",e=>{
+  if(mode!=="play") return;
+  e.preventDefault();
+  const raw=screenXY(e);
+  const worldX=camCX+(raw.x-W/2)/VIEW, worldY=camCY+(raw.y-H/2)/VIEW;
+  camZoom=clamp(camZoom*Math.exp(-e.deltaY*0.0016),1,CAM_MAX);
+  applyView();
+  camCX=worldX-(raw.x-W/2)/VIEW; camCY=worldY-(raw.y-H/2)/VIEW;
+  clampCamera(); syncZoomButtons();
+},{passive:false});
+
+/* ══════════════ ui ══════════════ */
+let toastT=0;
+function toast(msg){
+  const el=$("toast"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),1600);
+}
+function syncUI(){
+  const chips=$("chips"); const chipScroll=chips.scrollLeft; chips.innerHTML="";
+  for(const L of lines){
+    const c=document.createElement("button");
+    c.className="chip"+(selected===L.id?" sel":"");
+    const tr=L.trains.length, cars=L.trains.reduce((a,t)=>a+t.cars,0);
+    const crowd=L.stations.some(id=>{const s=byId(id);return s&&s.load>.3;});
+    c.innerHTML=`<span class="tag" style="background:var(--l${L.ci})">${LETTERS[L.ci]}</span>
+      <span class="n">${L.stations.length}</span>${L.loop?'<span class="loop">↻</span>':""}
+      ${tr?`<span class="n">${tr}×${cars?"+"+cars:""}</span>`:'<span class="warn">no train</span>'}
+      ${crowd?'<span class="dot" title="a stop on this line is filling up"></span>':""}`;
+    c.onclick=()=>{ selected=selected===L.id?null:L.id; pending=null; syncUI(); };
+    chips.appendChild(c);
+  }
+  for(let i=lines.length;i<res.lines;i++){
+    const c=document.createElement("button");
+    const first=i===lines.length;
+    c.className="chip empty"+(newLineArmed&&first?" armed":"");
+    c.innerHTML=`<span class="tag">+</span><span class="n">${newLineArmed&&first?"drag from a station":"new line"}</span>`;
+    if(first) c.onclick=()=>{
+      newLineArmed=!newLineArmed; selected=null; pending=null; syncUI();
+      if(newLineArmed) toast("Now drag from any station");
+    };
+    chips.appendChild(c);
+  }
+  chips.scrollLeft=chipScroll;
+  const dt=depotTrains(), dc=depotCars(), du=depotTunnels();
+  $("nTrain").textContent=dt; $("nCar").textContent=dc; $("nTun").textContent=du;
+  $("resTrain").classList.toggle("zero",dt<=0);
+  $("resCar").classList.toggle("zero",dc<=0);
+  $("resTun").classList.toggle("zero",du<=0);
+  const L=selected?lineById(selected):null;
+  /* The depot row never restructures itself — it only ever gains the line
+     panel on top, so nothing already on screen shifts when you tap a line. */
+  const info=$("lineInfo");
+  info.classList.toggle("show",!!L);
+  $("depotRow").classList.toggle("hide",!!L);
+  $("actGroup").classList.toggle("show",!!L);
+  if(L){
+    const cars=L.trains.reduce((a,t)=>a+t.cars,0);
+    $("liTag").textContent=LETTERS[L.ci];
+    $("liTag").style.background="var(--l"+L.ci+")";
+    $("liMeta").textContent=plural(L.stations.length,"stop")+(L.loop?" · loop":"")
+      +" · "+plural(L.trains.length,"train")+(cars?" +"+cars:"");
+  }
+  $("btnTrainCt").textContent=L&&dt>0?dt:"";
+  $("btnCarCt").textContent=L&&dc>0?dc:"";
+  $("btnTrain").disabled=!(L&&dt>0);
+  $("btnCar").disabled=!(L&&dc>0&&L.trains.length);
+  const canLoop=!!(L&&(L.loop||L.stations.length>=3));
+  $("btnLoop").disabled=!canLoop;                 // stays put; only its enabled state changes
+  $("btnLoop").textContent=L&&L.loop?"Open loop":"Close loop";
+  $("btnDel").disabled=!L;
+  $("btnUndo").disabled=!undoStack.length;
+  crowdSig=lineCrowdSignature();
+}
+function lineCrowdSignature(){
+  return lines.map(L=>L.stations.some(id=>{const s=byId(id);return s&&s.load>.3;})?"1":"0").join("");
+}
+let crowdSig="";
+let lastTick=-1,lastScore=-1,lastWait=-1;
+function syncClock(){
+  const s=clock|0;
+  if(s!==lastTick){
+    lastTick=s;
+    const deg=Math.round(clamp(weekT/CFG.weekSecs,0,1)*360/6)*6;
+    const ink=getComputedStyle(document.body).getPropertyValue("--ink").trim()||"#15181D";
+    const hair=getComputedStyle(document.body).getPropertyValue("--hair").trim()||"#C9D1D9";
+    $("dial").style.background=`conic-gradient(${ink} 0deg,${ink} ${deg}deg,${hair} ${deg}deg)`;
+    $("weekLbl").textContent="WEEK "+week;
+    $("timeLbl").textContent=((s/60)|0)+":"+String(s%60).padStart(2,"0");
+  }
+  if(delivered!==lastScore){
+    lastScore=delivered;
+    const el=$("scoreVal"); el.textContent=delivered;
+    el.classList.add("bump"); setTimeout(()=>el.classList.remove("bump"),120);
+  }
+  if(s!==lastWait){
+    lastWait=s;
+    if(mode==="play"&&lineCrowdSignature()!==crowdSig) syncUI();
+    let waiting=0, worst=0;
+    for(const st of stations){ waiting+=st.queue.length; if(st.load>worst) worst=st.load; }
+    $("waitVal").textContent=waiting;
+    $("waitBox").classList.toggle("hot",worst>.35);
+  }
+}
+$("btnTrain").onclick=()=>{ const L=lineById(selected); if(!L||depotTrains()<=0) return; pushUndo(); addTrainTo(L,0); syncUI(); };
+$("btnCar").onclick=()=>{
+  const L=lineById(selected); if(!L||depotCars()<=0||!L.trains.length) return;
+  pushUndo();
+  let t=L.trains[0]; for(const x of L.trains) if(x.cars<t.cars) t=x;
+  t.cars++; toast("Carriage attached"); Snd.link(); syncUI();
+};
+$("btnLoop").onclick=()=>{
+  const L=lineById(selected); if(!L) return;
+  if(L.loop){ if(editLine(L,[...L.stations],false)) toast("Loop opened"); }
+  else if(L.stations.length>=3&&editLine(L,[...L.stations],true)) toast("Loop closed");
+};
+$("btnDel").onclick=()=>{
+  const L=lineById(selected); if(!L) return;
+  deleteLine(L); toast("Line "+LETTERS[L.ci]+" removed");
+};
+$("btnUndo").onclick=doUndo;
+$("btnStats").onclick=()=>{ statsVeil.classList.contains("show")?closeStats():openStats(); };
+$("btnCloseStats").onclick=closeStats;
+$("btnPause").onclick=()=>setPaused(!paused);
+$("btnSpeed").onclick=()=>{ speed=speed>=3?1:speed+1; setPaused(false); syncSpeed(); };
+function syncSpeed(){
+  $("btnSpeed").textContent=speed+"×";
+  $("btnSpeed").classList.toggle("on",speed>1&&!paused);
+  $("btnPause").classList.toggle("on",paused);
+  $("btnPause").innerHTML=paused?"▶":"❚❚";
+}
+function setPaused(v){ paused=v; syncSpeed(); }
+const gearOpen=()=>$("gearMenu").classList.contains("show");
+const closeGear=()=>$("gearMenu").classList.remove("show");
+let gearClosedAt=-1e9;   // never suppress input before the menu has actually been used
+$("btnGear").onclick=e=>{ e.stopPropagation(); $("gearMenu").classList.toggle("show"); };
+document.addEventListener("pointerdown",e=>{
+  if(gearOpen()&&!$("gearMenu").contains(e.target)&&e.target!==$("btnGear")){ closeGear(); gearClosedAt=performance.now(); }
+},true);
+document.querySelectorAll("#segTheme button").forEach(b=>b.onclick=()=>{ setTheme(b.dataset.th); toast("Theme: "+b.textContent); });
+document.querySelectorAll("#segSound button").forEach(b=>b.onclick=()=>{
+  Snd.on=b.dataset.snd==="1";
+  document.querySelectorAll("#segSound button").forEach(x=>x.classList.toggle("on",x===b));
+  if(Snd.on){ Snd.boot(); Snd.resume(); Snd.link(); }
+  saveSettings();
+});
+let pausedBeforeRules=false;
+$("btnRules").onclick=()=>{ closeGear(); pausedBeforeRules=paused; $("rulesVeil").classList.add("show"); if(mode==="play") setPaused(true); };
+function closeRulesPanel(){
+  $("rulesVeil").classList.remove("show");
+  if(mode==="play"&&!pausedBeforeRules) setPaused(false);
+}
+$("btnCloseRules").onclick=closeRulesPanel;
+$("rulesVeil").addEventListener("click",e=>{ if(e.target===e.currentTarget) closeRulesPanel(); });
+$("btnChangelog").onclick=()=>{ closeGear(); openChangelog(); };
+$("btnCloseLog").onclick=closeChangelog;
+$("changeVeil").addEventListener("click",e=>{ if(e.target===e.currentTarget) closeChangelog(); });
+window.addEventListener("keydown",e=>{
+  if(e.code==="Space"){ e.preventDefault(); if(mode==="play") setPaused(!paused); }
+  if(e.key>="1"&&e.key<="3"){ speed=+e.key; setPaused(false); syncSpeed(); }
+  if(e.key==="u"||e.key==="U") doUndo();
+  if(e.key==="i"||e.key==="I"){ statsVeil.classList.contains("show")?closeStats():openStats(); }
+  if(e.key==="d"||e.key==="D") setTheme(nightTarget?"day":"night");
+  if(e.key==="Escape"){
+    if(statsVeil.classList.contains("show")){ closeStats(); return; }
+    if($("rulesVeil").classList.contains("show")){ closeRulesPanel(); return; }
+    if($("changeVeil").classList.contains("show")){ closeChangelog(); return; }
+    if(drag){ cancelDrag("Route cancelled"); activeId=null; }
+    pending=null; selected=null; newLineArmed=false; closeGear(); syncUI();
+  }
+});
+
+/* ══════════════ rules copy ══════════════ */
+const RULES=[
+  ["1","<b>Swipe across stations</b> to lay a line — every station you pass over joins it. Or <b>tap one, then tap the next</b>."],
+  ["2","<b>Drag from a line's end station</b> to continue it. Swipe back the way you came to take stops off again."],
+  ["3","Finish on the far end to close a loop, or back out of a route with a second finger (Esc on a keyboard)."],
+  ["4","Riders travel to the nearest station matching the shape they carry, changing lines as needed."],
+  ["5","A platform that stays overcrowded shuts the network down. Watch the red ring."],
+  ["6","Each week brings a locomotive and a choice: grow the network, or run what you have better."]
+];
+function fillRules(){
+  const html=RULES.map(r=>`<li><i>${r[0]}</i><span>${r[1]}</span></li>`).join("");
+  const a=$("rulesList"), b=$("rulesList2");   // rulesList no longer exists on the
+  if(a) a.innerHTML=html;                      // world-select menu; guard instead of
+  if(b) b.innerHTML=html;                      // assuming every id is still there
+}
+
+/* ══════════════ upgrades ══════════════ */
+const ICONS={
+  line:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M2 12h8l6-10h8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  train:'<svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="1" y="1" width="24" height="10" rx="4" stroke-width="2"/></svg>',
+  car:'<svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="1" y="1" width="11" height="10" rx="3.5" stroke-width="2"/><rect x="14" y="1" width="11" height="10" rx="3.5" stroke-width="2"/></svg>',
+  tunnel:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M4 13V8a9 9 0 0 1 18 0v5" stroke-width="2.5"/></svg>',
+  speed:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M4 3l6 4-6 4M14 3l6 4-6 4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  cap:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><rect x="1" y="2" width="24" height="10" rx="4" stroke-width="2"/><path d="M8 7h8M13 4.5L15.5 7 13 9.5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  board:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M4 13V2h7v11" stroke-width="2" stroke-linejoin="round"/><path d="M15 7h8M20 4l3 3-3 3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  calm:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M2 5c4-4 7 4 11 0s7-2 11 0" stroke-width="2" stroke-linecap="round"/><path d="M2 11c4-3 7 3 11 0s7-1.5 11 0" stroke-width="2" stroke-linecap="round" opacity=".5"/></svg>',
+  tol:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M13 1l8 2.6V7c0 3.2-3.2 5.2-8 6-4.8-.8-8-2.8-8-6V3.6z" stroke-width="2" stroke-linejoin="round"/></svg>',
+  rolling:'<svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="1" y="1" width="14" height="10" rx="4" stroke-width="2"/><rect x="17" y="3" width="8" height="7" rx="2.5" stroke-width="1.6" opacity=".6"/></svg>',
+  recover:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M13 1a6 6 0 1 1-5.2 3" stroke-width="2" stroke-linecap="round"/><path d="M4 1v4h4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  rush:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M2 12h22M6 12V7l4-4h6l4 4v5" stroke-width="2" stroke-linejoin="round"/></svg>',
+  nightCalm:'<svg width="26" height="14" viewBox="0 0 26 14" fill="none"><path d="M18 2a6 6 0 1 0 5.5 8.6A6 6 0 0 1 18 2z" stroke-width="1.8" stroke-linejoin="round"/></svg>'
+};
+const UPGRADES={
+  line:{t:"New line",  d:"Another line to run, and a tunnel to go with it.", eff:"+1 line, +1 tunnel", kind:"net", apply(){res.lines++;res.tunnels++;MODS.n.line++;}},
+  train:{t:"Locomotive",d:"A spare train for whichever line needs it.",       eff:"+1 train",          kind:"net", apply(){res.trains++;MODS.n.train++;}},
+  car:{t:"Carriage",   d:"Couple it on for six more seats.",                 eff:"+1 carriage",       kind:"net", apply(){res.cars++;MODS.n.car++;}},
+  tunnel:{t:"Two tunnels",d:"Cross the water twice more.",                    eff:"+2 tunnels",        kind:"net", apply(){res.tunnels+=2;MODS.n.tunnel++;}},
+  speed:{t:"Express timings",d:"Every train on the network runs faster.",    eff:"x1.15 speed",       kind:"flow",apply(){MODS.speed*=1.15;MODS.n.speed++;}},
+  cap:{t:"Wider cars", d:"Two more seats in every single carriage.",         eff:"+2 seats per car",  kind:"flow",apply(){MODS.cap+=2;MODS.n.cap++;}},
+  board:{t:"Level boarding",d:"Riders step on and off far quicker.",         eff:"-32% dwell time",   kind:"flow",apply(){MODS.board*=.68;MODS.n.board++;}},
+  calm:{t:"Off-peak shift",d:"Fewer new riders arrive across the city.",     eff:"-15% demand",       kind:"flow",apply(){MODS.spawn*=1.18;MODS.n.spawn++;}},
+  tol:{t:"Crowd control",d:"Packed platforms hold out much longer.",         eff:"+28% patience",     kind:"flow",apply(){MODS.tol*=1.28;MODS.n.tol++;}},
+  rolling:{t:"Rolling stock",d:"A train and a carriage for it, together.",   eff:"+1 train, +1 car",  kind:"net", apply(){res.trains++;res.cars++;MODS.n.rolling++;}},
+  recover:{t:"Quick recovery",d:"A relieved platform calms back down faster.",eff:"+35% recovery speed",kind:"flow",apply(){MODS.recover*=1.35;MODS.n.recover++;}},
+  rush:{t:"Traffic control",d:"Rush hour hits the network less hard.",       eff:"-28% rush severity", kind:"flow",apply(){MODS.rush*=.72;MODS.n.rush++;}},
+  nightCalm:{t:"Off-hours transit",d:"Night service runs noticeably quieter.",eff:"quieter nights",     kind:"flow",apply(){MODS.nightCalm*=.7;MODS.n.nightCalm++;}}
+};
+/* Each week pairs one network upgrade against one operating upgrade, so the
+   choice is always "more of the network" versus "run what I have better". */
+function openWeek(){
+  mode="week"; res.trains++; pending=null;
+  Snd.week();
+  if(themeMode==="auto") applyNight(week%2===0,false);
+  const net=["train","car","tunnel","rolling"];
+  if(res.lines<7){ net.push("line","line"); }
+  const flow=["speed","cap","board","calm","tol","recover","rush","nightCalm"];
+  const a=week===2?"line":pickOne(net);
+  const b=week===2?"car":pickOne(flow);
+  const el=$("picks"); el.innerHTML="";
+  [a,b].forEach(k=>{
+    const u=UPGRADES[k], btn=document.createElement("button");
+    btn.className="pick"+(u.kind==="rare"?" rare":"");
+    btn.innerHTML=`${ICONS[k]}<span class="ttl">${u.t}</span><span class="dsc">${u.d}</span><span class="eff">${u.eff}</span>`;
+    btn.onclick=()=>{ u.apply(); Snd.upgrade(); closeWeek(); };
+    el.appendChild(btn);
+  });
+  const carried=delivered-weekPax0;
+  const busy=stations.slice().sort((a,b)=>b.through-a.through)[0];
+  const sum=$("weekSum");
+  if(sum) sum.textContent=plural(carried,"rider")+" carried this week"
+    +(busy&&busy.through>4?" · busiest stop was "+busy.name:"")
+    +" · "+plural(stations.length,"station")+" on the map";
+  weekPax0=delivered;
+  $("weekEyebrow").textContent="Week "+(week-1)+" closed · +1 locomotive";
+  $("weekVeil").classList.add("show");
+}
+function closeWeek(){
+  $("weekVeil").classList.remove("show");
+  mode="play"; undoStack=[]; syncUI();
+  annCool=0; annQ.length=0;
+  announce(nightTarget?"Night service begins":"Morning service is getting busy",true);
+}
+
+/* ══════════════ upgrades in effect ══════════════ */
+function buildStats(){
+  const el=$("statList"); if(!el) return;
+  const pct=v=>(v>=1?"+":"\u2212")+Math.round(Math.abs(v-1)*100)+"%";
+  const rows=[
+    ["head","Network",""],
+    ["Lines",lines.length+" / "+res.lines,MODS.n.line],
+    ["Locomotives",res.trains,MODS.n.train+MODS.n.rolling],
+    ["Carriages",res.cars,MODS.n.car+MODS.n.rolling],
+    ["Tunnels",depotTunnels()+" / "+res.tunnels,MODS.n.tunnel],
+    ["head","Operating",""],
+    ["Train speed","\u00d7"+MODS.speed.toFixed(2),MODS.n.speed],
+    ["Seats per carriage",(CFG.baseCap+MODS.cap),MODS.n.cap],
+    ["Dwell at stops",pct(MODS.board),MODS.n.board],
+    ["Rider demand",pct(1/MODS.spawn),MODS.n.spawn],
+    ["Platform patience",pct(MODS.tol),MODS.n.tol],
+    ["Recovery speed",pct(MODS.recover),MODS.n.recover],
+    ["Rush hour severity",pct(MODS.rush),MODS.n.rush],
+    ["Night demand",pct(MODS.nightCalm),MODS.n.nightCalm],
+    ["head","This run",""],
+    ["Map",MAP?MAP.name+" \u00b7 "+MAP.diff:"\u2014",""],
+    ["City limits",zoomSteps?"extended \u00d7"+zoomSteps:"original",""],
+    ["Riders carried",delivered,""],
+    ["Next expansion",nextZoom+" riders",""],
+    ["View",camZoom>1.03?"zoomed \u00d7"+camZoom.toFixed(1):"whole map",""]
+  ];
+  el.innerHTML=rows.map(r=>{
+    if(r[0]==="head") return `<div class="strow head"><span class="sn"><b>${r[1]}</b></span></div>`;
+    const stack=(typeof r[2]==="number"&&r[2]>0)?"\u00d7"+r[2]:"";
+    const off=(typeof r[2]==="number"&&r[2]===0)?" off":"";
+    return `<div class="strow${off}"><span class="sn">${r[0]}</span><span class="sv">${r[1]}</span><span class="sx">${stack}</span></div>`;
+  }).join("");
+  $("statsEyebrow").textContent=(MAP?MAP.name:"Network")+" \u00b7 week "+week;
+}
+let pausedBeforeStats=false;
+function openStats(){
+  buildStats();
+  pausedBeforeStats=paused;
+  if(mode==="play") setPaused(true);
+  statsVeil.classList.add("show");
+  $("btnStats").classList.add("on");
+}
+function closeStats(){
+  statsVeil.classList.remove("show");
+  $("btnStats").classList.remove("on");
+  if(mode==="play"&&!pausedBeforeStats) setPaused(false);
+}
+
+/* ══════════════ what's new ══════════════ */
+const CHANGELOG=[
+  {v:"1.5",t:"Room to Breathe",items:[
+    "Harder networks pull the camera back much further at 500 riders carried.",
+    "Everyone gets a big pull-back at 1,000, whichever network you're running.",
+    "Kesridge and Rushgate reworked — water and rush hour now, not terrain.",
+    "Two new networks: Millbrook and Saltmarsh, ten in total."]},
+  {v:"1.4",t:"City Limits",items:[
+    "The map now expands every 500 riders carried, and the camera pulls back to show it.",
+    "Pinch, scroll, or drag empty ground to look around the city yourself.",
+    "An overcrowded platform snaps the view back to normal automatically.",
+    "Three new networks: Rushgate, Three Rivers, The Wilds."]},
+  {v:"1.3",t:"A Better Way In",items:[
+    "A proper Play button, and a full-screen How to Play.",
+    "The upgrades panel is now genuinely toggleable — tap it, or Escape, or the map behind it.",
+    "Fixed the dock shifting under your finger right when you meant to tap something."]},
+  {v:"1.2",t:"The City Talks Back",items:[
+    "LINEWORK Transit: every city gets its own name, and so does every station.",
+    "Short service announcements — new stations, crowding, a line running smoothly.",
+    "Parks, downtown blocks, and river bridges give every map its own layout."]},
+  {v:"1.1",t:"Drawing Lines That Feel Right",items:[
+    "Swipe across several stations in one motion to lay a whole route at once.",
+    "Drag a line's end to extend it; slide back the way you came to trim it.",
+    "Day and night now cycle through the week, with glowing lines after dark."]},
+  {v:"1.0",t:"First Service",items:[
+    "LINEWORK opens for business: draw lines, run trains, keep the platforms clear."]}
+];
+function buildChangelog(){
+  const el=$("logList"); if(!el) return;
+  el.innerHTML=CHANGELOG.map(e=>`<div class="logentry">
+    <div class="lv"><b>v${e.v}</b><span>${e.t}</span></div>
+    <ul>${e.items.map(i=>`<li>${i}</li>`).join("")}</ul>
+  </div>`).join("");
+}
+let pausedBeforeLog=false;
+function openChangelog(){
+  buildChangelog();
+  pausedBeforeLog=paused;
+  if(mode==="play") setPaused(true);
+  $("changeVeil").classList.add("show");
+}
+function closeChangelog(){
+  $("changeVeil").classList.remove("show");
+  if(mode==="play"&&!pausedBeforeLog) setPaused(false);
+}
+
+/* ══════════════ world select ══════════════ */
+function mapPreview(m){
+  const w=76,h=52,p=[];
+  p.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="var(--panel)"/>`);
+  for(let i=0;i<4;i++) p.push(`<line x1="${9+i*19}" y1="0" x2="${9+i*19}" y2="${h}" stroke="var(--hair)" stroke-width="1" opacity=".7"/>`);
+  for(let i=0;i<3;i++) p.push(`<line x1="0" y1="${11+i*16}" x2="${w}" y2="${11+i*16}" stroke="var(--hair)" stroke-width="1" opacity=".7"/>`);
+  if(m.rivers>=1) p.push(`<path d="M-3 15 q17 9 34 1 t 48 3" stroke="#9CC3DA" stroke-width="7" fill="none" stroke-linecap="round"/>`);
+  if(m.rivers>=2) p.push(`<path d="M24 -3 q7 19 -1 33 t 5 25" stroke="#9CC3DA" stroke-width="6" fill="none" stroke-linecap="round"/>`);
+  if(m.rivers>=3) p.push(`<path d="M-3 40 q20 -6 38 2 t 41 -4" stroke="#9CC3DA" stroke-width="5" fill="none" stroke-linecap="round"/>`);
+  p.push(`<circle cx="17" cy="34" r="3.4" fill="var(--ink)"/>`);
+  p.push(`<rect x="43" y="9" width="6" height="6" fill="var(--ink)"/>`);
+  p.push(`<path d="M60 40 l4 -7 l4 7 z" fill="var(--ink)"/>`);
+  p.push(`<path d="M17 34 L46 12" stroke="${m.accent}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
+  p.push(`<path d="M46 12 L64 36" stroke="${m.accent}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${p.join("")}</svg>`;
+}
+let pickedMap=null;
+function buildMapList(){
+  const el=$("mapList"); if(!el) return;
+  const listScroll=el.scrollTop; el.innerHTML="";
+  if(!pickedMap||!MAPS.some(m=>m.id===pickedMap)) pickedMap=(MAP&&MAP.id)||MAPS[0].id;
+  for(const m of MAPS){
+    const b=document.createElement("button");
+    b.className="mapcard"+(pickedMap===m.id?" sel":"");
+    b.style.setProperty("--acc",m.accent);
+    const bs=bests[m.id]||0;
+    b.innerHTML=`<span class="prev">${mapPreview(m)}</span>
+      <span class="body">
+        <span class="mtop"><b>${m.name}</b><i class="badge2">${m.diff}</i></span>
+        <span class="mdesc">${m.desc}</span>
+        <span class="mbest">${m.tunnels} starting tunnels${m.rush?" · rush hours":""}${bs?" · best "+bs:""}</span>
+      </span>`;
+    b.onclick=()=>{ pickedMap=m.id; buildMapList(); };
+    el.appendChild(b);
+  }
+  el.scrollTop=listScroll;
+  const play=$("btnPlay");
+  if(play){ play.disabled=false; play.textContent="Play "+(MAPS.find(m=>m.id===pickedMap)||{}).name; }
+}
+function showMenu(){
+  mode="menu"; drag=null; pending=null;
+  buildMapList();
+  $("overVeil").classList.remove("show");
+  $("menuVeil").classList.add("show");
+}
+
+/* ══════════════ flow ══════════════ */
+function startGame(mapId){
+  Snd.boot(); Snd.resume();
+  MAP=MAPS.find(m=>m.id===mapId)||MAP||MAPS[1];
+  best=bests[MAP.id]||0;
+  rushT=MAP.rush?rand(48,72):1e9; rushLeft=0;
+  nextZoom=500; zoomSteps=0; vipTimer=rand(48,72)/tierVipBoost(); vipDelivered=0;
+  res={lines:3,trains:3,cars:0,tunnels:MAP.tunnels||2};
+  MODS.speed=1; MODS.cap=0; MODS.board=1; MODS.spawn=1; MODS.tol=1; MODS.recover=1; MODS.rush=1; MODS.nightCalm=1;
+  MODS.n={speed:0,cap:0,board:0,spawn:0,tol:0,recover:0,rush:0,nightCalm:0,line:0,train:0,car:0,tunnel:0,rolling:0};
+  clock=0;week=1;weekT=0;delivered=0;selected=null;pending=null;particles=[];ripples=[];flyers=[];
+  stationTimer=20;endReason="";speed=1;lastTick=-1;lastScore=-1;lastWait=-1;hintedExtend=false;newLineArmed=false;hintedNew=false;
+  annT=0;annCool=0;annQ=[];ambientT=45;milestone=0;overT=0;failedId=null;rushLeft=0;
+  hintT=0;hintPair=null;weekPax0=0;
+  setPaused(false);
+  if(themeMode==="auto") applyNight(false,false);
+  newCity(); buildPaths(); rebuildGraph(); syncUI();
+  const tag=$("cityTag"); if(tag) tag.textContent=MAP.name+" — "+city.name;
+  const tk=$("ticker"); if(tk) tk.classList.remove("show");
+  $("menuVeil").classList.remove("show"); $("overVeil").classList.remove("show");
+  mode="play";
+  toast(TOUCH?"Swipe across a few stations to lay your first line":"Swipe across stations to lay your first line");
+  announce("Welcome to "+city.name);
+}
+const scoreOf=()=>delivered*10+stations.length*15+(week-1)*40+lines.reduce((a,L)=>a+L.stations.length*2,0);
+function gameOver(){
+  mode="over"; pending=null; drag=null; overT=0;
+  const failed=failedId?byId(failedId):null;
+  const waiting=failed?failed.queue.length:0;
+  const sc=scoreOf(), isBest=sc>best;
+  if(isBest){ best=sc; if(MAP) bests[MAP.id]=sc; saveState(); }
+  Snd.over(); buzz([30,60,30]);
+  const tk=$("ticker"); if(tk) tk.classList.remove("show");
+  $("overWhy").textContent=(endReason||"A platform")+" overflowed";
+  const sub=$("overSub");
+  if(sub) sub.textContent=failed
+    ? plural(waiting,"rider")+(waiting===1?" was":" were")+" left waiting at "+failed.name+", which "+
+      (failed.lineCount?"only "+plural(failed.lineCount,"line")+" served.":"no line served.")
+    : "A platform stayed overcrowded for too long.";
+  $("bestBadge").classList.toggle("hide",!isBest);
+  $("fScore").textContent=sc; $("fPax").textContent=delivered;
+  const s=clock|0;
+  $("fTime").textContent=((s/60)|0)+":"+String(s%60).padStart(2,"0");
+  $("fSta").textContent=stations.length; $("fBest").textContent=best;
+  $("overEyebrow").textContent=MAP?MAP.name+" · service suspended":"Service suspended";
+  setTimeout(()=>{ if(mode==="over") $("overVeil").classList.add("show"); },1200);
+}
+$("btnAgain").onclick=()=>startGame(MAP?MAP.id:"banks");
+$("btnPickMap").onclick=showMenu;
+$("btnPlay").onclick=()=>startGame(pickedMap);
+$("btnRulesMenu").onclick=()=>$("rulesVeil").classList.add("show");
+
+/* ══════════════ storage ══════════════ */
+async function loadState(){
+  try{
+    if(window.storage){
+      const b=await window.storage.get("linework:bests");
+      if(b&&b.value) bests=JSON.parse(b.value)||{};
+    }
+  }catch(e){}
+  best=MAP?(bests[MAP.id]||0):0;
+  buildMapList();
+  try{
+    if(!window.storage) return;
+    const s=await window.storage.get("linework:prefs");
+    if(s&&s.value){
+      const p=JSON.parse(s.value);
+      if(p.theme) setTheme(p.theme,true);
+      if(p.sound===false){
+        Snd.on=false;
+        document.querySelectorAll("#segSound button").forEach(x=>x.classList.toggle("on",x.dataset.snd==="0"));
+      }
+    }
+  }catch(e){}
+  prefsLoaded=true;
+}
+async function saveState(){ try{ if(window.storage) await window.storage.set("linework:bests",JSON.stringify(bests)); }catch(e){} }
+let prefsLoaded=false;
+async function saveSettings(){
+  if(!prefsLoaded) return;
+  try{ if(window.storage) await window.storage.set("linework:prefs",JSON.stringify({theme:themeMode,sound:Snd.on})); }catch(e){}
+}
+
+/* ══════════════ loop ══════════════ */
+function fit(){
+  const r=stage.getBoundingClientRect();
+  const w=Math.max(280,r.width), h=Math.max(280,r.height);
+  const dpr=Math.min(window.devicePixelRatio||1,TOUCH?2:2.5);
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  cv.style.width=w+"px"; cv.style.height=h+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(W>0&&(Math.abs(w-W)>1||Math.abs(h-H)>1)){
+    const sx=w/W, sy=h/H;
+    for(const s of stations){ s.x*=sx; s.y*=sy; }
+    for(const B of barriers){ for(const p of B.pts){ p.x*=sx; p.y*=sy; } B.width*=Math.min(sx,sy); }
+    for(const p of city.parks){ p.x*=sx; p.y*=sy; p.rx*=sx; p.ry*=sy; }
+    for(const b of city.blocks){ b.x*=sx; b.y*=sy; b.w*=sx; b.h*=sy; }
+    for(const b of city.bridges){ b.x*=sx; b.y*=sy; b.len*=Math.min(sx,sy); }
+    for(const a of city.avenues){ a.x*=sx; a.y*=sy; a.len*=Math.max(sx,sy); }
+    city.downtown.x*=sx; city.downtown.y*=sy;
+    WW*=sx; WH*=sy; viewWW*=sx; viewWH*=sy; camCX*=sx; camCY*=sy;
+    W=w;H=h; applyView(); bgDirty=true; buildPaths();
+  } else { W=w;H=h; if(!WW){ WW=w; WH=h; viewWW=w; viewWH=h; camCX=w/2; camCY=h/2; } applyView(); bgDirty=true; }
+}
+let last=0;
+function frame(ts){
+  const dt=Math.max(0,Math.min(.05,(ts-last)/1000||0)); last=ts;
+  if(nightT!==nightTarget){
+    const step=dt/0.9;
+    nightT = nightT<nightTarget ? Math.min(nightTarget,nightT+step) : Math.max(nightTarget,nightT-step);
+  }
+  const springK=27, springC=6.3;              // a natural pull with a touch of overshoot
+  const ax=(WW-viewWW)*springK-viewVelW*springC; viewVelW+=ax*dt; viewWW+=viewVelW*dt;
+  const ay=(WH-viewWH)*springK-viewVelH*springC; viewVelH+=ay*dt; viewWH+=viewVelH*dt;
+  if(Math.abs(WW-viewWW)<.4&&Math.abs(viewVelW)<2){ viewWW=WW; viewVelW=0; }
+  if(Math.abs(WH-viewWH)<.4&&Math.abs(viewVelH)<2){ viewWH=WH; viewVelH=0; }
+  if(growPulseT>0) growPulseT=Math.max(0,growPulseT-dt);
+  applyView();
+  if(mode==="play"&&!paused){
+    const steps=speed>1?speed:1;
+    for(let i=0;i<steps&&mode==="play";i++) update(dt*speed/steps);
+  } else if(mode==="over"&&overT<3) overT+=dt;
+  else if(mode==="play"&&paused) cosmeticTick(dt);
+  draw(); syncClock();
+  requestAnimationFrame(frame);
+}
+window.addEventListener("resize",fit);
+window.addEventListener("orientationchange",()=>setTimeout(fit,120));
+document.addEventListener("visibilitychange",()=>{ if(document.hidden&&mode==="play") setPaused(true); });
+
+/* ══════════════ boot ══════════════ */
+fillRules();
+statsVeil=$("statsVeil");
+statsVeil.addEventListener("click",e=>{ if(e.target===statsVeil) closeStats(); });
+try{
+  const prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches;
+  setTheme("auto",true);                    // the city runs its own day/night cycle
+  if(prefersDark) applyNight(true,true);
+}catch(e){ setTheme("auto",true); }
+document.querySelectorAll("#segSound button").forEach(x=>x.classList.toggle("on",x.dataset.snd==="1"));
+blend();
+fit();
+newCity(); buildPaths(); rebuildGraph(); syncUI(); syncSpeed();
+{ const tag=$("cityTag"); if(tag) tag.textContent="LINEWORK Transit — "+city.name; }
+buildMapList();          // Play must be usable immediately, not after storage resolves
+loadState();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
