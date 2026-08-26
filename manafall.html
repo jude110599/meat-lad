@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c0a17">
+<title>MANAFALL</title>
+<style>
+:root{
+  --bg:#0c0a17; --panel:#16132a; --panel2:#100d20; --raise:#201c3c; --ink:#eee9ff; --dim:#8b83b0;
+  --hair:#2e2954; --gold:#f0c53c;
+  --fire:#ff5a4d; --water:#4fa8ff; --earth:#7bd94a; --air:#f0d23c; --arcane:#c16cff; --skull:#d8dbe6;
+  --hp:#e8324a; --font:"Trebuchet MS",Verdana,system-ui,sans-serif; --fontnum:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--ink);
+  font-family:var(--font);position:fixed;width:100%;-webkit-user-select:none;user-select:none}
+button{font-family:inherit;cursor:pointer;color:inherit}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;background:
+  radial-gradient(90% 60% at 50% 0%,#241a4a 0%,transparent 60%),
+  radial-gradient(70% 50% at 90% 100%,#2a1240 0%,transparent 55%),var(--bg)}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;overflow:hidden}
+.screen.show{display:flex}
+.scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+.center{align-items:center;justify-content:center}
+.hide{display:none!important}
+.disp{font-weight:900;letter-spacing:.06em;text-transform:uppercase}
+.btn{background:linear-gradient(160deg,var(--raise),var(--panel2));border:1px solid var(--hair);color:var(--ink);
+  border-radius:10px;padding:13px 20px;font-weight:800;font-size:13px;letter-spacing:.1em;text-transform:uppercase;
+  transition:transform .12s,border-color .15s,box-shadow .15s}
+.btn:hover{border-color:var(--arcane);box-shadow:0 6px 18px -8px rgba(193,108,255,.4)}
+.btn:active{transform:scale(.97)}
+.btn.big{padding:16px 30px;font-size:15px}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.35;cursor:default;box-shadow:none;transform:none}
+.pill{display:inline-flex;align-items:center;gap:5px;background:var(--raise);border:1px solid var(--hair);
+  border-radius:20px;padding:4px 11px;font-size:12px;font-weight:700}
+.eyebrow{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim);font-weight:800}
+h1.logo{font-size:clamp(38px,10vw,64px);letter-spacing:.05em;line-height:.9;text-align:center}
+h1.logo .a{color:var(--arcane);text-shadow:0 4px 0 #4a1a6b}
+h1.logo .b{color:var(--gold);text-shadow:0 4px 0 #6b5205}
+.tag{text-align:center;color:var(--dim);font-size:12px;letter-spacing:.08em;margin-top:6px}
+#s-title{padding:20px}
+#titleBg{position:absolute;inset:0;opacity:.55}
+.tstack{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:14px;
+  width:100%;max-width:420px;margin:0 auto}
+.statrow{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;justify-content:center}
+.statchip{background:rgba(255,255,255,.04);border:1px solid var(--hair);border-radius:10px;padding:8px 14px;text-align:center;min-width:84px}
+.statchip b{display:block;font-family:var(--fontnum);font-size:19px;color:var(--gold)}
+.statchip span{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.tbtns{display:flex;flex-direction:column;gap:9px;width:100%;margin-top:10px}
+.homelink{position:absolute;top:14px;left:14px;font-size:11px;color:var(--dim);letter-spacing:.1em;
+  text-transform:uppercase;text-decoration:none;border:1px solid var(--hair);border-radius:20px;padding:8px 14px;z-index:2}
+.homelink:hover{color:var(--ink);border-color:var(--arcane)}
+
+/* ── campaign select ── */
+#s-camp{padding:0}
+#campTop{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--hair);
+  background:var(--panel);flex-wrap:wrap}
+#campTop .spacer{flex:1}
+.mini{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim)}
+.mini b{color:var(--ink);font-family:var(--fontnum)}
+#chapterTabs{display:flex;gap:8px;padding:10px 14px;flex-wrap:wrap}
+.chapTab{background:var(--raise);border:1px solid var(--hair);border-radius:20px;padding:7px 16px;font-size:11px;
+  font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.chapTab.sel{border-color:var(--arcane);background:rgba(193,108,255,.15);color:#dcb8ff}
+.chapTab:disabled{opacity:.35}
+#oppGrid{display:flex;flex-wrap:wrap;gap:16px;padding:16px;justify-content:center;overflow-y:auto;flex:1}
+.oppCard{width:150px;background:linear-gradient(160deg,var(--panel),var(--panel2));border:1px solid var(--hair);
+  border-radius:14px;padding:14px 12px;text-align:center;position:relative}
+.oppCard.locked{opacity:.4}
+.oppCard.boss{border-color:var(--gold);box-shadow:0 0 16px -6px rgba(240,197,60,.5)}
+.oppCard.beaten:after{content:"✓";position:absolute;top:8px;right:10px;color:var(--earth);font-weight:900;font-size:16px}
+.oppCard .ic{font-size:38px;margin-bottom:6px}
+.oppCard b{display:block;font-size:12.5px;margin-bottom:4px}
+.oppCard .hp{font-size:10.5px;color:var(--dim);margin-bottom:8px}
+.oppCard button{width:100%;padding:8px;border-radius:8px;font-size:10.5px;font-weight:800;text-transform:uppercase;
+  background:var(--raise);border:1px solid var(--hair)}
+.oppCard button:disabled{opacity:.3}
+
+/* ── combat ── */
+#s-combat{background:radial-gradient(120% 80% at 50% 0%,#241a4a,transparent 60%),var(--bg)}
+#combatTop{flex:0 0 auto;display:flex;gap:12px;padding:10px 14px;align-items:stretch;flex-wrap:wrap}
+.fighter{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:9px 12px}
+.fighter.enemy{border-color:#5a2040}
+.fighter .frow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fighter .nm{font-size:12.5px;font-weight:800}
+.fighter .lvl{font-size:10px;color:var(--dim)}
+.hpbar2{height:10px;border-radius:6px;background:#0006;overflow:hidden;margin-top:5px;border:1px solid var(--hair)}
+.hpbar2 i{display:block;height:100%;background:linear-gradient(90deg,#a3101c,var(--hp))}
+.hptxt2{font-family:var(--fontnum);font-size:9.5px;color:var(--dim);margin-top:2px;text-align:right}
+.manarow{display:flex;gap:4px;margin-top:7px}
+.manapip{flex:1;text-align:center}
+.manapip .mb{height:36px;border-radius:5px;background:#0005;border:1px solid var(--hair);position:relative;overflow:hidden}
+.manapip .mb i{position:absolute;bottom:0;left:0;right:0;transition:height .25s}
+.manapip span{font-size:8px;font-family:var(--fontnum);color:var(--dim);display:block;margin-top:2px}
+.shieldTag{font-size:9.5px;color:#9fc6ff;font-weight:800}
+#turnBanner{text-align:center;padding:4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);flex:0 0 auto}
+#boardWrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:6px}
+#board{display:grid;gap:4px;touch-action:none}
+.gem{border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;
+  position:relative;transition:transform .14s ease;user-select:none}
+.gem.sel{transform:scale(.88);box-shadow:0 0 0 3px #fff8}
+.gem.matched{animation:pop .28s ease forwards}
+.gem.fall{animation:none}
+@keyframes pop{0%{transform:scale(1);opacity:1}100%{transform:scale(0);opacity:0}}
+.gem[data-c="fire"]{background:radial-gradient(circle at 35% 30%,#ff9a7a,var(--fire))}
+.gem[data-c="water"]{background:radial-gradient(circle at 35% 30%,#a7d8ff,var(--water))}
+.gem[data-c="earth"]{background:radial-gradient(circle at 35% 30%,#c8f0a0,var(--earth))}
+.gem[data-c="air"]{background:radial-gradient(circle at 35% 30%,#fff2a0,var(--air))}
+.gem[data-c="arcane"]{background:radial-gradient(circle at 35% 30%,#e6c6ff,var(--arcane))}
+.gem[data-c="skull"]{background:radial-gradient(circle at 35% 30%,#fff,var(--skull));color:#241a30}
+#spellRow{flex:0 0 auto;display:flex;gap:8px;overflow-x:auto;padding:8px 12px 12px;justify-content:center;flex-wrap:wrap}
+.spellBtn{background:var(--raise);border:1px solid var(--hair);border-radius:10px;padding:8px 12px;text-align:center;
+  min-width:76px;position:relative}
+.spellBtn .sic{font-size:18px}
+.spellBtn b{display:block;font-size:9.5px;margin-top:3px}
+.spellBtn .cost{font-size:9px;color:var(--dim);font-family:var(--fontnum)}
+.spellBtn:disabled{opacity:.35}
+#combatLog{position:fixed;left:10px;bottom:10px;max-width:260px;font-size:11px;color:var(--dim);
+  display:flex;flex-direction:column-reverse;gap:3px;pointer-events:none;z-index:3;max-height:120px;overflow:hidden}
+#combatLog div{background:rgba(16,13,32,.8);border-radius:6px;padding:3px 8px;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.floater{position:absolute;font-weight:900;font-family:var(--fontnum);font-size:22px;pointer-events:none;
+  animation:floatUp .8s ease-out forwards;z-index:20;text-shadow:0 2px 6px #000}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-46px) scale(1.25)}}
+
+/* ── shop ── */
+.veil{position:absolute;inset:0;background:rgba(6,4,14,.86);backdrop-filter:blur(3px);display:none;
+  align-items:center;justify-content:center;padding:20px;z-index:8;animation:fadeIn .2s ease both}
+.veil.show{display:flex}
+.vcard{background:linear-gradient(160deg,var(--panel),var(--panel2));border:1px solid var(--hair);border-radius:18px;
+  padding:24px 22px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 30px 60px -20px #000;
+  animation:rise .25s ease both;position:relative}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.vcard h2{font-size:22px;letter-spacing:.03em;margin-bottom:6px}
+.vcard .desc{color:var(--dim);font-size:13px;line-height:1.6;margin-bottom:16px}
+.closeX{position:absolute;top:14px;right:16px;width:30px;height:30px;border-radius:50%;background:var(--raise);
+  border:1px solid var(--hair);font-size:14px}
+.shopTabs{display:flex;gap:8px;margin-bottom:14px}
+.shopTab{background:var(--raise);border:1px solid var(--hair);border-radius:20px;padding:7px 16px;font-size:11px;
+  font-weight:800;text-transform:uppercase}
+.shopTab.sel{border-color:var(--gold);color:var(--gold)}
+.shopGrid{display:flex;flex-wrap:wrap;gap:12px}
+.shopItem2{width:150px;background:var(--raise);border:1px solid var(--hair);border-radius:12px;padding:12px;text-align:center}
+.shopItem2 .ic{font-size:28px;margin-bottom:6px}
+.shopItem2 b{display:block;font-size:11.5px;margin-bottom:4px}
+.shopItem2 .ds{font-size:10px;color:var(--dim);line-height:1.4;margin-bottom:8px;min-height:34px}
+.shopItem2 button{width:100%;padding:7px;border-radius:8px;font-size:10.5px;font-weight:800;text-transform:uppercase;
+  background:var(--panel2);border:1px solid var(--hair)}
+.shopItem2 button:disabled{opacity:.3}
+.shopItem2.equipped{border-color:var(--earth)}
+.statBig{display:flex;justify-content:center;gap:20px;margin:16px 0;flex-wrap:wrap}
+.statBig .sb{text-align:center}
+.statBig b{display:block;font-family:var(--fontnum);font-size:26px;color:var(--gold)}
+.statBig span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.howto{font-size:12.5px;line-height:1.75;color:var(--dim)}
+.howto b{color:var(--ink)}
+.howto .sec{color:var(--arcane);font-weight:800;text-transform:uppercase;font-size:11px;letter-spacing:.1em;
+  margin:14px 0 6px;display:block}
+.howto .sec:first-child{margin-top:0}
+#toast{position:absolute;left:50%;bottom:16px;transform:translate(-50%,10px);background:var(--panel2);
+  color:var(--ink);border:1px solid var(--arcane);font-size:12px;font-weight:700;padding:10px 16px;border-radius:20px;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:9;max-width:88%;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--hair);border-radius:4px}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══ TITLE ═══ -->
+  <div class="screen show center" id="s-title">
+    <a class="homelink" href="index.html">&larr; All games</a>
+    <canvas id="titleBg"></canvas>
+    <div class="tstack">
+      <div class="eyebrow">A duel of gems &amp; grudges</div>
+      <h1 class="logo"><span class="a">MANA</span><span class="b">FALL</span></h1>
+      <div class="tag">Match your magic. Outlast every duelist in the Arcanum.</div>
+      <div class="statrow" id="metaStats"></div>
+      <div class="tbtns">
+        <button class="btn big" id="bContinue">Continue</button>
+        <button class="btn big" id="bNewGame">New Duelist</button>
+        <button class="btn ghost" id="bHowTo">How to play</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ CAMPAIGN SELECT ═══ -->
+  <div class="screen" id="s-camp">
+    <div id="campTop">
+      <div class="pill">LV <b id="pLevel">1</b></div>
+      <div class="mini">HP <b id="pMaxHpTxt">60</b></div>
+      <div class="pill">&#9679; <b id="pGold">0</b></div>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="bOpenShop" style="padding:8px 14px;font-size:10px">Arcanum Shop</button>
+      <button class="btn ghost" id="bCampRules" style="padding:8px 14px;font-size:10px">Rules</button>
+    </div>
+    <div id="chapterTabs"></div>
+    <div id="oppGrid"></div>
+  </div>
+
+  <!-- ═══ COMBAT ═══ -->
+  <div class="screen" id="s-combat">
+    <div id="combatTop">
+      <div class="fighter" id="playerFighter">
+        <div class="frow"><span class="nm">You</span><span class="lvl" id="pLvlTag">Lv 1</span></div>
+        <div class="hpbar2"><i id="pHpFill"></i></div>
+        <div class="hptxt2" id="pHpTxt">60/60</div>
+        <div class="manarow" id="pManaRow"></div>
+      </div>
+      <div class="fighter enemy" id="enemyFighter">
+        <div class="frow"><span class="nm" id="eNm">Foe</span><span class="shieldTag" id="eShield"></span></div>
+        <div class="hpbar2"><i id="eHpFill"></i></div>
+        <div class="hptxt2" id="eHpTxt">60/60</div>
+        <div class="manarow" id="eManaRow"></div>
+      </div>
+    </div>
+    <div id="turnBanner">Your turn</div>
+    <div id="boardWrap"><div id="board"></div></div>
+    <div id="spellRow"></div>
+    <div id="combatLog"></div>
+  </div>
+
+  <!-- ═══ overlays ═══ -->
+  <div class="veil" id="v-shop">
+    <div class="vcard" style="max-width:720px">
+      <button class="closeX" id="bCloseShop">&times;</button>
+      <div class="eyebrow">The Arcanum</div>
+      <h2>Spells &amp; Gear</h2>
+      <div class="desc">Gold: <b id="shopGold" style="color:var(--gold)">0</b> &nbsp;·&nbsp; Level: <b id="shopLevel" style="color:var(--gold)">1</b></div>
+      <div class="shopTabs">
+        <button class="shopTab sel" data-tab="spells">Spells</button>
+        <button class="shopTab" data-tab="gear">Equipment</button>
+      </div>
+      <div class="shopGrid" id="shopBody"></div>
+    </div>
+  </div>
+
+  <div class="veil" id="v-result">
+    <div class="vcard" style="text-align:center;max-width:420px">
+      <div class="eyebrow" id="resEyebrow">Duel over</div>
+      <h2 id="resTitle">Victory</h2>
+      <div class="desc" id="resSub"></div>
+      <div class="statBig" id="resStats"></div>
+      <button class="btn big" id="bResultContinue">Continue</button>
+    </div>
+  </div>
+
+  <div class="veil" id="v-rules">
+    <div class="vcard" style="max-width:540px;position:relative">
+      <button class="closeX" id="bCloseRules">&times;</button>
+      <div class="eyebrow">Reference</div>
+      <h2>How to play</h2>
+      <div class="howto" id="rulesBody"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id);};
+var TAU=Math.PI*2;
+function clamp(v,a,b){return v<a?a:(v>b?b:v);}
+function rnd(a,b){return a+Math.random()*(b-a);}
+function ri(a,b){return Math.floor(rnd(a,b+1));}
+function pick(arr){return arr[(Math.random()*arr.length)|0];}
+
+/* ══════════════════════ GEM / BOARD ENGINE ══════════════════════ */
+var COLORS=["fire","water","earth","air","arcane","skull"];
+var MANA_COLORS=["fire","water","earth","air","arcane"];
+var GEM_ICON={fire:"🔥",water:"💧",earth:"🌿",air:"⚡",arcane:"🔮",skull:"💀"};
+var GEM_HEX={fire:"#ff5a4d",water:"#4fa8ff",earth:"#7bd94a",air:"#f0d23c",arcane:"#c16cff",skull:"#d8dbe6"};
+var SIZE=8;
+
+function makeBoard(){
+  var b=[];
+  for(var r=0;r<SIZE;r++){
+    b.push([]);
+    for(var c=0;c<SIZE;c++){
+      var col;
+      do{ col=pick(COLORS); b[r][c]=col; } while(
+        (c>=2 && b[r][c-1]===col && b[r][c-2]===col) ||
+        (r>=2 && b[r-1][c]===col && b[r-2][c]===col)
+      );
+    }
+  }
+  return b;
+}
+function cloneBoard(b){ return b.map(function(row){return row.slice();}); }
+function findMatches(b){
+  var marks=[]; for(var r=0;r<SIZE;r++){ marks.push(new Array(SIZE).fill(false)); }
+  for(var r2=0;r2<SIZE;r2++){
+    var run=1;
+    for(var c=1;c<=SIZE;c++){
+      if(c<SIZE && b[r2][c]!=null && b[r2][c]===b[r2][c-1]) run++;
+      else{
+        if(run>=3) for(var k=0;k<run;k++) marks[r2][c-1-k]=true;
+        run=1;
+      }
+    }
+  }
+  for(var c2=0;c2<SIZE;c2++){
+    var run2=1;
+    for(var r=1;r<=SIZE;r++){
+      if(r<SIZE && b[r][c2]!=null && b[r][c2]===b[r-1][c2]) run2++;
+      else{
+        if(run2>=3) for(var k2=0;k2<run2;k2++) marks[r-1-k2][c2]=true;
+        run2=1;
+      }
+    }
+  }
+  return marks;
+}
+function countMarks(marks){ var n=0; for(var r=0;r<SIZE;r++)for(var c=0;c<SIZE;c++)if(marks[r][c])n++; return n; }
+/* resolves ALL cascades from a board that already has a valid match pending; returns
+   rewards keyed by color (mana gained / skull damage) and total group count info */
+function resolveCascades(b){
+  var rewards={fire:0,water:0,earth:0,air:0,arcane:0,skull:0};
+  var totalGroups=0, anyBig=false;
+  while(true){
+    var marks=findMatches(b);
+    var n=countMarks(marks);
+    if(n===0) break;
+    totalGroups++;
+    // tally by color, with a small bonus for matches of 4/5+ (group-size aware via flood fill)
+    var visited=[]; for(var r=0;r<SIZE;r++)visited.push(new Array(SIZE).fill(false));
+    for(var r2=0;r2<SIZE;r2++){
+      for(var c2=0;c2<SIZE;c2++){
+        if(marks[r2][c2] && !visited[r2][c2]){
+          var color=b[r2][c2];
+          var stack=[[r2,c2]], group=[];
+          visited[r2][c2]=true;
+          while(stack.length){
+            var p=stack.pop(); group.push(p);
+            var nbrs=[[p[0]+1,p[1]],[p[0]-1,p[1]],[p[0],p[1]+1],[p[0],p[1]-1]];
+            nbrs.forEach(function(nb){
+              if(nb[0]>=0&&nb[0]<SIZE&&nb[1]>=0&&nb[1]<SIZE&&marks[nb[0]][nb[1]]&&!visited[nb[0]][nb[1]]&&b[nb[0]][nb[1]]===color){
+                visited[nb[0]][nb[1]]=true; stack.push(nb);
+              }
+            });
+          }
+          var bonus=group.length>=5?2:(group.length===4?1:0);
+          if(bonus) anyBig=true;
+          rewards[color]=(rewards[color]||0)+group.length+bonus;
+        }
+      }
+    }
+    // remove marked, drop, refill
+    for(var c3=0;c3<SIZE;c3++){
+      var col=[];
+      for(var r3=0;r3<SIZE;r3++) if(!marks[r3][c3]) col.push(b[r3][c3]);
+      while(col.length<SIZE) col.unshift(pick(COLORS));
+      for(var r4=0;r4<SIZE;r4++) b[r4][c3]=col[r4];
+    }
+  }
+  return {rewards:rewards,groups:totalGroups,big:anyBig};
+}
+function isAdjacent(a,b){ return (Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1]))===1; }
+function trySwap(b,a1,a2){
+  var tmp=b[a1[0]][a1[1]]; b[a1[0]][a1[1]]=b[a2[0]][a2[1]]; b[a2[0]][a2[1]]=tmp;
+  var marks=findMatches(b);
+  return countMarks(marks)>0;
+}
+
+/* ══════════════════════ SPELLS ══════════════════════ */
+var SPELL_DEFS={};
+function defSpell(d){ SPELL_DEFS[d.id]=d; return d; }
+defSpell({id:"spark",name:"Spark",color:"air",cost:4,tier:0,ic:"⚡",
+  desc:"Deal 4 damage.", cast:function(ctx){ ctx.damageEnemy(4); }});
+defSpell({id:"mend",name:"Mend",color:"water",cost:4,tier:0,ic:"💧",
+  desc:"Heal 7 HP.", cast:function(ctx){ ctx.heal(ctx.self,7); }});
+defSpell({id:"scorch",name:"Scorch",color:"fire",cost:4,tier:0,ic:"🔥",
+  desc:"Deal 5 damage.", cast:function(ctx){ ctx.damageEnemy(5); }});
+defSpell({id:"barrier",name:"Barrier",color:"earth",cost:4,tier:0,ic:"🌿",
+  desc:"Gain 6 shield.", cast:function(ctx){ ctx.self.shield+=6; }});
+defSpell({id:"focus",name:"Focus",color:"arcane",cost:4,tier:0,ic:"🔮",
+  desc:"Gain 3 mana of your best color.", cast:function(ctx){
+    var best=MANA_COLORS.reduce(function(a,b2){return ctx.self.mana[b2]>ctx.self.mana[a]?b2:a;},"fire");
+    ctx.self.mana[best]=clamp(ctx.self.mana[best]+3,0,ctx.self.manaCap);
+  }});
+defSpell({id:"fireball",name:"Fireball",color:"fire",cost:9,tier:1,ic:"🔥",
+  desc:"Deal 12 damage.", cast:function(ctx){ ctx.damageEnemy(12); }});
+defSpell({id:"combust",name:"Combust",color:"fire",cost:13,tier:2,ic:"🔥",
+  desc:"Deal 20 damage. Take 4 damage yourself.", cast:function(ctx){ ctx.damageEnemy(20); ctx.self.hp=Math.max(0,ctx.self.hp-4); }});
+defSpell({id:"tidalshift",name:"Tidal Shift",color:"water",cost:9,tier:1,ic:"💧",
+  desc:"Transform 4 random gems into Water.", cast:function(ctx){ ctx.transmute(4,"water"); }});
+defSpell({id:"greatheal",name:"Great Heal",color:"water",cost:14,tier:2,ic:"💧",
+  desc:"Heal 22 HP.", cast:function(ctx){ ctx.heal(ctx.self,22); }});
+defSpell({id:"stoneskin",name:"Stoneskin",color:"earth",cost:9,tier:1,ic:"🌿",
+  desc:"Gain 14 shield.", cast:function(ctx){ ctx.self.shield+=14; }});
+defSpell({id:"entangle",name:"Entangle",color:"earth",cost:15,tier:2,ic:"🌿",
+  desc:"The enemy loses their next turn.", cast:function(ctx){ ctx.enemy.stunned=true; }});
+defSpell({id:"chainlightning",name:"Chain Lightning",color:"air",cost:10,tier:1,ic:"⚡",
+  desc:"Deal 8 damage. Take another turn.", cast:function(ctx){ ctx.damageEnemy(8); ctx.extraTurn=true; }});
+defSpell({id:"gust",name:"Gust",color:"air",cost:8,tier:1,ic:"⚡",
+  desc:"Destroy 5 random gems (grants their mana/damage).", cast:function(ctx){ ctx.shatter(5); }});
+defSpell({id:"manadrain",name:"Mana Drain",color:"arcane",cost:9,tier:1,ic:"🔮",
+  desc:"Steal 6 mana of a random color from the enemy.", cast:function(ctx){
+    var pool=MANA_COLORS.filter(function(c){return ctx.enemy.mana[c]>0;});
+    if(!pool.length) return;
+    var c=pick(pool); var amt=Math.min(6,ctx.enemy.mana[c]);
+    ctx.enemy.mana[c]-=amt; ctx.self.mana[c]=clamp(ctx.self.mana[c]+amt,0,ctx.self.manaCap);
+  }});
+defSpell({id:"disjunction",name:"Disjunction",color:"arcane",cost:16,tier:2,ic:"🔮",
+  desc:"Destroy every gem of one color on the board.", cast:function(ctx){
+    var c=pick(MANA_COLORS); ctx.shatterColor(c);
+  }});
+var ALL_SPELL_IDS=Object.keys(SPELL_DEFS);
+var STARTER_SPELLS=["spark","mend","scorch","barrier","focus"];
+var LEARNABLE_SPELLS=ALL_SPELL_IDS.filter(function(id){return STARTER_SPELLS.indexOf(id)<0;});
+
+/* ══════════════════════ EQUIPMENT ══════════════════════ */
+var GEAR_DEFS={};
+function defGear(d){ GEAR_DEFS[d.id]=d; return d; }
+defGear({id:"apprenticewand",slot:"weapon",name:"Apprentice Wand",ic:"🪄",price:0,skullBonus:0,desc:"A plain training wand."});
+defGear({id:"emberrod",slot:"weapon",name:"Ember Rod",ic:"🪄",price:70,skullBonus:1,desc:"+1 damage per Skull gem matched."});
+defGear({id:"stormstaff",slot:"weapon",name:"Storm Staff",ic:"🪄",price:150,skullBonus:2,desc:"+2 damage per Skull gem matched."});
+defGear({id:"voidscepter",slot:"weapon",name:"Void Scepter",ic:"🪄",price:260,skullBonus:3,desc:"+3 damage per Skull gem matched."});
+defGear({id:"clothrobe",slot:"armor",name:"Cloth Robe",ic:"🥋",price:0,dr:0,desc:"Offers no real protection."});
+defGear({id:"wardedcloak",slot:"armor",name:"Warded Cloak",ic:"🥋",price:70,dr:2,desc:"-2 damage from every hit."});
+defGear({id:"plateofembers",slot:"armor",name:"Plate of Embers",ic:"🥋",price:150,dr:4,desc:"-4 damage from every hit."});
+defGear({id:"aegisofthedeep",slot:"armor",name:"Aegis of the Deep",ic:"🥋",price:260,dr:6,desc:"-6 damage from every hit."});
+defGear({id:"copperring",slot:"trinket",name:"Copper Ring",ic:"💍",price:0,hp:0,desc:"Just a ring."});
+defGear({id:"ringofvigor",slot:"trinket",name:"Ring of Vigor",ic:"💍",price:80,hp:20,desc:"+20 max HP."});
+defGear({id:"amuletoftides",slot:"trinket",name:"Amulet of Tides",ic:"💍",price:120,manaCap:4,desc:"+4 to every mana cap."});
+defGear({id:"crownofembers",slot:"trinket",name:"Crown of Embers",ic:"💍",price:220,hp:30,manaCap:3,desc:"+30 max HP, +3 to every mana cap."});
+var STARTER_GEAR={weapon:"apprenticewand",armor:"clothrobe",trinket:"copperring"};
+var SHOP_GEAR_IDS=Object.keys(GEAR_DEFS).filter(function(id){return GEAR_DEFS[id].price>0;});
+
+/* ══════════════════════ ENEMY / CAMPAIGN DATA ══════════════════════ */
+var ENEMY_DEFS=[
+  {id:"pyroapprentice",name:"Apprentice Pyromancer",ic:"🧙",chapter:1,hp:46,gold:18,fav:"fire",spells:["scorch","fireball"],boss:false},
+  {id:"hedgedruid",name:"Hedge Druid",ic:"🧝",chapter:1,hp:52,gold:18,fav:"earth",spells:["barrier","stoneskin"],boss:false},
+  {id:"riversprite",name:"River Sprite",ic:"🧚",chapter:1,hp:48,gold:18,fav:"water",spells:["mend","tidalshift"],boss:false},
+  {id:"windacolyte",name:"Wind Acolyte",ic:"🧙",chapter:1,hp:50,gold:18,fav:"air",spells:["spark","chainlightning"],boss:false},
+  {id:"twintonguedsage",name:"The Twin-Tongued Sage",ic:"🧙‍♂️",chapter:1,hp:100,gold:60,fav:"arcane",spells:["focus","manadrain","disjunction"],boss:true},
+
+  {id:"emberknight",name:"Ember Knight",ic:"🛡️",chapter:2,hp:96,gold:32,fav:"fire",spells:["fireball","combust"],boss:false},
+  {id:"stonewarden",name:"Stone Warden",ic:"🗿",chapter:2,hp:110,gold:32,fav:"earth",spells:["stoneskin","entangle"],boss:false},
+  {id:"tidecaller",name:"Tide Caller",ic:"🧜",chapter:2,hp:100,gold:32,fav:"water",spells:["tidalshift","greatheal"],boss:false},
+  {id:"stormherald",name:"Storm Herald",ic:"🧙",chapter:2,hp:104,gold:32,fav:"air",spells:["chainlightning","gust"],boss:false},
+  {id:"boundoracle",name:"The Bound Oracle",ic:"👁️",chapter:2,hp:190,gold:100,fav:"arcane",spells:["manadrain","disjunction","entangle"],boss:true},
+
+  {id:"cinderlord",name:"Cinderlord",ic:"👹",chapter:3,hp:160,gold:50,fav:"fire",spells:["combust","fireball"],boss:false},
+  {id:"deeproottitan",name:"Deeproot Titan",ic:"🌳",chapter:3,hp:190,gold:50,fav:"earth",spells:["entangle","stoneskin"],boss:false},
+  {id:"maelstromwidow",name:"Maelstrom Widow",ic:"🕷️",chapter:3,hp:170,gold:50,fav:"water",spells:["greatheal","gust"],boss:false},
+  {id:"skyreaver",name:"Skyreaver",ic:"🦅",chapter:3,hp:180,gold:50,fav:"air",spells:["chainlightning","gust"],boss:false},
+  {id:"archmageunbound",name:"The Archmage Unbound",ic:"👑",chapter:3,hp:320,gold:220,fav:"arcane",
+   spells:["combust","greatheal","entangle","gust","manadrain","disjunction"],boss:true}
+];
+var CHAPTER_COUNT=3;
+
+/* ══════════════════════ SAVE / PLAYER STATE ══════════════════════ */
+var SAVE_KEY="manafall:save";
+var META_KEY="manafall:meta";
+var meta={bestChapter:0,wins:0,runs:0};
+function loadMeta(){ try{ var s=localStorage.getItem(META_KEY); if(s) meta=Object.assign(meta,JSON.parse(s)); }catch(e){} }
+function saveMeta(){ try{ localStorage.setItem(META_KEY,JSON.stringify(meta)); }catch(e){} }
+
+var P=null;
+function newPlayer(){
+  P={
+    level:1, wins:0, gold:40,
+    spells:STARTER_SPELLS.slice(),
+    gear:Object.assign({},STARTER_GEAR),
+    beaten:{}
+  };
+  savePlayer();
+}
+function savePlayer(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(P)); }catch(e){} }
+function loadPlayer(){
+  try{ var s=localStorage.getItem(SAVE_KEY); if(s){ P=JSON.parse(s); return true; } }catch(e){}
+  return false;
+}
+function playerMaxHp(){
+  var base=60+ (P.level-1)*8;
+  var trinket=GEAR_DEFS[P.gear.trinket];
+  return base+(trinket&&trinket.hp?trinket.hp:0);
+}
+function playerManaCap(){
+  var base=12+Math.floor(P.level/3)*2;
+  var trinket=GEAR_DEFS[P.gear.trinket];
+  return Math.min(24,base+(trinket&&trinket.manaCap?trinket.manaCap:0));
+}
+function playerSkullBonus(){ var w=GEAR_DEFS[P.gear.weapon]; return w&&w.skullBonus?w.skullBonus:0; }
+function playerDR(){ var a=GEAR_DEFS[P.gear.armor]; return a&&a.dr?a.dr:0; }
+
+/* ══════════════════════ COMBAT ══════════════════════ */
+var CM=null; // combat state
+function startCombat(enemyDef){
+  var manaCap=playerManaCap();
+  CM={
+    board:makeBoard(),
+    self:{hp:playerMaxHp(),maxHp:playerMaxHp(),manaCap:manaCap,mana:{fire:0,water:0,earth:0,air:0,arcane:0},shield:0,stunned:false},
+    foe:{hp:enemyDef.hp,maxHp:enemyDef.hp,manaCap:14,mana:{fire:0,water:0,earth:0,air:0,arcane:0},shield:0,stunned:false},
+    enemyDef:enemyDef,
+    turn:"player", sel:null, busy:false, log:[]
+  };
+  renderBoard(true);
+  renderCombatHud();
+  renderSpells();
+  logMsg("The duel with "+enemyDef.name+" begins.");
+  showScreen("s-combat");
+}
+function logMsg(msg){
+  CM.log.push(msg); if(CM.log.length>4) CM.log.shift();
+  var box=$("combatLog"); box.innerHTML="";
+  CM.log.slice().reverse().forEach(function(m){ var d=document.createElement("div"); d.textContent=m; box.appendChild(d); });
+}
+function ctxFor(side){
+  var self=side==="player"?CM.self:CM.foe;
+  var enemy=side==="player"?CM.foe:CM.self;
+  return {
+    self:self, enemy:enemy, extraTurn:false,
+    damageEnemy:function(amt){ applyDamage(enemy,amt,side); },
+    heal:function(who,amt){ who.hp=Math.min(who.maxHp,who.hp+amt); },
+    transmute:function(n,color){
+      for(var i=0;i<n;i++){ var r=ri(0,SIZE-1),c=ri(0,SIZE-1); CM.board[r][c]=color; }
+      settleBoardNoMatchCheck();
+    },
+    shatter:function(n){
+      var cells=[]; for(var i=0;i<n;i++) cells.push([ri(0,SIZE-1),ri(0,SIZE-1)]);
+      shatterCells(cells,side);
+    },
+    shatterColor:function(color){
+      var cells=[];
+      for(var r=0;r<SIZE;r++)for(var c=0;c<SIZE;c++) if(CM.board[r][c]===color) cells.push([r,c]);
+      shatterCells(cells,side);
+    }
+  };
+}
+function shatterCells(cells,side){
+  var marks=[]; for(var r=0;r<SIZE;r++) marks.push(new Array(SIZE).fill(false));
+  cells.forEach(function(p){ marks[p[0]][p[1]]=true; });
+  var rewards={fire:0,water:0,earth:0,air:0,arcane:0,skull:0};
+  cells.forEach(function(p){ var col=CM.board[p[0]][p[1]]; rewards[col]=(rewards[col]||0)+1; });
+  for(var c=0;c<SIZE;c++){
+    var col=[];
+    for(var r=0;r<SIZE;r++) if(!marks[r][c]) col.push(CM.board[r][c]);
+    while(col.length<SIZE) col.unshift(pick(COLORS));
+    for(var r2=0;r2<SIZE;r2++) CM.board[r2][c]=col[r2];
+  }
+  applyRewards(rewards,side);
+  var casc=resolveCascades(CM.board);
+  applyRewards(casc.rewards,side);
+}
+function settleBoardNoMatchCheck(){ /* placed gems might create matches, that's fine — treat as a bonus cascade */
+  var casc=resolveCascades(CM.board);
+  applyRewards(casc.rewards, CM.turn);
+}
+function applyRewards(rewards,side){
+  var self=side==="player"?CM.self:CM.foe;
+  var enemy=side==="player"?CM.foe:CM.self;
+  MANA_COLORS.forEach(function(c){
+    if(rewards[c]) self.mana[c]=clamp(self.mana[c]+rewards[c],0,self.manaCap);
+  });
+  if(rewards.skull){
+    var bonus=side==="player"?playerSkullBonus():0;
+    applyDamage(enemy,rewards.skull+bonus,side);
+  }
+}
+function applyDamage(target,amount,fromSide){
+  var absorb=Math.min(target.shield,amount);
+  target.shield-=absorb;
+  var rest=amount-absorb;
+  if(target===CM.self){ rest=Math.max(0,rest-playerDR()); }
+  target.hp=Math.max(0,target.hp-rest);
+  if(target.hp<=0) target.hp=0;
+}
+function renderCombatHud(){
+  $("pHpFill").style.width=clamp(CM.self.hp/CM.self.maxHp*100,0,100)+"%";
+  $("pHpTxt").textContent=CM.self.hp+"/"+CM.self.maxHp;
+  $("pLvlTag").textContent="Lv "+P.level;
+  $("eNm").textContent=CM.enemyDef.name;
+  $("eHpFill").style.width=clamp(CM.foe.hp/CM.foe.maxHp*100,0,100)+"%";
+  $("eHpTxt").textContent=CM.foe.hp+"/"+CM.foe.maxHp;
+  $("eShield").textContent=CM.foe.shield>0?("🛡️"+CM.foe.shield):"";
+  $("pManaRow").innerHTML=manaRowHtml(CM.self.mana,CM.self.manaCap)+(CM.self.shield>0?'<div class="manapip"><div class="mb"><i style="height:100%;background:#9fc6ff44"></i></div><span>🛡️'+CM.self.shield+'</span></div>':'');
+  $("eManaRow").innerHTML=manaRowHtml(CM.foe.mana,CM.foe.manaCap);
+  $("turnBanner").textContent=CM.turn==="player"?"Your turn":(CM.enemyDef.name+"'s turn");
+}
+function manaRowHtml(mana,cap){
+  return MANA_COLORS.map(function(c){
+    var pc=clamp(mana[c]/cap*100,0,100);
+    return '<div class="manapip"><div class="mb"><i style="height:'+pc+'%;background:'+GEM_HEX[c]+'"></i></div><span>'+mana[c]+'</span></div>';
+  }).join("");
+}
+function renderSpells(){
+  var row=$("spellRow"); row.innerHTML="";
+  P.spells.forEach(function(sid){
+    var d=SPELL_DEFS[sid];
+    var afford=CM.self.mana[d.color]>=d.cost;
+    var b=document.createElement("button");
+    b.className="spellBtn";
+    b.disabled=!afford||CM.turn!=="player"||CM.busy;
+    b.innerHTML='<div class="sic">'+d.ic+'</div><b>'+d.name+'</b><div class="cost">'+d.cost+' '+d.color+'</div>';
+    b.title=d.desc;
+    b.onclick=function(){ playerCastSpell(sid); };
+    row.appendChild(b);
+  });
+}
+function renderBoard(instant){
+  var wrap=$("board");
+  var cell=Math.min(46, Math.floor((Math.min(window.innerWidth-24,520))/SIZE));
+  wrap.style.gridTemplateColumns="repeat("+SIZE+","+cell+"px)";
+  wrap.style.gridTemplateRows="repeat("+SIZE+","+cell+"px)";
+  wrap.innerHTML="";
+  for(var r=0;r<SIZE;r++){
+    for(var c=0;c<SIZE;c++){
+      var col=CM.board[r][c];
+      var g=document.createElement("div");
+      g.className="gem"; g.dataset.c=col; g.dataset.r=r; g.dataset.c2=c;
+      g.style.width=cell+"px"; g.style.height=cell+"px"; g.style.fontSize=Math.round(cell*0.5)+"px";
+      g.textContent=GEM_ICON[col];
+      g.onclick=(function(rr,cc){ return function(){ onGemClick(rr,cc); }; })(r,c);
+      wrap.appendChild(g);
+    }
+  }
+}
+function onGemClick(r,c){
+  if(CM.turn!=="player"||CM.busy) return;
+  if(!CM.sel){ CM.sel=[r,c]; markSel(); return; }
+  if(CM.sel[0]===r&&CM.sel[1]===c){ CM.sel=null; markSel(); return; }
+  if(!isAdjacent(CM.sel,[r,c])){ CM.sel=[r,c]; markSel(); return; }
+  var a=CM.sel, b=[r,c];
+  CM.sel=null;
+  var testBoard=cloneBoard(CM.board);
+  if(!trySwap(testBoard,a,b)){
+    markSel();
+    flashInvalid(a,b);
+    return;
+  }
+  CM.board=testBoard;
+  CM.busy=true;
+  renderBoard();
+  var casc=resolveCascades(CM.board);
+  applyRewards(casc.rewards,"player");
+  renderBoard();
+  renderCombatHud();
+  logCascade(casc,"You");
+  finishTurn("player",casc);
+}
+function markSel(){
+  document.querySelectorAll(".gem").forEach(function(g){ g.classList.remove("sel"); });
+  if(CM.sel){
+    var el=document.querySelector('.gem[data-r="'+CM.sel[0]+'"][data-c2="'+CM.sel[1]+'"]');
+    if(el) el.classList.add("sel");
+  }
+}
+function flashInvalid(a,b){
+  [a,b].forEach(function(p){
+    var el=document.querySelector('.gem[data-r="'+p[0]+'"][data-c2="'+p[1]+'"]');
+    if(el){ el.style.transform="scale(1.15)"; setTimeout(function(){ el.style.transform=""; },140); }
+  });
+}
+function logCascade(casc,who){
+  if(!casc.groups){ return; }
+  var parts=[];
+  MANA_COLORS.forEach(function(c){ if(casc.rewards[c]) parts.push("+"+casc.rewards[c]+" "+c); });
+  if(casc.rewards.skull) parts.push(casc.rewards.skull+" dmg");
+  if(parts.length) logMsg(who+" matched "+parts.join(", ")+(casc.big?" (combo!)":""));
+}
+function playerCastSpell(sid){
+  if(CM.turn!=="player"||CM.busy) return;
+  var d=SPELL_DEFS[sid];
+  if(CM.self.mana[d.color]<d.cost) return;
+  CM.busy=true;
+  CM.self.mana[d.color]-=d.cost;
+  var ctx=ctxFor("player");
+  d.cast(ctx);
+  logMsg("You cast "+d.name+"!");
+  renderBoard(); renderCombatHud();
+  finishTurn("player",{extraTurn:ctx.extraTurn});
+}
+function finishTurn(side,info){
+  renderCombatHud();
+  if(checkCombatEnd()) return;
+  if(info&&info.extraTurn){
+    CM.busy=false; renderSpells(); markSel();
+    logMsg((side==="player"?"You":CM.enemyDef.name)+" gained an extra turn!");
+    if(side==="enemy") setTimeout(enemyTurn,600);
+    return;
+  }
+  CM.turn=side==="player"?"enemy":"player";
+  if(CM.turn==="enemy" && CM.foe.stunned){
+    CM.foe.stunned=false; logMsg(CM.enemyDef.name+" is stunned and skips their turn.");
+    CM.turn="player";
+  }
+  if(CM.turn==="player" && CM.self.stunned){
+    CM.self.stunned=false; logMsg("You are stunned and skip your turn.");
+    CM.turn="enemy";
+  }
+  CM.busy=false;
+  renderCombatHud(); renderSpells();
+  if(CM.turn==="enemy") setTimeout(enemyTurn,650);
+}
+function checkCombatEnd(){
+  if(CM.self.hp<=0){ setTimeout(function(){ onCombatEnd(false); },400); return true; }
+  if(CM.foe.hp<=0){ setTimeout(function(){ onCombatEnd(true); },400); return true; }
+  return false;
+}
+function enemyTurn(){
+  if(CM.self.hp<=0||CM.foe.hp<=0) return;
+  CM.busy=true;
+  var def=CM.enemyDef;
+  var castableSpells=def.spells.filter(function(sid){ return CM.foe.mana[SPELL_DEFS[sid].color]>=SPELL_DEFS[sid].cost; });
+  if(castableSpells.length && Math.random()<0.7){
+    var sid=pick(castableSpells);
+    var d=SPELL_DEFS[sid];
+    CM.foe.mana[d.color]-=d.cost;
+    var ctx=ctxFor("enemy");
+    d.cast(ctx);
+    logMsg(def.name+" casts "+d.name+"!");
+    renderBoard(); renderCombatHud();
+    finishTurn("enemy",{extraTurn:ctx.extraTurn});
+    return;
+  }
+  var best=findBestMoveFor(def.fav);
+  if(!best){ finishTurn("enemy",{}); return; }
+  CM.board=best.board;
+  renderBoard();
+  var casc=resolveCascades(CM.board);
+  applyRewards(casc.rewards,"enemy");
+  renderBoard();
+  renderCombatHud();
+  logCascade(casc,def.name);
+  finishTurn("enemy",casc);
+}
+function findBestMoveFor(favColor){
+  var candidates=[];
+  for(var r=0;r<SIZE;r++){
+    for(var c=0;c<SIZE;c++){
+      if(c+1<SIZE) candidates.push([[r,c],[r,c+1]]);
+      if(r+1<SIZE) candidates.push([[r,c],[r+1,c]]);
+    }
+  }
+  var bestScore=-1, bestBoard=null;
+  candidates.forEach(function(pair){
+    /* keep the freshly-swapped (NOT yet cascaded) board as the candidate to commit — scoring runs
+       resolveCascades on a SEPARATE clone, since resolveCascades mutates the board it's given in
+       place. Scoring used to run directly on the board we intended to commit, so by the time a
+       candidate won, its board had already had every match resolved (and its rewards discarded,
+       only used for the score number) — enemyTurn() would then commit that already-empty board
+       and re-run resolveCascades on it, find nothing left to match, and silently gain no mana and
+       deal no damage every single turn. */
+    var swapped=cloneBoard(CM.board);
+    if(!trySwap(swapped,pair[0],pair[1])) return;
+    var scoringClone=cloneBoard(swapped);
+    var casc=resolveCascades(scoringClone);
+    var score=0;
+    MANA_COLORS.forEach(function(c){ score+=(casc.rewards[c]||0)*(c===favColor?2.2:1); });
+    score+=(casc.rewards.skull||0)*2.5;
+    score+=Math.random()*1.5; // slight imperfection so it isn't a flawless solver
+    if(score>bestScore){ bestScore=score; bestBoard=swapped; }
+  });
+  return bestBoard?{board:bestBoard}:null;
+}
+
+/* ══════════════════════ RESULT / PROGRESSION ══════════════════════ */
+function onCombatEnd(won){
+  var def=CM.enemyDef;
+  if(won){
+    P.wins++;
+    var goldGain=def.gold;
+    P.gold+=goldGain;
+    var leveled=false;
+    P.level++; leveled=true;
+    P.beaten[def.id]=true;
+    if(def.chapter>meta.bestChapter || (def.chapter===meta.bestChapter)){ meta.bestChapter=Math.max(meta.bestChapter,def.boss?def.chapter+0.5:def.chapter); }
+    meta.wins++; saveMeta();
+    savePlayer();
+    $("resEyebrow").textContent="Victory";
+    $("resTitle").textContent="You defeated "+def.name;
+    $("resSub").textContent="Found "+goldGain+" gold."+(leveled?" You are now level "+P.level+".":"");
+    $("resStats").innerHTML=
+      '<div class="sb"><b>'+P.gold+'</b><span>Gold</span></div>'+
+      '<div class="sb"><b>'+P.level+'</b><span>Level</span></div>'+
+      '<div class="sb"><b>'+P.wins+'</b><span>Wins</span></div>';
+    if(def.boss) toast("Chapter "+def.chapter+" cleared!");
+  } else {
+    meta.runs++; saveMeta();
+    $("resEyebrow").textContent="Defeat";
+    $("resTitle").textContent=def.name+" bested you";
+    $("resSub").textContent="No progress is lost — try again when ready, or spend gold on better gear first.";
+    $("resStats").innerHTML=
+      '<div class="sb"><b>'+P.gold+'</b><span>Gold</span></div>'+
+      '<div class="sb"><b>'+P.level+'</b><span>Level</span></div>'+
+      '<div class="sb"><b>'+P.wins+'</b><span>Wins</span></div>';
+  }
+  showVeil("v-result");
+}
+$("bResultContinue").onclick=function(){ hideVeil("v-result"); renderCampaign(); showScreen("s-camp"); };
+
+/* ══════════════════════ CAMPAIGN SELECT ══════════════════════ */
+var curChapter=1;
+function highestUnlockedChapter(){
+  for(var ch=1;ch<CHAPTER_COUNT;ch++){
+    var bossOfCh=ENEMY_DEFS.filter(function(e){return e.chapter===ch&&e.boss;})[0];
+    if(!P.beaten[bossOfCh.id]) return ch;
+  }
+  return CHAPTER_COUNT;
+}
+function renderCampaign(){
+  $("pLevel").textContent=P.level;
+  $("pMaxHpTxt").textContent=playerMaxHp();
+  $("pGold").textContent=P.gold;
+  var unlocked=highestUnlockedChapter();
+  if(curChapter>unlocked) curChapter=unlocked;
+  var tabs=$("chapterTabs"); tabs.innerHTML="";
+  for(var ch=1;ch<=CHAPTER_COUNT;ch++){
+    var b=document.createElement("button");
+    b.className="chapTab"+(ch===curChapter?" sel":"");
+    b.textContent="Chapter "+ch;
+    b.disabled=ch>unlocked;
+    b.onclick=(function(c2){ return function(){ curChapter=c2; renderCampaign(); }; })(ch);
+    tabs.appendChild(b);
+  }
+  var grid=$("oppGrid"); grid.innerHTML="";
+  var list=ENEMY_DEFS.filter(function(e){return e.chapter===curChapter;});
+  var prevBeaten=true;
+  list.forEach(function(e,idx){
+    var beaten=!!P.beaten[e.id];
+    var locked=!beaten && !prevBeaten;
+    var card=document.createElement("div");
+    card.className="oppCard"+(e.boss?" boss":"")+(locked?" locked":"")+(beaten?" beaten":"");
+    card.innerHTML='<div class="ic">'+e.ic+'</div><b>'+e.name+'</b><div class="hp">'+e.hp+' HP'+(e.boss?" · BOSS":"")+'</div>'+
+      '<button'+(locked?" disabled":"")+'>'+(beaten?"Duel again":"Duel")+'</button>';
+    card.querySelector("button").onclick=function(){ if(!locked) startCombat(e); };
+    grid.appendChild(card);
+    if(!e.boss) prevBeaten=beaten;
+  });
+}
+$("bOpenShop").onclick=function(){ openShop(); };
+$("bCampRules").onclick=function(){ showVeil("v-rules"); };
+
+/* ══════════════════════ SHOP ══════════════════════ */
+var shopTab="spells";
+function openShop(){ renderShop(); showVeil("v-shop"); }
+function renderShop(){
+  $("shopGold").textContent=P.gold;
+  $("shopLevel").textContent=P.level;
+  document.querySelectorAll(".shopTab").forEach(function(t){ t.classList.toggle("sel",t.dataset.tab===shopTab); });
+  var body=$("shopBody"); body.innerHTML="";
+  if(shopTab==="spells"){
+    LEARNABLE_SPELLS.forEach(function(sid){
+      var d=SPELL_DEFS[sid];
+      var known=P.spells.indexOf(sid)>=0;
+      var price=(d.tier===1?60:110)+ (d.tier===2?40:0);
+      var levelReq=d.tier===1?2:5;
+      var div=document.createElement("div"); div.className="shopItem2"+(known?" equipped":"");
+      div.innerHTML='<div class="ic">'+d.ic+'</div><b>'+d.name+'</b><div class="ds">'+d.desc+' ('+d.cost+' '+d.color+' mana)</div>';
+      var btn=document.createElement("button");
+      if(known) btn.textContent="Known";
+      else if(P.level<levelReq) btn.textContent="Requires Lv "+levelReq;
+      else btn.textContent="Learn • "+price+"g";
+      btn.disabled=known||P.level<levelReq||P.gold<price;
+      btn.onclick=function(){ if(known||P.level<levelReq||P.gold<price) return; P.gold-=price; P.spells.push(sid); savePlayer(); renderShop(); toast("Learned "+d.name+"."); };
+      div.appendChild(btn);
+      body.appendChild(div);
+    });
+  } else {
+    SHOP_GEAR_IDS.forEach(function(gid){
+      var d=GEAR_DEFS[gid];
+      var equipped=P.gear[d.slot]===gid;
+      var div=document.createElement("div"); div.className="shopItem2"+(equipped?" equipped":"");
+      div.innerHTML='<div class="ic">'+d.ic+'</div><b>'+d.name+'</b><div class="ds">'+d.desc+'</div>';
+      var btn=document.createElement("button");
+      var owned=P["own_"+gid];
+      if(equipped) btn.textContent="Equipped";
+      else if(owned) btn.textContent="Equip";
+      else btn.textContent="Buy • "+d.price+"g";
+      btn.disabled=equipped||(!owned&&P.gold<d.price);
+      btn.onclick=function(){
+        if(equipped) return;
+        if(!owned){ if(P.gold<d.price) return; P.gold-=d.price; P["own_"+gid]=true; }
+        P.gear[d.slot]=gid; savePlayer(); renderShop(); toast("Equipped "+d.name+".");
+      };
+      div.appendChild(btn);
+      body.appendChild(div);
+    });
+  }
+}
+document.querySelectorAll(".shopTab").forEach(function(t){ t.onclick=function(){ shopTab=t.dataset.tab; renderShop(); }; });
+$("bCloseShop").onclick=function(){ hideVeil("v-shop"); };
+
+/* ══════════════════════ SCREEN / TOAST HELPERS ══════════════════════ */
+function showScreen(id){ document.querySelectorAll(".screen").forEach(function(s){s.classList.remove("show");}); $(id).classList.add("show"); }
+function showVeil(id){ $(id).classList.add("show"); }
+function hideVeil(id){ $(id).classList.remove("show"); }
+var toastT=null;
+function toast(msg){ var t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("show");},2200); }
+
+/* ══════════════════════ RULES ══════════════════════ */
+var RULES_HTML=
+  '<span class="sec">The basics</span>'+
+  'One shared board, two duelists. On your turn, swap two adjacent gems to make a match of 3 or more — matching does not use your turn unless it actually finds one, so a bad guess costs nothing. Matches cascade: gems above fall down and new ones can chain into more matches automatically.<br><br>'+
+  '<span class="sec">Gems</span>'+
+  'Matching a colored gem (Fire, Water, Earth, Air, Arcane) fills your mana pool of that color. Matching Skull gems deals direct damage to your opponent. Bigger matches (4 or 5+ in a row) grant a small bonus.<br><br>'+
+  '<span class="sec">Spells</span>'+
+  'Instead of swapping, you can cast any spell you know if you have enough mana of its color. Casting a spell ends your turn just like a swap does, unless the spell grants an extra turn.<br><br>'+
+  '<span class="sec">Progress</span>'+
+  'Winning grants gold and a level (more max HP and higher mana caps). Losing costs nothing — no progress is lost, just try again once you\'re stronger. Spend gold at the Arcanum to learn new spells or equip better gear. Everything is saved on this device.';
+$("rulesBody").innerHTML=RULES_HTML;
+$("bHowTo").onclick=function(){ showVeil("v-rules"); };
+$("bCloseRules").onclick=function(){ hideVeil("v-rules"); };
+
+/* ══════════════════════ TITLE / BOOT ══════════════════════ */
+function renderTitleStats(){
+  $("metaStats").innerHTML=
+    '<div class="statchip"><b>'+Math.floor(meta.bestChapter)+'</b><span>Best Chapter</span></div>'+
+    '<div class="statchip"><b>'+meta.wins+'</b><span>Wins</span></div>'+
+    '<div class="statchip"><b>'+meta.runs+'</b><span>Losses</span></div>';
+  var hasSave=loadPlayer();
+  $("bContinue").disabled=!hasSave;
+  $("bContinue").style.display=hasSave?"":"none";
+}
+$("bContinue").onclick=function(){
+  if(!loadPlayer()) return;
+  renderCampaign(); showScreen("s-camp");
+};
+$("bNewGame").onclick=function(){
+  newPlayer(); renderCampaign(); showScreen("s-camp");
+};
+
+(function(){
+  var cv=$("titleBg"),ctx2=cv.getContext("2d"),W=0,H=0,parts=[];
+  function resize(){ W=innerWidth;H=innerHeight; cv.width=W; cv.height=H; }
+  window.addEventListener("resize",resize); resize();
+  var cols=["#ff5a4d","#4fa8ff","#7bd94a","#f0d23c","#c16cff"];
+  for(var i=0;i<44;i++) parts.push({x:rnd(0,W),y:rnd(0,H),r:rnd(2,4),vy:rnd(6,18),vx:rnd(-4,4),a:rnd(.25,.6),ph:rnd(0,6),col:pick(cols)});
+  function tick(){
+    ctx2.clearRect(0,0,W,H);
+    var t=performance.now()/1000;
+    parts.forEach(function(p){
+      p.y-=p.vy/60; p.x+=Math.sin(t+p.ph)*.3;
+      if(p.y<-10){ p.y=H+10; p.x=rnd(0,W); }
+      ctx2.beginPath(); ctx2.fillStyle=p.col+Math.round(p.a*255).toString(16).padStart(2,"0");
+      ctx2.arc(p.x,p.y,p.r,0,TAU); ctx2.fill();
+    });
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
+loadMeta();
+renderTitleStats();
+})();
+</script>
+</body>
+</html>
