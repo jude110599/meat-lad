@@ -797,7 +797,6 @@ const COOLERS=[
  {id:"quantum",name:"Quantum Crate", ic:"&#9883;",  cost:9e7,    cap:1600,desc:"Bigger inside. Do not ask."}
 ];
 const COOLER_MODS=[
- {id:"autosell",name:"Auto-Sell Module",ic:"&#9851;", cost:250000,desc:"Sells the cooler the moment it fills."},
  {id:"compress",name:"Compressor",     ic:"&#128736;",cost:120000,desc:"Each duck takes half a slot."}
 ];
 const GEAR=[
@@ -811,7 +810,6 @@ const GEAR=[
 const COATS=[
  {id:"bandana",name:"Bandana",        ic:"&#129509;",cost:3000,   desc:"+20% fetch speed.",       speed:.20},
  {id:"pack",   name:"Saddle Pack",    ic:"&#127890;",cost:25000,  desc:"+2 ducks per trip.",      carry:2},
- {id:"harness",name:"Cooler Harness", ic:"&#128230;",cost:90000,  desc:"Your dog loads the cooler itself.",deliver:true},
  {id:"boots2", name:"Paw Boots",      ic:"&#129406;",cost:400000, desc:"+35% fetch speed.",       speed:.35},
  {id:"medal",  name:"Gold Medal",     ic:"&#127941;",cost:2000000,desc:"+25% rare duck chance.",  luck:.25}
 ];
@@ -840,10 +838,11 @@ const UPG={
  dogspeed: {unlock:0,name:"Dog Speed",        ic:"&#129460;",cat:"dog",max:30,base:400,  growth:1.50,desc:l=>`+${l*7}% fetch speed.`},
  dogcarry: {unlock:0,name:"Dog Carry",        ic:"&#127937;",cat:"dog",max:30,base:800,  growth:1.55,desc:l=>`+${l} ducks per trip.`},
  dogcount: {unlock:40,name:"Extra Dogs",       ic:"&#128062;",cat:"dog",max:5, base:40000,growth:6.0, desc:l=>`${l+1} dog${l?"s":""} fetching at once.`},
- dogrange: {unlock:12,name:"Fetch Range",      ic:"&#128246;",cat:"dog",max:20,base:600,  growth:1.50,desc:l=>`Dogs notice ducks ${Math.round(62+l*7)}m away.`},
  dogluck:  {unlock:28,name:"Lucky Nose",       ic:"&#128067;",cat:"dog",max:20,base:9000, growth:1.70,desc:l=>`+${l*2}% rare duck chance.`},
 
  handcap:  {unlock:0,name:"Saddle Bags",     ic:"&#129355;",cat:"dog",max:20,base:400,   growth:1.55,desc:l=>`Your dog carries ${l} more duck${l===1?"":"s"} per trip.`},
+ autocooler:{unlock:0,name:"Auto-Cooler",    ic:"&#128230;",cat:"dog",max:1, base:60000, growth:1,    desc:l=>"Your dog loads the cooler itself."},
+ autosell: {unlock:0,name:"Auto-Sell",       ic:"&#9851;",  cat:"dog",max:1, base:140000,growth:1,    desc:l=>"The cooler empties itself when full."},
  value:    {unlock:0,name:"Duck Value",       ic:"&#128176;",cat:"bag",max:40,base:3000,  growth:1.55,desc:l=>`Ducks sell for +${l*12}% more.`},
 
  movespeed:{unlock:0,name:"Move Speed",       ic:"&#128095;",cat:"player",max:25,base:500,  growth:1.50,desc:l=>`+${l*5}% run speed.`},
@@ -965,7 +964,7 @@ function newSave(){
     zone:"lobby",map:"backyard",unlocked:["backyard"],
     researched:Object.keys(UPG).filter(k=>!UPG[k].unlock),
     round:1,
-    perm:{weapons:["spud"],dogs:["biscuit"],coats:["harness"],gear:[],mods:["autosell"],cooler:0,att:{}},
+    perm:{weapons:["spud"],dogs:["biscuit"],coats:[],gear:[],mods:[],cooler:0,att:{}},
     up,abilities:[],ach:[],
     stats:{ducks:0,golden:0,bosses:0,earned:0,bestCombo:0,shots:0},lastSave:Date.now()};
 }
@@ -1094,7 +1093,7 @@ const bagFull=()=>bagFill()>=bagCap();
 const dogSpeed=()=>dogDef().speed*(1+L("dogspeed")*.07+coatBonus("speed"));
 const dogCarry=()=>dogDef().carry+L("dogcarry")+L("handcap")+coatBonus("carry");
 const dogCount=()=>1+L("dogcount");
-const dogRange=()=>62+L("dogrange")*7;
+const dogRange=()=>99999;   /* dogs fetch from any distance now - no upgrade needed */
 const luck=()=>L("luck")*.025+L("dogluck")*.02+(dogDef().luck||0)+gearBonus("luck")+coatBonus("luck");
 const valueMult=()=>(1+L("value")*.12)*(1+L("coinmult")*.15+gearBonus("coin"))*(1+(dogDef().mult||0))*curZone().mult;
 const moveSpeed=()=>7*(1+L("movespeed")*.05+gearBonus("move"));
@@ -3488,12 +3487,11 @@ function renderShop(){
           money(Math.floor(d.val*valueMult()))+" each",'own');
       });
     } else row("&#183;","Cooler is empty","Bring ducks over and press E to stow them.","");
-    if(modHas("autosell")) row("&#9851;","Auto-Sell","Fitted - the cooler empties itself when full.","own");
     return;
   }
 
   const groups={gun:["dmg","rate","spd","range","mag","reload","crit","critdmg"],
-                dog:["dogspeed","dogcarry","dogcount","dogrange","dogluck","handcap"],
+                dog:["dogspeed","dogcarry","dogcount","dogluck","handcap","autocooler","autosell"],
                 unlocked:null};
   let keys;
   if(shopCat==="unlocked"){
@@ -3782,7 +3780,7 @@ function stow(c,at){
   floatText((at||player.pos).clone().add(new THREE.Vector3(0,2.6,0)),
     "+"+money(value),c.gold?"#ffd23c":"#7bd94a",.40);
   SFX.coin();
-  if(bagFull()&&modHas("autosell")) doSellSilent();
+  if(bagFull()&&L("autosell")>0) doSellSilent();
   checkAch();
 }
 /* Take what the dog is holding into your arms. */
@@ -4311,7 +4309,7 @@ function updateDogs(dt){
     }
     let goal;
     if(dg.state==="seek"&&dg.target) goal=dg.target.pos;
-    else if(dg.state==="return") goal=(coatHas("deliver")&&cooler)?cooler.spot:player.pos;
+    else if(dg.state==="return") goal=(L("autocooler")>0&&cooler)?cooler.spot:player.pos;
     else if(dg.state==="hold") goal=cooler?cooler.spot:player.pos;   /* waits beside the cooler, not inside it */
     else{
     /* Idle dogs wait AHEAD of the player, fanned out. Parking them behind put
@@ -4340,7 +4338,7 @@ function updateDogs(dt){
       dg.state=dg.carry.length>=cap?"return":"seek";
     }
     if(dg.state==="return"&&dist<=stop){
-      if(coatHas("deliver")){
+      if(L("autocooler")>0){
         /* trained dogs load the cooler themselves */
         while(dg.carry.length&&!bagFull()) stow(dg.carry.shift(),cooler?cooler.pos:dg.pos);
         if(!dg.carry.length) dg.state="follow";
@@ -4354,7 +4352,7 @@ function updateDogs(dt){
     if(dg.state==="hold"&&!dg.carry.length) dg.state="follow";
     /* A dog already waiting with ducks must be released the moment Cooler
        Training is bought, or it stays in "hold" forever and stops fetching. */
-    if(dg.state==="hold"&&coatHas("deliver")) dg.state="return";
+    if(dg.state==="hold"&&L("autocooler")>0) dg.state="return";
     dg.mesh.position.copy(dg.pos);
     dg.mesh.rotation.y=angLerp(dg.mesh.rotation.y,dg.yaw,1-Math.pow(.001,dt));
     const legs=dg.mesh.userData.legs, sw=Math.sin(dg.legT)*.7;
