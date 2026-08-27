@@ -148,6 +148,15 @@ kbd{background:var(--gold);color:#0b1c2b;border-radius:5px;padding:1px 6px;font-
   color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.45),0 0 26px rgba(255,210,60,.55);
   pointer-events:none;transition:opacity .35s,transform .35s;white-space:nowrap}
 #banner.show{opacity:1;transform:translate(-50%,-12px) scale(1)}
+#banner.alert{color:#ffe3de;text-shadow:0 4px 0 rgba(0,0,0,.5),0 0 30px rgba(255,90,77,.75);
+  animation:bannerShake .12s linear infinite}
+@keyframes bannerShake{
+  0%{transform:translate(calc(-50% - 2px),-13px) rotate(-1deg)}
+  25%{transform:translate(calc(-50% + 3px),-11px) rotate(1.2deg)}
+  50%{transform:translate(calc(-50% - 3px),-13px) rotate(-1.4deg)}
+  75%{transform:translate(calc(-50% + 2px),-11px) rotate(1deg)}
+  100%{transform:translate(calc(-50% - 2px),-13px) rotate(-1deg)}
+}
 #aimRed,#aimYellow{position:fixed;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);
   display:none;z-index:21}
 #aimRed{border:2px solid rgba(255,90,77,.85);background:rgba(255,90,77,.12)}
@@ -929,6 +938,10 @@ const ABILITIES=[
 ];
 /* Real dates, pulled from this file's own commit history. Newest first. */
 const CHANGELOG=[
+ {date:"2026-08-27T19:21:38-04:00",title:"Duck Storm gets a warning, aim ring gets steadier",notes:[
+   "Aim reticle is bigger and no longer drifts off a bobbing or distant duck",
+   "Duck Storm now gives you a jittery \"DUCK STORM\" warning and a rumble before the flock rushes in from the left",
+   "The old instant, no-warning duck storm is gone for good"]},
  {date:"2026-08-27T19:05:55-04:00",title:"Precision crits, round timer, weather and boss cycles",notes:[
    "Aim reticle: a red ring over the duck you're aiming at, a small yellow ring inside it for a guaranteed 1.75x crit",
    "Every 5 rounds a new species takes the spotlight, gets more common each round, then becomes that round's boss",
@@ -3336,16 +3349,27 @@ function crosshairFlash(crit){
 function updateAimReticle(d){
   const red=$("aimRed"), yellow=$("aimYellow");
   if(!d){ red.style.display="none"; yellow.style.display="none"; return; }
-  const center=d.pos.clone().add(new THREE.Vector3(0,1*d.scale,0));
+  /* aim at the same lead/intercept point a shot will actually connect at,
+     not the duck's current position - so the ring sits in front of a
+     moving duck instead of trailing behind it */
+  const vsp=projSpeed();
+  /* capped lead time - a far-off, bobbing or turning duck extrapolated too
+     far into the future is what made the ring drift off the actual bird */
+  let tt=Math.min(.4,d.pos.distanceTo(camera.position)/vsp);
+  const center=new THREE.Vector3();
+  for(let k=0;k<3;k++){
+    center.set(d.pos.x+(d.velX||0)*tt,d.pos.y+1*d.scale+(d.velY||0)*tt,d.pos.z+(d.velZ||0)*tt);
+    tt=Math.min(.4,center.distanceTo(camera.position)/vsp);
+  }
   const p=center.clone().project(camera);
   if(p.z>1||p.z<-1){ red.style.display="none"; yellow.style.display="none"; return; }
   const sx=(p.x*.5+.5)*innerWidth, sy=(1-(p.y*.5+.5))*innerHeight;
   const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd);
   const camRight=new THREE.Vector3().crossVectors(fwd,camera.up).normalize();
-  const edgeR=center.clone().addScaledVector(camRight,d.scale*.62).project(camera);
-  const edgeY=center.clone().addScaledVector(camRight,d.scale*.30).project(camera);
-  const pxR=clamp(Math.abs((edgeR.x*.5+.5)*innerWidth-sx),10,140);
-  const pxY=clamp(Math.abs((edgeY.x*.5+.5)*innerWidth-sx),4,60);
+  const edgeR=center.clone().addScaledVector(camRight,d.scale*.85).project(camera);
+  const edgeY=center.clone().addScaledVector(camRight,d.scale*.40).project(camera);
+  const pxR=clamp(Math.abs((edgeR.x*.5+.5)*innerWidth-sx),16,170);
+  const pxY=clamp(Math.abs((edgeY.x*.5+.5)*innerWidth-sx),8,80);
   red.style.left=sx+"px"; red.style.top=sy+"px";
   red.style.width=red.style.height=(pxR*2)+"px"; red.style.display="block";
   yellow.style.left=sx+"px"; yellow.style.top=sy+"px";
@@ -3512,8 +3536,8 @@ const EVENTS=[
    const d=spawnDuck("giant",null,true,true); d.baseY=waterY()+rnd(9,16); }},
  {id:"storm",name:"DUCK STORM!",dur:24,go(){
    for(let i=0;i<28;i++){
-     const d=spawnDuck(null,null,true,true);
-     d.baseY=waterY()+rnd(15,28);      /* a high, dense pass overhead */
+     const d=spawnDuck(null,null,false,true);   /* rushes in from the left, not scattered overhead */
+     d.baseY=waterY()+rnd(15,28);
    } }},
  {id:"ufo",name:"UFO INVASION!",dur:28,go(){ spawnUFO(); }},
  {id:"parade",name:"DUCK PARADE!",dur:26,go(){
@@ -3533,8 +3557,18 @@ function spawnUFO(){
   g.position.set(0,28,0); scene.add(g);
   ufo={mesh:g,t:0};
 }
+let stormPending=-1, pendingEvent=null;
 function fireEvent(){
   const e=pick(EVENTS);
+  if(e.id==="storm"){
+    /* a beat of warning before they show up: a jittery alert banner and a
+       building rumble, then the flock actually rushes in from the left */
+    bannerMsg("DUCK STORM",true);
+    toast("Something's coming in from the left...");
+    SFX.event(); camShake=Math.max(camShake,.5);
+    pendingEvent=e; stormPending=.9;
+    return;
+  }
   activeEvent=e; eventTime=e.dur; e.go();
   const bar=$("eventBar"); bar.textContent=e.name; bar.classList.add("show");
   SFX.event(); toast(e.name);
@@ -3985,9 +4019,11 @@ function flashSell(){
   clearTimeout(sellT); sellT=setTimeout(()=>el.classList.remove("show"),2300);
 }
 let bannerT=null;
-function bannerMsg(txt){
-  const el=$("banner"); el.textContent=txt; el.classList.add("show");
-  clearTimeout(bannerT); bannerT=setTimeout(()=>el.classList.remove("show"),1900);
+function bannerMsg(txt,alert){
+  const el=$("banner"); el.textContent=txt;
+  el.classList.toggle("alert",!!alert); el.classList.add("show");
+  clearTimeout(bannerT);
+  bannerT=setTimeout(()=>{ el.classList.remove("show"); el.classList.remove("alert"); },alert?2600:1900);
 }
 function countUp(el,target){
   const t0=performance.now(), dur=Math.min(1400,500+Math.log10(Math.max(10,target))*260);
@@ -4788,23 +4824,41 @@ function frame(){
     updateAbilityUI();
     if(comboT>0){ comboT-=dt; if(comboT<=0){ combo=0; $("comboBox").classList.remove("show"); } }
     if(!bagFull())bagWarned=false;
-    if(inLobby()){ stormAt=-1; eventT=rnd(60,120); activeEvent=null; }
+    if(inLobby()){ stormAt=-1; eventT=rnd(60,120); activeEvent=null; stormPending=-1; pendingEvent=null; }
     else if(stormAt>0){
       stormAt-=dt;
-      if(stormAt<=0){
+      if(stormAt<=0&&stormPending<=0){
         stormAt=-1;
-        bannerMsg("DUCK STORM");
-        toast("DUCK STORM! They are everywhere.");
-        SFX.event();
-        for(let i=0;i<26;i++){
-          const d=spawnDuck(null,null,false,true);
-          d.baseY=waterY()+rnd(6,24);
+        /* a beat of warning before they show up, same treatment as the
+           random-event storm below - a jittery alert, then a rumble, then
+           the flock actually rushes in from the left */
+        bannerMsg("DUCK STORM",true);
+        toast("Something's coming in from the left...");
+        SFX.event(); camShake=Math.max(camShake,.5);
+        stormPending=.9;
+      }
+    }
+    if(stormPending>0){
+      camShake=Math.max(camShake,.09);
+      stormPending-=dt;
+      if(stormPending<=0){
+        if(pendingEvent){
+          activeEvent=pendingEvent; eventTime=pendingEvent.dur; pendingEvent.go();
+          const bar=$("eventBar"); bar.textContent=pendingEvent.name; bar.classList.add("show");
+          pendingEvent=null;
+        } else {
+          for(let i=0;i<26;i++){
+            const d=spawnDuck(null,null,false,true);
+            d.baseY=waterY()+rnd(6,24);
+          }
         }
+        camShake=Math.max(camShake,.6);
+        SFX.event();
       }
     }
     if(!inLobby()){
       eventT-=dt*(1+L("eventrate")*.07);
-      if(eventT<=0&&!activeEvent){ fireEvent(); eventT=rnd(70,150); }
+      if(eventT<=0&&!activeEvent&&stormPending<=0){ fireEvent(); eventT=rnd(70,150); }
       if(!bossActive){
         roundTimeLeft=Math.max(0,roundTimeLeft-dt);
         if(roundTimeLeft<=0) summonBoss();
