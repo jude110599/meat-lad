@@ -838,12 +838,12 @@ const UPG={
 
 
  dogspeed: {unlock:0,name:"Dog Speed",        ic:"&#129460;",cat:"dog",max:30,base:400,  growth:1.50,desc:l=>`+${l*7}% fetch speed.`},
- dogcarry: {unlock:10,name:"Dog Carry",        ic:"&#127937;",cat:"dog",max:30,base:800,  growth:1.55,desc:l=>`+${l} ducks per trip.`},
+ dogcarry: {unlock:0,name:"Dog Carry",        ic:"&#127937;",cat:"dog",max:30,base:800,  growth:1.55,desc:l=>`+${l} ducks per trip.`},
  dogcount: {unlock:40,name:"Extra Dogs",       ic:"&#128062;",cat:"dog",max:5, base:40000,growth:6.0, desc:l=>`${l+1} dog${l?"s":""} fetching at once.`},
  dogrange: {unlock:12,name:"Fetch Range",      ic:"&#128246;",cat:"dog",max:20,base:600,  growth:1.50,desc:l=>`Dogs notice ducks ${Math.round(62+l*7)}m away.`},
  dogluck:  {unlock:28,name:"Lucky Nose",       ic:"&#128067;",cat:"dog",max:20,base:9000, growth:1.70,desc:l=>`+${l*2}% rare duck chance.`},
 
- handcap:  {unlock:0,name:"Saddle Bags",     ic:"&#129355;",cat:"dog",max:20,base:400,   growth:1.55,desc:l=>`Your dog carries ${3+l*2} more duck${(3+l*2)===1?"":"s"} per trip.`},
+ handcap:  {unlock:0,name:"Saddle Bags",     ic:"&#129355;",cat:"dog",max:20,base:400,   growth:1.55,desc:l=>`Your dog carries ${l} more duck${l===1?"":"s"} per trip.`},
  value:    {unlock:0,name:"Duck Value",       ic:"&#128176;",cat:"bag",max:40,base:3000,  growth:1.55,desc:l=>`Ducks sell for +${l*12}% more.`},
 
  movespeed:{unlock:0,name:"Move Speed",       ic:"&#128095;",cat:"player",max:25,base:500,  growth:1.50,desc:l=>`+${l*5}% run speed.`},
@@ -965,7 +965,7 @@ function newSave(){
     zone:"lobby",map:"backyard",unlocked:["backyard"],
     researched:Object.keys(UPG).filter(k=>!UPG[k].unlock),
     round:1,
-    perm:{weapons:["spud"],dogs:["biscuit"],coats:[],gear:[],mods:[],cooler:0,att:{}},
+    perm:{weapons:["spud"],dogs:["biscuit"],coats:["harness"],gear:[],mods:["autosell"],cooler:0,att:{}},
     up,abilities:[],ach:[],
     stats:{ducks:0,golden:0,bosses:0,earned:0,bestCombo:0,shots:0},lastSave:Date.now()};
 }
@@ -1092,7 +1092,7 @@ const bagUse=()=>modHas("compress")?.5:1;
 const bagFill=()=>S.bag.length*bagUse();
 const bagFull=()=>bagFill()>=bagCap();
 const dogSpeed=()=>dogDef().speed*(1+L("dogspeed")*.07+coatBonus("speed"));
-const dogCarry=()=>dogDef().carry+L("dogcarry")+L("handcap")*2+coatBonus("carry");
+const dogCarry=()=>dogDef().carry+L("dogcarry")+L("handcap")+coatBonus("carry");
 const dogCount=()=>1+L("dogcount");
 const dogRange=()=>62+L("dogrange")*7;
 const luck=()=>L("luck")*.025+L("dogluck")*.02+(dogDef().luck||0)+gearBonus("luck")+coatBonus("luck");
@@ -1727,7 +1727,11 @@ function placeCooler(x,z){
   const g=makeCooler();
   g.position.set(x,heightAt(x,z),z);
   worldGroup.add(g);
-  cooler={pos:new THREE.Vector3(x,heightAt(x,z),z),group:g};
+  /* dogs wait/deliver to a spot beside the cooler, not its exact centre -
+     otherwise they path straight into the middle of the box */
+  const sx=x+2.6;
+  cooler={pos:new THREE.Vector3(x,heightAt(x,z),z),
+    spot:new THREE.Vector3(sx,heightAt(sx,z),z),group:g};
   interactables.push({x,z,r:5.5,kind:"cooler",group:g});
   decor.push(g);
 }
@@ -2549,7 +2553,7 @@ function buildStations(){
   if(inLobby()){ buildLobby(); return; }
   /* The player spawns on the near shore facing the lake, so every building
      sits behind and to the sides - nothing blocks the shooting lane. */
-  placeCooler(-9,24);
+  placeCooler(-6,24);
   station(11,26, 0x8a5ab8,"BACK TO LODGE","lodge");
 
   worldGroup.add(jettyProp());
@@ -2566,13 +2570,21 @@ function makeDuck(def){
   const body=mat(def.col), accent=mat(def.acc), beakM=mat(0xff9d1f), footM=mat(0xf08a1a);
   const dark=mat(0x1a1c18);
 
-  /* body: two overlapping masses so the silhouette has a chest and a rump */
+  /* body: two overlapping masses so the silhouette has a chest and a rump,
+     plus a rump bump under the tail and shoulder bumps where the wings
+     attach so nothing floats free of the body */
   const b=new THREE.Mesh(G.sphere,body); b.scale.set(.68,.60,1.22); b.position.set(0,.72,-.10);
   b.castShadow=true; b.receiveShadow=true; g.add(b);
   const chest=new THREE.Mesh(G.sphere,body); chest.scale.set(.58,.54,.64); chest.position.set(0,.80,.54);
   chest.castShadow=true; g.add(chest);
+  const rump=new THREE.Mesh(G.sphere,body); rump.scale.set(.36,.30,.30); rump.position.set(0,.80,-1.02);
+  rump.castShadow=true; g.add(rump);
   const belly=new THREE.Mesh(G.sphere,mat(def.acc,{transparent:true,opacity:.55}));
   belly.scale.set(.52,.30,.92); belly.position.set(0,.48,-.02); g.add(belly);
+  /* a soft gloss sheen along the top of the back sells a glossy painted-toy look */
+  const sheen=new THREE.Mesh(G.sphere,new THREE.MeshBasicMaterial({
+    color:0xffffff,transparent:true,opacity:.16}));
+  sheen.scale.set(.30,.14,.60); sheen.position.set(0,1.02,.10); g.add(sheen);
 
   /* neck + head */
   const neck=new THREE.Mesh(G.cyl,body); neck.scale.set(.20,.56,.20); neck.position.set(0,1.18,.44);
@@ -2581,9 +2593,17 @@ function makeDuck(def){
   h.castShadow=true; g.add(h);
   const crown=new THREE.Mesh(G.sphere,accent); crown.scale.set(.34,.17,.36); crown.position.set(0,1.72,.60);
   g.add(crown);
+  /* small brow ridges give the face an expression instead of a blank stare */
+  for(const sd of[-1,1]){
+    const brow=new THREE.Mesh(G.sphere,accent); brow.scale.set(.09,.03,.05);
+    brow.position.set(sd*.20,1.71,.90); brow.rotation.z=sd*.3; g.add(brow);
+  }
 
-  /* beak: upper + lower with nostrils */
+  /* beak: upper + lower, flared wider at the tip like a real bill, with a
+     small nail-tip nub and nostrils */
   const beak=new THREE.Mesh(G.sphere,beakM); beak.scale.set(.17,.08,.46); beak.position.set(0,1.52,1.02); g.add(beak);
+  const beakTip=new THREE.Mesh(G.sphere,beakM); beakTip.scale.set(.20,.075,.13); beakTip.position.set(0,1.515,1.30); g.add(beakTip);
+  const nail=new THREE.Mesh(G.sphere,mat(0xd97a12)); nail.scale.set(.05,.03,.04); nail.position.set(0,1.50,1.38); g.add(nail);
   const beakL=new THREE.Mesh(G.sphere,mat(0xd97a12)); beakL.scale.set(.15,.05,.40); beakL.position.set(0,1.46,1.00); g.add(beakL);
   g.add(ball(.025,0x8a4a08,.07,1.55,1.18)); g.add(ball(.025,0x8a4a08,-.07,1.55,1.18));
 
@@ -2594,34 +2614,50 @@ function makeDuck(def){
     const hi=new THREE.Mesh(G.sphere,mat(0xffffff)); hi.scale.setScalar(.026); hi.position.set(sd*.24,1.65,.98); g.add(hi);
   }
 
-  /* wings: upper arm + feather fan on one pivot */
+  /* wings: a shoulder bump anchors each one to the body, then an upper arm
+     and a five-feather fan instead of three, tapering more clearly to a tip */
   const wings=[];
   for(const sd of[-1,1]){
+    const shoulder=new THREE.Mesh(G.sphere,body); shoulder.scale.set(.20,.24,.30);
+    shoulder.position.set(sd*.34,.90,.06); shoulder.castShadow=true; g.add(shoulder);
     const pivot=new THREE.Group(); pivot.position.set(sd*.46,.86,.02); g.add(pivot);
     const up=new THREE.Mesh(G.sphere,body); up.scale.set(.15,.20,.68); up.position.set(sd*.10,0,0);
     up.castShadow=true; pivot.add(up);
-    for(let f=0;f<3;f++){
+    for(let f=0;f<5;f++){
+      const t=f/4;
       const fe=new THREE.Mesh(G.sphere,accent);
-      fe.scale.set(.07,.13,.54-f*.07);
-      fe.position.set(sd*(.20+f*.05),-.04-f*.04,-.20-f*.12);
+      fe.scale.set(.065-t*.02,.12-t*.05,.58-t*.34);
+      fe.position.set(sd*(.18+f*.045),-.04-f*.035,-.16-f*.11);
       fe.castShadow=true; pivot.add(fe);
     }
     wings.push(pivot);
   }
   g.userData.wings=wings;
 
-  /* tail fan */
-  for(let t=-1;t<=1;t++){
+  /* tail: five feathers fanning wider, with a rump highlight underneath.
+     Kept in userData so they can wag continuously instead of sitting frozen. */
+  const tail=[];
+  for(let t=-2;t<=2;t++){
     const tf=new THREE.Mesh(G.sphere,accent);
-    tf.scale.set(.07,.11,.40); tf.position.set(t*.12,.86,-1.14);
-    tf.rotation.x=-.45; tf.rotation.z=t*.22; g.add(tf);
+    const w=1-Math.abs(t)*.12;
+    tf.scale.set(.065*w,.10*w,.40*w); tf.position.set(t*.10,.86+Math.abs(t)*.02,-1.14);
+    tf.rotation.x=-.45; tf.rotation.z=t*.16; g.add(tf);
+    tail.push({mesh:tf,baseZ:t*.16});
   }
+  g.userData.tail=tail;
 
-  /* legs + webbed feet */
+  /* legs + proper webbed feet: three splayed toe-fins instead of one blob */
   const legs=[];
   for(const sd of[-1,1]){
     const l=new THREE.Mesh(G.cyl,footM); l.scale.set(.055,.34,.055); l.position.set(sd*.20,.26,.00); g.add(l);
-    const foot=new THREE.Mesh(G.sphere,footM); foot.scale.set(.13,.04,.22); foot.position.set(sd*.20,.09,.10); g.add(foot);
+    const ankle=new THREE.Mesh(G.sphere,footM); ankle.scale.setScalar(.07); ankle.position.set(sd*.20,.10,.02); g.add(ankle);
+    for(let toe=-1;toe<=1;toe++){
+      const w=1-Math.abs(toe)*.18;
+      const t=new THREE.Mesh(G.sphere,footM);
+      t.scale.set(.075*w,.03,.20*w);
+      t.position.set(sd*.20+toe*.09,.045,.11+Math.abs(toe)*-.02);
+      t.rotation.y=toe*.35; g.add(t);
+    }
     legs.push(l);
   }
   g.userData.legs=legs;
@@ -2720,6 +2756,15 @@ function makeDog(def){
 }
 
 /* One distinct model per weapon, so progression is visible in your hands. */
+/* Every weapon gets a stock reaching back toward the shoulder and a sight
+   up top, on top of whatever comedic barrel it fires - without this they
+   read as toys hovering next to the player instead of something aimed. */
+function gunTrim(add,housing,accent){
+  add(box(.15,.24,.42,housing,0,-.20,.36));
+  add(box(.19,.28,.09,0x14100c,0,-.20,.58));
+  add(box(.045,.11,.16,accent,0,.22,-.42));
+  add(box(.03,.05,.03,accent,0,.265,-.49));
+}
 function makeGunModel(id){
   const g=new THREE.Group();
   const add=m=>{m.castShadow=true;g.add(m);return m;};
@@ -2727,6 +2772,7 @@ function makeGunModel(id){
     const drum=cyl(.30,.7,0xf0d24a,0,0,-1.05); drum.rotation.x=Math.PI/2; add(drum);
     add(box(.22,.22,.9,0xd94a4a,0,0,-.32));
     add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
+    gunTrim(add,0x3a2f26,0x8a3a3a);
     for(let i=0;i<5;i++) add(ball(.07,0xfff2d0,rnd(-.2,.2),rnd(-.2,.2),-1.5));
   } else if(id==="rubber"){
     add(box(.20,.22,1.15,0x2f6fb8,0,0,-.34));
@@ -2734,6 +2780,7 @@ function makeGunModel(id){
     const t2=cyl(.13,1.05,0xd94a6a,0,-.13,-1.10); t2.rotation.x=Math.PI/2; add(t2);
     add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
     add(cyl(.22,.16,0x1f4f8a,0,.22,-.30));
+    gunTrim(add,0x3a2f26,0x2f6fb8);
   } else if(id==="bagel"){
     add(box(.22,.24,1.0,0x7a5a3a,0,0,-.30));
     const ring=new THREE.Mesh(new THREE.TorusGeometry(.34,.13,8,18),mat(0xd9a45a));
@@ -2741,12 +2788,14 @@ function makeGunModel(id){
     const ring2=new THREE.Mesh(new THREE.TorusGeometry(.24,.09,8,16),mat(0xf0c27a));
     ring2.position.set(0,0,-1.55); add(ring2);
     add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
+    gunTrim(add,0x3a2f26,0xd9a45a);
   } else if(id==="trom"){
     add(box(.18,.18,.8,0xd9a417,0,0,-.25));
     const bell=cone(.42,.7,0xf0c53c,0,0,-1.35); bell.rotation.x=-Math.PI/2; add(bell);
     const s1=cyl(.08,1.1,0xf0c53c,.16,0,-.9); s1.rotation.x=Math.PI/2; add(s1);
     const s2=cyl(.08,1.1,0xf0c53c,-.16,0,-.9); s2.rotation.x=Math.PI/2; add(s2);
     add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
+    gunTrim(add,0x3a2f26,0xf0c53c);
   } else if(id==="toast"){
     add(box(.44,.40,.92,0xb8c2cc,0,0,-.28));
     for(let i=-1;i<=1;i++){
@@ -2755,6 +2804,7 @@ function makeGunModel(id){
     add(box(.5,.10,.34,0x8a949e,0,.24,-.30));
     add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
     add(box(.22,.26,.05,0xd9a45a,0,.34,-.36));
+    gunTrim(add,0x3a2f26,0x8a949e);
   } else if(id==="noodle"){
     add(box(.30,.30,.9,0xe8e0c8,0,0,-.28));
     const bowl=new THREE.Mesh(G.sphere,mat(0xd94a4a)); bowl.scale.set(.40,.26,.40);
@@ -2765,6 +2815,7 @@ function makeGunModel(id){
     }
     add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
     add(box(.05,.05,.7,0x8a5a2a,.22,.24,-1.0));
+    gunTrim(add,0x3a2f26,0xd94a4a);
   } else if(id==="cosmic"){
     add(box(.26,.26,.85,0x2a1a4a,0,0,-.26));
     add(ball(.26,0xc16cff,0,0,-1.0,{emissive:0xc16cff,emissiveIntensity:1.4}));
@@ -2775,12 +2826,14 @@ function makeGunModel(id){
       mat(0xff6cc4,{emissive:0xff6cc4,emissiveIntensity:1.0}));
     r2.position.set(0,0,-1.0); r2.rotation.x=.7; add(r2);
     add(box(.16,.38,.20,0x2a1a4a,0,-.26,.06));
+    gunTrim(add,0x2a1a4a,0x6cf0ff);
     g.userData.spin=[r1,r2];
   } else { /* spud launcher, the starter */
     add(box(.20,.20,1.0,0x6a4a28,0,0,-.30));
     const tube=cyl(.19,.9,0xb08654,0,0,-1.05); tube.rotation.x=Math.PI/2; add(tube);
     add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
     add(ball(.16,0xd9a94a,0,0,-1.52));
+    gunTrim(add,0x3a2f26,0xb08654);
   }
   return g;
 }
@@ -2800,6 +2853,13 @@ function makePlayer(){
   strap.position.set(.16,1.28,0); strap.rotation.z=.28; g.add(strap);
   const pack=new THREE.Mesh(G.sphere,mat(0x7a5a3a)); pack.scale.set(.36,.34,.24);
   pack.position.set(0,1.32,-.42); pack.castShadow=true; g.add(pack);
+  /* collar and belt sell layered clothing instead of one bare sphere */
+  const collar=new THREE.Mesh(G.box,mat(0x1e3a28)); collar.scale.set(.40,.08,.30);
+  collar.position.set(0,1.60,.02); g.add(collar);
+  const belt=new THREE.Mesh(G.box,mat(0x241c14)); belt.scale.set(.48,.09,.36);
+  belt.position.set(0,.94,0); g.add(belt);
+  const buckle=new THREE.Mesh(G.box,mat(0xc9a24a)); buckle.scale.set(.09,.09,.05);
+  buckle.position.set(0,.94,.19); g.add(buckle);
 
   /* head, cap, face */
   const head=new THREE.Mesh(G.sphere,skin); head.scale.setScalar(.40);
@@ -2808,11 +2868,16 @@ function makePlayer(){
   cap.position.set(0,2.16,0); g.add(cap);
   const brim=new THREE.Mesh(G.box,mat(0xb83a3a)); brim.scale.set(.68,.07,.36);
   brim.position.set(0,2.06,-.34); g.add(brim);
+  const badge=new THREE.Mesh(G.sphere,mat(0xffd23c,{emissive:0xffd23c,emissiveIntensity:.4}));
+  badge.scale.setScalar(.055); badge.position.set(0,2.20,-.40); g.add(badge);
   for(const sd of[-1,1]){
     const w=new THREE.Mesh(G.sphere,mat(0xffffff)); w.scale.setScalar(.085); w.position.set(sd*.15,2.02,-.32); g.add(w);
     const pu=new THREE.Mesh(G.sphere,mat(0x1a1c18)); pu.scale.setScalar(.045); pu.position.set(sd*.16,2.02,-.37); g.add(pu);
   }
   const nose=new THREE.Mesh(G.sphere,skin); nose.scale.set(.09,.08,.10); nose.position.set(0,1.94,-.38); g.add(nose);
+  for(const sd of[-1,1]){
+    const ear=new THREE.Mesh(G.sphere,skin); ear.scale.setScalar(.075); ear.position.set(sd*.38,1.98,-.02); g.add(ear);
+  }
 
   /* limbs - kept on groups pivoted at the hip/shoulder so they swing cleanly */
   const legs=[], legPivots=[];
@@ -2820,14 +2885,26 @@ function makePlayer(){
     const pivot=new THREE.Group(); pivot.position.set(sd*.20,.86,0); g.add(pivot);
     const leg=new THREE.Mesh(G.cyl,jeans); leg.scale.set(.16,.85,.16);
     leg.position.set(0,-.40,0); leg.castShadow=true; pivot.add(leg);
+    const cuff=new THREE.Mesh(G.cyl,mat(0x1e1712)); cuff.scale.set(.185,.09,.185);
+    cuff.position.set(0,-.66,-.02); pivot.add(cuff);
     const bt=new THREE.Mesh(G.sphere,boot); bt.scale.set(.20,.12,.28); bt.position.set(0,-.78,-.06); pivot.add(bt);
+    const lace=new THREE.Mesh(G.box,mat(0x2a201a)); lace.scale.set(.10,.03,.16);
+    lace.position.set(0,-.71,-.02); pivot.add(lace);
     legs.push(pivot);
   }
+  const shoulderL=new THREE.Mesh(G.sphere,shirt); shoulderL.scale.set(.20,.18,.20);
+  shoulderL.position.set(-.44,1.58,-.02); shoulderL.castShadow=true; g.add(shoulderL);
   const armPivotL=new THREE.Group(); armPivotL.position.set(-.52,1.62,-.05); g.add(armPivotL);
   const armL=new THREE.Mesh(G.cyl,skin); armL.scale.set(.13,.62,.13);
   armL.position.set(0,-.31,-.05); armL.rotation.x=-.35; armL.castShadow=true; armPivotL.add(armL);
+  const handL=new THREE.Mesh(G.sphere,skin); handL.scale.setScalar(.145);
+  handL.position.set(0,-.62,-.19); armPivotL.add(handL);
+  const shoulderR=new THREE.Mesh(G.sphere,shirt); shoulderR.scale.set(.20,.18,.20);
+  shoulderR.position.set(.42,1.42,-.10); shoulderR.castShadow=true; g.add(shoulderR);
   const armR=new THREE.Mesh(G.cyl,skin); armR.scale.set(.13,.62,.13);
   armR.position.set(.46,1.28,-.22); armR.rotation.x=-.85; armR.castShadow=true; g.add(armR);
+  const handR=new THREE.Mesh(G.sphere,skin); handR.scale.setScalar(.145);
+  handR.position.set(.46,1.07,-.44); g.add(handR);
 
   /* gun socket: the model inside is swapped whenever the weapon changes */
   const socket=new THREE.Group();
@@ -2890,7 +2967,7 @@ const tmpV=new THREE.Vector3();
 const camRay=new THREE.Raycaster();
 const fx={rapid:0,storm:0};
 let ammo=0,reloading=false,reloadT=0,shotCooldown=0,megaCounter=0;
-let combo=0,comboT=0,camShake=0,slow=0,bagWarned=false;
+let combo=0,comboT=0,camShake=0,slow=0,bagWarned=false,gunKick=0,fireKick=0;
 let started=false,paused=false,pointerLocked=false,mouseDown=false;
 /* Pointer lock is refused in embedded/iframe contexts (and can be blocked by
    the user). Falling back to right-drag look keeps the game fully playable
@@ -2935,7 +3012,7 @@ function spawnDuck(species,at,spread,forceCross){
   const key=species||rollSpecies(), def=DUCKS[key];
   const Z=curZone(), lake=Z.ponds[0];
   const mesh=makeDuck(def);
-  const hp=Math.max(1,Math.round(def.hp*(def.boss?1+(S.round-1)*.55:roundHp())));
+  const hp=Math.max(1,Math.round(def.hp*(def.boss?.15+(S.round-1)*.55:roundHp())));
   const d={key,def,mesh,hp,maxHp:hp,
     pos:new THREE.Vector3(),state:"walk",t:rnd(0,3),wingT:rnd(0,6.28),
     targetA:rnd(0,6.283),phase:rnd(0,6.283),flyY:rnd(9,20),
@@ -2944,6 +3021,11 @@ function spawnDuck(species,at,spread,forceCross){
   if(at){
     d.pos.set(at.x,heightAt(at.x,at.z)+(inWater(at.x,at.z)?.35:0),at.z);
     d.state=inWater(at.x,at.z)?"swim":"walk";
+  } else if(def.boss){
+    /* bosses fight close to the middle of the lake, not off on some distant shore */
+    const a=rnd(0,6.283), r=rnd(4,14);
+    d.pos.set(lake[0]+Math.cos(a)*r,waterY()+.35,lake[1]+Math.sin(a)*r);
+    d.state="swim";
   } else if(!def.boss && (forceCross || Math.random()<.74)){
     /* the main event: a duck crossing the lake from one side to the other */
     d.state="cross";
@@ -3036,8 +3118,10 @@ function fire(){
   const origin=new THREE.Vector3(); player.muzzle.getWorldPosition(origin);
   const fwd=aimPoint().sub(origin).normalize();
   muzzleFlash(origin);
-  camShake=Math.max(camShake,.16);
-  player.gun.position.z+=.16;
+  camShake=Math.max(camShake,.32);
+  player.gun.position.z+=.34;
+  gunKick=Math.min(1,gunKick+.55);
+  fireKick=1;
   megaCounter++;
   const isMega=A("mega")>0&&megaCounter%6===0;
   const n=shotCount(), spread=spreadAngle();
@@ -3053,20 +3137,35 @@ function fire(){
 function makeShot(origin,dir,mega){
   const size=mega?(1.2+A("mega")*.45):.34;
   const col=mega?0x6cf0ff:0xffd23c;
-  const m=new THREE.Mesh(G.sphere,mat(col,{emissive:col,emissiveIntensity:1.4}));
-  m.scale.setScalar(size); m.position.copy(origin); scene.add(m);
-  const glow=new THREE.Sprite(puffMat(col,true)); glow.scale.setScalar(size*4.5); m.add(glow);
+  /* stretched into a streak along its travel direction and given a white-hot
+     core under the colour, instead of one flat dot */
+  const m=new THREE.Mesh(G.sphere,mat(col,{emissive:col,emissiveIntensity:1.9}));
+  m.scale.set(size,size,size*2.4); m.position.copy(origin);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),dir);
+  scene.add(m);
+  const core=new THREE.Sprite(puffMat(0xffffff,true)); core.scale.setScalar(size*2.3); m.add(core);
+  const glow=new THREE.Sprite(puffMat(col,true)); glow.scale.setScalar(size*5.5); m.add(glow);
   shots.push({mesh:m,pos:m.position,vel:dir.clone().multiplyScalar(projSpeed()),
     dist:0,mega,pierce:1+A("pierce"),ricochet:A("ricochet"),hitIds:new Set(),size,isCluster:false});
 }
 function muzzleFlash(p){
+  const core=new THREE.Sprite(puffMat(0xffffff,true));
+  core.scale.setScalar(.7); core.position.copy(p); scene.add(core);
+  pops.push({mesh:core,life:.055,max:.055,grow:6,isSprite:true});
   const f=new THREE.Sprite(puffMat(0xfff3b0,true));
-  f.scale.setScalar(1.1); f.position.copy(p); scene.add(f);
-  pops.push({mesh:f,life:.10,max:.10,grow:9,isSprite:true});
+  f.scale.setScalar(1.5); f.position.copy(p); scene.add(f);
+  pops.push({mesh:f,life:.12,max:.12,grow:12,isSprite:true});
   const star=new THREE.Sprite(puffMat(0xffd23c,true));
-  star.scale.setScalar(.6); star.position.copy(p); scene.add(star);
-  pops.push({mesh:star,life:.07,max:.07,grow:5,isSprite:true});
-  smoke(p,2,0xf0e6d0);
+  star.scale.setScalar(.9); star.position.copy(p); scene.add(star);
+  pops.push({mesh:star,life:.09,max:.09,grow:7,isSprite:true});
+  /* a few sparks kick sideways off the muzzle, on top of the smoke */
+  for(let i=0;i<4;i++){
+    const sp=new THREE.Sprite(puffMat(0xffd23c,true));
+    sp.scale.setScalar(rnd(.12,.22)); sp.position.copy(p); scene.add(sp);
+    parts.push({mesh:sp,vel:new THREE.Vector3(rnd(-3,3),rnd(-1,2.5),rnd(-3,3)),
+      life:rnd(.12,.22),max:.22,spin:rnd(-4,4),size:.16});
+  }
+  smoke(p,3,0xf0e6d0);
 }
 function burst(p,n,color,additive){
   for(let i=0;i<n;i++){
@@ -3157,7 +3256,7 @@ function downDuck(d){
   bumpCombo();
   downed.push({key:d.key,def:d.def,gold:d.gold,mesh:d.mesh,pos:d.pos.clone(),
     vel:new THREE.Vector3(rnd(-2,2),4,rnd(-2,2)),spin:rnd(-6,6),
-    landed:false,life:40,claimed:null,scale:d.scale});
+    landed:false,life:1e9,claimed:null,scale:d.scale});
 }
 function summonBoss(){
   bossActive=true;
@@ -3955,7 +4054,8 @@ function updatePlayer(dt){
   player.mesh.position.copy(player.pos);
   player.mesh.rotation.y=player.yaw;
   player.gun.position.z=lerp(player.gun.position.z,-.2,1-Math.pow(.001,dt));
-  player.gun.rotation.x=player.pitch*.55;
+  gunKick=Math.max(0,gunKick-dt*7);
+  player.gun.rotation.x=player.pitch*.55-gunKick*.5;
 
   /* walk cycle: legs and the off arm swing with horizontal speed, but only
      while your feet are actually on the ground */
@@ -4014,12 +4114,15 @@ function updatePlayer(dt){
     .add(new THREE.Vector3(-Math.sin(player.yaw)*10,Math.tan(player.pitch)*10,-Math.cos(player.yaw)*10));
   camera.lookAt(look);
   if(camShake>0){
-    camera.position.add(new THREE.Vector3(rnd(-1,1),rnd(-1,1),rnd(-1,1)).multiplyScalar(camShake*.35));
-    camShake=Math.max(0,camShake-dt*2.6);
+    camera.position.add(new THREE.Vector3(rnd(-1,1),rnd(-1,1),rnd(-1,1)).multiplyScalar(camShake*.5));
+    camShake=Math.max(0,camShake-dt*3.2);
   }
   /* sprinting widens the field of view a little, a cheap but effective sense
-     of speed; it always eases back to whatever resize() set as the base */
-  const wantFov=(camera.userData.baseFov||70)+(sprinting?5:0);
+     of speed; firing punches it out further for a snappy recoil kick, and
+     both always ease back to whatever resize() set as the base */
+  fireKick=Math.max(0,fireKick-dt*9);
+  const aiming=rmbDown&&!inLobby();
+  const wantFov=(camera.userData.baseFov||70)+(sprinting?5:0)-fireKick*3.5-(aiming?22:0);
   camera.fov=lerp(camera.fov,wantFov,1-Math.pow(.001,dt));
   camera.updateProjectionMatrix();
   if(sun){ sun.position.set(player.pos.x+48,80,player.pos.z+32); sun.target.position.copy(player.pos); }
@@ -4059,7 +4162,7 @@ function updateDucks(dt){
           const dp=player.pos.clone().add(new THREE.Vector3(rnd(-2,2),1,rnd(-2,2)));
           downed.push({key:lost.key,def:DUCKS[lost.key],gold:lost.gold,mesh:makeDuck(DUCKS[lost.key]),
             pos:dp,vel:new THREE.Vector3(rnd(-3,3),3,rnd(-3,3)),spin:rnd(-6,6),
-            landed:false,life:40,claimed:null,scale:DUCK_SCALE*(DUCKS[lost.key].scale||1)});
+            landed:false,life:1e9,claimed:null,scale:DUCK_SCALE*(DUCKS[lost.key].scale||1)});
           scene.add(downed[downed.length-1].mesh);
           updateHUD();
         }
@@ -4088,7 +4191,14 @@ function updateDucks(dt){
       if(distP<11&&d.panic<=0&&!d.def.boss) d.panic=1.2;
       if(d.t<=0){
         d.t=rnd(1.4,4.2);
-        if(!d.parade) d.targetA=rnd(0,6.283);
+        if(!d.parade){
+          if(d.def.boss){
+            /* wander freely near the middle, but never let it drift off far */
+            const Z=curZone(), lk=Z.ponds[0];
+            const distC=Math.hypot(d.pos.x-lk[0],d.pos.z-lk[1]);
+            d.targetA=distC>16?Math.atan2(lk[0]-d.pos.x,lk[1]-d.pos.z)+rnd(-.5,.5):rnd(0,6.283);
+          } else d.targetA=rnd(0,6.283);
+        }
         if(Math.random()<.1)SFX.quack();
       }
       let speed=d.def.speed;
@@ -4114,6 +4224,18 @@ function updateDucks(dt){
     }
 
     d.mesh.position.copy(d.pos);
+    /* small continuous life so grounded ducks never look frozen: a tail
+       wag that never stops, a waddle bounce while walking/running, and a
+       gentle bob while afloat */
+    if(d.mesh.userData.tail){
+      const wag=(d.panic>0?2.2:1)*(d.state==="cross"||d.state==="charge"?.4:1);
+      for(const tf of d.mesh.userData.tail)
+        tf.mesh.rotation.z=tf.baseZ+Math.sin(d.wingT*.6+tf.baseZ*3)*.10*wag;
+    }
+    if(d.state==="walk"||d.state==="run")
+      d.mesh.position.y+=Math.abs(Math.sin(d.wingT*.9))*.05;
+    else if(d.state==="swim")
+      d.mesh.position.y+=Math.sin(d.wingT*.6)*.035;
     if(d.mesh.userData.halo)
       d.mesh.userData.halo.scale.setScalar(2.0+Math.sin(performance.now()*.004)*.2);
     if(d.mesh.userData.motes){
@@ -4189,8 +4311,8 @@ function updateDogs(dt){
     }
     let goal;
     if(dg.state==="seek"&&dg.target) goal=dg.target.pos;
-    else if(dg.state==="return") goal=(coatHas("deliver")&&cooler)?cooler.pos:player.pos;
-    else if(dg.state==="hold") goal=cooler?cooler.pos:player.pos;   /* waits by the cooler */
+    else if(dg.state==="return") goal=(coatHas("deliver")&&cooler)?cooler.spot:player.pos;
+    else if(dg.state==="hold") goal=cooler?cooler.spot:player.pos;   /* waits beside the cooler, not inside it */
     else{
     /* Idle dogs wait AHEAD of the player, fanned out. Parking them behind put
        them right in the third-person camera's lap. */
