@@ -95,6 +95,16 @@ kbd{background:var(--gold);color:#0b1c2b;border-radius:5px;padding:1px 6px;font-
   padding:9px 20px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;font-size:13px;
   transition:opacity .3s,transform .3s;text-align:center;color:#0b1c2b}
 #eventBar.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.coolHead{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 6px}
+.coolHead b{display:block;font-size:14px}
+.coolHead span{display:block;font-size:11px;color:var(--dim);font-family:var(--num)}
+.coolBar{height:12px;border-radius:7px;background:rgba(0,0,0,.45);border:1px solid var(--edge);
+  overflow:hidden;margin-bottom:9px}
+.coolBar i{display:block;height:100%;background:linear-gradient(90deg,#4a9950,#7bd94a);transition:width .2s}
+.sellBig{width:100%;background:linear-gradient(160deg,#4a9950,#2b6b33);border:1px solid #7bd94a;
+  border-radius:12px;padding:13px;font-weight:900;font-size:13px;letter-spacing:.05em;
+  text-transform:uppercase;box-shadow:0 4px 0 #1a3d1e;margin-bottom:6px}
+.sellBig:active{transform:translateY(3px);box-shadow:0 1px 0 #1a3d1e}
 #sellFlash{position:absolute;left:50%;top:96px;transform:translate(-50%,-10px);opacity:0;
   background:linear-gradient(180deg,rgba(12,32,20,.94),rgba(8,20,14,.94));
   border:1px solid #4a9950;border-radius:13px;padding:9px 20px;text-align:center;
@@ -211,6 +221,7 @@ body.touch #touch{display:block}
   <a class="homelink" href="index.html">&larr; All games</a>
   <h1 class="logo disp"><span class="a">QUACK</span><span class="b">POT</span></h1>
   <div class="tag">Shoot ducks. Dog fetches. Sell. Buy something stupid. Repeat.</div>
+  <div class="tag" id="acctLabel" style="font-size:11px;opacity:.8">Playing offline - progress saved on this device</div>
   <div class="tstats" id="tStats"></div>
   <div style="display:flex;flex-direction:column;gap:9px;width:min(340px,80vw);margin-top:8px">
     <button class="btn big" id="bResume">Continue</button>
@@ -259,6 +270,12 @@ body.touch #touch{display:block}
   <h2 id="shopTitle">Shop</h2><div class="sub" id="shopSub"></div>
   <div class="tabs" id="shopTabs"></div>
   <div class="list" id="shopList"></div>
+</div></div>
+
+<div class="veil" id="vStore"><div class="card" style="max-width:540px">
+  <button class="closeX" id="storeX">&times;</button>
+  <h2 id="storeTitle">Store</h2><div class="sub" id="storeSub"></div>
+  <div class="list" id="storeList"></div>
 </div></div>
 
 <div class="veil" id="vResearch"><div class="card" style="max-width:520px">
@@ -618,7 +635,7 @@ const SFX={
   }
 };
 
-const DUCK_SCALE=1.4, DOG_SCALE=1.15;
+const DUCK_SCALE=1.28, DOG_SCALE=1.12;
 /* ═══════════ duck species ═══════════ */
 const DUCKS={
  common  :{name:"Common Duck",     rarity:0,hp:6,     val:8,        col:0xfff2d8,acc:0xe8c27a,speed:2.4,fly:.15,quip:"Just a duck. Nothing more."},
@@ -712,7 +729,73 @@ const DOGS=[
  {id:"myth",   name:"Mythdog",   ic:"&#10024;", cost:900000000000, speed:60,carry:36,coat:0xc16cff,ear:0x6c2fb8,scale:1.50,desc:"Fetches things that have not landed yet.",luck:.45,mult:.60}
 ];
 
-/* ═══════════ upgrades ═══════════ */
+
+/* ═══════════ permanent goods, bought in town ═══════════
+   Guns, dogs, dog coats, coolers and worn gear are kept forever.
+   Everything bought at the cooler out on the lake is per-run and is
+   stripped when you come back to the lodge. */
+const ATTACH=[
+ {id:"multi",   name:"Multi Barrel",   ic:"&#127919;",max:5,base:9000,  growth:5.0,
+  label:l=>["Double Shot","Triple Shot","Quad Shot","Penta Shot","Hexa Shot"][clamp(l,0,4)],
+  desc:l=>l?`Fires ${l+1} projectiles.`:`Fires a second projectile.`},
+ {id:"spread",  name:"Spread Choke",   ic:"&#127806;",max:6,base:14000, growth:3.6,
+  desc:l=>`Fans out over ${l*4} degrees with ${l} extra pellet${l===1?"":"s"}.`},
+ {id:"chain",   name:"Chain Coil",     ic:"&#9939;",  max:8,base:26000, growth:3.5,
+  desc:l=>`Hits arc to ${l} nearby duck${l===1?"":"s"}.`},
+ {id:"pierce",  name:"Piercing Rounds",ic:"&#10145;", max:6,base:38000, growth:3.9,
+  desc:l=>`Passes through ${l} more duck${l===1?"":"s"} than normal.`},
+ {id:"explode", name:"Burst Shells",   ic:"&#128163;",max:8,base:70000, growth:3.7,
+  desc:l=>`Impacts burst for ${l*5}m.`},
+ {id:"homing",  name:"Homing Chip",    ic:"&#129522;",max:6,base:120000,growth:3.8,
+  desc:l=>`Projectiles curve toward ducks (${l}).`},
+ {id:"ricochet",name:"Ricochet Plate", ic:"&#129530;",max:6,base:180000,growth:4.0,
+  desc:l=>`Bounces to ${l} more target${l===1?"":"s"}.`},
+ {id:"magnet",  name:"Magnet Core",    ic:"&#127786;",max:6,base:260000,growth:3.9,
+  desc:l=>`Drags ducks within ${l*3}m toward the shot.`},
+ {id:"golden",  name:"Gilding Kit",    ic:"&#10024;", max:10,base:600000,growth:3.5,
+  desc:l=>`${(l*1.5).toFixed(1)}% chance a catch turns golden.`},
+ {id:"mega",    name:"Mega Chamber",   ic:"&#128309;",max:8,base:1400000,growth:3.8,
+  desc:l=>`Every 6th shot is huge and hits everything.`},
+ {id:"cluster", name:"Cluster Pack",   ic:"&#127882;",max:8,base:4000000,growth:3.9,
+  desc:l=>`Splits into ${l*2} smaller shots on impact.`}
+];
+const COOLERS=[
+ {id:"box",   name:"Foam Box",       ic:"&#128230;",cost:0,      cap:25,  desc:"Holds a modest number of ducks."},
+ {id:"steel", name:"Steel Chest",    ic:"&#129482;",cost:6000,   cap:70,  desc:"Heavier, colder, roomier."},
+ {id:"chill", name:"Chill Locker",   ic:"&#10052;", cost:120000, cap:180, desc:"Runs its own compressor."},
+ {id:"vault", name:"Duck Vault",     ic:"&#128274;",cost:2500000,cap:500, desc:"Industrial. Faintly ominous."},
+ {id:"quantum",name:"Quantum Crate", ic:"&#9883;",  cost:9e7,    cap:1600,desc:"Bigger inside. Do not ask."}
+];
+const COOLER_MODS=[
+ {id:"autosell",name:"Auto-Sell Module",ic:"&#9851;", cost:250000,desc:"Sells the cooler the moment it fills."},
+ {id:"compress",name:"Compressor",     ic:"&#128736;",cost:120000,desc:"Each duck takes half a slot."}
+];
+const GEAR=[
+ {id:"boots",  name:"Marsh Boots",     ic:"&#129406;",cost:4000,   desc:"+25% move speed.",       move:.25},
+ {id:"vest",   name:"Hunter's Vest",   ic:"&#129509;",cost:18000,  desc:"+2 ducks carried.",      carry:2},
+ {id:"gloves", name:"Grip Gloves",     ic:"&#129508;",cost:60000,  desc:"Reload 25% faster.",     reload:.25},
+ {id:"charm",  name:"Lucky Charm",     ic:"&#127808;",cost:250000, desc:"+20% rare duck chance.", luck:.20},
+ {id:"ledger", name:"Trader's Ledger", ic:"&#128220;",cost:900000, desc:"+35% coins from sales.", coin:.35},
+ {id:"scope",  name:"Brass Scope",     ic:"&#128301;",cost:3500000,desc:"+40% range, +15% crit.", range:.40,crit:.15}
+];
+const COATS=[
+ {id:"bandana",name:"Bandana",        ic:"&#129509;",cost:3000,   desc:"+20% fetch speed.",       speed:.20},
+ {id:"pack",   name:"Saddle Pack",    ic:"&#127890;",cost:25000,  desc:"+2 ducks per trip.",      carry:2},
+ {id:"harness",name:"Cooler Harness", ic:"&#128230;",cost:90000,  desc:"Your dog loads the cooler itself.",deliver:true},
+ {id:"boots2", name:"Paw Boots",      ic:"&#129406;",cost:400000, desc:"+35% fetch speed.",       speed:.35},
+ {id:"medal",  name:"Gold Medal",     ic:"&#127941;",cost:2000000,desc:"+25% rare duck chance.",  luck:.25}
+];
+const has=(list,id)=>list.indexOf(id)>=0;
+const A=id=>(S.perm.att&&S.perm.att[id])||0;
+const attDef=id=>ATTACH.find(a=>a.id===id);
+const attCost=id=>{const a=attDef(id);return Math.floor(a.base*Math.pow(a.growth,A(id)));};
+const coolerDef=()=>COOLERS[clamp(S.perm.cooler|0,0,COOLERS.length-1)];
+const gearBonus=k=>GEAR.reduce((n,g)=>n+(has(S.perm.gear,g.id)?(g[k]||0):0),0);
+const coatBonus=k=>COATS.reduce((n,c)=>n+(has(S.perm.coats,c.id)?(c[k]||0):0),0);
+const coatHas=k=>COATS.some(c=>has(S.perm.coats,c.id)&&c[k]);
+const modHas=id=>has(S.perm.mods,id);
+
+/* ═══════════ per-run upgrades, bought at the cooler ═══════════ */
 const UPG={
  dmg:      {unlock:0,name:"Damage",           ic:"&#128165;",cat:"weapon",max:40,base:120,   growth:1.42,desc:l=>`Shots hit for ${(1+l*.35).toFixed(2)}x weapon damage.`},
  rate:     {unlock:0,name:"Fire Rate",        ic:"&#9201;",  cat:"weapon",max:25,base:220,   growth:1.50,desc:l=>`+${l*6}% shots per second.`},
@@ -723,29 +806,14 @@ const UPG={
  crit:     {unlock:18,name:"Critical Chance",  ic:"&#127808;",cat:"weapon",max:25,base:380,   growth:1.55,desc:l=>`${l*3}% chance of a critical.`},
  critdmg:  {unlock:30,name:"Critical Power",   ic:"&#9889;",  cat:"weapon",max:20,base:900,   growth:1.60,desc:l=>`Criticals hit for ${(5+l*1.5).toFixed(1)}x.`},
 
- multi:    {unlock:45,name:"Multi Shot",       ic:"&#127919;",cat:"special",max:5, base:9000,     growth:7.0,desc:l=>`Fires ${l+2} projectiles at once.`,label:l=>["Double Shot","Triple Shot","Quad Shot","Penta Shot","Hexa Shot"][clamp(l,0,4)]},
- spread:   {unlock:35,name:"Spread Shot",      ic:"&#127806;",cat:"special",max:6, base:14000,    growth:4.2,desc:l=>`Fans out over ${l*4} degrees, +${l} pellet${l===1?"":"s"}.`},
- chain:    {unlock:60,name:"Chain Shot",       ic:"&#9939;",  cat:"special",max:8, base:26000,    growth:4.0,desc:l=>`Hits arc to ${l} nearby duck${l===1?"":"s"}.`},
- pierce:   {unlock:55,name:"Piercing Shot",    ic:"&#10145;", cat:"special",max:6, base:38000,    growth:4.5,desc:l=>`Passes through ${l} extra duck${l===1?"":"s"}.`},
- explode:  {unlock:80,name:"Explosive Shot",   ic:"&#128163;",cat:"special",max:8, base:70000,    growth:4.2,desc:l=>`Impacts burst for ${l*5}m.`},
- homing:   {unlock:110,name:"Homing Shot",      ic:"&#129522;",cat:"special",max:6, base:120000,   growth:4.4,desc:l=>`Projectiles curve toward ducks (${l}).`},
- ricochet: {unlock:130,name:"Ricochet Shot",    ic:"&#129530;",cat:"special",max:6, base:180000,   growth:4.6,desc:l=>`Bounces to ${l} more target${l===1?"":"s"}.`},
- magnet:   {unlock:150,name:"Magnet Shot",      ic:"&#127786;",cat:"special",max:6, base:260000,   growth:4.5,desc:l=>`Drags ducks within ${l*3}m toward the shot.`},
- golden:   {unlock:200,name:"Golden Shot",      ic:"&#10024;", cat:"special",max:10,base:600000,   growth:4.0,desc:l=>`${(l*1.5).toFixed(1)}% chance to turn a catch golden (10x).`},
- mega:     {unlock:260,name:"Mega Shot",        ic:"&#128309;",cat:"special",max:8, base:1400000,  growth:4.3,desc:l=>`Every 6th shot is huge and hits everything.`},
- cluster:  {unlock:320,name:"Cluster Shot",     ic:"&#127882;",cat:"special",max:8, base:4000000,  growth:4.4,desc:l=>`Splits into ${l*2} smaller shots on impact.`},
 
  dogspeed: {unlock:0,name:"Dog Speed",        ic:"&#129460;",cat:"dog",max:30,base:400,  growth:1.50,desc:l=>`+${l*7}% fetch speed.`},
  dogcarry: {unlock:10,name:"Dog Carry",        ic:"&#127937;",cat:"dog",max:30,base:800,  growth:1.55,desc:l=>`+${l} ducks per trip.`},
  dogcount: {unlock:40,name:"Extra Dogs",       ic:"&#128062;",cat:"dog",max:5, base:40000,growth:6.0, desc:l=>`${l+1} dog${l?"s":""} fetching at once.`},
  dogrange: {unlock:12,name:"Fetch Range",      ic:"&#128246;",cat:"dog",max:20,base:600,  growth:1.50,desc:l=>`Dogs notice ducks ${Math.round(62+l*7)}m away.`},
  dogluck:  {unlock:28,name:"Lucky Nose",       ic:"&#128067;",cat:"dog",max:20,base:9000, growth:1.70,desc:l=>`+${l*2}% rare duck chance.`},
- dogdeliver:{unlock:25,name:"Cooler Training",ic:"&#128230;",cat:"dog",max:1, base:9000, growth:1,   desc:()=>`Your dog drops ducks straight into the cooler instead of waiting for you.`},
 
- bag:      {unlock:0,name:"Cooler Capacity", ic:"&#127890;",cat:"bag",max:40,base:250,   growth:1.50,desc:l=>`The cooler holds ${25+l*25} ducks.`},
  handcap:  {unlock:0,name:"Carry Capacity",  ic:"&#129355;",cat:"bag",max:20,base:400,   growth:1.55,desc:l=>`You can carry ${4+l*3} ducks at a time.`},
- autosell: {unlock:50,name:"Auto-Sell",        ic:"&#9851;",  cat:"bag",max:1, base:250000,growth:1,   desc:()=>`Sells automatically when the bag fills.`},
- compress: {unlock:45,name:"Duck Compression", ic:"&#128736;",cat:"bag",max:20,base:120000,growth:1.80,desc:l=>`Each duck takes ${(1-l*.04).toFixed(2)} slots.`},
  value:    {unlock:0,name:"Duck Value",       ic:"&#128176;",cat:"bag",max:40,base:3000,  growth:1.55,desc:l=>`Ducks sell for +${l*12}% more.`},
 
  movespeed:{unlock:0,name:"Move Speed",       ic:"&#128095;",cat:"player",max:25,base:500,  growth:1.50,desc:l=>`+${l*5}% run speed.`},
@@ -788,11 +856,13 @@ function newSave(){
     zone:"lobby",map:"backyard",unlocked:["backyard"],
     researched:Object.keys(UPG).filter(k=>!UPG[k].unlock),
     round:1,
+    perm:{weapons:["spud"],dogs:["biscuit"],coats:[],gear:[],mods:[],cooler:0,att:{}},
     up,abilities:[],ach:[],
     stats:{ducks:0,golden:0,bosses:0,earned:0,bestCombo:0,shots:0},lastSave:Date.now()};
 }
 function save(){ if(!S)return; S.lastSave=Date.now();
-  try{ localStorage.setItem(SAVE_KEY,JSON.stringify(S)); }catch(e){} }
+  try{ localStorage.setItem(SAVE_KEY,JSON.stringify(S)); }catch(e){}
+  cloudSave(); }
 function load(){
   try{ const r=localStorage.getItem(SAVE_KEY);
     if(r){ const p=JSON.parse(r), base=newSave();
@@ -806,41 +876,119 @@ function load(){
       if(typeof S.feathers!=="number")S.feathers=0;
       if(!S.map)S.map="backyard";
       if(typeof S.round!=="number"||S.round<1)S.round=1;
+      const bp={weapons:["spud"],dogs:["biscuit"],coats:[],gear:[],mods:[],cooler:0,att:{}};
+      S.perm=Object.assign(bp,S.perm||{});
+      ["weapons","dogs","coats","gear","mods"].forEach(k=>{ if(!Array.isArray(S.perm[k]))S.perm[k]=bp[k]; });
+      if(typeof S.perm.att!=="object"||!S.perm.att)S.perm.att={};
+      if(typeof S.perm.cooler!=="number")S.perm.cooler=0;
       if(!Array.isArray(S.unlocked)||!S.unlocked.length)S.unlocked=["backyard"];
       return true; } }catch(e){}
   return false;
 }
 let saveT=null; const saveSoon=()=>{clearTimeout(saveT);saveT=setTimeout(save,900);};
 
+
+/* ═══════════ optional cloud save ═══════════
+   Uses the same Firebase account the rest of the site signs into. It is
+   entirely optional: local storage is always written first and the game
+   runs identically when signed out or when Firebase cannot be reached. */
+const Cloud={
+  ready:false, uid:null, db:null, busy:false, pending:false,
+  async init(){
+    try{
+      if(location.protocol==="file:")return;
+      await this.script("https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js");
+      await this.script("https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js");
+      await this.script("https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js");
+      if(!window.firebase)return;
+      if(!firebase.apps.length){
+        firebase.initializeApp({apiKey:"AIzaSyBa6Kv2Wiot2F-vqX_sOH57Yy6O_HBIwPk",
+          authDomain:"game-701be.firebaseapp.com",projectId:"game-701be",
+          storageBucket:"game-701be.firebasestorage.app",
+          messagingSenderId:"637319510154",appId:"1:637319510154:web:6f4947e02802c641d89573"});
+      }
+      this.db=firebase.firestore();
+      firebase.auth().onAuthStateChanged(u=>{
+        this.uid=u?u.uid:null;
+        this.ready=!!u;
+        setAccountLabel(u?(u.email||"signed in"):null);
+        if(u) this.pull();
+      });
+    }catch(e){ /* stay local-only */ }
+  },
+  script(src){
+    return new Promise((res,rej)=>{
+      if(document.querySelector('script[src="'+src+'"]'))return res();
+      const t=document.createElement("script");
+      t.src=src; t.onload=res; t.onerror=rej; document.head.appendChild(t);
+    });
+  },
+  async pull(){
+    if(!this.ready||!this.db)return;
+    try{
+      const doc=await this.db.collection("quackpot").doc(this.uid).get();
+      if(!doc.exists)return;
+      const remote=doc.data()&&doc.data().save;
+      if(!remote)return;
+      const parsed=typeof remote==="string"?JSON.parse(remote):remote;
+      const localTime=(S&&S.lastSave)||0;
+      if((parsed.lastSave||0)>localTime+2000){
+        cloudNotice("Loaded newer progress from your account.");
+        try{ localStorage.setItem(SAVE_KEY,JSON.stringify(parsed)); }catch(e){}
+        if(!started){ load(); renderTitleStats(); }
+      }
+    }catch(e){}
+  },
+  async push(){
+    if(!this.ready||!this.db||!S)return;
+    if(this.busy){ this.pending=true; return; }
+    this.busy=true;
+    try{
+      await this.db.collection("quackpot").doc(this.uid)
+        .set({save:JSON.stringify(S),at:Date.now()},{merge:true});
+    }catch(e){}
+    this.busy=false;
+    if(this.pending){ this.pending=false; this.push(); }
+  }
+};
+function setAccountLabel(txt){
+  const el=$("acctLabel"); if(!el)return;
+  el.textContent=txt?("Synced to "+txt):"Playing offline - progress saved on this device";
+}
+let cloudT=null;
+function cloudNotice(m){ toast(m); }
+function cloudSave(){ clearTimeout(cloudT); cloudT=setTimeout(()=>Cloud.push(),2500); }
+
 /* ═══════════ derived ═══════════ */
 const L=k=>S.up[k]||0;
+function freshUp(){ const u={}; for(const k in UPG) u[k]=0; return u; }
 const weaponDef=()=>WEAPONS.find(w=>w.id===S.weapon)||WEAPONS[0];
 const dogDef=()=>DOGS.find(d=>d.id===S.dog)||DOGS[0];
 const curZone=()=>zoneById(S.zone)||ZONES[0];
 const gunDamage=()=>weaponDef().dmg*(1+L("dmg")*.35);
 const gunRate=()=>weaponDef().rate*(1+L("rate")*.06)*(fx.rapid>0?3:1);
 const gunMag=()=>Math.floor(weaponDef().mag+L("mag")*3);
-const gunReload=()=>Math.max(.45,weaponDef().reload*1.9*(1-Math.min(.72,L("reload")*.045)));
+const gunReload=()=>Math.max(.45,weaponDef().reload*1.9*(1-Math.min(.72,L("reload")*.045))*(1-gearBonus("reload")));
 const projSpeed=()=>weaponDef().spd*(1+L("spd")*.07);
-const projRange=()=>78+L("range")*9;
-const critChance=()=>Math.min(.9,L("crit")*.03);
+const projRange=()=>(78+L("range")*9)*(1+gearBonus("range"));
+const critChance=()=>Math.min(.9,L("crit")*.03+gearBonus("crit"));
 const critMult=()=>5+L("critdmg")*1.5;
-const shotCount=()=>1+L("multi")+L("spread");
-const spreadAngle=()=>L("spread")*4*Math.PI/180;
-const bagCap=()=>25+L("bag")*25;                 /* cooler */
-const carryCap=()=>4+L("handcap")*3;             /* what fits in your arms */
+const shotCount=()=>1+A("multi")+A("spread");
+const spreadAngle=()=>A("spread")*4*Math.PI/180;
+const bagCap=()=>coolerDef().cap;
+const carryCap=()=>4+L("handcap")*3+gearBonus("carry");
 const carryFull=()=>S.carry.length>=carryCap();
 const researched=k=>S.researched.indexOf(k)>=0;
-const bagUse=()=>Math.max(.2,1-L("compress")*.04);
+const bagUse=()=>modHas("compress")?.5:1;
 const bagFill=()=>S.bag.length*bagUse();
 const bagFull=()=>bagFill()>=bagCap();
-const dogSpeed=()=>dogDef().speed*(1+L("dogspeed")*.07);
-const dogCarry=()=>dogDef().carry+L("dogcarry");
+const dogSpeed=()=>dogDef().speed*(1+L("dogspeed")*.07+coatBonus("speed"));
+const dogCarry=()=>dogDef().carry+L("dogcarry")+coatBonus("carry");
 const dogCount=()=>1+L("dogcount");
 const dogRange=()=>62+L("dogrange")*7;
-const luck=()=>L("luck")*.025+L("dogluck")*.02+(dogDef().luck||0);
-const valueMult=()=>(1+L("value")*.12)*(1+L("coinmult")*.15)*(1+(dogDef().mult||0))*curZone().mult;
-const moveSpeed=()=>7*(1+L("movespeed")*.05);
+const luck=()=>L("luck")*.025+L("dogluck")*.02+(dogDef().luck||0)+gearBonus("luck")+coatBonus("luck");
+const valueMult=()=>(1+L("value")*.12)*(1+L("coinmult")*.15+gearBonus("coin"))*(1+(dogDef().mult||0))*curZone().mult;
+const moveSpeed=()=>7*(1+L("movespeed")*.05+gearBonus("move"));
 const sprintMult=()=>1.7*(1+L("sprint")*.06);
 const jumpVel=()=>9.5*(1+L("jump")*.06);
 const comboWindow=()=>3+L("combokeep")*.4;
@@ -1463,32 +1611,55 @@ function placeCooler(x,z){
   interactables.push({x,z,r:5.5,kind:"cooler",group:g});
   decor.push(g);
 }
+function shopHut(x,z,color,label,kind,payload,w,h){
+  const g=new THREE.Group(), y=heightAt(x,z);
+  const W=w||7, H=h||5;
+  g.add(box(W,.5,W*.82,0x6a4a28,0,.25,0));
+  g.add(box(W-.8,H,W*.72,color,0,H/2+.4,0));
+  g.add(box(W+.5,.4,W*.86,0xf6e6c4,0,H+.5,0));
+  const roof=cone(W*.78,1.7,color,0,H+1.4,0); roof.rotation.y=Math.PI/4; g.add(roof);
+  /* windows and a door so it reads as a shop, not a shed */
+  g.add(box(W*.34,1.3,.12,0x9ad6f0,-(W*.24),H*.55,W*.36));
+  g.add(box(W*.34,1.3,.12,0x9ad6f0, (W*.24),H*.55,W*.36));
+  g.add(box(1.5,2.6,.14,0x5a3a20,0,1.7,W*.36));
+  const plate=labelPlate(label,color); plate.position.set(0,H+.05,W*.37); g.add(plate);
+  g.add(ball(.26,0xffe08a,0,H+2.3,0,{emissive:0xffe08a,emissiveIntensity:1.2}));
+  g.position.set(x,y,z);
+  worldGroup.add(g);
+  interactables.push({x,z,r:6,kind,payload,group:g});
+  return g;
+}
 function buildLobby(){
-  /* a small lodge yard: research bench, map board, and the gate out */
-  const deck=box(30,.5,22,0x8a6a44,0,.25,0); worldGroup.add(deck);
-  platforms.push({x:0,y:.5,z:0,w:30,d:22});
-  /* open-air deck: a roof here sat exactly where the third-person camera
-     rides and filled the screen with its underside */
-  for(let i=-1;i<=1;i+=2){
-    worldGroup.add(box(.5,1.5,.5,0x6a4a28,i*14,1.0,-10));
-    worldGroup.add(box(.5,1.5,.5,0x6a4a28,i*14,1.0,10));
-    worldGroup.add(box(29,.22,.22,0x8a6a44,0,1.7,i*10));
+  /* a small town square: shops around a paved plaza */
+  const plaza=box(46,.5,34,0x9a8a6a,0,.25,0); worldGroup.add(plaza);
+  platforms.push({x:0,y:.5,z:0,w:46,d:34});
+  for(let i=-2;i<=2;i++) worldGroup.add(box(44,.05,.5,0x8a7a5a,0,.53,i*7));
+
+  shopHut(-17,-11,0x3d6fb8,"GUN STORE","store","gun");
+  shopHut(0,-17,  0xb85a3d,"DOG STORE","store","dog");
+  shopHut(17,-11, 0x6c3cff,"THE LAB","store","lab");
+  shopHut(-17,3,  0x3d8ab8,"COOLER STORE","store","cooler",6.4,4.4);
+  shopHut(17,3,   0xb8973d,"ATTACHMENTS","store","attach",6.4,4.4);
+  shopHut(0,-3,   0x4a9950,"DEPART","start",null,6.4,4.2);
+  shopHut(-27,-4, 0x8a5ab8,"MAP BOARD","store","maps",5.4,3.8);
+  shopHut(27,-4,  0x9a4a6a,"TROPHIES","store","ach",5.4,3.8);
+
+  /* street furniture */
+  for(let i=0;i<6;i++){
+    const lx=(i%2?1:-1)*21, lz=-12+Math.floor(i/2)*12;
+    worldGroup.add(cyl(.16,3.4,0x3a3f47,lx,1.7,lz));
+    worldGroup.add(ball(.32,0xffe08a,lx,3.6,lz,{emissive:0xffe08a,emissiveIntensity:1.3}));
   }
-  /* all three stations sit in front of the spawn */
-  station(-11,-3,0x6c3cff,"RESEARCH","research");
-  station(11,-3,0x3d8ab8,"MAP BOARD","maps");
-  station(0,-11,0x4a9950,"START HUNT","start");
-  const s1=signProp("SPEND FEATHERS ON RESEARCH\nTO UNLOCK NEW UPGRADES");
-  s1.position.set(-11,heightAt(-11,3)+.5,3); worldGroup.add(s1);
-  const mascot=giantRubberDuck(-17,9); mascot.scale.setScalar(.30); worldGroup.add(mascot);
-  for(let i=0;i<4;i++){
-    const lx=(i%2?1:-1)*14.6, lz=(i<2?1:-1)*10.6;
-    worldGroup.add(cyl(.16,3.0,0x6a4a28,lx,1.5,lz));
-    worldGroup.add(ball(.34,0xffe08a,lx,3.2,lz,{emissive:0xffe08a,emissiveIntensity:1.3}));
-  }
-  /* woods kept well clear of the deck, or the camera ends up inside a tree */
-  for(let i=0;i<14;i++){
-    const a=rnd(0,6.283), d=rnd(44,86);
+  const fountain=new THREE.Group();
+  fountain.add(cyl(3.2,.7,0x9aa8b2,0,.35,0));
+  fountain.add(cyl(2.7,.4,0x2f9fd8,0,.62,0));
+  fountain.add(cyl(.5,2.0,0x9aa8b2,0,1.4,0));
+  const md=giantRubberDuck(0,0); md.scale.setScalar(.22); md.position.set(0,2.2,0);
+  fountain.add(md);
+  fountain.position.set(-26,heightAt(-26,9)+.5,9); worldGroup.add(fountain);
+
+  for(let i=0;i<16;i++){
+    const a=rnd(0,6.283), d=rnd(40,84);
     worldGroup.add(tree(Math.cos(a)*d,Math.sin(a)*d,0x7a5230,0x4f9e3f,rnd(.9,1.4)));
   }
 }
@@ -1514,43 +1685,43 @@ function makeDuck(def){
   const dark=mat(0x1a1c18);
 
   /* body: two overlapping masses so the silhouette has a chest and a rump */
-  const b=new THREE.Mesh(G.sphere,body); b.scale.set(.88,.80,1.06); b.position.set(0,.78,-.04);
+  const b=new THREE.Mesh(G.sphere,body); b.scale.set(.68,.60,1.22); b.position.set(0,.72,-.10);
   b.castShadow=true; b.receiveShadow=true; g.add(b);
-  const chest=new THREE.Mesh(G.sphere,body); chest.scale.set(.72,.68,.62); chest.position.set(0,.86,.56);
+  const chest=new THREE.Mesh(G.sphere,body); chest.scale.set(.58,.54,.64); chest.position.set(0,.80,.54);
   chest.castShadow=true; g.add(chest);
   const belly=new THREE.Mesh(G.sphere,mat(def.acc,{transparent:true,opacity:.55}));
-  belly.scale.set(.66,.42,.82); belly.position.set(0,.50,.02); g.add(belly);
+  belly.scale.set(.52,.30,.92); belly.position.set(0,.48,-.02); g.add(belly);
 
   /* neck + head */
-  const neck=new THREE.Mesh(G.cyl,body); neck.scale.set(.28,.42,.28); neck.position.set(0,1.24,.44);
+  const neck=new THREE.Mesh(G.cyl,body); neck.scale.set(.20,.56,.20); neck.position.set(0,1.18,.44);
   neck.rotation.x=-.28; g.add(neck);
-  const h=new THREE.Mesh(G.sphere,body); h.scale.set(.54,.52,.54); h.position.set(0,1.58,.60);
+  const h=new THREE.Mesh(G.sphere,body); h.scale.set(.40,.42,.44); h.position.set(0,1.56,.62);
   h.castShadow=true; g.add(h);
-  const crown=new THREE.Mesh(G.sphere,accent); crown.scale.set(.44,.24,.44); crown.position.set(0,1.78,.58);
+  const crown=new THREE.Mesh(G.sphere,accent); crown.scale.set(.34,.17,.36); crown.position.set(0,1.72,.60);
   g.add(crown);
 
   /* beak: upper + lower with nostrils */
-  const beak=new THREE.Mesh(G.sphere,beakM); beak.scale.set(.22,.11,.38); beak.position.set(0,1.52,1.06); g.add(beak);
-  const beakL=new THREE.Mesh(G.sphere,mat(0xd97a12)); beakL.scale.set(.19,.07,.32); beakL.position.set(0,1.44,1.02); g.add(beakL);
+  const beak=new THREE.Mesh(G.sphere,beakM); beak.scale.set(.17,.08,.46); beak.position.set(0,1.52,1.02); g.add(beak);
+  const beakL=new THREE.Mesh(G.sphere,mat(0xd97a12)); beakL.scale.set(.15,.05,.40); beakL.position.set(0,1.46,1.00); g.add(beakL);
   g.add(ball(.025,0x8a4a08,.07,1.55,1.18)); g.add(ball(.025,0x8a4a08,-.07,1.55,1.18));
 
   /* eyes: white, pupil, specular dot */
   for(const sd of[-1,1]){
-    const w=new THREE.Mesh(G.sphere,mat(0xffffff)); w.scale.setScalar(.15); w.position.set(sd*.26,1.66,.90); g.add(w);
-    const pu=new THREE.Mesh(G.sphere,dark); pu.scale.setScalar(.085); pu.position.set(sd*.28,1.66,1.00); g.add(pu);
-    const hi=new THREE.Mesh(G.sphere,mat(0xffffff)); hi.scale.setScalar(.035); hi.position.set(sd*.31,1.70,1.05); g.add(hi);
+    const w=new THREE.Mesh(G.sphere,mat(0xffffff)); w.scale.setScalar(.11); w.position.set(sd*.21,1.62,.86); g.add(w);
+    const pu=new THREE.Mesh(G.sphere,dark); pu.scale.setScalar(.062); pu.position.set(sd*.22,1.62,.94); g.add(pu);
+    const hi=new THREE.Mesh(G.sphere,mat(0xffffff)); hi.scale.setScalar(.026); hi.position.set(sd*.24,1.65,.98); g.add(hi);
   }
 
   /* wings: upper arm + feather fan on one pivot */
   const wings=[];
   for(const sd of[-1,1]){
-    const pivot=new THREE.Group(); pivot.position.set(sd*.62,.94,.06); g.add(pivot);
-    const up=new THREE.Mesh(G.sphere,body); up.scale.set(.22,.30,.60); up.position.set(sd*.14,0,0);
+    const pivot=new THREE.Group(); pivot.position.set(sd*.46,.86,.02); g.add(pivot);
+    const up=new THREE.Mesh(G.sphere,body); up.scale.set(.15,.20,.68); up.position.set(sd*.10,0,0);
     up.castShadow=true; pivot.add(up);
     for(let f=0;f<3;f++){
       const fe=new THREE.Mesh(G.sphere,accent);
-      fe.scale.set(.10,.20,.46-f*.06);
-      fe.position.set(sd*(.30+f*.07),-.06-f*.05,-.16-f*.10);
+      fe.scale.set(.07,.13,.54-f*.07);
+      fe.position.set(sd*(.20+f*.05),-.04-f*.04,-.20-f*.12);
       fe.castShadow=true; pivot.add(fe);
     }
     wings.push(pivot);
@@ -1560,15 +1731,15 @@ function makeDuck(def){
   /* tail fan */
   for(let t=-1;t<=1;t++){
     const tf=new THREE.Mesh(G.sphere,accent);
-    tf.scale.set(.10,.16,.34); tf.position.set(t*.16,.92,-1.02);
+    tf.scale.set(.07,.11,.40); tf.position.set(t*.12,.86,-1.14);
     tf.rotation.x=-.45; tf.rotation.z=t*.22; g.add(tf);
   }
 
   /* legs + webbed feet */
   const legs=[];
   for(const sd of[-1,1]){
-    const l=new THREE.Mesh(G.cyl,footM); l.scale.set(.075,.40,.075); l.position.set(sd*.26,.24,.02); g.add(l);
-    const foot=new THREE.Mesh(G.sphere,footM); foot.scale.set(.17,.05,.26); foot.position.set(sd*.26,.05,.12); g.add(foot);
+    const l=new THREE.Mesh(G.cyl,footM); l.scale.set(.055,.34,.055); l.position.set(sd*.20,.26,.00); g.add(l);
+    const foot=new THREE.Mesh(G.sphere,footM); foot.scale.set(.13,.04,.22); foot.position.set(sd*.20,.09,.10); g.add(foot);
     legs.push(l);
   }
   g.userData.legs=legs;
@@ -1812,6 +1983,7 @@ function miniDuck(key){
 /* ═══════════ entities ═══════════ */
 let ducks=[],dogs=[],shots=[],parts=[],pops=[],downed=[],vortex=null,ufo=null;
 const tmpV=new THREE.Vector3();
+const camRay=new THREE.Raycaster();
 const fx={rapid:0,storm:0};
 let ammo=0,reloading=false,reloadT=0,shotCooldown=0,megaCounter=0;
 let combo=0,comboT=0,camShake=0,slow=0,bagWarned=false;
@@ -1963,7 +2135,7 @@ function fire(){
   camShake=Math.max(camShake,.16);
   player.gun.position.z+=.16;
   megaCounter++;
-  const isMega=L("mega")>0&&megaCounter%6===0;
+  const isMega=A("mega")>0&&megaCounter%6===0;
   const n=shotCount(), spread=spreadAngle();
   const right=fwd.clone().cross(new THREE.Vector3(0,1,0)).normalize();
   for(let i=0;i<n;i++){
@@ -1975,13 +2147,13 @@ function fire(){
   }
 }
 function makeShot(origin,dir,mega){
-  const size=mega?(1.2+L("mega")*.45):.34;
+  const size=mega?(1.2+A("mega")*.45):.34;
   const col=mega?0x6cf0ff:0xffd23c;
   const m=new THREE.Mesh(G.sphere,mat(col,{emissive:col,emissiveIntensity:1.4}));
   m.scale.setScalar(size); m.position.copy(origin); scene.add(m);
   const glow=new THREE.Sprite(puffMat(col,true)); glow.scale.setScalar(size*4.5); m.add(glow);
   shots.push({mesh:m,pos:m.position,vel:dir.clone().multiplyScalar(projSpeed()),
-    dist:0,mega,pierce:1+L("pierce"),ricochet:L("ricochet"),hitIds:new Set(),size,isCluster:false});
+    dist:0,mega,pierce:1+A("pierce"),ricochet:A("ricochet"),hitIds:new Set(),size,isCluster:false});
 }
 function muzzleFlash(p){
   const f=new THREE.Sprite(puffMat(0xfff3b0,true));
@@ -2051,7 +2223,7 @@ function damage(d,amount,crit){
 function downDuck(d){
   const i=ducks.indexOf(d); if(i<0)return;
   ducks.splice(i,1);
-  if(L("golden")>0&&Math.random()<L("golden")*.015&&!d.def.boss){
+  if(A("golden")>0&&Math.random()<A("golden")*.015&&!d.def.boss){
     d.gold=true;
     const gm=mat(0xffd23c,{emissive:0xffd23c,emissiveIntensity:.7});
     d.mesh.traverse(o=>{ if(o.isMesh)o.material=gm; });
@@ -2249,6 +2421,7 @@ $("mTitle").onclick=()=>{save();location.reload();};
 $("helpX").onclick=()=>hideVeil("vHelp");
 $("achX").onclick=()=>hideVeil("vAch");
 $("resX").onclick=()=>hideVeil("vResearch");
+$("storeX").onclick=()=>hideVeil("vStore");
 $("mapsX").onclick=()=>hideVeil("vMaps");
 $("shopX").onclick=()=>hideVeil("vShop");
 
@@ -2258,25 +2431,25 @@ let shopCat="weapon";
 function openShop(cat){ shopCat=cat; renderShop(); showVeil("vShop"); }
 function openCooler(){ shopCat="cooler"; renderShop(); showVeil("vShop"); }
 function renderShop(){
-  $("shopTitle").textContent=shopCat==="cooler"?"Cooler":(CAT_TITLE[shopCat]||"Shop");
-  $("shopSub").textContent="Coins: "+money(S.coins)+"   Feathers: "+fmt(S.feathers);
+  const CAT={cooler:"Cooler",gun:"Gun Tuning",dog:"Dog Handling",unlocked:"Researched"};
+  $("shopTitle").textContent=CAT[shopCat]||"Cooler";
+  $("shopSub").innerHTML='Coins <span class="money">'+money(S.coins)+
+    '</span> &nbsp;&middot;&nbsp; field upgrades reset when you go back to town';
   const list=$("shopList"); list.innerHTML="";
   const tabs=$("shopTabs"); tabs.innerHTML="";
-  [["cooler","Cooler"],["weapon","Weapons"],["special","Specials"],["dog","Dogs"],["bag","Storage"],["player","Player"],["hunt","Hunting"]]
-   .forEach(([id,label])=>{
+  [["cooler","Cooler"],["gun","Gun"],["dog","Dog"],["unlocked","Researched"]].forEach(([id,label])=>{
     const b=document.createElement("button");
     b.className="tab"+(id===shopCat?" sel":""); b.textContent=label;
     b.onclick=()=>{shopCat=id;renderShop();};
     tabs.appendChild(b);
   });
-  const addItem=(ic,nm,ds,cls,right)=>{
+  const row=(ic,nm,ds,cls,right)=>{
     const d=document.createElement("div"); d.className="item"+(cls?" "+cls:"");
     d.innerHTML='<div class="ic">'+ic+'</div><div class="info"><div class="nm"></div><div class="ds"></div></div>';
-    d.querySelector(".nm").innerHTML=nm; d.querySelector(".ds").textContent=ds;
-    if(right)d.appendChild(right);
-    list.appendChild(d);
+    d.querySelector(".nm").textContent=nm; d.querySelector(".ds").textContent=ds;
+    if(right)d.appendChild(right); list.appendChild(d);
   };
-  const buyBtn=(cost,can,fn,label)=>{
+  const buy=(cost,can,fn,label)=>{
     const b=document.createElement("button");
     b.innerHTML=label||('<span class="money">'+money(cost)+'</span>');
     b.disabled=!can; b.onclick=fn; return b;
@@ -2284,82 +2457,173 @@ function renderShop(){
   const tag=t=>{const d=document.createElement("div");d.className="tag";d.textContent=t;return d;};
 
   if(shopCat==="cooler"){
-    const cap=bagCap();
-    addItem("&#129482;","Cooler","Holding "+S.bag.length+" of "+cap+" ducks."+
-      (L("autosell")>0?" Auto-sell is installed.":""),S.bag.length?"own":"");
-    if(S.bag.length){
-      const total=S.bag.reduce((a,b)=>a+b.value,0);
-      const b=document.createElement("button");
-      b.innerHTML='<span class="money">Sell '+money(total)+'</span>';
-      b.onclick=()=>{ doSell(); renderShop(); };
-      addItem("&#128176;","Sell everything","Empty the cooler for coins.","",b);
+    const cap=bagCap(), n=S.bag.length;
+    const bar=document.createElement("div");
+    bar.className="coolBar";
+    bar.innerHTML='<i style="width:'+Math.min(100,n/cap*100)+'%"></i>';
+    const head=document.createElement("div"); head.className="coolHead";
+    head.innerHTML='<div><b>'+coolerDef().name+'</b><span>'+n+' / '+cap+' ducks</span></div>';
+    list.appendChild(head); list.appendChild(bar);
+    if(n){
+      const total=S.bag.reduce((x,y)=>x+y.value,0);
+      const sell=document.createElement("button");
+      sell.className="sellBig";
+      sell.innerHTML='Sell everything &nbsp;<span class="money">'+money(total)+'</span>';
+      sell.onclick=()=>{ doSell(); renderShop(); };
+      list.appendChild(sell);
       const counts={}; S.bag.forEach(x=>counts[x.key]=(counts[x.key]||0)+1);
-      Object.keys(counts).forEach(k=>{
+      Object.keys(counts).sort((x,y)=>DUCKS[y].val-DUCKS[x].val).forEach(k=>{
         const d=DUCKS[k];
-        addItem("&#129414;",d.name+" x"+counts[k],
-          money(Math.floor(d.val*valueMult()))+" each - \u201c"+d.quip+"\u201d","own");
+        row("&#129414;",d.name+" x"+counts[k],
+          money(Math.floor(d.val*valueMult()))+" each",'own');
       });
-    } else addItem("&#183;","Empty","Shoot some ducks and get them in here.","");
+    } else row("&#183;","Cooler is empty","Bring ducks over and press E to stow them.","");
+    if(modHas("autosell")) row("&#9851;","Auto-Sell","Fitted - the cooler empties itself when full.","own");
     return;
   }
-  if(shopCat==="weapon"){
-    const cur=WEAPONS.findIndex(x=>x.id===S.weapon);
-    WEAPONS.forEach((w,i)=>{
-      const ds=w.desc+" - "+fmt(w.dmg)+" dmg, "+w.rate+"/s, mag "+w.mag;
-      if(w.id===S.weapon) addItem(w.ic,w.name,ds,"eq",tag("EQUIPPED"));
-      else if(i<cur) addItem(w.ic,w.name,ds,"own",buyBtn(0,true,()=>{
-        S.weapon=w.id;rebuildGun();ammo=gunMag();renderAmmo();updateHUD();renderShop();save();},"Equip"));
-      else addItem(w.ic,w.name,ds,"",buyBtn(w.cost,S.coins>=w.cost,()=>{
-        if(S.coins<w.cost)return; S.coins-=w.cost; S.weapon=w.id; rebuildGun(); ammo=gunMag(); renderAmmo();
-        SFX.buy(); toast("Bought the "+w.name+"!"); updateHUD(); renderShop(); checkAch(); save();
-      }));
-    });
-  } else if(shopCat==="dog"){
-    const cur=DOGS.findIndex(x=>x.id===S.dog);
-    DOGS.forEach((dg,i)=>{
-      const ds=dg.desc+" - speed "+dg.speed+", carries "+dg.carry;
-      if(dg.id===S.dog) addItem(dg.ic,dg.name,ds,"eq",tag("ACTIVE"));
-      else if(i<cur) addItem(dg.ic,dg.name,ds,"own",buyBtn(0,true,()=>{
-        S.dog=dg.id;syncDogs();renderShop();save();},"Use"));
-      else addItem(dg.ic,dg.name,ds,"",buyBtn(dg.cost,S.coins>=dg.cost,()=>{
-        if(S.coins<dg.cost)return; S.coins-=dg.cost; S.dog=dg.id; syncDogs();
-        SFX.buy(); toast(dg.name+" joined you!"); updateHUD(); renderShop(); checkAch(); save();
-      }));
-    });
-  } else if(shopCat==="special"){
-    ABILITIES.forEach((a,i)=>{
-      if(S.abilities.includes(a.id)) addItem(a.ic,a.name+" (key "+(i+1)+")",a.desc,"own",tag("OWNED"));
-      else addItem(a.ic,a.name,a.desc,"",buyBtn(a.cost,S.coins>=a.cost,()=>{
-        if(S.coins<a.cost)return; S.coins-=a.cost; S.abilities.push(a.id);
-        SFX.buy(); toast(a.name+" unlocked! Press "+(i+1));
-        renderAbilities(); updateHUD(); renderShop(); save();
-      }));
-    });
-  }
-  const hdr=document.createElement("div"); hdr.className="secLbl"; hdr.textContent="Upgrades";
-  list.appendChild(hdr);
-  let anyLocked=0;
-  for(const k in UPG){
-    const u=UPG[k]; if(u.cat!==shopCat)continue;
-    if(!researched(k)){ anyLocked++; continue; }   /* research it in the lodge first */
-    const lv=L(k),maxed=lv>=u.max;
+
+  const groups={gun:["dmg","rate","spd","range","mag","reload","crit","critdmg"],
+                dog:["dogspeed","dogcarry","dogcount","dogrange","dogluck","handcap"],
+                unlocked:null};
+  let keys;
+  if(shopCat==="unlocked"){
+    const base=new Set([].concat(groups.gun,groups.dog));
+    keys=Object.keys(UPG).filter(k=>!base.has(k));
+  } else keys=groups[shopCat].filter(k=>UPG[k]);
+
+  let locked=0;
+  keys.forEach(k=>{
+    const u=UPG[k]; if(!u)return;
+    if(!researched(k)){ locked++; return; }
+    const lv=L(k), maxed=lv>=u.max;
     const nm=(u.label?u.label(Math.min(lv,u.max-1)):u.name)+(maxed?" (MAX)":" - Lv "+lv+"/"+u.max);
-    if(maxed) addItem(u.ic,nm,u.desc(lv),"own",tag("MAX"));
-    else{
-      const c=upgCost(k);
-      addItem(u.ic,nm,u.desc(lv),"",buyBtn(c,S.coins>=c,()=>{
-        const cost=upgCost(k);
-        if(S.coins<cost)return;
-        S.coins-=cost; S.up[k]=(S.up[k]||0)+1;
-        SFX.buy();
-        if(k==="dogcount"||k==="dogspeed"||k==="dogcarry")syncDogs();
-        if(k==="mag"){ammo=gunMag();renderAmmo();}
-        updateHUD(); renderShop(); save();
+    if(maxed){ row(u.ic,nm,u.desc(lv),"own",tag("MAX")); return; }
+    const c=upgCost(k);
+    row(u.ic,nm,u.desc(lv),"",buy(c,S.coins>=c,()=>{
+      const cost=upgCost(k);
+      if(S.coins<cost)return;
+      S.coins-=cost; S.up[k]=(S.up[k]||0)+1;
+      SFX.buy();
+      if(k==="dogcount"||k==="dogspeed"||k==="dogcarry")syncDogs();
+      if(k==="mag"){ammo=gunMag();renderAmmo();}
+      updateHUD(); renderShop(); save();
+    }));
+  });
+  if(!keys.length||locked===keys.length)
+    row("&#128274;",locked?locked+" locked":"Nothing here yet",
+      "Unlock these at The Lab in town, with feathers.","");
+  else if(locked) row("&#128274;",locked+" more locked","Research them at The Lab in town.","");
+}
+const STORE_TITLE={gun:"Gun Store",dog:"Dog Store",lab:"The Lab",
+  cooler:"Cooler Store",attach:"Attachment Store",maps:"Map Board",ach:"Trophy Room"};
+function openStore(which){
+  if(which==="lab") return openResearch();
+  if(which==="maps") return openMaps();
+  if(which==="ach")  return openAch();
+  storeCat=which; renderStore(); showVeil("vStore");
+}
+let storeCat="gun";
+function renderStore(){
+  $("storeTitle").textContent=STORE_TITLE[storeCat]||"Store";
+  $("storeSub").textContent="Coins: "+money(S.coins)+"   Feathers: "+fmt(S.feathers);
+  const list=$("storeList"); list.innerHTML="";
+  const row=(ic,nm,ds,cls,right)=>{
+    const d=document.createElement("div"); d.className="item"+(cls?" "+cls:"");
+    d.innerHTML='<div class="ic">'+ic+'</div><div class="info"><div class="nm"></div><div class="ds"></div></div>';
+    d.querySelector(".nm").textContent=nm; d.querySelector(".ds").textContent=ds;
+    if(right)d.appendChild(right); list.appendChild(d);
+  };
+  const buy=(cost,can,fn,label)=>{
+    const b=document.createElement("button");
+    b.innerHTML=label||('<span class="money">'+money(cost)+'</span>');
+    b.disabled=!can; b.onclick=fn; return b;
+  };
+  const tag=t=>{const d=document.createElement("div");d.className="tag";d.textContent=t;return d;};
+  const hdr=t=>{const d=document.createElement("div");d.className="secLbl";d.textContent=t;list.appendChild(d);};
+
+  if(storeCat==="gun"){
+    WEAPONS.forEach(w=>{
+      const owned=has(S.perm.weapons,w.id), eq=S.weapon===w.id;
+      const ds=w.desc+" - "+fmt(w.dmg)+" dmg, "+w.rate+"/s, mag "+w.mag;
+      if(eq) row(w.ic,w.name,ds,"eq",tag("EQUIPPED"));
+      else if(owned) row(w.ic,w.name,ds,"own",buy(0,true,()=>{
+        S.weapon=w.id;rebuildGun();ammo=gunMag();renderAmmo();updateHUD();renderStore();save();},"Equip"));
+      else row(w.ic,w.name,ds,"",buy(w.cost,S.coins>=w.cost,()=>{
+        if(S.coins<w.cost)return; S.coins-=w.cost; S.perm.weapons.push(w.id); S.weapon=w.id;
+        rebuildGun(); ammo=gunMag(); renderAmmo(); SFX.buy();
+        toast("Bought the "+w.name+"!"); updateHUD(); renderStore(); checkAch(); save();
       }));
-    }
+    });
   }
-  if(anyLocked) addItem("&#128274;",anyLocked+" more locked",
-    "Unlock these at the Research Bench in the lodge, using feathers.","");
+  else if(storeCat==="dog"){
+    hdr("Dogs");
+    DOGS.forEach(d=>{
+      const owned=has(S.perm.dogs,d.id), eq=S.dog===d.id;
+      const ds=d.desc+" - speed "+d.speed+", carries "+d.carry;
+      if(eq) row(d.ic,d.name,ds,"eq",tag("ACTIVE"));
+      else if(owned) row(d.ic,d.name,ds,"own",buy(0,true,()=>{
+        S.dog=d.id;syncDogs();renderStore();save();},"Use"));
+      else row(d.ic,d.name,ds,"",buy(d.cost,S.coins>=d.cost,()=>{
+        if(S.coins<d.cost)return; S.coins-=d.cost; S.perm.dogs.push(d.id); S.dog=d.id; syncDogs();
+        SFX.buy(); toast(d.name+" joined you!"); updateHUD(); renderStore(); checkAch(); save();
+      }));
+    });
+    hdr("Coats and kit for your dog");
+    COATS.forEach(c=>{
+      if(has(S.perm.coats,c.id)) row(c.ic,c.name,c.desc,"own",tag("WORN"));
+      else row(c.ic,c.name,c.desc,"",buy(c.cost,S.coins>=c.cost,()=>{
+        if(S.coins<c.cost)return; S.coins-=c.cost; S.perm.coats.push(c.id);
+        SFX.buy(); toast(dogDef().name+" is wearing the "+c.name+".");
+        syncDogs(); updateHUD(); renderStore(); save();
+      }));
+    });
+  }
+  else if(storeCat==="cooler"){
+    hdr("Coolers");
+    COOLERS.forEach((c,i)=>{
+      const owned=i<=S.perm.cooler;
+      if(i===S.perm.cooler) row(c.ic,c.name,c.desc+" - holds "+c.cap,"eq",tag("IN USE"));
+      else if(owned) row(c.ic,c.name,c.desc+" - holds "+c.cap,"own",tag("OWNED"));
+      else row(c.ic,c.name,c.desc+" - holds "+c.cap,"",buy(c.cost,S.coins>=c.cost&&i===S.perm.cooler+1,()=>{
+        if(S.coins<c.cost)return; S.coins-=c.cost; S.perm.cooler=i;
+        SFX.buy(); toast("Upgraded to the "+c.name+"."); updateHUD(); renderStore(); save();
+      }));
+    });
+    hdr("Cooler modules");
+    COOLER_MODS.forEach(m=>{
+      if(modHas(m.id)) row(m.ic,m.name,m.desc,"own",tag("FITTED"));
+      else row(m.ic,m.name,m.desc,"",buy(m.cost,S.coins>=m.cost,()=>{
+        if(S.coins<m.cost)return; S.coins-=m.cost; S.perm.mods.push(m.id);
+        SFX.buy(); toast(m.name+" fitted."); updateHUD(); renderStore(); save();
+      }));
+    });
+    hdr("Equipment you wear");
+    GEAR.forEach(g=>{
+      if(has(S.perm.gear,g.id)) row(g.ic,g.name,g.desc,"own",tag("WORN"));
+      else row(g.ic,g.name,g.desc,"",buy(g.cost,S.coins>=g.cost,()=>{
+        if(S.coins<g.cost)return; S.coins-=g.cost; S.perm.gear.push(g.id);
+        SFX.buy(); toast("Equipped the "+g.name+"."); updateHUD(); renderStore(); save();
+      }));
+    });
+  }
+  else if(storeCat==="attach"){
+    hdr("Bolt-ons for your gun - kept forever");
+    ATTACH.forEach(a=>{
+      const lv=A(a.id), maxed=lv>=a.max;
+      const nm=(a.label?a.label(Math.min(lv,a.max-1)):a.name)+(maxed?" (MAX)":(lv?" - Lv "+lv+"/"+a.max:""));
+      if(maxed) row(a.ic,nm,a.desc(lv),"own",tag("MAX"));
+      else{
+        const c=attCost(a.id);
+        row(a.ic,nm,a.desc(lv),lv?"own":"",buy(c,S.coins>=c,()=>{
+          const cost=attCost(a.id);
+          if(S.coins<cost)return;
+          S.coins-=cost; S.perm.att[a.id]=(S.perm.att[a.id]||0)+1;
+          SFX.buy(); toast(a.label?a.label(A(a.id)-1)+" fitted!":a.name+" upgraded.");
+          updateHUD(); renderStore(); save();
+        }));
+      }
+    });
+  }
 }
 function openResearch(){
   const list=$("resList"); list.innerHTML="";
@@ -2490,7 +2754,7 @@ function stow(c,at){
   floatText((at||player.pos).clone().add(new THREE.Vector3(0,2.6,0)),
     "+"+money(value),c.gold?"#ffd23c":"#7bd94a",.40);
   SFX.coin();
-  if(bagFull()&&L("autosell")>0) doSellSilent();
+  if(bagFull()&&modHas("autosell")) doSellSilent();
   checkAch();
 }
 /* Take what the dog is holding into your arms. */
@@ -2571,7 +2835,7 @@ function enterZone(){
   if(ufo){scene.remove(ufo.mesh);ufo=null;}
   if(vortex){scene.remove(vortex.mesh);vortex=null;}
   buildWorld();
-  if(inLobby()){ player.pos.set(0,heightAt(0,9)+2,9); player.yaw=0; player.pitch=-.06; }
+  if(inLobby()){ player.pos.set(0,heightAt(0,6)+2,6); player.yaw=0; player.pitch=-.05; }
   else { player.pos.set(0,heightAt(0,18)+2,18); player.yaw=0; player.pitch=-.03; }
   player.vel.set(0,0,0);
   for(const d of dogs) d.pos.copy(player.pos);
@@ -2594,13 +2858,21 @@ function tryInteract(){
   if(k==="dog") takeFromDog(nearest.dog);
   else if(k==="cooler"){ if(!depositCarry()) openCooler(); }
   else if(k==="shop") openShop(nearest.payload);
+  else if(k==="store") openStore(nearest.payload);
   else if(k==="research") openResearch();
   else if(k==="maps") openMaps();
   else if(k==="start") startHunt();
   else if(k==="lodge") gotoLobby();
   else if(k==="portal") travelTo(nearest.payload);
 }
-function gotoLobby(){ S.zone="lobby"; enterZone(); save(); }
+function gotoLobby(){
+  /* everything bought at the cooler is per-run and does not come home */
+  const hadAny=Object.keys(S.up).some(k=>S.up[k]>0);
+  S.up=freshUp();
+  S.zone="lobby"; enterZone();
+  if(hadAny) toast("Field upgrades left behind - permanent kit is in town.");
+  updateHUD(); save();
+}
 function startHunt(){
   if(!S.unlocked.includes(S.map)) S.map="backyard";
   S.zone=S.map; enterZone(); save();
@@ -2761,6 +3033,19 @@ function updatePlayer(dt){
   const want=player.pos.clone().add(new THREE.Vector3(0,hgt,0)).add(cd.multiplyScalar(dist));
   const minY=heightAt(want.x,want.z)+1.2;
   if(want.y<minY)want.y=minY;
+  /* Never let scenery sit between the camera and the player: cast from the
+     player out to the desired camera spot and pull the camera in on a hit.
+     Without this you end up looking at the inside of a roof. */
+  if(worldGroup){
+    const from=player.pos.clone().add(new THREE.Vector3(0,2.2,0));
+    const seg=want.clone().sub(from); const segLen=seg.length();
+    if(segLen>.01){
+      seg.divideScalar(segLen);
+      camRay.set(from,seg); camRay.near=0; camRay.far=segLen;
+      const hit=camRay.intersectObjects(worldGroup.children,true)[0];
+      if(hit) want.copy(from).addScaledVector(seg,Math.max(1.7,hit.distance-.45));
+    }
+  }
   camera.position.lerp(want,1-Math.pow(.0001,dt));
   const look=player.pos.clone().add(new THREE.Vector3(0,2.1,0))
     .add(new THREE.Vector3(-Math.sin(player.yaw)*10,Math.tan(player.pitch)*10,-Math.cos(player.yaw)*10));
@@ -2936,8 +3221,8 @@ function updateDogs(dt){
     }
     let goal;
     if(dg.state==="seek"&&dg.target) goal=dg.target.pos;
-    else if(dg.state==="return") goal=(L("dogdeliver")>0&&cooler)?cooler.pos:player.pos;
-    else if(dg.state==="hold") goal=player.pos;
+    else if(dg.state==="return") goal=(coatHas("deliver")&&cooler)?cooler.pos:player.pos;
+    else if(dg.state==="hold") goal=cooler?cooler.pos:player.pos;   /* waits by the cooler */
     else{
     /* Idle dogs wait AHEAD of the player, fanned out. Parking them behind put
        them right in the third-person camera's lap. */
@@ -2965,7 +3250,7 @@ function updateDogs(dt){
       dg.state=dg.carry.length>=cap?"return":"seek";
     }
     if(dg.state==="return"&&dist<=stop){
-      if(L("dogdeliver")>0){
+      if(coatHas("deliver")){
         /* trained dogs load the cooler themselves */
         while(dg.carry.length&&!bagFull()) stow(dg.carry.shift(),cooler?cooler.pos:dg.pos);
         if(!dg.carry.length) dg.state="follow";
@@ -2979,7 +3264,7 @@ function updateDogs(dt){
     if(dg.state==="hold"&&!dg.carry.length) dg.state="follow";
     /* A dog already waiting with ducks must be released the moment Cooler
        Training is bought, or it stays in "hold" forever and stops fetching. */
-    if(dg.state==="hold"&&L("dogdeliver")>0) dg.state="return";
+    if(dg.state==="hold"&&coatHas("deliver")) dg.state="return";
     dg.mesh.position.copy(dg.pos);
     dg.mesh.rotation.y=angLerp(dg.mesh.rotation.y,dg.yaw,1-Math.pow(.001,dt));
     const legs=dg.mesh.userData.legs, sw=Math.sin(dg.legT)*.7;
@@ -3004,18 +3289,18 @@ function updateShots(dt){
   const dmgBase=gunDamage();
   for(let i=shots.length-1;i>=0;i--){
     const s=shots[i];
-    if(L("homing")>0){
+    if(A("homing")>0){
       let best=null,bd=26;
       for(const d of ducks){ if(s.hitIds.has(d))continue;
         const dist=d.pos.distanceTo(s.pos); if(dist<bd){bd=dist;best=d;} }
       if(best){
         const want=best.pos.clone().add(new THREE.Vector3(0,1,0)).sub(s.pos)
           .normalize().multiplyScalar(s.vel.length());
-        s.vel.lerp(want,clamp(L("homing")*.06,0,.6));
+        s.vel.lerp(want,clamp(A("homing")*.06,0,.6));
       }
     }
-    if(L("magnet")>0){
-      const r=L("magnet")*3;
+    if(A("magnet")>0){
+      const r=A("magnet")*3;
       for(const d of ducks){
         const dv=s.pos.clone().sub(d.pos);
         if(dv.length()<r) d.pos.addScaledVector(dv.normalize(),dt*6);
@@ -3037,12 +3322,12 @@ function updateShots(dt){
       if(dc.distanceTo(s.pos)<hitR+1.0*d.scale){
         s.hitIds.add(d);
         const crit=Math.random()<critChance();
-        const amount=Math.max(1,Math.floor(dmgBase*(crit?critMult():1)*(s.mega?(2+L("mega")):1)));
+        const amount=Math.max(1,Math.floor(dmgBase*(crit?critMult():1)*(s.mega?(2+A("mega")):1)));
         damage(d,amount,crit);
-        if(L("chain")>0) chainFrom(d,amount*.65,L("chain"),new Set([d]));
-        if(L("explode")>0) explodeAt(s.pos.clone(),L("explode")*5,amount*.8);
-        if(L("cluster")>0&&!s.isCluster){
-          for(let c=0;c<L("cluster")*2;c++){
+        if(A("chain")>0) chainFrom(d,amount*.65,A("chain"),new Set([d]));
+        if(A("explode")>0) explodeAt(s.pos.clone(),A("explode")*5,amount*.8);
+        if(A("cluster")>0&&!s.isCluster){
+          for(let c=0;c<A("cluster")*2;c++){
             const dir=new THREE.Vector3(rnd(-1,1),rnd(-.2,.8),rnd(-1,1)).normalize();
             const m=new THREE.Mesh(G.sphere,mat(0xffb545,{emissive:0xffb545,emissiveIntensity:1}));
             m.scale.setScalar(.2); m.position.copy(s.pos); scene.add(m);
@@ -3155,7 +3440,7 @@ function updateInteract(){
   for(const dg of dogs){
     if(dg.state!=="hold"||!dg.carry.length)continue;
     const d=dg.pos.distanceTo(player.pos);
-    if(d<4.2&&d<best){best=d;nearest={kind:"dog",dog:dg};}
+    if(d<5.0&&d<best){best=d;nearest={kind:"dog",dog:dg};}
   }
   const p=$("prompt");
   if(nearest){
@@ -3166,6 +3451,7 @@ function updateInteract(){
     else if(k==="cooler") txt=S.carry.length
       ? "<kbd>E</kbd> Put "+S.carry.length+" duck"+(S.carry.length===1?"":"s")+" in the cooler"
       : "<kbd>E</kbd> Cooler - sell &amp; upgrades";
+    else if(k==="store") txt="<kbd>E</kbd> "+STORE_TITLE[nearest.payload];
     else if(k==="research") txt="<kbd>E</kbd> Research";
     else if(k==="maps") txt="<kbd>E</kbd> Choose a lake";
     else if(k==="start") txt="<kbd>E</kbd> Start hunting - "+zoneById(S.map).name;
@@ -3308,6 +3594,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.hidden)save(); })
 
 showTitle();
 frame();
+Cloud.init();
 
 /* testing surface: lets the world be driven and inspected headlessly */
 window.__QP={
@@ -3317,7 +3604,8 @@ window.__QP={
   get shots(){return shots;}, get player(){return player;}, get interactables(){return interactables;},
   scene,camera,renderer,keys,
   spawnDuck,fire,enterZone,buildWorld,doSell,heightAt,inWater,syncDogs,rebuildGun,makeGunModel,
-  takeFromDog,depositCarry,stow,openCooler,openResearch,openMaps,tryInteract,startHunt,gotoLobby,
+  takeFromDog,depositCarry,stow,openCooler,openResearch,openMaps,openStore,tryInteract,startHunt,gotoLobby,
+  freshUp,A,attCost,coolerDef,modHas,coatHas,
   carryCap,researched,get cooler(){return cooler;},
   damage,downDuck,duckValue,bagCap,bagFull,valueMult,upgCost,fireEvent,useAbility,
   newSave,save,load,updateHUD,checkAch,openShop,travelTo,
