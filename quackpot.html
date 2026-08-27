@@ -95,12 +95,26 @@ kbd{background:var(--gold);color:#0b1c2b;border-radius:5px;padding:1px 6px;font-
   padding:9px 20px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;font-size:13px;
   transition:opacity .3s,transform .3s;text-align:center;color:#0b1c2b}
 #eventBar.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#toasts{position:absolute;right:12px;top:60px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+#sellFlash{position:absolute;left:50%;top:96px;transform:translate(-50%,-10px);opacity:0;
+  background:linear-gradient(180deg,rgba(12,32,20,.94),rgba(8,20,14,.94));
+  border:1px solid #4a9950;border-radius:13px;padding:9px 20px;text-align:center;
+  transition:opacity .25s,transform .25s;pointer-events:none;box-shadow:0 10px 30px -12px #000}
+#sellFlash.show{opacity:1;transform:translate(-50%,0)}
+#sellFlash span{display:block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+#sellFlash b{display:block;font-family:var(--num);font-size:26px;color:var(--cash);line-height:1.15}
+#banner{position:absolute;left:50%;top:42%;transform:translate(-50%,0) scale(.85);opacity:0;
+  font-weight:900;font-size:clamp(24px,5vw,44px);letter-spacing:.10em;text-transform:uppercase;
+  color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.45),0 0 26px rgba(255,210,60,.55);
+  pointer-events:none;transition:opacity .35s,transform .35s;white-space:nowrap}
+#banner.show{opacity:1;transform:translate(-50%,-12px) scale(1)}
+#roundChip{position:absolute;top:12px;right:12px;text-align:right}
+#roundChip .r{font-size:15px;font-weight:900;letter-spacing:.10em;color:var(--gold);text-shadow:0 2px 6px #000}
+#roundChip .q{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:#fff;text-shadow:0 2px 6px #000}
+#toasts{position:absolute;right:12px;top:76px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
 .toast{background:rgba(8,20,32,.88);border:1px solid var(--edge);border-left:3px solid var(--gold);
   border-radius:9px;padding:8px 13px;font-size:12px;font-weight:700;animation:tIn .25s ease both;max-width:290px}
 @keyframes tIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
-#zoneName{position:absolute;top:12px;right:12px;font-size:11px;font-weight:900;letter-spacing:.14em;
-  text-transform:uppercase;color:#fff;text-shadow:0 2px 6px #000,0 0 10px #000;text-align:right}
+
 #bossBar{position:absolute;top:52px;left:50%;transform:translateX(-50%);width:min(420px,72vw);display:none}
 #bossBar.show{display:block}
 #bossBar .nm{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;text-align:center;
@@ -213,11 +227,14 @@ body.touch #touch{display:block}
     <div class="stat" id="bagStat"><span class="ic">&#129482;</span><b id="bagV">0 / 25</b></div>
     <div class="stat"><span class="ic">&#129718;</span><b id="feathV">0</b></div>
   </div>
-  <div id="zoneName">Backyard Pond</div>
+  <div id="roundChip"><div class="r" id="roundR">Round 1</div>
+    <div class="q" id="roundQ">Backyard Pond</div></div>
   <div id="comboBox"><div id="comboN">x0</div><div id="comboB">Duck Combo</div></div>
   <div id="bossBar"><div class="nm" id="bossNm"></div><div class="track"><div class="fill" id="bossFill"></div></div></div>
   <div id="crosshair"><div class="h1"></div><div class="h2"></div><div class="v1"></div><div class="v2"></div></div>
   <div id="eventBar"></div>
+  <div id="banner"></div>
+  <div id="sellFlash"><span id="sellCnt"></span><b id="sellAmt"></b></div>
   <div id="toasts"></div>
   <div class="hudBL">
     <div id="reloadMsg">Reloading...</div>
@@ -256,12 +273,7 @@ body.touch #touch{display:block}
   <div class="list" id="mapsList"></div>
 </div></div>
 
-<div class="veil" id="vSell"><div class="card" id="sellCard" style="max-width:400px;text-align:center">
-  <h2>Duck Exchange</h2>
-  <div class="cnt" id="sellCnt">0 Ducks Sold!</div>
-  <div class="big" id="sellAmt">+$0</div>
-  <button class="btn big" id="sellOk" style="align-self:center">Nice</button>
-</div></div>
+
 
 <div class="veil" id="vMenu"><div class="card" style="max-width:420px">
   <button class="closeX" id="menuX">&times;</button>
@@ -606,6 +618,7 @@ const SFX={
   }
 };
 
+const DUCK_SCALE=1.4, DOG_SCALE=1.15;
 /* ═══════════ duck species ═══════════ */
 const DUCKS={
  common  :{name:"Common Duck",     rarity:0,hp:6,     val:8,        col:0xfff2d8,acc:0xe8c27a,speed:2.4,fly:.15,quip:"Just a duck. Nothing more."},
@@ -618,6 +631,7 @@ const DUCKS={
  mythic  :{name:"Cosmic Duck",     rarity:5,hp:420,   val:3200,     col:0x6cf0ff,acc:0x2a5fd8,speed:5.2,fly:.65,quip:"Has been places. Will not say where.",glow:0x6cf0ff},
  golden  :{name:"Golden Duck",     rarity:6,hp:260,   val:9000,     col:0xffd23c,acc:0xc98a06,speed:5.8,fly:.60,quip:"Worth an unreasonable amount.",glow:0xffd23c},
  diamond :{name:"Diamond Duck",    rarity:7,hp:900,   val:34000,    col:0xd6f7ff,acc:0x7fd6ee,speed:4.8,fly:.50,quip:"Structurally a bad idea.",glow:0xbdf1ff},
+ rage    :{name:"Raging Duck",     rarity:2,hp:34,    val:130,      col:0xd93a2a,acc:0x6a1408,speed:6.4,fly:.5, quip:"It has decided this is personal.",charge:true,glow:0xff4a2a},
  giant   :{name:"Giant Duck",      rarity:8,hp:3200,  val:150000,   col:0xffe985,acc:0xd98a10,speed:1.7,fly:.10,quip:"Why is it this large?",scale:3.1},
  bossMega:{name:"Mega Duck",       rarity:9,hp:14000, val:900000,   col:0xffd23c,acc:0xb87708,speed:2.0,fly:.15,quip:"WHY IS IT THIS LARGE.",scale:5.4,boss:true,glow:0xffd23c},
  bossRobo:{name:"Robo Duck",       rarity:9,hp:26000, val:2400000,  col:0xc4d2dc,acc:0x5a6873,speed:2.6,fly:.20,quip:"Beep. Quack. Beep.",scale:5.0,boss:true,glow:0xff5a4d},
@@ -773,6 +787,7 @@ function newSave(){
   return {coins:0,feathers:0,bag:[],carry:[],weapon:"spud",dog:"biscuit",
     zone:"lobby",map:"backyard",unlocked:["backyard"],
     researched:Object.keys(UPG).filter(k=>!UPG[k].unlock),
+    round:1,
     up,abilities:[],ach:[],
     stats:{ducks:0,golden:0,bosses:0,earned:0,bestCombo:0,shots:0},lastSave:Date.now()};
 }
@@ -790,6 +805,7 @@ function load(){
         S.researched=Object.keys(UPG).filter(k=>!UPG[k].unlock);
       if(typeof S.feathers!=="number")S.feathers=0;
       if(!S.map)S.map="backyard";
+      if(typeof S.round!=="number"||S.round<1)S.round=1;
       if(!Array.isArray(S.unlocked)||!S.unlocked.length)S.unlocked=["backyard"];
       return true; } }catch(e){}
   return false;
@@ -804,7 +820,7 @@ const curZone=()=>zoneById(S.zone)||ZONES[0];
 const gunDamage=()=>weaponDef().dmg*(1+L("dmg")*.35);
 const gunRate=()=>weaponDef().rate*(1+L("rate")*.06)*(fx.rapid>0?3:1);
 const gunMag=()=>Math.floor(weaponDef().mag+L("mag")*3);
-const gunReload=()=>Math.max(.18,weaponDef().reload*(1-Math.min(.72,L("reload")*.045)));
+const gunReload=()=>Math.max(.45,weaponDef().reload*1.9*(1-Math.min(.72,L("reload")*.045)));
 const projSpeed=()=>weaponDef().spd*(1+L("spd")*.07);
 const projRange=()=>78+L("range")*9;
 const critChance=()=>Math.min(.9,L("crit")*.03);
@@ -828,6 +844,14 @@ const moveSpeed=()=>7*(1+L("movespeed")*.05);
 const sprintMult=()=>1.7*(1+L("sprint")*.06);
 const jumpVel=()=>9.5*(1+L("jump")*.06);
 const comboWindow=()=>3+L("combokeep")*.4;
+/* ── rounds ── each one is harder: rarer species, more health, more birds,
+   and a boss at the end. Round 1 is plain ducks that die to one shot. */
+const roundQuota=()=>10+S.round*3;
+const roundHp=()=>1+(S.round-1)*.32;
+const roundTiers=()=>1+Math.floor((S.round-1)/2);
+const roundDensity=()=>Math.min(curZone().density,5+S.round*2);
+const stormChance=()=>Math.min(.55,.05*S.round);
+let roundCaught=0, bossActive=false, stormAt=-1;
 const upgCost=k=>Math.floor(UPG[k].base*Math.pow(UPG[k].growth,L(k)));
 
 /* ═══════════ renderer ═══════════ */
@@ -883,7 +907,7 @@ function mat(color,opts){
   const key=color+"|"+(opts?JSON.stringify(opts):"");
   let m=matCache.get(key);
   if(!m){
-    m=new THREE.MeshToonMaterial(Object.assign({color,gradientMap:RAMP},opts||{}));
+    m=new THREE.MeshStandardMaterial(Object.assign({color,roughness:.86,metalness:.02},opts||{}));
     matCache.set(key,m);
   }
   return m;
@@ -911,18 +935,43 @@ function puffMat(color,additive){
   }
   return m;
 }
-/* vertical gradient sky dome, far nicer than a flat clear colour */
+/* Shader sky: three-stop gradient with a real sun disc, a bloom of light
+   around it and haze thickening toward the horizon. */
 function skyDome(topCol,botCol){
-  const cv=document.createElement("canvas"); cv.width=8; cv.height=128;
-  const c=cv.getContext("2d");
-  const g=c.createLinearGradient(0,0,0,128);
-  g.addColorStop(0,"#"+new THREE.Color(topCol).getHexString());
-  g.addColorStop(.55,"#"+new THREE.Color(topCol).lerp(new THREE.Color(botCol),.55).getHexString());
-  g.addColorStop(1,"#"+new THREE.Color(botCol).getHexString());
-  c.fillStyle=g; c.fillRect(0,0,8,128);
-  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace;
-  const m=new THREE.Mesh(new THREE.SphereGeometry(430,24,16),
-    new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,depthWrite:false,fog:false}));
+  const top=new THREE.Color(topCol), bot=new THREE.Color(botCol);
+  const mid=top.clone().lerp(bot,.55);
+  const m=new THREE.Mesh(new THREE.SphereGeometry(440,32,20),
+    new THREE.ShaderMaterial({
+      side:THREE.BackSide, depthWrite:false, fog:false,
+      uniforms:{
+        uTop:{value:top}, uMid:{value:mid}, uBot:{value:bot},
+        uSun:{value:new THREE.Vector3(.48,.62,.32).normalize()},
+        uSunCol:{value:new THREE.Color(0xfff3d0)}
+      },
+      vertexShader:`
+        varying vec3 vDir;
+        void main(){
+          vDir=normalize(position);
+          gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+        }`,
+      fragmentShader:`
+        uniform vec3 uTop,uMid,uBot,uSunCol; uniform vec3 uSun;
+        varying vec3 vDir;
+        void main(){
+          vec3 d=normalize(vDir);
+          float h=clamp(d.y*.5+.5,0.,1.);
+          vec3 col=mix(uBot,uMid,smoothstep(0.30,0.52,h));
+          col=mix(col,uTop,smoothstep(0.50,0.95,h));
+          float s=max(dot(d,normalize(uSun)),0.0);
+          col+=uSunCol*pow(s,900.0)*2.2;          // disc
+          col+=uSunCol*pow(s,26.0)*0.28;          // tight bloom
+          col+=uSunCol*pow(s,4.0)*0.07;           // wide haze
+          col+=uBot*pow(1.0-abs(d.y),6.0)*0.22;   // horizon thickening
+          gl_FragColor=vec4(col,1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`
+    }));
   m.renderOrder=-1;
   return m;
 }
@@ -1028,14 +1077,15 @@ function buildWorld(){
   }
   g.setAttribute("color",new THREE.BufferAttribute(colors,3));
   g.computeVertexNormals();
-  const ground=new THREE.Mesh(g,new THREE.MeshToonMaterial({vertexColors:true,gradientMap:RAMP}));
+  const ground=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0}));
   ground.receiveShadow=true; worldGroup.add(ground);
 
   for(const p of Z.ponds){
     const wg=new THREE.CircleGeometry(p[2],34); wg.rotateX(-Math.PI/2);
     const isLava=Z.id==="volcano", isVoid=Z.id==="dimension";
-    const wm=new THREE.Mesh(wg,new THREE.MeshToonMaterial({
-      gradientMap:RAMP,color:Z.water,transparent:true,opacity:isLava?.96:.78,
+    const wm=new THREE.Mesh(wg,new THREE.MeshStandardMaterial({
+      roughness:isLava?.7:.18,metalness:isLava?0:.32,
+      color:Z.water,transparent:true,opacity:isLava?.96:.82,
       emissive:isLava?0xff3a00:(isVoid?0xff3ca8:0x000000),
       emissiveIntensity:isLava?.75:(isVoid?.5:0)}));
     wm.position.set(p[0],waterY(),p[1]);
@@ -1108,6 +1158,19 @@ function nestProp(x,z){
   for(let i=0;i<3;i++) g.add(ball(.28,0xfff2d8,rnd(-.35,.35),.34,rnd(-.35,.35)));
   g.position.set(x,heightAt(x,z),z); return g;
 }
+/* flat painted label fixed to a building - never billboards */
+function labelPlate(text,color){
+  const cv=document.createElement("canvas"); cv.width=512; cv.height=128;
+  const c=cv.getContext("2d");
+  c.fillStyle="#f6e6c4"; c.fillRect(0,0,512,128);
+  c.strokeStyle="#8a5f3a"; c.lineWidth=10; c.strokeRect(5,5,502,118);
+  c.fillStyle="#3a2a18"; c.font="900 46px Trebuchet MS,Verdana,sans-serif";
+  c.textAlign="center"; c.textBaseline="middle";
+  c.fillText(String(text),256,64);
+  const tex=new THREE.CanvasTexture(cv); tex.colorSpace=THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(3.1,.78),
+    new THREE.MeshBasicMaterial({map:tex,transparent:true}));
+}
 function signProp(text,color){
   const g=new THREE.Group();
   g.add(cyl(.14,2.0,0x8a5f3a,0,1.0,0));
@@ -1123,7 +1186,6 @@ function signProp(text,color){
     new THREE.MeshBasicMaterial({map:tex,transparent:true}));
   p.position.y=2.35; g.add(p);
   g.add(box(3.0,1.0,.12,color||0xd9c49a,0,2.35,-.08));
-  g.userData.billboard=p; decor.push(g);
   return g;
 }
 function bridgeProp(x,z,len,ang,c){
@@ -1157,7 +1219,7 @@ function boatProp(x,z){
 function iceSpike(x,z){
   const h=rnd(2,5.5);
   const g=new THREE.Group();
-  const c=new THREE.Mesh(G.cone,new THREE.MeshToonMaterial({gradientMap:RAMP,color:0xbfe6f7,transparent:true,opacity:.85}));
+  const c=new THREE.Mesh(G.cone,new THREE.MeshStandardMaterial({color:0xbfe6f7,transparent:true,opacity:.85,roughness:.25,metalness:.1}));
   c.scale.set(rnd(.6,1.2),h,rnd(.6,1.2)); c.position.y=h/2; c.castShadow=true; g.add(c);
   g.position.set(x,heightAt(x,z),z); return g;
 }
@@ -1325,7 +1387,10 @@ function station(x,z,color,label,kind,payload){
   g.add(box(4.2,.35,2.9,0xf6e6c4,0,3.0,0));
   const roof=cone(3.0,1.4,color,0,3.7,0); roof.rotation.y=Math.PI/4; g.add(roof);
   g.add(ball(.42,0xffd23c,0,4.6,0,{emissive:0xffd23c,emissiveIntensity:1.1}));
-  const s=signProp(label,color); s.position.set(0,0,3.0); s.scale.setScalar(.9); g.add(s);
+  /* the shop name is painted on the hut itself - a post sign outside every
+     one of them was clutter */
+  const plate=labelPlate(label,color);
+  plate.position.set(0,2.05,1.21); g.add(plate);
   g.position.set(x,y,z);
   worldGroup.add(g);
   interactables.push({x,z,r:6,kind,payload,group:g});
@@ -1552,7 +1617,7 @@ function makeDuck(def){
     }
     g.userData.motes=motes;
   }
-  g.scale.setScalar(def.scale||1);
+  g.scale.setScalar((def.scale||1)*DUCK_SCALE);
   return g;
 }
 function makeDog(def){
@@ -1597,7 +1662,7 @@ function makeDog(def){
   tail.position.set(0,1.12,-1.02); tail.rotation.x=.95; tail.castShadow=true; g.add(tail);
   const tuft=new THREE.Mesh(G.sphere,coat); tuft.scale.setScalar(.17); tuft.position.set(0,1.40,-1.30); g.add(tuft);
   g.userData.tail=tail;
-  g.scale.setScalar((def.scale||1)*0.92);
+  g.scale.setScalar((def.scale||1)*DOG_SCALE);
   return g;
 }
 
@@ -1776,7 +1841,13 @@ function onLockFail(){
 const abilCD=[0,0,0];
 
 function rollSpecies(){
-  const table=Object.assign({},curZone().spawn);
+  /* only the first few rarity tiers of this lake are in play early on */
+  const zt=curZone().spawn;
+  const keys=Object.keys(zt).sort((a,b)=>DUCKS[a].rarity-DUCKS[b].rarity);
+  const allow=keys.slice(0,Math.max(1,Math.min(keys.length,roundTiers())));
+  const table={};
+  allow.forEach(k=>table[k]=zt[k]);
+  if(S.round>=3) table.rage=(S.round>=6?6:2);      /* rare at first */
   const lk=luck();
   if(lk>0){
     const keys=Object.keys(table).sort((a,b)=>DUCKS[a].rarity-DUCKS[b].rarity);
@@ -1788,10 +1859,11 @@ function spawnDuck(species,at,spread,forceCross){
   const key=species||rollSpecies(), def=DUCKS[key];
   const Z=curZone(), lake=Z.ponds[0];
   const mesh=makeDuck(def);
-  const d={key,def,mesh,hp:def.hp,maxHp:def.hp,
+  const hp=Math.max(1,Math.round(def.hp*(def.boss?1+(S.round-1)*.55:roundHp())));
+  const d={key,def,mesh,hp,maxHp:hp,
     pos:new THREE.Vector3(),state:"walk",t:rnd(0,3),wingT:rnd(0,6.28),
     targetA:rnd(0,6.283),phase:rnd(0,6.283),flyY:rnd(9,20),
-    scale:def.scale||1,gold:false,panic:0,parade:false,dir:1,baseY:0,climb:0};
+    scale:(def.scale||1)*DUCK_SCALE,gold:false,panic:0,parade:false,dir:1,baseY:0,climb:0};
 
   if(at){
     d.pos.set(at.x,heightAt(at.x,at.z)+(inWater(at.x,at.z)?.35:0),at.z);
@@ -1823,7 +1895,7 @@ function spawnDuck(species,at,spread,forceCross){
   scene.add(mesh); ducks.push(d);
   return d;
 }
-const targetDuckCount=()=>Math.round(curZone().density*(1+L("spawnrate")*.08));
+const targetDuckCount=()=>Math.round(roundDensity()*(1+L("spawnrate")*.08));
 
 /* ═══════════ combat ═══════════ */
 function startReload(){ if(reloading||ammo>=gunMag())return;
@@ -1909,7 +1981,7 @@ function makeShot(origin,dir,mega){
   m.scale.setScalar(size); m.position.copy(origin); scene.add(m);
   const glow=new THREE.Sprite(puffMat(col,true)); glow.scale.setScalar(size*4.5); m.add(glow);
   shots.push({mesh:m,pos:m.position,vel:dir.clone().multiplyScalar(projSpeed()),
-    dist:0,mega,pierce:L("pierce"),ricochet:L("ricochet"),hitIds:new Set(),size,isCluster:false});
+    dist:0,mega,pierce:1+L("pierce"),ricochet:L("ricochet"),hitIds:new Set(),size,isCluster:false});
 }
 function muzzleFlash(p){
   const f=new THREE.Sprite(puffMat(0xfff3b0,true));
@@ -1994,10 +2066,38 @@ function downDuck(d){
   }
   burst(d.pos.clone().add(new THREE.Vector3(0,1.2,0)),d.def.boss?60:18,d.def.col);
   camShake=Math.max(camShake,d.def.boss?.9:.22);
+  if(!d.def.boss){
+    roundCaught++;
+    if(roundCaught>=roundQuota()&&!bossActive) summonBoss();
+  } else {
+    finishRound();
+  }
   bumpCombo();
   downed.push({key:d.key,def:d.def,gold:d.gold,mesh:d.mesh,pos:d.pos.clone(),
     vel:new THREE.Vector3(rnd(-2,2),4,rnd(-2,2)),spin:rnd(-6,6),
     landed:false,life:40,claimed:null,scale:d.scale});
+}
+function summonBoss(){
+  bossActive=true;
+  const pool=["bossMega","bossRobo","bossKing","bossVoid"];
+  const zi=Math.max(0,ZONES.findIndex(z=>z.id===S.zone));
+  const b=spawnDuck(pool[clamp(Math.floor(zi/2),0,pool.length-1)],null,false,true);
+  b.baseY=waterY()+rnd(11,16);
+  toast("ROUND "+S.round+" BOSS - "+b.def.name+'! "'+b.def.quip+'"');
+  bannerMsg(b.def.name.toUpperCase()+" INCOMING");
+  SFX.boss(); slow=.7;
+}
+function finishRound(){
+  const bonus=Math.floor(400*Math.pow(1.7,S.round));
+  S.coins+=bonus; S.feathers+=2+S.round;
+  toast("Round "+S.round+" cleared! +"+money(bonus)+" and "+(2+S.round)+" feathers.");
+  bannerMsg("ROUND "+S.round+" CLEARED");
+  S.round++; roundCaught=0; bossActive=false;
+  planStorm();
+  SFX.rare(); updateHUD(); save();
+}
+function planStorm(){
+  stormAt=Math.random()<stormChance()?rnd(12,45):-1;
 }
 function duckValue(c){
   const def=c.def||DUCKS[c.key];
@@ -2127,7 +2227,9 @@ function updateHUD(){
   $("carryStat").classList.toggle("full",carryFull());
   $("feathV").textContent=fmt(S.feathers);
   $("weapName").innerHTML=weaponDef().name;
-  $("zoneName").textContent=curZone().name;
+  $("roundR").textContent=inLobby()?"Lodge":("Round "+S.round);
+  $("roundQ").textContent=inLobby()?curZone().name
+    :(bossActive?"BOSS":(roundCaught+" / "+roundQuota()+"  \u00b7  "+curZone().name));
 }
 const anyVeilOpen=()=>Array.prototype.some.call(document.querySelectorAll(".veil"),v=>v.classList.contains("show"));
 function showVeil(id){ $(id).classList.add("show"); if(document.pointerLockElement)document.exitPointerLock(); }
@@ -2149,7 +2251,7 @@ $("achX").onclick=()=>hideVeil("vAch");
 $("resX").onclick=()=>hideVeil("vResearch");
 $("mapsX").onclick=()=>hideVeil("vMaps");
 $("shopX").onclick=()=>hideVeil("vShop");
-$("sellOk").onclick=()=>hideVeil("vSell");
+
 $("bHelp").onclick=()=>showVeil("vHelp");
 
 let shopCat="weapon";
@@ -2420,9 +2522,10 @@ function doSell(){
   const count=S.bag.length;
   S.coins+=total; S.stats.earned+=total; S.stats.golden+=golden; S.bag=[];
   SFX.coin(); setTimeout(()=>SFX.coin(),90); setTimeout(()=>SFX.buy(),190);
-  $("sellCnt").textContent=fmt(count)+" Duck"+(count===1?"":"s")+" Sold!";
+  $("sellCnt").textContent=fmt(count)+" duck"+(count===1?"":"s")+" sold";
   countUp($("sellAmt"),total);
-  showVeil("vSell"); updateHUD(); checkAch(); save();
+  flashSell();
+  updateHUD(); checkAch(); save();
 }
 function doSellSilent(){
   if(!S.bag.length)return;
@@ -2432,6 +2535,16 @@ function doSellSilent(){
   S.coins+=total; S.stats.earned+=total; S.stats.golden+=golden; S.bag=[];
   toast("Auto-sold "+fmt(n)+" ducks for "+money(total));
   SFX.coin(); updateHUD(); checkAch(); save();
+}
+let sellT=null;
+function flashSell(){
+  const el=$("sellFlash"); el.classList.add("show");
+  clearTimeout(sellT); sellT=setTimeout(()=>el.classList.remove("show"),2300);
+}
+let bannerT=null;
+function bannerMsg(txt){
+  const el=$("banner"); el.textContent=txt; el.classList.add("show");
+  clearTimeout(bannerT); bannerT=setTimeout(()=>el.classList.remove("show"),1900);
 }
 function countUp(el,target){
   const t0=performance.now(), dur=Math.min(1400,500+Math.log10(Math.max(10,target))*260);
@@ -2462,9 +2575,12 @@ function enterZone(){
   else { player.pos.set(0,heightAt(0,18)+2,18); player.yaw=0; player.pitch=-.03; }
   player.vel.set(0,0,0);
   for(const d of dogs) d.pos.copy(player.pos);
+  roundCaught=0; bossActive=false; stormAt=-1;
   if(!inLobby()){
+    planStorm();
     const n=targetDuckCount();
     for(let i=0;i<n;i++)spawnDuck(null,null,true);
+    bannerMsg("ROUND "+S.round);
   }
   updateHUD();
   const AMB={backyard:98,marsh:87,lake:110,frozen:130.8,volcano:73.4,city:82.4,station:65.4,dimension:61.7};
@@ -2669,6 +2785,36 @@ function updateDucks(dt){
       if(dv.length()>3) d.pos.addScaledVector(dv.normalize(),dt*12);
     }
 
+    /* raging ducks break off and dive at the player */
+    if(d.def.charge&&d.state==="cross"&&d.chargeT===undefined) d.chargeT=rnd(2,7);
+    if(d.def.charge&&d.state==="cross"&&(d.chargeT-=dt)<=0&&d.pos.distanceTo(player.pos)<70){
+      d.state="charge"; SFX.quack(); toast("A Raging Duck is coming for you!");
+    }
+    if(d.state==="charge"){
+      const to=player.pos.clone().add(new THREE.Vector3(0,1.6,0)).sub(d.pos);
+      const dist=to.length();
+      d.velX=0; d.velZ=0; d.velY=0;
+      d.pos.addScaledVector(to.normalize(),d.def.speed*2.6*dt);
+      d.mesh.rotation.y=Math.atan2(to.x,to.z);
+      d.mesh.rotation.z=Math.sin(clock.elapsedTime*22)*.25;
+      for(const w of d.mesh.userData.wings) w.rotation.z=Math.sin(d.wingT*1.6)*1.4;
+      if(dist<2.4){
+        camShake=Math.max(camShake,.85); SFX.hit(); SFX.quack();
+        bannerMsg("RUDE");
+        if(S.carry.length){                     /* knocks a duck out of your arms */
+          const lost=S.carry.pop();
+          const dp=player.pos.clone().add(new THREE.Vector3(rnd(-2,2),1,rnd(-2,2)));
+          downed.push({key:lost.key,def:DUCKS[lost.key],gold:lost.gold,mesh:makeDuck(DUCKS[lost.key]),
+            pos:dp,vel:new THREE.Vector3(rnd(-3,3),3,rnd(-3,3)),spin:rnd(-6,6),
+            landed:false,life:40,claimed:null,scale:DUCK_SCALE*(DUCKS[lost.key].scale||1)});
+          scene.add(downed[downed.length-1].mesh);
+          updateHUD();
+        }
+        d.state="cross"; d.dir=1; d.baseY=d.pos.y+6; d.panic=3;
+      }
+      d.mesh.position.copy(d.pos);
+      continue;
+    }
     if(d.state==="cross"){
       /* straight, brisk pass across the lake - shot at, they flare upward
          and speed up but keep going, so you get one clean window per duck */
@@ -2749,14 +2895,7 @@ function updateDucks(dt){
     }
     if(worst>=0){ scene.remove(ducks[worst].mesh); ducks.splice(worst,1); }
   }
-  if(Math.random()<dt*.004*(1+L("bossrate")*.06)&&!ducks.some(d=>d.def.boss)){
-    const pool=["bossMega","bossRobo","bossKing","bossVoid"];
-    const zi=ZONES.findIndex(z=>z.id===S.zone);
-    const b=spawnDuck(pool[clamp(Math.floor(zi/2),0,pool.length-1)]);
-    b.pos.y+=30;
-    toast(b.def.name+' appeared! "'+b.def.quip+'"');
-    SFX.boss(); slow=.7;
-  }
+
 }
 function updateDowned(dt){
   for(let i=downed.length-1;i>=0;i--){
@@ -2970,7 +3109,6 @@ function updateWorldAnim(dt,time){
     if(d.userData.sway!==undefined) d.rotation.z=Math.sin(time*1.6+d.userData.sway)*.07;
     if(d.userData.bob!==undefined) d.position.y+=Math.sin(time*1.4+d.userData.bob)*dt*.5;
     if(d.userData.spin!==undefined) d.rotation.y+=dt*d.userData.spin;
-    if(d.userData.billboard) d.userData.billboard.lookAt(camera.position);
   }
   for(const w of waterMeshes) w.position.y=w.userData.base+Math.sin(time*1.3)*.09;
   if(cooler&&cooler.group.userData.lamp){
@@ -3074,6 +3212,19 @@ function frame(){
     updateAbilityUI();
     if(comboT>0){ comboT-=dt; if(comboT<=0){ combo=0; $("comboBox").classList.remove("show"); } }
     if(!bagFull())bagWarned=false;
+    if(stormAt>0){
+      stormAt-=dt;
+      if(stormAt<=0){
+        stormAt=-1;
+        bannerMsg("DUCK STORM");
+        toast("DUCK STORM! They are everywhere.");
+        SFX.event();
+        for(let i=0;i<26;i++){
+          const d=spawnDuck(null,null,true,true);
+          d.baseY=waterY()+rnd(6,24);
+        }
+      }
+    }
     eventT-=dt*(1+L("eventrate")*.07);
     if(eventT<=0&&!activeEvent){ fireEvent(); eventT=rnd(70,150); }
     if(activeEvent){ eventTime-=dt; if(eventTime<=0){ activeEvent=null; $("eventBar").classList.remove("show"); } }
