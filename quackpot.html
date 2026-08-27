@@ -142,6 +142,42 @@ kbd{background:var(--gold);color:#0b1c2b;border-radius:5px;padding:1px 6px;font-
   letter-spacing:.1em;margin:12px 0 4px}
 .howto .sec:first-child{margin-top:0}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;align-items:center}
+
+/* ---------- touch controls ---------- */
+#touch{position:fixed;inset:0;z-index:30;pointer-events:none;display:none}
+body.touch #touch{display:block}
+#stick{position:absolute;width:132px;height:132px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.30);background:rgba(8,20,32,.30);
+  opacity:0;transition:opacity .15s;pointer-events:none}
+#stick.on{opacity:1}
+#knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;
+  border-radius:50%;background:rgba(255,255,255,.55);border:2px solid rgba(255,255,255,.75)}
+.tbtn{position:absolute;pointer-events:auto;border-radius:50%;
+  background:rgba(8,20,32,.62);border:2px solid var(--edge);color:var(--ink);
+  font-weight:900;letter-spacing:.04em;text-transform:uppercase;
+  display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+  -webkit-user-select:none;user-select:none;touch-action:none}
+.tbtn:active{transform:scale(.93);border-color:var(--gold)}
+#tFire{right:22px;bottom:104px;width:104px;height:104px;font-size:15px;
+  border-color:#c4463c;background:rgba(150,40,34,.55)}
+#tJump{right:140px;bottom:118px;width:66px;height:66px;font-size:11px}
+#tUse{right:34px;bottom:222px;width:66px;height:66px;font-size:19px}
+#tReload{right:150px;bottom:34px;width:60px;height:60px;font-size:11px}
+@media (max-width:820px){
+  .stat{font-size:11.5px;padding:5px 9px}
+  .stat .ic{font-size:13px}
+  #weapName{font-size:10.5px}
+  .hudBR{bottom:auto;top:104px;right:10px;flex-direction:column}
+  .ability{width:46px;height:46px}
+  .ability .ic{font-size:16px}
+  #comboN{font-size:23px}
+  .card{padding:14px;border-radius:14px;max-height:88vh}
+  .card h2{font-size:16px}
+  .item .ds{font-size:9.5px}
+  .item button,.item .tag{min-width:70px;font-size:9.5px;padding:7px 8px}
+  #prompt{bottom:auto;top:56%;font-size:11.5px;padding:7px 12px}
+  .hudBL{bottom:190px}
+}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:#2f5a7d;border-radius:5px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -188,6 +224,15 @@ kbd{background:var(--gold);color:#0b1c2b;border-radius:5px;padding:1px 6px;font-
   </div>
   <div class="hudBR" id="abilityRow"></div>
   <div id="prompt"></div>
+</div>
+
+
+<div id="touch">
+  <div id="stick"><div id="knob"></div></div>
+  <button class="tbtn" id="tFire">Fire</button>
+  <button class="tbtn" id="tJump">Jump</button>
+  <button class="tbtn" id="tUse">E</button>
+  <button class="tbtn" id="tReload">Load</button>
 </div>
 
 <div class="veil" id="vShop"><div class="card">
@@ -260,6 +305,12 @@ const ri=(a,b)=>Math.floor(rnd(a,b+1));
 const pick=a=>a[(Math.random()*a.length)|0];
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const lerp=(a,b,t)=>a+(b-a)*t;
+/* Interpolating headings with a plain lerp walks the long way round the
+   0/2*PI seam, which made ducks visibly spin on the spot. */
+function angLerp(a,b,t){
+  let d=((b-a+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  return a+d*t;
+}
 function wpick(t){let s=0;for(const k in t)s+=t[k];let r=Math.random()*s;
   for(const k in t){r-=t[k];if(r<=0)return k;}return Object.keys(t)[0];}
 function fmt(n){
@@ -565,49 +616,49 @@ const ZONES=[
  {id:"backyard",name:"Backyard Pond",cost:0,mult:1,
   sky:0x8fd6f2,fog:0x9fdcf5,fogD:.0055,ground:0x5cb35f,ground2:0x3f8a44,water:0x2f9fd8,grav:22,
   hills:(x,z)=>Math.sin(x*.05)*1.2+Math.cos(z*.045)*1.0,
-  ponds:[[20,-16,13]],props:"backyard",spawn:{common:78,angry:14,business:8},density:30,
+  ponds:[[0,-36,42],[40,26,9]],props:"backyard",spawn:{common:78,angry:14,business:8},density:30,
   desc:"Where every duck hunter starts."},
  {id:"marsh",name:"Marshlands",cost:6000,mult:2.6,
   sky:0x9fb98a,fog:0xa8bd94,fogD:.014,ground:0x6b7a45,ground2:0x4a5a2e,water:0x4a6b3f,grav:22,
   hills:(x,z)=>Math.sin(x*.08)*.7+Math.cos(z*.07)*.7,
-  ponds:[[-18,12,11],[24,20,9],[8,-26,8]],props:"marsh",spawn:{common:30,angry:26,business:16,sus:18,speedy:10},density:34,
+  ponds:[[0,-36,42],[-42,28,10],[40,28,9]],props:"marsh",spawn:{common:30,angry:26,business:16,sus:18,speedy:10},density:34,
   desc:"Ducks here have learned what a gun is."},
  {id:"lake",name:"Big Lake",cost:90000,mult:6.5,
   sky:0x6cc4ee,fog:0x8fd4f0,fogD:.005,ground:0x74b06a,ground2:0x4d8250,water:0x1f7fc4,grav:22,
   hills:(x,z)=>Math.sin(x*.04)*1.6+Math.cos(z*.05)*1.3,
-  ponds:[[0,10,30]],props:"lake",spawn:{angry:22,business:20,sus:22,speedy:18,epic:14,legend:4},density:40,
+  ponds:[[0,-42,56]],props:"lake",spawn:{angry:22,business:20,sus:22,speedy:18,epic:14,legend:4},density:40,
   desc:"Huge water, huge flocks, occasional wizard."},
  {id:"frozen",name:"Frozen Lake",cost:1400000,mult:17,
   sky:0xbfd8ee,fog:0xd4e4f2,fogD:.011,ground:0xe6eef7,ground2:0xb9cbdd,water:0x8fc8e8,grav:20,
   hills:(x,z)=>Math.sin(x*.06)*1.0+Math.cos(z*.055)*1.4,
-  ponds:[[-10,-8,20]],props:"frozen",spawn:{sus:24,speedy:24,epic:24,legend:16,mythic:9,golden:3},density:38,
+  ponds:[[0,-36,42],[-44,28,10]],props:"frozen",spawn:{sus:24,speedy:24,epic:24,legend:16,mythic:9,golden:3},density:38,
   desc:"Slippery, bright, over-feathered."},
  {id:"volcano",name:"Volcano Lake",cost:22000000,mult:48,
   sky:0x6e1d0c,fog:0x9c3316,fogD:.0085,ground:0x63301f,ground2:0x3a1a10,water:0xff5a1f,grav:22,hemiSky:0xff8a4a,
   hills:(x,z)=>Math.sin(x*.07)*2.2+Math.cos(z*.06)*1.8,
-  ponds:[[16,14,12],[-20,-12,10]],props:"volcano",spawn:{epic:22,legend:26,mythic:24,golden:16,diamond:9,giant:3},density:36,
+  ponds:[[0,-36,42],[42,26,10]],props:"volcano",spawn:{epic:22,legend:26,mythic:24,golden:16,diamond:9,giant:3},density:36,
   desc:"The water is not water."},
  {id:"city",name:"Duck City",cost:400000000,mult:140,
   sky:0x3a4a6e,fog:0x4d5c82,fogD:.0075,ground:0x5d636e,ground2:0x3f444d,water:0x2f4a6b,grav:22,hemiSky:0x8fa6d8,
   hills:()=>0,
-  ponds:[[-24,18,8]],props:"city",spawn:{legend:20,mythic:26,golden:22,diamond:20,giant:12},density:42,
+  ponds:[[0,-36,42],[-44,28,9]],props:"city",spawn:{legend:20,mythic:26,golden:22,diamond:20,giant:12},density:42,
   desc:"They built a city. Nobody asked."},
  {id:"station",name:"Space Duck Station",cost:9000000000,mult:420,
   sky:0x090622,fog:0x1a1040,fogD:.006,ground:0x6a5f96,ground2:0x413764,water:0x6c3cff,grav:9,hemiSky:0x6f7fd4,
   hills:(x,z)=>Math.sin(x*.09)*.6+Math.cos(z*.08)*.6,
-  ponds:[[0,-22,10]],props:"station",spawn:{mythic:24,golden:24,diamond:26,giant:20,legend:6},density:40,
+  ponds:[[0,-36,42]],props:"station",spawn:{mythic:24,golden:24,diamond:26,giant:20,legend:6},density:40,
   desc:"Low gravity. Jump like you mean it."},
  {id:"dimension",name:"Duck Dimension",cost:250000000000,mult:1500,
   sky:0x2a0d52,fog:0x4a1b7a,fogD:.0075,ground:0x8340d4,ground2:0x53208c,water:0xff3ca8,grav:16,hemiSky:0xb07cff,
   hills:(x,z)=>Math.sin(x*.12)*2.6+Math.cos(z*.1)*2.6,
-  ponds:[[14,-14,11],[-16,16,11]],props:"dimension",spawn:{golden:22,diamond:28,giant:34,mythic:16},density:46,
+  ponds:[[0,-36,42],[-44,26,10]],props:"dimension",spawn:{golden:22,diamond:28,giant:34,mythic:16},density:46,
   desc:"You went too far and the ducks noticed."}
 ];
 const zoneById=id=>ZONES.find(z=>z.id===id);
 
 /* ═══════════ weapons / dogs ═══════════ */
 const WEAPONS=[
- {id:"spud",  name:"Spud Launcher",   ic:"&#129364;",cost:0,           dmg:4,     rate:2.4,mag:5,  reload:1.5,spd:52, desc:"Fires a potato. Reluctantly."},
+ {id:"spud",  name:"Spud Launcher",   ic:"&#129364;",cost:0,           dmg:7,     rate:2.6,mag:6,  reload:1.3,spd:66, desc:"Fires a potato. Reluctantly."},
  {id:"pop",   name:"Popcorn Cannon",  ic:"&#127871;",cost:2200,        dmg:14,    rate:3.4,mag:8,  reload:1.3,spd:60, desc:"Warm, buttery, mildly effective."},
  {id:"rubber",name:"Rubber Repeater", ic:"&#127880;",cost:52000,       dmg:52,    rate:5.2,mag:14, reload:1.1,spd:72, desc:"Squeaks on impact. Ducks hate it."},
  {id:"bagel", name:"Bagel Blaster",   ic:"&#129391;",cost:850000,      dmg:230,   rate:7.0,mag:22, reload:.95,spd:84, desc:"Everything bagel. Everything."},
@@ -653,7 +704,7 @@ const UPG={
  dogspeed: {name:"Dog Speed",        ic:"&#129460;",cat:"dog",max:30,base:400,  growth:1.50,desc:l=>`+${l*7}% fetch speed.`},
  dogcarry: {name:"Dog Carry",        ic:"&#127937;",cat:"dog",max:30,base:800,  growth:1.55,desc:l=>`+${l} ducks per trip.`},
  dogcount: {name:"Extra Dogs",       ic:"&#128062;",cat:"dog",max:5, base:40000,growth:6.0, desc:l=>`${l+1} dog${l?"s":""} fetching at once.`},
- dogrange: {name:"Fetch Range",      ic:"&#128246;",cat:"dog",max:20,base:600,  growth:1.50,desc:l=>`Dogs notice ducks ${Math.round(30+l*6)}m away.`},
+ dogrange: {name:"Fetch Range",      ic:"&#128246;",cat:"dog",max:20,base:600,  growth:1.50,desc:l=>`Dogs notice ducks ${Math.round(62+l*7)}m away.`},
  dogluck:  {name:"Lucky Nose",       ic:"&#128067;",cat:"dog",max:20,base:9000, growth:1.70,desc:l=>`+${l*2}% rare duck chance.`},
 
  bag:      {name:"Bag Capacity",     ic:"&#127890;",cat:"bag",max:40,base:250,   growth:1.50,desc:l=>`Holds ${25+l*25} ducks.`},
@@ -726,7 +777,7 @@ const gunRate=()=>weaponDef().rate*(1+L("rate")*.06)*(fx.rapid>0?3:1);
 const gunMag=()=>Math.floor(weaponDef().mag+L("mag")*3);
 const gunReload=()=>Math.max(.18,weaponDef().reload*(1-Math.min(.72,L("reload")*.045)));
 const projSpeed=()=>weaponDef().spd*(1+L("spd")*.07);
-const projRange=()=>60+L("range")*9;
+const projRange=()=>78+L("range")*9;
 const critChance=()=>Math.min(.9,L("crit")*.03);
 const critMult=()=>5+L("critdmg")*1.5;
 const shotCount=()=>1+L("multi")+L("spread");
@@ -738,7 +789,7 @@ const bagFull=()=>bagFill()>=bagCap();
 const dogSpeed=()=>dogDef().speed*(1+L("dogspeed")*.07);
 const dogCarry=()=>dogDef().carry+L("dogcarry");
 const dogCount=()=>1+L("dogcount");
-const dogRange=()=>30+L("dogrange")*6;
+const dogRange=()=>62+L("dogrange")*7;
 const luck=()=>L("luck")*.025+L("dogluck")*.02+(dogDef().luck||0);
 const valueMult=()=>(1+L("value")*.12)*(1+L("coinmult")*.15)*(1+(dogDef().mult||0))*curZone().mult;
 const moveSpeed=()=>7*(1+L("movespeed")*.05);
@@ -760,8 +811,20 @@ const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(70,1,.1,700);
 const clock=new THREE.Clock();
 let sun=null,hemi=null,rim=null;
-function resize(){ const w=innerWidth,h=innerHeight;
-  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+function resize(){
+  const w=innerWidth,h=innerHeight,a=w/h;
+  /* updateStyle must stay ON: with it off, Three sizes the drawing buffer to
+     w*dpr x h*dpr but never sets the canvas CSS size, so on any device with
+     devicePixelRatio > 1 the canvas lays out at twice the viewport and the
+     player only ever sees the top-left quarter of the frame. */
+  renderer.setSize(w,h);
+  camera.aspect=a;
+  /* A tall phone screen with a fixed 70deg VERTICAL fov leaves only ~36deg
+     horizontally, so ducks crossing left to right flash past. Widen the
+     vertical fov on portrait to keep a usable horizontal view. */
+  camera.fov=a<1?Math.min(88,70/(0.5+a*0.5)):70;
+  camera.updateProjectionMatrix();
+}
 addEventListener("resize",resize); resize();
 
 const G={
@@ -835,8 +898,24 @@ function skyDome(topCol,botCol){
 /* ═══════════ world ═══════════ */
 let worldGroup=null,waterMeshes=[],platforms=[],interactables=[],decor=[];
 const ZG=110;
+/* Terrain height before platforms. Ponds carve a smooth basin so the water
+   plane sits inside the ground instead of resting on top of a hill. */
+function baseHeight(x,z){
+  const Z=curZone();
+  let h=Z.hills(x,z);
+  const ps=Z.ponds;
+  for(let i=0;i<ps.length;i++){
+    const dx=x-ps[i][0], dz=z-ps[i][1], r=ps[i][2];
+    const d=Math.sqrt(dx*dx+dz*dz);
+    if(d<r){
+      const t=1-d/r;
+      h-=Math.pow(t,.55)*3.4;
+    }
+  }
+  return h;
+}
 function heightAt(x,z){
-  let h=curZone().hills(x,z);
+  let h=baseHeight(x,z);
   for(let i=0;i<platforms.length;i++){
     const p=platforms[i];
     if(x>=p.x-p.w/2&&x<=p.x+p.w/2&&z>=p.z-p.d/2&&z<=p.z+p.d/2&&p.y>h) h=p.y;
@@ -910,7 +989,7 @@ function buildWorld(){
   const pos=g.attributes.position, colors=new Float32Array(pos.count*3);
   const cA=new THREE.Color(Z.ground), cB=new THREE.Color(Z.ground2), tmp=new THREE.Color();
   for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i), z=pos.getZ(i), y=Z.hills(x,z);
+    const x=pos.getX(i), z=pos.getZ(i), y=baseHeight(x,z);
     pos.setY(i,y);
     tmp.copy(cB).lerp(cA,clamp((y+2.5)/5,0,1));
     colors[i*3]=tmp.r; colors[i*3+1]=tmp.g; colors[i*3+2]=tmp.b;
@@ -1139,7 +1218,9 @@ function giantRubberDuck(x,z){
 
 function buildProps(Z){
   const W=worldGroup;
-  const ok=(x,z)=>!inWater(x,z)&&Math.hypot(x,z)>26;
+  /* keep props out of the water, off the spawn apron, and out of the lane
+     between the player and the lake */
+  const ok=(x,z)=>!inWater(x,z)&&!(z>-6&&z<50&&Math.abs(x)<46)&&Math.hypot(x,z)>20;
   const scatter=(n,fn)=>{ let tries=0;
     while(n>0&&tries<n*40){ tries++;
       const x=rnd(-ZG*.86,ZG*.86), z=rnd(-ZG*.86,ZG*.86);
@@ -1232,24 +1313,53 @@ function portal(x,z,zone){
   worldGroup.add(g);
   interactables.push({x,z,r:5,kind:"portal",payload:zone.id,group:g});
 }
+/* Wide plank jetty running from the shore out over the lake, with posts and
+   rails - this is where you stand to shoot. */
+function jettyProp(){
+  const g=new THREE.Group();
+  const deckY=.85, len=26, wid=9, zc=2;
+  const deck=box(wid,.34,len,0x9a6f42,0,deckY,0); g.add(deck);
+  for(let i=0;i<7;i++){
+    const pz=-len/2+2+i*((len-4)/6);
+    for(const sd of[-1,1]){
+      const px=sd*(wid/2-.5);
+      g.add(cyl(.22,3.4,0x6a4a28,px,deckY-1.7,pz));
+      g.add(box(.24,1.0,.24,0x8a5f3a,px,deckY+.6,pz));
+    }
+  }
+  for(const sd of[-1,1]){
+    g.add(box(.20,.18,len-1,0x8a5f3a,sd*(wid/2-.5),deckY+1.05,0));
+  }
+  for(let i=0;i<6;i++){
+    const pz=-len/2+2.4+i*((len-5)/5);
+    g.add(box(wid-1.4,.06,.5,0x7a5a34,0,deckY+.2,pz));
+  }
+  g.position.set(0,0,zc);
+  platforms.push({x:0,y:deckY+.17,z:zc,w:wid,d:len});
+  return g;
+}
 function buildStations(){
-  station(-11,11,0x4a9950,"SELL DUCKS","sell");
-  station(-21,4, 0x3d6fb8,"WEAPON SHOP","shop","weapon");
-  station(-21,-7,0xb85a3d,"DOG SHOP","shop","dog");
-  station(-11,-14,0x8a5ab8,"BAG SHOP","shop","bag");
-  station(2,-16, 0x3d8ab8,"PLAYER SHOP","shop","player");
-  station(12,-7, 0xb8973d,"HUNTING SHOP","shop","hunt");
-  station(13,7,  0x6c3cff,"ABILITIES","shop","special");
-  const cur=S.zone;
-  const others=ZONES.filter(z=>z.id!==cur);
+  /* The player spawns on the near shore facing the lake, so every building
+     sits behind and to the sides - nothing blocks the shooting lane. */
+  station(0,26,   0x4a9950,"SELL DUCKS","sell");
+  station(-17,29, 0x3d6fb8,"WEAPON SHOP","shop","weapon");
+  station(-30,21, 0xb85a3d,"DOG SHOP","shop","dog");
+  station(17,29,  0x8a5ab8,"BAG SHOP","shop","bag");
+  station(30,21,  0x3d8ab8,"PLAYER SHOP","shop","player");
+  station(-26,40, 0xb8973d,"HUNTING SHOP","shop","hunt");
+  station(26,40,  0x6c3cff,"ABILITIES","shop","special");
+
+  worldGroup.add(jettyProp());
+
+  const others=ZONES.filter(z=>z.id!==S.zone);
   others.forEach((z,i)=>{
-    const a=(i/others.length)*6.283;
-    portal(Math.cos(a)*30,Math.sin(a)*30-4,z);
+    const x=-60+i*(120/Math.max(1,others.length-1));
+    portal(x,52,z);
   });
-  const s1=signProp("SHOOT DUCKS\nYOUR DOG FETCHES");
-  s1.position.set(0,heightAt(0,6),6); worldGroup.add(s1);
-  const s2=signProp("BAG FULL?\nSELL OVER THERE");
-  s2.position.set(-6,heightAt(-6,16),16); worldGroup.add(s2);
+  const s1=signProp("DUCKS FLY LEFT TO RIGHT\nOVER THE LAKE");
+  s1.position.set(-9,heightAt(-9,14),14); worldGroup.add(s1);
+  const s2=signProp("BAG FULL?\nSELL BEHIND YOU");
+  s2.position.set(9,heightAt(9,14),14); worldGroup.add(s2);
 }
 
 /* ═══════════ meshes: duck / dog / player ═══════════ */
@@ -1554,6 +1664,7 @@ let started=false,paused=false,pointerLocked=false,mouseDown=false;
 let lockFailed=false,rmbDown=false,lockHinted=false;
 function tryLock(){
   if(lockFailed)return;
+  if(typeof isTouch!=="undefined"&&isTouch){ lockFailed=true; return; }
   try{
     const p=renderer.domElement.requestPointerLock();
     if(p&&typeof p.catch==="function") p.catch(onLockFail);
@@ -1580,18 +1691,43 @@ function rollSpecies(){
   }
   return wpick(table);
 }
-function spawnDuck(species,at){
+function spawnDuck(species,at,spread,forceCross){
   const key=species||rollSpecies(), def=DUCKS[key];
-  let x,z;
-  if(at){x=at.x;z=at.z;}
-  else{ const a=rnd(0,6.283),d=rnd(30,ZG*.85); x=Math.cos(a)*d; z=Math.sin(a)*d; }
+  const Z=curZone(), lake=Z.ponds[0];
   const mesh=makeDuck(def);
-  const water=inWater(x,z);
   const d={key,def,mesh,hp:def.hp,maxHp:def.hp,
-    pos:new THREE.Vector3(x,heightAt(x,z)+(water?.35:0),z),
-    state:water?"swim":"walk",t:rnd(0,3),wingT:rnd(0,6.28),targetA:rnd(0,6.283),
-    flyY:rnd(9,20),scale:def.scale||1,gold:false,panic:0,parade:false};
-  mesh.position.copy(d.pos); scene.add(mesh); ducks.push(d);
+    pos:new THREE.Vector3(),state:"walk",t:rnd(0,3),wingT:rnd(0,6.28),
+    targetA:rnd(0,6.283),phase:rnd(0,6.283),flyY:rnd(9,20),
+    scale:def.scale||1,gold:false,panic:0,parade:false,dir:1,baseY:0,climb:0};
+
+  if(at){
+    d.pos.set(at.x,heightAt(at.x,at.z)+(inWater(at.x,at.z)?.35:0),at.z);
+    d.state=inWater(at.x,at.z)?"swim":"walk";
+  } else if(!def.boss && (forceCross || Math.random()<.74)){
+    /* the main event: a duck crossing the lake from one side to the other */
+    d.state="cross";
+    d.dir=Math.random()<.72?1:-1;                 /* mostly left to right */
+    /* On the first fill of a zone, scatter them along the flight lane so the
+       sky is already busy. Later arrivals enter from the edge as normal. */
+    d.pos.x=spread? rnd(-ZG*.9,ZG*.9) : -d.dir*ZG*.92;
+    d.pos.z=lake[1]+rnd(-lake[2]*.18,lake[2]*.66);
+    d.baseY=waterY()+rnd(5,13);
+    d.pos.y=d.baseY;
+  } else if(Math.random()<.6){
+    /* loafing on the water */
+    const a=rnd(0,6.283), r=Math.sqrt(Math.random())*lake[2]*.85;
+    d.pos.set(lake[0]+Math.cos(a)*r,waterY()+.35,lake[1]+Math.sin(a)*r);
+    d.state="swim";
+  } else {
+    /* pottering about on the far shore */
+    const a=rnd(0,6.283), dd=rnd(46,ZG*.8);
+    const x=Math.cos(a)*dd, z=lake[1]+Math.sin(a)*dd;
+    d.pos.set(x,heightAt(x,z),z);
+    d.state="walk";
+  }
+  mesh.position.copy(d.pos);
+  mesh.rotation.y=d.state==="cross"?(d.dir>0?Math.PI/2:-Math.PI/2):d.targetA;
+  scene.add(mesh); ducks.push(d);
   return d;
 }
 const targetDuckCount=()=>Math.round(curZone().density*(1+L("spawnrate")*.08));
@@ -1616,16 +1752,31 @@ function aimPoint(){
   camera.getWorldDirection(_ad);
   _ao.copy(camera.position);
   const range=projRange();
-  let best=null,bestT=Infinity;
+  let bestDuck=null,bestT=Infinity;
   for(const d of ducks){
     _ac.copy(d.pos); _ac.y+=1.0*d.scale;
     _ap.copy(_ac).sub(_ao);
     const t=_ap.dot(_ad);
     if(t<=0||t>range)continue;
     const perp=_ap.addScaledVector(_ad,-t).length();
-    if(perp<1.7*d.scale&&t<bestT){ bestT=t; best=_ac.clone(); }
+    if(perp<2.2*d.scale&&t<bestT){ bestT=t; bestDuck=d; }
   }
-  if(best)return best;
+  if(bestDuck){
+    /* Lead the target. Aiming at where a duck IS means the shot arrives about
+       four metres behind it, which is wider than the hit radius - so putting
+       the crosshair on a crossing duck never connected. Solve for the
+       intercept point instead. */
+    const vsp=projSpeed();
+    const aim=new THREE.Vector3();
+    let tt=bestDuck.pos.distanceTo(_ao)/vsp;
+    for(let k=0;k<3;k++){
+      aim.set(bestDuck.pos.x+(bestDuck.velX||0)*tt,
+              bestDuck.pos.y+1.0*bestDuck.scale+(bestDuck.velY||0)*tt,
+              bestDuck.pos.z+(bestDuck.velZ||0)*tt);
+      tt=aim.distanceTo(_ao)/vsp;
+    }
+    return aim;
+  }
   for(let t=4;t<range;t+=2.5){
     const px=_ao.x+_ad.x*t, py=_ao.y+_ad.y*t, pz=_ao.z+_ad.z*t;
     if(py<=heightAt(px,pz)) return new THREE.Vector3(px,py,pz);
@@ -1753,7 +1904,7 @@ function downDuck(d){
   bumpCombo();
   downed.push({key:d.key,def:d.def,gold:d.gold,mesh:d.mesh,pos:d.pos.clone(),
     vel:new THREE.Vector3(rnd(-2,2),4,rnd(-2,2)),spin:rnd(-6,6),
-    landed:false,life:26,claimed:null,scale:d.scale});
+    landed:false,life:40,claimed:null,scale:d.scale});
 }
 function duckValue(c){
   const def=c.def||DUCKS[c.key];
@@ -1830,10 +1981,15 @@ const EVENTS=[
    for(let i=0;i<36;i++){ const a=rnd(0,6.283);
      const d=spawnDuck(null,{x:Math.cos(a)*ZG*.8,z:Math.sin(a)*ZG*.8});
      d.state="run"; d.panic=20; } }},
- {id:"golden",name:"GOLDEN HOUR!",dur:30,go(){ for(let i=0;i<18;i++)spawnDuck("golden"); }},
- {id:"giant",name:"A GIANT DUCK HAS LANDED",dur:26,go(){ const d=spawnDuck("giant"); d.pos.y+=26; }},
+ {id:"golden",name:"GOLDEN HOUR!",dur:30,go(){
+   for(let i=0;i<16;i++) spawnDuck("golden",null,true,true); }},
+ {id:"giant",name:"A GIANT DUCK HAS LANDED",dur:26,go(){
+   const d=spawnDuck("giant",null,true,true); d.baseY=waterY()+rnd(9,16); }},
  {id:"storm",name:"DUCK STORM!",dur:24,go(){
-   for(let i=0;i<32;i++){ const d=spawnDuck(); d.pos.y=rnd(24,50); d.state="fly"; } }},
+   for(let i=0;i<28;i++){
+     const d=spawnDuck(null,null,true,true);
+     d.baseY=waterY()+rnd(15,28);      /* a high, dense pass overhead */
+   } }},
  {id:"ufo",name:"UFO INVASION!",dur:28,go(){ spawnUFO(); }},
  {id:"parade",name:"DUCK PARADE!",dur:26,go(){
    const a=rnd(0,6.283),dx=Math.cos(a),dz=Math.sin(a);
@@ -2087,10 +2243,11 @@ function enterZone(){
   if(ufo){scene.remove(ufo.mesh);ufo=null;}
   if(vortex){scene.remove(vortex.mesh);vortex=null;}
   buildWorld();
-  player.pos.set(0,heightAt(0,24)+2,24); player.vel.set(0,0,0);
+  player.pos.set(0,heightAt(0,18)+2,18); player.vel.set(0,0,0);
+  player.yaw=0; player.pitch=-.03;            /* yaw 0 looks down -Z, at the lake */
   for(const d of dogs) d.pos.copy(player.pos);
   const n=targetDuckCount();
-  for(let i=0;i<n;i++)spawnDuck();
+  for(let i=0;i<n;i++)spawnDuck(null,null,true);
   updateHUD();
   const AMB={backyard:98,marsh:87,lake:110,frozen:130.8,volcano:73.4,city:82.4,station:65.4,dimension:61.7};
   SFX.ambience(AMB[S.zone]||98);
@@ -2141,15 +2298,85 @@ addEventListener("mousemove",e=>{
   player.pitch=clamp(player.pitch-e.movementY*.0020,-1.15,.9);
 });
 
+
+/* ═══════════ touch controls ═══════════
+   A left-thumb stick for movement, right-thumb drag to aim, and physical
+   buttons for fire / jump / interact / reload. Pointer lock is never
+   attempted on a touch device. */
+const isTouch=(window.matchMedia&&matchMedia("(pointer:coarse)").matches)||("ontouchstart" in window);
+const touchMove={x:0,y:0};
+let touchSprint=false;
+if(isTouch){
+  document.body.classList.add("touch");
+  const stick=$("stick"), knob=$("knob");
+  let stickId=null, lookId=null, sx=0, sy=0, lx=0, ly=0;
+  const MAXR=54;
+
+  const cv=renderer.domElement;
+  cv.style.touchAction="none";
+
+  cv.addEventListener("pointerdown",e=>{
+    if(!started||paused||anyVeilOpen())return;
+    /* capture is a nicety - never let it take the input handler down with it */
+    try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+    if(e.clientX<innerWidth*.5&&stickId===null){
+      stickId=e.pointerId; sx=e.clientX; sy=e.clientY;
+      stick.style.left=(sx-66)+"px"; stick.style.top=(sy-66)+"px";
+      stick.classList.add("on");
+      knob.style.transform="translate(0,0)";
+    } else if(lookId===null){
+      lookId=e.pointerId; lx=e.clientX; ly=e.clientY;
+    }
+  },{passive:false});
+
+  cv.addEventListener("pointermove",e=>{
+    if(e.pointerId===stickId){
+      const dx=e.clientX-sx, dy=e.clientY-sy;
+      const len=Math.hypot(dx,dy)||1, k=Math.min(1,len/MAXR);
+      touchMove.x=(dx/len)*k; touchMove.y=(dy/len)*k;
+      touchSprint=k>.85;
+      knob.style.transform="translate("+(dx/len)*MAXR*k+"px,"+(dy/len)*MAXR*k+"px)";
+      e.preventDefault();
+    } else if(e.pointerId===lookId){
+      player.yaw-=(e.clientX-lx)*.0055;
+      player.pitch=clamp(player.pitch-(e.clientY-ly)*.0050,-1.15,.9);
+      lx=e.clientX; ly=e.clientY;
+      e.preventDefault();
+    }
+  },{passive:false});
+
+  const endPtr=e=>{
+    if(e.pointerId===stickId){
+      stickId=null; touchMove.x=touchMove.y=0; touchSprint=false;
+      stick.classList.remove("on"); knob.style.transform="translate(0,0)";
+    }
+    if(e.pointerId===lookId) lookId=null;
+  };
+  cv.addEventListener("pointerup",endPtr);
+  cv.addEventListener("pointercancel",endPtr);
+
+  const hold=(el,down,up)=>{
+    el.addEventListener("pointerdown",e=>{e.preventDefault();down();},{passive:false});
+    el.addEventListener("pointerup",e=>{e.preventDefault();if(up)up();},{passive:false});
+    el.addEventListener("pointercancel",()=>{if(up)up();});
+    el.addEventListener("pointerleave",()=>{if(up)up();});
+  };
+  hold($("tFire"),()=>{mouseDown=true;},()=>{mouseDown=false;});
+  hold($("tJump"),()=>{keys.Space=true;},()=>{keys.Space=false;});
+  hold($("tUse"),()=>{tryInteract();});
+  hold($("tReload"),()=>{startReload();});
+}
+
 /* ═══════════ per-frame systems ═══════════ */
 function updatePlayer(dt){
   const Z=curZone();
-  const spd=moveSpeed()*(keys.ShiftLeft?sprintMult():1);
+  const spd=moveSpeed()*((keys.ShiftLeft||touchSprint)?sprintMult():1);
   const f=new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
   const r=new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw));
   const move=new THREE.Vector3();
   if(keys.KeyW)move.add(f); if(keys.KeyS)move.sub(f);
   if(keys.KeyD)move.add(r); if(keys.KeyA)move.sub(r);
+  if(touchMove.x||touchMove.y){ move.addScaledVector(f,-touchMove.y); move.addScaledVector(r,touchMove.x); }
   if(move.lengthSq()>0) move.normalize().multiplyScalar(spd*(inWater(player.pos.x,player.pos.z)?.55:1));
   const k=1-Math.pow(.0008,dt);
   player.vel.x=lerp(player.vel.x,move.x,k);
@@ -2169,7 +2396,7 @@ function updatePlayer(dt){
   if(player.gunSpin){ const t=clock.elapsedTime;
     player.gunSpin[0].rotation.z=t*2.2; player.gunSpin[1].rotation.y=t*-1.7; }
 
-  const dist=7.4,hgt=3.0;
+  const dist=camera.aspect<1?6.1:7.4, hgt=camera.aspect<1?2.7:3.0;
   const cd=new THREE.Vector3(
     Math.sin(player.yaw)*Math.cos(player.pitch),
     -Math.sin(player.pitch)+.25,
@@ -2188,8 +2415,9 @@ function updatePlayer(dt){
   if(sun){ sun.position.set(player.pos.x+48,80,player.pos.z+32); sun.target.position.copy(player.pos); }
 }
 function updateDucks(dt){
-  for(const d of ducks){
-    d.t-=dt; d.wingT+=dt*10;
+  for(let qi=ducks.length-1;qi>=0;qi--){
+    const d=ducks[qi];
+    d.t-=dt; d.wingT+=dt*(d.state==="cross"?13:10);
     if(d.panic>0)d.panic-=dt;
     if(vortex){
       const dv=vortex.pos.clone().sub(d.pos);
@@ -2199,37 +2427,53 @@ function updateDucks(dt){
       const dv=player.pos.clone().sub(d.pos);
       if(dv.length()>3) d.pos.addScaledVector(dv.normalize(),dt*12);
     }
-    const distP=d.pos.distanceTo(player.pos);
-    if(distP<11&&d.state!=="fly"&&d.panic<=0&&!d.def.boss) d.panic=1.2;
-    if(d.t<=0){
-      d.t=rnd(1.4,4.2);
-      if(d.state==="fly"&&Math.random()<.45) d.state=inWater(d.pos.x,d.pos.z)?"swim":"walk";
-      else if(Math.random()<d.def.fly*.4) d.state="fly";
-      else if(!d.parade) d.targetA=rnd(0,6.283);
-      if(Math.random()<.12)SFX.quack();
-    }
-    let speed=d.def.speed;
-    if(d.panic>0){ speed*=2.1; if(d.state==="walk")d.state="run"; }
-    if(d.state==="run")speed*=1.5;
-    if(d.panic>0&&!d.def.boss) d.targetA=Math.atan2(d.pos.x-player.pos.x,d.pos.z-player.pos.z);
-    d.pos.x+=Math.sin(d.targetA)*speed*dt;
-    d.pos.z+=Math.cos(d.targetA)*speed*dt;
-    if(Math.abs(d.pos.x)>ZG*.9||Math.abs(d.pos.z)>ZG*.9)
-      d.targetA=Math.atan2(-d.pos.x,-d.pos.z);
-    const gy=heightAt(d.pos.x,d.pos.z), water=inWater(d.pos.x,d.pos.z);
-    if(d.state==="fly"){
-      d.pos.y=lerp(d.pos.y,gy+d.flyY,1-Math.pow(.06,dt));
-      for(const w of d.mesh.userData.wings) w.rotation.z=Math.sin(d.wingT)*1.1;
+
+    if(d.state==="cross"){
+      /* straight, brisk pass across the lake - shot at, they flare upward
+         and speed up but keep going, so you get one clean window per duck */
+      const sp=d.def.speed*2.05*(d.panic>0?1.5:1);
+      d.velX=d.dir*sp; d.velZ=0; d.velY=d.panic>0?3.2:0;
+      d.pos.x+=d.dir*sp*dt;
+      if(d.panic>0) d.climb=Math.min(d.climb+dt*3.2,8);
+      d.pos.y=d.baseY+d.climb+Math.sin(clock.elapsedTime*1.9+d.phase)*.85;
+      d.mesh.rotation.y=d.dir>0?Math.PI/2:-Math.PI/2;
+      d.mesh.rotation.z=lerp(d.mesh.rotation.z,d.dir>0?-.16:.16,1-Math.pow(.02,dt));
+      for(const w of d.mesh.userData.wings) w.rotation.z=Math.sin(d.wingT)*1.3;
+      if(d.t<=0){ d.t=rnd(1.6,4.4); if(Math.random()<.2)SFX.quack(); }
+      if(d.pos.x*d.dir>ZG*.95){        /* left the map - retire it */
+        scene.remove(d.mesh); ducks.splice(qi,1); continue;
+      }
     } else {
-      d.pos.y=lerp(d.pos.y,water?waterY()+.35:gy,1-Math.pow(.001,dt));
+      const distP=d.pos.distanceTo(player.pos);
+      if(distP<11&&d.panic<=0&&!d.def.boss) d.panic=1.2;
+      if(d.t<=0){
+        d.t=rnd(1.4,4.2);
+        if(!d.parade) d.targetA=rnd(0,6.283);
+        if(Math.random()<.1)SFX.quack();
+      }
+      let speed=d.def.speed;
+      if(d.panic>0){ speed*=2.1; if(d.state==="walk")d.state="run"; }
+      if(d.state==="run")speed*=1.5;
+      if(d.state==="swim")speed*=.55;
+      if(d.panic>0&&!d.def.boss) d.targetA=Math.atan2(d.pos.x-player.pos.x,d.pos.z-player.pos.z);
+      d.velX=Math.sin(d.targetA)*speed; d.velZ=Math.cos(d.targetA)*speed; d.velY=0;
+      d.pos.x+=d.velX*dt;
+      d.pos.z+=d.velZ*dt;
+      if(Math.abs(d.pos.x)>ZG*.9||Math.abs(d.pos.z)>ZG*.9)
+        d.targetA=Math.atan2(-d.pos.x,-d.pos.z);
+      const water=inWater(d.pos.x,d.pos.z);
+      d.pos.y=lerp(d.pos.y,water?waterY()+.35:heightAt(d.pos.x,d.pos.z),1-Math.pow(.001,dt));
       for(const w of d.mesh.userData.wings) w.rotation.z=lerp(w.rotation.z,0,1-Math.pow(.02,dt));
       if(d.state==="walk"||d.state==="run"){
         const sw=Math.sin(d.wingT*.9)*.5, lg=d.mesh.userData.legs;
         lg[0].rotation.x=sw; lg[1].rotation.x=-sw;
       }
+      /* shortest-path turn, so they never spin through the long side */
+      d.mesh.rotation.y=angLerp(d.mesh.rotation.y,d.targetA,1-Math.pow(.02,dt));
+      d.mesh.rotation.z=lerp(d.mesh.rotation.z,0,1-Math.pow(.02,dt));
     }
+
     d.mesh.position.copy(d.pos);
-    d.mesh.rotation.y=lerp(d.mesh.rotation.y,d.targetA,1-Math.pow(.02,dt));
     if(d.mesh.userData.halo)
       d.mesh.userData.halo.scale.setScalar(2.0+Math.sin(performance.now()*.004)*.2);
     if(d.mesh.userData.motes){
@@ -2241,7 +2485,29 @@ function updateDucks(dt){
       });
     }
   }
-  if(ducks.length<targetDuckCount()&&Math.random()<dt*3) spawnDuck();
+  /* The flight lane is topped up on its own count. Previously the refill
+     compared TOTAL ducks against the target, so as soon as a random event
+     added a flock of swimmers the sky stopped restocking and, once the last
+     crosser flew off the map, never recovered. */
+  const tgt=targetDuckCount();
+  let crossers=0, ground=0;
+  for(let i=0;i<ducks.length;i++){ if(ducks[i].state==="cross")crossers++; else ground++; }
+  const wantCross=Math.round(tgt*.7), wantGround=tgt-wantCross;
+  let needC=wantCross-crossers;
+  while(needC>0&&Math.random()<dt*18){ spawnDuck(null,null,false,true); needC--; }
+  if(ground<wantGround&&Math.random()<dt*3) spawnDuck();
+
+  /* stop events from inflating the world forever - retire a far-off
+     ground duck once the population runs well over target */
+  if(ducks.length>tgt*2){
+    let worst=-1,wd=70;
+    for(let i=0;i<ducks.length;i++){
+      if(ducks[i].state==="cross"||ducks[i].def.boss)continue;
+      const dd=ducks[i].pos.distanceTo(player.pos);
+      if(dd>wd){wd=dd;worst=i;}
+    }
+    if(worst>=0){ scene.remove(ducks[worst].mesh); ducks.splice(worst,1); }
+  }
   if(Math.random()<dt*.004*(1+L("bossrate")*.06)&&!ducks.some(d=>d.def.boss)){
     const pool=["bossMega","bossRobo","bossKing","bossVoid"];
     const zi=ZONES.findIndex(z=>z.id===S.zone);
@@ -2336,7 +2602,7 @@ function updateDogs(dt){
       updateHUD(); saveSoon(); checkAch();
     }
     dg.mesh.position.copy(dg.pos);
-    dg.mesh.rotation.y=lerp(dg.mesh.rotation.y,dg.yaw,1-Math.pow(.001,dt));
+    dg.mesh.rotation.y=angLerp(dg.mesh.rotation.y,dg.yaw,1-Math.pow(.001,dt));
     const legs=dg.mesh.userData.legs, sw=Math.sin(dg.legT)*.7;
     for(let i=0;i<legs.length;i++) legs[i].rotation.x=(i%2?sw:-sw);
     if(dg.mesh.userData.tail) dg.mesh.userData.tail.rotation.z=Math.sin(dg.legT*2.4)*.5;
@@ -2459,10 +2725,20 @@ function updateWorldAnim(dt,time){
     ufo.mesh.position.x=Math.sin(ufo.t*.35)*40;
     ufo.mesh.position.z=Math.cos(ufo.t*.28)*40;
     ufo.mesh.rotation.y+=dt*1.4;
-    if(Math.random()<dt*.6){
-      for(const d of ducks){
-        if(Math.hypot(d.pos.x-ufo.mesh.position.x,d.pos.z-ufo.mesh.position.z)<5){
-          d.pos.y=lerp(d.pos.y,ufo.mesh.position.y,.06); d.state="fly"; break;
+    /* actually abduct: haul the duck up the beam and pop it out of existence.
+       (It used to be flipped into a "fly" state that no longer exists, which
+       left the duck stuck behaving like a ground bird.) */
+    for(let i=ducks.length-1;i>=0;i--){
+      const d=ducks[i];
+      if(d.def.boss)continue;
+      if(Math.hypot(d.pos.x-ufo.mesh.position.x,d.pos.z-ufo.mesh.position.z)<5.5){
+        d.abducted=true;
+        d.pos.y=lerp(d.pos.y,ufo.mesh.position.y,1-Math.pow(.25,dt));
+        d.mesh.position.copy(d.pos);
+        d.mesh.rotation.y+=dt*5;
+        if(ufo.mesh.position.y-d.pos.y<2.5){
+          burst(d.pos.clone(),14,0x9df0ff,true);
+          scene.remove(d.mesh); ducks.splice(i,1);
         }
       }
     }
@@ -2595,7 +2871,8 @@ function startGame(){
   enterZone();
   ammo=gunMag(); renderAmmo(); renderAbilities(); updateHUD();
   tryLock();
-  toast("Left click to shoot. E to use shops.");
+  toast(isTouch?"Left stick to walk, drag right to aim, FIRE to shoot."
+    :"Left click to shoot. E to use shops.");
 }
 $("bResume").onclick=()=>{ if(!load())return; startGame(); };
 $("bNew").onclick=()=>{ S=newSave(); save(); startGame(); };
@@ -2625,7 +2902,8 @@ window.__QP={
     } },
   render(){ renderer.render(scene,camera); },
   setAmmo(n){ ammo=n; reloading=false; },
-  get ammo(){return ammo;}, get combo(){return combo;}
+  get ammo(){return ammo;}, get combo(){return combo;},
+  get mouseDown(){return mouseDown;}, get touchMove(){return touchMove;}, get isTouch(){return isTouch;}
 };
 </script>
 </body>
