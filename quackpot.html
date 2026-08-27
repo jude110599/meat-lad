@@ -1804,243 +1804,517 @@ function duckFountain(){
 }
 
 /* ═══════ the five storefronts ═══════ */
-function duckArms(x,z,ry){
-  const g=new THREE.Group();
-  const wall=0x8a4a3a, trim=0x5a2f24, roofc=0x3a2a22;
-  g.add(box(13,.6,10,0x6a4a28,0,.3,0));
-  g.add(box(12,5.2,9,wall,0,2.9,0));
-  /* false front with a stepped parapet, like an old gun shop */
-  g.add(box(12.6,1.6,.5,trim,0,6.2,4.5));
-  g.add(box(7.5,1.2,.5,trim,0,7.4,4.5));
-  g.add(box(3.4,1.0,.5,trim,0,8.4,4.5));
-  const roof=box(12.4,.4,9.4,roofc,0,5.6,0); g.add(roof);
-  /* big display windows either side of the door */
+/* ═══════════════════ ARCHITECTURE KIT ═══════════════════
+   Buildings are modelled from extruded profiles with bevelled edges and
+   lathed solids of revolution, not stacked cubes. Everything shares one
+   palette so the town reads as a single place. */
+const PAL={
+  brick:0xb35b45, brickDk:0x8d4132, plaster:0xf2e6cd, plasterDk:0xdfcdae,
+  woodW:0xb98a52, woodDk:0x6f4a2a, teal:0x2f7d78, navy:0x2f4f7d,
+  roofRed:0xb8432f, roofGrn:0x2f6b4a, roofBlu:0x33527d, slate:0x515c68,
+  metal:0x9aa4ad, metalDk:0x6b747d, gold:0xe0ab33, stone:0xded6c4,
+  stoneDk:0xb9ae98, cream:0xf6efdd, sage:0x8fa87c
+};
+const GLASS=new THREE.MeshStandardMaterial({color:0xa9dcf2,roughness:.05,
+  metalness:.5,transparent:true,opacity:.55});
+function shapeFrom(pts){
+  const sh=new THREE.Shape();
+  sh.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++) sh.lineTo(pts[i][0],pts[i][1]);
+  sh.closePath(); return sh;
+}
+/* extrude a profile along Z, centred, with a soft bevel */
+function extr(shape,depth,color,bev){
+  const b=bev===undefined?.05:bev;
+  const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:b>0,
+    bevelThickness:b,bevelSize:b,bevelSegments:1,curveSegments:10});
+  g.translate(0,0,-depth/2);
+  const m=new THREE.Mesh(g,mat(color));
+  m.castShadow=true; m.receiveShadow=true; return m;
+}
+function lathe(pts,color,seg){
+  const v=pts.map(q=>new THREE.Vector2(q[0],q[1]));
+  const m=new THREE.Mesh(new THREE.LatheGeometry(v,seg||16),mat(color));
+  m.castShadow=true; return m;
+}
+/* pitched roof: a solid slab with overhang, underside and a fascia lip */
+function gableRoof(w,d,h,color,over){
+  /* Ridge runs along X. The cross-section therefore spans the building DEPTH
+     and is extruded across its WIDTH; getting these the wrong way round
+     rotates every roof 90 degrees and hangs it off the front of the house. */
+  const o=over===undefined?.9:over, t=.42, P=d/2+o, L=w+o*2;
+  const roof=extr(shapeFrom([[-P,0],[0,h],[P,0],[P,-t],[0,h-t*1.5],[-P,-t]]),L,color,.07);
+  roof.rotation.y=Math.PI/2;
+  const g=new THREE.Group(); g.add(roof);
   for(const sd of[-1,1]){
-    g.add(glass(4.0,2.6,sd*3.2,3.0,4.56));
-    g.add(box(4.4,.3,.4,trim,sd*3.2,1.55,4.56));
-    g.add(box(4.4,.3,.4,trim,sd*3.2,4.42,4.56));
-    /* rifles on display */
-    for(let i=0;i<3;i++){
-      const rx=sd*3.2-1.3+i*1.3;
-      g.add(box(.14,.14,1.9,0x5a4a3a,rx,3.2,4.2,0));
-      g.add(box(.20,.44,.5,0x3a2f26,rx,2.95,4.9));
-    }
+    const f=extr(shapeFrom([[-P,0],[0,h],[P,0],[P,-.16],[0,h-.24],[-P,-.16]]),.18,PAL.cream,.03);
+    f.rotation.y=Math.PI/2; f.position.x=sd*(w/2+o);
+    g.add(f);
   }
-  g.add(box(2.4,3.4,.35,0x4a2a20,0,1.7,4.6));
-  g.add(ball(.14,0xffd23c,.9,2.9,4.8));
-  const sg=signBoard("DUCK ARMS",9,"#f6e6c4","#5a2f24");
-  sg.position.set(0,7.3,4.78); g.add(sg);
-  /* target boards outside */
-  for(const sd of[-1,1]){
-    const t=new THREE.Group();
-    t.add(box(.22,2.6,.22,0x6a4a28,0,1.3,0));
-    const r1=cyl(1.05,.16,0xf4f0e6,0,2.9,0); r1.rotation.x=Math.PI/2; t.add(r1);
-    const r2=cyl(.68,.18,0xd94a4a,0,2.9,.02); r2.rotation.x=Math.PI/2; t.add(r2);
-    const r3=cyl(.32,.2,0xf4f0e6,0,2.9,.04); r3.rotation.x=Math.PI/2; t.add(r3);
-    t.position.set(sd*7.4,0,5.6); t.rotation.y=sd*.3; g.add(t);
-  }
-  /* ammo crates */
-  for(let i=0;i<4;i++){
-    const cx=-5.6+i*.9+rnd(-.2,.2);
-    g.add(box(1.5,1.0,1.2,0x7a5a34,cx,.5+((i%2)?1.0:0),6.6,rnd(-.3,.3)));
-  }
-  g.position.set(x,heightAt(x,z),z); g.rotation.y=ry||0;
-  worldGroup.add(g);
-  interactables.push({x,z,r:9,kind:"store",payload:"gun",group:g});
   return g;
 }
-function dogDepot(x,z,ry){
+/* barn roof: two pitches a side */
+function gambrelRoof(w,d,h,color,over){
+  const o=over===undefined?.8:over, t=.4, P=d/2+o, L=w+o*2, k=.58;
+  const pts=[[-P,0],[-P*k,h*k],[0,h],[P*k,h*k],[P,0],[P,-t],[P*k,h*k-t],[0,h-t*1.3],[-P*k,h*k-t],[-P,-t]];
+  const roof=extr(shapeFrom(pts),L,color,.07);
+  roof.rotation.y=Math.PI/2;
+  const g=new THREE.Group(); g.add(roof);
+  for(const sd of[-1,1]){
+    const f=extr(shapeFrom(pts),.18,PAL.cream,.03);
+    f.rotation.y=Math.PI/2; f.position.x=sd*(w/2+o); g.add(f);
+  }
+  return g;
+}
+/* sawtooth factory roof */
+function sawtoothRoof(w,d,n,h,color){
+  /* teeth step across X, each ridge running the depth of the building */
+  const g=new THREE.Group(), seg=w/n;
+  for(let i=0;i<n;i++){
+    const x=-w/2+seg*(i+.5);
+    const sl=extr(shapeFrom([[-seg/2,0],[seg/2,h],[seg/2,h-.32],[-seg/2,-.32]]),d,color,.05);
+    sl.position.x=x; g.add(sl);
+    const gl=new THREE.Mesh(new THREE.PlaneGeometry(seg*.02+d*.92,h*.84),GLASS);
+    gl.rotation.y=Math.PI/2;
+    gl.position.set(x+seg/2-.05,h*.5,0); g.add(gl);
+  }
+  return g;
+}
+/* a real window: bevelled frame with a hole, glass, mullions, sill, lintel */
+function windowUnit(w,h,frameC,arched){
+  const g=new THREE.Group(), t=Math.max(.11,w*.085);
+  let outer,hole;
+  if(arched){
+    const r=w/2;
+    outer=new THREE.Shape();
+    outer.moveTo(-w/2,0); outer.lineTo(-w/2,h-r);
+    outer.absarc(0,h-r,r,Math.PI,0,true); outer.lineTo(w/2,0); outer.closePath();
+    hole=new THREE.Path();
+    const ri=r-t;
+    hole.moveTo(-w/2+t,t); hole.lineTo(-w/2+t,h-r);
+    hole.absarc(0,h-r,ri,Math.PI,0,true); hole.lineTo(w/2-t,t); hole.closePath();
+  } else {
+    outer=shapeFrom([[-w/2,0],[w/2,0],[w/2,h],[-w/2,h]]);
+    hole=new THREE.Path();
+    hole.moveTo(-w/2+t,t); hole.lineTo(w/2-t,t); hole.lineTo(w/2-t,h-t); hole.lineTo(-w/2+t,h-t); hole.closePath();
+  }
+  outer.holes.push(hole);
+  const fr=extr(outer,.24,frameC,.035); g.add(fr);
+  const gl=new THREE.Mesh(new THREE.PlaneGeometry(w-t*1.6,h-t*1.6),GLASS);
+  gl.position.set(0,h/2,-.03); g.add(gl);
+  g.add(box(w-t*2,.075,.16,frameC,0,h*.55,.06));
+  g.add(box(.075,h-t*2,.16,frameC,0,h/2,.06));
+  g.add(box(w+.42,.17,.42,PAL.stone,0,-.07,.1));       /* sill */
+  g.add(box(w+.30,.16,.30,PAL.stone,0,h+.08,.06));     /* lintel */
+  return g;
+}
+/* panelled door with frame, threshold and a fanlight */
+function doorUnit(w,h,doorC,frameC,fan){
   const g=new THREE.Group();
-  const wall=0xd9a45a, trim=0xf0e2c4, roofc=0xb84a3a;
-  g.add(box(14,.6,11,0x6a4a28,0,.3,0));
-  g.add(box(12.5,4.6,10,wall,0,2.6,0));
-  /* barn roof: two slabs meeting in a ridge */
+  const outer=shapeFrom([[-w/2-.22,0],[w/2+.22,0],[w/2+.22,h+.22],[-w/2-.22,h+.22]]);
+  const hole=new THREE.Path();
+  hole.moveTo(-w/2,0); hole.lineTo(w/2,0); hole.lineTo(w/2,h); hole.lineTo(-w/2,h); hole.closePath();
+  outer.holes.push(hole);
+  g.add(extr(outer,.30,frameC,.04));
+  const d=box(w-.06,h-.06,.16,doorC,0,h/2,-.02); g.add(d);
+  for(const sy of[.28,.68]) for(const sx of[-1,1])
+    g.add(box(w*.34,h*.26,.06,frameC,sx*w*.22,h*sy,.07));
+  g.add(ball(.09,PAL.gold,w*.32,h*.46,.12));
+  g.add(box(w+.7,.18,.7,PAL.stone,0,-.08,.12));        /* threshold step */
+  if(fan!==false){
+    const r=w/2;
+    const arc=new THREE.Shape();
+    arc.moveTo(-r,0); arc.absarc(0,0,r,Math.PI,0,true); arc.closePath();
+    const glm=new THREE.Mesh(new THREE.ShapeGeometry(arc),GLASS);
+    glm.position.set(0,h+.02,.04); g.add(glm);
+    for(let i=1;i<4;i++){
+      const an=Math.PI*i/4;
+      g.add(box(.07,r,.1,frameC,Math.cos(an)*r*.5,h+.02+Math.sin(an)*r*.5,.06,0));
+      g.children[g.children.length-1].rotation.z=an-Math.PI/2;
+    }
+  }
+  return g;
+}
+/* awning with a scalloped valance, mounted on rods */
+function awningUnit(w,proj,c1,c2){
+  const g=new THREE.Group();
+  const canvas=extr(shapeFrom([[0,0],[proj,-proj*.5],[proj,-proj*.5-.14],[0,-.14]]),w,c1,.03);
+  canvas.rotation.y=Math.PI/2; g.add(canvas);
+  const n=Math.max(3,Math.round(w/.7));
+  for(let i=0;i<n;i++){
+    const sc=lathe([[0,0],[.26,0],[.3,-.1],[.26,-.24],[0,-.3]],(i%2)?c2:c1,10);
+    sc.position.set(-w/2+w*(i+.5)/n,-proj*.5-.16,proj); g.add(sc);
+  }
   for(const sd of[-1,1]){
-    const r=box(7.6,.45,10.6,roofc,sd*3.1,6.0,0);
-    r.rotation.z=sd*-.62; g.add(r);
+    const rod=cyl(.05,proj*1.15,PAL.metalDk,sd*(w/2-.15),-proj*.28,proj*.5);
+    rod.rotation.x=Math.PI/2-.5; g.add(rod);
   }
-  g.add(box(.6,.6,10.8,trim,0,7.35,0));
-  /* barn doors + hayloft hatch */
-  g.add(box(4.6,3.6,.35,trim,0,1.8,5.06));
-  g.add(box(.25,3.6,.4,0x8a5f3a,0,1.8,5.2));
-  g.add(box(2.0,1.6,.3,trim,0,5.3,5.06));
-  for(const sd of[-1,1]) g.add(glass(2.2,1.8,sd*4.0,3.1,5.06));
-  const sg=signBoard("DOG DEPOT",8.4,"#3a2a18","#f0e2c4");
-  sg.position.set(0,4.9,5.3); g.add(sg);
-  /* kennels along the front */
-  for(let i=0;i<3;i++){
-    const kx=-7.5+i*7.5;
-    const k=new THREE.Group();
-    k.add(box(2.4,2.0,2.6,0xb87a4a,0,1.0,0));
-    for(const sd of[-1,1]){ const r=box(1.7,.3,2.8,0x8a4a3a,sd*.62,2.2,0); r.rotation.z=sd*-.6; k.add(r); }
-    const hole=new THREE.Mesh(G.cyl,mat(0x2a1c12));
-    hole.scale.set(.62,.2,.62); hole.rotation.x=Math.PI/2; hole.position.set(0,.85,1.32); k.add(hole);
-    k.add(box(1.1,.18,.9,0xd94a4a,0,.1,1.9));      /* bed */
-    k.position.set(kx,0,8.2); g.add(k);
-  }
-  /* bowls and training hoops */
-  for(let i=0;i<3;i++){
-    const bx=-6+i*6;
-    const b=cyl(.55,.28,0x3d8ab8,bx,.14,6.2); g.add(b);
-    g.add(cyl(.42,.10,0x8a5f3a,bx,.30,6.2));
-  }
+  return g;
+}
+/* a sign board on brackets, bolted to a wall */
+function mountedSign(text,w,fg,bg,frameC){
+  const g=new THREE.Group();
+  const board=signBoard(text,w,fg,bg);
+  const h=w*.25;
+  g.add(extr(shapeFrom([[-w/2-.18,-h/2-.18],[w/2+.18,-h/2-.18],[w/2+.18,h/2+.18],[-w/2-.18,h/2+.18]]),
+    .22,frameC||PAL.woodDk,.05));
+  /* the frame is extruded .22 deep with a .05 bevel, so its front face sits
+     at z~.16 - the board has to sit proud of that or it is swallowed */
+  board.position.z=.24; g.add(board);
   for(const sd of[-1,1]){
-    const hoop=new THREE.Mesh(new THREE.TorusGeometry(1.3,.16,8,20),mat(0x4a9950));
-    hoop.position.set(sd*9.5,1.6,9.5); g.add(hoop);
-    g.add(box(.2,1.6,.2,0x6a4a28,sd*9.5,.8,9.5));
+    g.add(box(.14,.14,.5,PAL.metalDk,sd*(w/2-.3),h/2+.1,-.2));
+    const br=box(.1,.5,.1,PAL.metalDk,sd*(w/2-.3),h/2-.1,-.34); br.rotation.x=.7; g.add(br);
+  }
+  return g;
+}
+function hangingSign(text,w,fg,bg){
+  const g=new THREE.Group();
+  g.add(box(.16,.16,1.9,PAL.metalDk,0,0,-.8));
+  g.add(cyl(.07,.7,PAL.metalDk,0,-.35,-1.5));
+  const br=box(.09,1.0,.09,PAL.metalDk,0,-.4,-.45); br.rotation.x=-.8; g.add(br);
+  const board=mountedSign(text,w,fg,bg,PAL.woodDk);
+  board.rotation.y=Math.PI/2; board.position.set(0,-1.1,-1.5); g.add(board);
+  return g;
+}
+/* plinth + cornice give a building a base, middle and top */
+function plinth(w,d,h,color){ return box(w+.5,h,d+.5,color,0,h/2,0); }
+function cornice(w,d,color,y){
+  const g=new THREE.Group();
+  g.add(box(w+.9,.34,d+.9,color,0,y,0));
+  g.add(box(w+.55,.26,d+.55,color,0,y-.28,0));
+  return g;
+}
+function pilaster(x,z,h,color,ry){
+  const g=new THREE.Group();
+  g.add(box(.62,h,.42,color,0,h/2,0));
+  g.add(box(.82,.28,.56,color,0,h+.1,0));
+  g.add(box(.82,.28,.56,color,0,.14,0));
+  g.position.set(x,0,z); if(ry)g.rotation.y=ry; return g;
+}
+function column(x,z,h,color){
+  const g=lathe([[0,0],[.42,0],[.42,.18],[.32,.34],[.30,h-.4],[.40,h-.22],[.46,h-.06],[.46,h],[0,h]],color,18);
+  g.position.set(x,0,z); return g;
+}
+function chimney(x,y,z,h,brickC){
+  const g=new THREE.Group();
+  g.add(box(1.0,h,1.0,brickC,0,h/2,0));
+  g.add(box(1.3,.3,1.3,PAL.stone,0,h+.1,0));
+  g.add(lathe([[0,0],[.24,0],[.24,.5],[.3,.56],[.3,.62],[0,.62]],PAL.brickDk,12));
+  g.children[g.children.length-1].position.y=h+.25;
+  g.position.set(x,y,z); return g;
+}
+function battens(w,h,d,color,n,z){
+  const g=new THREE.Group();
+  for(let i=0;i<n;i++) g.add(box(.16,h,.1,color,-w/2+w*(i+.5)/n,h/2,z));
+  return g;
+}
+
+/* ═══════ DUCK ARMS - brick gunsmith with an arcaded shopfront ═══════ */
+function duckArms(x,z,ry){
+  const g=new THREE.Group();
+  const W=15,D=11,H=10.0;         /* tall enough to zone the façade properly */
+  g.add(plinth(W,D,.9,PAL.stoneDk));
+  g.add(box(W,H,D,PAL.brick,0,.9+H/2,0));
+  /* corner pilasters and a string course */
+  for(const sx of[-1,1]) for(const sz of[-1,1])
+    g.add(pilaster(sx*(W/2-.25),sz*(D/2-.15),H+.9,PAL.brickDk));
+  g.add(box(W+.4,.34,D+.4,PAL.stone,0,6.0,0));   /* string course above the shopfront */
+  g.add(cornice(W,D,PAL.stone,H+1.0));
+  const roof=gableRoof(W,D,3.0,PAL.roofRed); roof.position.y=H+1.3; g.add(roof);
+  g.add(chimney(-W/2+2.4,H+0.4,-D/2+2.2,4.6,PAL.brickDk));
+  /* arcaded shopfront: two big arched windows flanking a recessed door */
+  for(const sd of[-1,1]){
+    const wnd=windowUnit(3.6,4.2,PAL.cream,true);
+    wnd.position.set(sd*4.2,1.1,D/2+.02); g.add(wnd);
+    const aw=awningUnit(4.2,1.4,PAL.roofRed,PAL.cream);
+    aw.position.set(sd*4.2,5.45,D/2+.05); g.add(aw);
+  }
+  const recess=box(4.4,4.6,.7,PAL.brickDk,0,3.2,D/2-.25); g.add(recess);
+  const door=doorUnit(2.4,3.6,PAL.woodDk,PAL.cream);
+  door.position.set(0,1.1,D/2+.12); g.add(door);
+  /* upper floor windows with shutters */
+  for(let i=-1;i<=1;i++){
+    const wnd=windowUnit(1.5,2.0,PAL.cream);
+    wnd.position.set(i*4.4,7.9,D/2+.02); g.add(wnd);
+    for(const sd of[-1,1]) g.add(box(.5,2.0,.14,PAL.teal,i*4.4+sd*1.15,8.9,D/2+.06));
+  }
+  /* signage attached to the façade and hanging off a bracket */
+  const sg=mountedSign("DUCK ARMS",8.2,"#f6e6c4","#8d4132",PAL.stone);
+  sg.position.set(0,6.85,D/2+.30); g.add(sg);
+  const hs=hangingSign("GUNS",2.4,"#3a2a18","#e0ab33");
+  hs.position.set(W/2-.4,4.9,D/2-1.2); g.add(hs);
+  /* target boards, on posts, either side of the door */
+  for(const sd of[-1,1]){
+    const t=new THREE.Group();
+    t.add(box(.24,3.0,.24,PAL.woodDk,0,1.5,0));
+    for(const [r,c] of [[1.1,PAL.cream],[.72,0xd94a4a],[.34,PAL.cream]]){
+      const d2=cyl(r,.14,c,0,3.2,.05); d2.rotation.x=Math.PI/2; t.add(d2);
+    }
+    t.position.set(sd*8.4,0,D/2+2.4); t.rotation.y=sd*.35; g.add(t);
   }
   g.position.set(x,heightAt(x,z),z); g.rotation.y=ry||0;
   worldGroup.add(g);
-  interactables.push({x,z,r:9,kind:"store",payload:"dog",group:g});
-  /* dogs loose outside */
+  interactables.push({x,z,r:10,kind:"store",payload:"gun",group:g});
+  return g;
+}
+
+/* ═══════ DOG DEPOT - gambrel barn with a cupola ═══════ */
+function dogDepot(x,z,ry){
+  const g=new THREE.Group();
+  const W=15,D=12,H=5.4;
+  g.add(plinth(W,D,.8,PAL.stoneDk));
+  g.add(box(W,H,D,PAL.roofRed,0,.8+H/2,0));
+  g.add(battens(W,H,D,0xd45c46,13,D/2+.06));
+  g.add(box(W+.3,.3,D+.3,PAL.cream,0,.9,0));
+  g.add(box(W+.3,.3,D+.3,PAL.cream,0,H+.7,0));
+  const roof=gambrelRoof(W,D,4.6,PAL.slate); roof.position.y=H+.8; g.add(roof);
+  /* cupola with a lathed roof and a duck weathervane */
+  const cup=new THREE.Group();
+  cup.add(box(2.0,1.8,2.0,PAL.cream,0,.9,0));
+  for(const sd of[-1,1]) cup.add(new THREE.Mesh(new THREE.PlaneGeometry(1.3,1.0),GLASS)).position;
+  cup.add(lathe([[0,0],[1.5,0],[1.1,.9],[.4,1.5],[0,1.7]],PAL.slate,14)).position.y=1.8;
+  cup.add(cyl(.07,1.4,PAL.metalDk,0,4.2,0));
+  const vane=makeDuck(DUCKS.common); vane.scale.multiplyScalar(.42); vane.position.y=4.9; cup.add(vane);
+  cup.position.set(0,H+5.0,0); g.add(cup);
+  /* sliding barn doors on a rail, with X bracing */
+  g.add(cyl(.09,7.4,PAL.metalDk,0,H-.2,D/2+.16));
+  g.children[g.children.length-1].rotation.z=Math.PI/2;
+  for(const sd of[-1,1]){
+    const dr=new THREE.Group();
+    dr.add(box(3.3,4.4,.28,PAL.cream,0,2.2,0));
+    dr.add(box(3.3,.24,.34,PAL.woodDk,0,4.3,.03));
+    dr.add(box(3.3,.24,.34,PAL.woodDk,0,.15,.03));
+    for(const q of[-1,1]){
+      const br=box(4.6,.22,.34,PAL.woodDk,0,2.2,.03); br.rotation.z=q*.93; dr.add(br);
+    }
+    dr.position.set(sd*1.75,.8,D/2+.18); g.add(dr);
+  }
+  /* hayloft door with a hoist beam, and a round gable window */
+  g.add(box(2.0,2.2,.26,PAL.cream,0,H+2.0,D/2+.1));
+  g.add(box(.3,.3,1.8,PAL.woodDk,0,H+4.5,D/2+.8));
+  g.add(cyl(.16,.5,PAL.metalDk,0,H+4.2,D/2+1.5));
+  const rw=new THREE.Mesh(new THREE.TorusGeometry(.85,.16,8,20),mat(PAL.cream));
+  rw.position.set(0,H+5.4,D/2+.06); g.add(rw);
+  const rg=new THREE.Mesh(new THREE.CircleGeometry(.8,20),GLASS);
+  rg.position.set(0,H+5.4,D/2+.02); g.add(rg);
+  /* side windows */
+  for(const sd of[-1,1]) for(let i=-1;i<=1;i+=2){
+    const wnd=windowUnit(1.4,1.8,PAL.cream);
+    wnd.rotation.y=sd*Math.PI/2;
+    wnd.position.set(sd*(W/2+.02),2.4,i*3.2); g.add(wnd);
+  }
+  const sg=mountedSign("DOG DEPOT",7.6,"#3a2a18","#f6efdd",PAL.woodDk);
+  sg.position.set(0,H+1.0,D/2+.22); g.add(sg);
+  /* lean-to kennel run along one side */
+  const run=new THREE.Group();
+  for(let i=0;i<4;i++) run.add(box(.22,2.4,.22,PAL.woodDk,-3.6+i*2.4,1.2,0));
+  run.add(box(9.2,.24,4.6,PAL.woodDk,-1.2,2.5,-2.2));
+  run.children[run.children.length-1].rotation.x=-.3;
+  for(let i=0;i<3;i++){
+    const k=new THREE.Group();
+    k.add(box(2.2,1.9,2.4,PAL.cream,0,.95,0));
+    k.add(gableRoof(2.4,2.6,1.0,PAL.roofRed,.25)).position.y=1.9;
+    const hole=lathe([[0,0],[.5,0],[.5,.9],[0,1.1]],0x2a1c12,12);
+    hole.position.set(0,.1,1.2); hole.rotation.x=-Math.PI/2; k.add(hole);
+    k.position.set(-3.6+i*2.4,0,-2.6); run.add(k);
+  }
+  run.position.set(W/2+5.2,0,1.0); g.add(run);
+  g.position.set(x,heightAt(x,z),z); g.rotation.y=ry||0;
+  worldGroup.add(g);
+  interactables.push({x,z,r:10,kind:"store",payload:"dog",group:g});
   const dd=[DOGS[0],DOGS[1],DOGS[3]];
   for(let i=0;i<3;i++){
     const d=makeDog(dd[i%dd.length]);
-    const wx=x+Math.cos(i*2.1)*7, wz=z+8+Math.sin(i*2.1)*3;
-    d.position.set(wx,heightAt(wx,wz),wz);
-    d.rotation.y=rnd(0,6.283);
+    const wx=x+Math.cos(i*2.1)*8, wz=z+9+Math.sin(i*2.1)*3;
+    d.position.set(wx,heightAt(wx,wz),wz); d.rotation.y=rnd(0,6.283);
     d.userData.idle=rnd(0,6.283); decor.push(d); worldGroup.add(d);
   }
   return g;
 }
+
+/* ═══════ DUCK GEAR - alpine chalet with a balcony ═══════ */
 function duckGear(x,z,ry){
   const g=new THREE.Group();
-  const wall=0x4a7a5a, trim=0xe8d9a8, roofc=0x2f5a42;
-  g.add(box(13,.6,10,0x6a4a28,0,.3,0));
-  /* A-frame cabin */
-  g.add(box(11,3.2,9,wall,0,1.9,0));
+  const W=13,D=11,H=5.0;
+  /* rubble stone ground floor, timber above */
+  g.add(box(W+.6,2.6,D+.6,PAL.stoneDk,0,1.3,0));
+  for(let i=0;i<26;i++){
+    const sx=rnd(-W/2,W/2), sy=rnd(.3,2.3);
+    g.add(box(rnd(.7,1.4),rnd(.4,.7),.16,PAL.stone,sx,sy,D/2+.34));
+  }
+  g.add(box(W,H-2.6,D,PAL.woodW,0,2.6+(H-2.6)/2,0));
+  g.add(battens(W,H-2.6,D,PAL.woodDk,11,D/2+.06));
+  const roof=gableRoof(W,D,5.4,PAL.roofGrn,1.5); roof.position.y=H; g.add(roof);
+  /* scalloped bargeboards on the gable */
   for(const sd of[-1,1]){
-    const r=box(8.4,.5,9.6,roofc,sd*2.9,5.4,0); r.rotation.z=sd*-.85; g.add(r);
+    const n=9, Wg=W/2+1.5;
+    for(let i=0;i<n;i++){
+      const t=i/(n-1), px=-Wg+Wg*2*t, py=5.4*(1-Math.abs(t-.5)*2);
+      const sc=lathe([[0,0],[.3,0],[.34,-.14],[.28,-.3],[0,-.36]],PAL.cream,10);
+      sc.position.set(px,H+py-.35,sd*(D/2+1.5)); g.add(sc);
+    }
   }
-  g.add(box(.7,.7,9.8,trim,0,7.35,0));
-  /* awning over the front on poles */
-  g.add(box(11.5,.3,3.4,0xd9584a,0,4.0,6.0));
-  for(const sd of[-1,1]) g.add(cyl(.16,4.0,0x8a5f3a,sd*5.2,2.0,7.5));
-  /* backpacks hanging from a rail */
-  g.add(cyl(.12,10.6,0x5a5f66,0,3.6,5.0));
-  g.children[g.children.length-1].rotation.z=Math.PI/2;
-  const packCols=[0xd94a4a,0x3d6fb8,0xffd23c,0x7bd94a,0xc16cff];
-  for(let i=0;i<5;i++){
-    const px=-4.4+i*2.2;
-    g.add(box(1.1,1.4,.7,packCols[i],px,2.75,5.0));
-    g.add(box(1.2,.3,.75,0x3a2f26,px,3.3,5.0));
+  /* exposed purlin ends poking through the gable */
+  for(const sd of[-1,1]) for(let i=0;i<3;i++)
+    g.add(cyl(.18,.9,PAL.woodDk,sd*(2.0+i*1.7),H+1.4+i*1.1,D/2+1.3));
+  /* balcony with turned balusters */
+  const bal=new THREE.Group();
+  bal.add(box(W+1.4,.3,2.4,PAL.woodDk,0,0,0));
+  for(let i=0;i<16;i++){
+    const bx=-(W+1.0)/2+(W+1.0)*i/15;
+    bal.add(lathe([[0,0],[.11,0],[.08,.3],[.14,.55],[.08,.8],[.11,1.05],[0,1.05]],PAL.cream,10))
+      .position.set(bx,.15,1.1);
   }
-  for(const sd of[-1,1]) g.add(glass(2.6,2.0,sd*3.4,2.2,4.56));
-  g.add(box(2.2,3.0,.35,0x6a4a28,0,1.5,4.6));
-  const sg=signBoard("DUCK GEAR",8.6,"#f6e6c4","#2f5a42");
-  sg.position.set(0,5.6,4.9); g.add(sg);
-  /* camp scene beside the shop */
-  const tent=new THREE.Group();
-  for(const sd of[-1,1]){ const t=box(3.2,.3,4.0,0xd9a417,sd*1.15,1.3,0); t.rotation.z=sd*-.75; tent.add(t); }
-  tent.add(box(.16,2.6,4.2,0x8a5f3a,0,1.3,0));
-  tent.position.set(-9.5,0,8.0); tent.rotation.y=.4; g.add(tent);
-  const fire=new THREE.Group();
-  for(let i=0;i<5;i++){ const a=i/5*6.283;
-    fire.add(box(.9,.22,.22,0x6a4a28,Math.cos(a)*.4,.12,Math.sin(a)*.4,a)); }
-  fire.add(ball(.42,0xff8a2a,0,.45,0,{emissive:0xff6a1a,emissiveIntensity:1.6}));
-  fire.position.set(-5.4,0,9.4); g.add(fire);
-  /* canoe leaning on the wall */
-  const canoe=box(1.4,.9,5.4,0x2f6fb8,7.2,2.2,6.0); canoe.rotation.x=.35; g.add(canoe);
-  for(let i=0;i<3;i++) g.add(box(1.6,1.1,1.3,0x7a5a34,9.4,.55+i*1.1,9.0,rnd(-.3,.3)));
+  bal.add(box(W+1.4,.22,.32,PAL.woodDk,0,1.3,1.1));
+  for(const sd of[-1,1]) bal.add(box(.26,1.3,.26,PAL.woodDk,sd*(W+1.2)/2,.75,1.1));
+  bal.position.set(0,H-1.4,D/2+.3); g.add(bal);
+  /* glazed shopfront under the balcony */
+  for(const sd of[-1,1]){
+    const wnd=windowUnit(3.2,2.2,PAL.cream);
+    wnd.position.set(sd*3.6,.5,D/2+.36); g.add(wnd);
+  }
+  const door=doorUnit(2.2,3.0,PAL.roofGrn,PAL.cream,false);
+  door.position.set(0,.5,D/2+.36); g.add(door);
+  /* upper floor casements onto the balcony */
+  for(const sd of[-1,1]){
+    const wnd=windowUnit(1.6,2.0,PAL.cream);
+    wnd.position.set(sd*2.6,H-1.1,D/2+.06); g.add(wnd);
+    for(const q of[-1,1]) g.add(box(.5,2.0,.14,PAL.roofRed,sd*2.6+q*1.2,H-.1,D/2+.1));
+  }
+  const sg=mountedSign("DUCK GEAR",7.0,"#f6e6c4","#2f6b4a",PAL.woodDk);
+  sg.position.set(0,H+2.6,D/2+1.15); g.add(sg);
+  const hs=hangingSign("OUTFITTER",2.8,"#f6e6c4","#2f7d78");
+  hs.position.set(-W/2+.4,3.6,D/2+1.0); g.add(hs);
   g.position.set(x,heightAt(x,z),z); g.rotation.y=ry||0;
   worldGroup.add(g);
-  interactables.push({x,z,r:9,kind:"store",payload:"cooler",group:g});
+  interactables.push({x,z,r:10,kind:"store",payload:"cooler",group:g});
   return g;
 }
+
+/* ═══════ DUCK EXCHANGE - stone bank, portico and dome ═══════ */
 function duckExchange(x,z,ry){
   const g=new THREE.Group();
-  const stone=0xe4dcc8, gold=0xffd23c, trim=0xc9bfa4;
-  g.add(box(15,.6,12,0xb9b0a0,0,.3,0));
-  /* steps */
-  for(let i=0;i<3;i++) g.add(box(13-i*1.2,.42,1.6,trim,0,.5+i*.42,6.0-i*.7));
-  g.add(box(12.5,6.0,10,stone,0,3.6,0));
-  /* columns + pediment */
-  for(let i=-2;i<=2;i++){
-    g.add(cyl(.52,6.2,stone,i*2.6,3.7,5.4));
-    g.add(cyl(.66,.4,trim,i*2.6,6.9,5.4));
-    g.add(cyl(.66,.4,trim,i*2.6,.75,5.4));
+  const W=15,D=13,H=7.2;
+  for(let i=0;i<4;i++) g.add(box(W+2.2-i*1.0,.44,2.8-i*.35,PAL.stoneDk,0,.22+i*.44,D/2+2.6-i*.3));
+  g.add(plinth(W,D,1.8,PAL.stoneDk));
+  g.add(box(W,H,D,PAL.stone,0,1.8+H/2,0));
+  /* entablature */
+  g.add(box(W+1.2,.5,D+1.2,PAL.cream,0,H+1.9,0));
+  g.add(box(W+1.6,.6,D+1.6,PAL.stone,0,H+2.4,0));
+  g.add(box(W+1.9,.4,D+1.9,PAL.cream,0,H+2.85,0));
+  /* portico: six turned columns and a pediment */
+  for(let i=-2;i<=2;i++) g.add(column(i*2.9,D/2+1.6,H+1.6,PAL.cream));
+  g.add(box(W+2.4,.6,3.2,PAL.cream,0,H+2.1,D/2+1.6));
+  const ped=extr(shapeFrom([[-(W/2+1.4),0],[0,2.6],[W/2+1.4,0],[W/2+1.4,-.5],[0,2.1],[-(W/2+1.4),-.5]]),3.4,PAL.cream,.06);
+  ped.rotation.y=Math.PI/2; ped.position.set(0,H+2.4,D/2+1.6); g.add(ped);
+  /* coin emblem in the tympanum */
+  const coin=lathe([[0,0],[1.15,0],[1.15,.22],[0,.22]],PAL.gold,22);
+  coin.rotation.x=Math.PI/2; coin.position.set(0,H+3.5,D/2+3.32); g.add(coin);
+  const dk=makeDuck(DUCKS.common); dk.scale.multiplyScalar(.42);
+  dk.position.set(0,H+3.5,D/2+3.5); g.add(dk); g.userData.coin=coin;
+  /* drum and dome behind the pediment */
+  g.add(lathe([[0,0],[3.4,0],[3.4,1.8],[3.2,1.9],[0,1.9]],PAL.stone,20)).position.y=H+3.0;
+  g.add(lathe([[0,0],[3.2,0],[2.9,1.2],[2.0,2.2],[.9,2.9],[0,3.1]],PAL.roofBlu,22)).position.y=H+4.9;
+  g.add(lathe([[0,0],[.35,0],[.35,.5],[0,.7]],PAL.gold,12)).position.y=H+8.0;
+  /* bronze arched doors and tall windows */
+  const door=doorUnit(3.0,4.4,0x8a6a3a,PAL.cream);
+  door.position.set(0,1.8,D/2+.06); g.add(door);
+  for(const sd of[-1,1]) for(let i=0;i<2;i++){
+    const wnd=windowUnit(1.7,3.4,PAL.cream,true);
+    wnd.position.set(sd*(3.6+i*2.9),2.4,D/2+.06); g.add(wnd);
   }
-  g.add(box(13.6,.7,2.2,trim,0,7.2,5.2));
-  const ped=cone(7.6,2.0,trim,0,8.4,5.2); ped.rotation.y=Math.PI/4; g.add(ped);
-  g.add(box(13.2,.5,10.4,trim,0,6.9,0));
-  /* giant coin above the door */
-  const coin=cyl(2.0,.34,gold,0,8.6,4.2,{});
-  coin.rotation.x=Math.PI/2; coin.material=mat(gold,{emissive:gold,emissiveIntensity:.35});
-  g.add(coin); g.userData.coin=coin;
-  const dk=makeDuck(DUCKS.common); dk.scale.multiplyScalar(.5); dk.position.set(0,8.6,4.45); g.add(dk);
-  /* doors and windows, counter visible inside */
-  g.add(box(3.0,4.0,.4,0x8a6a3a,0,2.3,4.9));
-  for(const sd of[-1,1]) g.add(glass(2.4,2.6,sd*4.2,3.4,4.92));
-  g.add(box(6.0,1.1,1.2,0x8a6a3a,0,1.3,2.4));      /* counter */
-  g.add(box(1.2,.8,.9,0xd9d2c4,1.6,2.2,2.4));      /* register */
-  g.add(ball(.2,0xd94a4a,1.6,2.7,2.4));
-  for(let i=0;i<6;i++) g.add(cyl(.4,.12,gold,-2.4+i*.5,1.92,2.4));
-  const sg=signBoard("DUCK EXCHANGE",10,"#3a2a18","#ffd23c");
-  sg.position.set(0,6.4,5.5); g.add(sg);
-  /* gold planters */
+  /* counter visible through the doorway */
+  g.add(box(6.4,1.2,1.3,0x8a6a3a,0,2.4,D/2-2.4));
+  g.add(box(1.3,.85,.95,PAL.cream,1.7,3.4,D/2-2.4));
+  for(let i=0;i<6;i++) g.add(cyl(.4,.13,PAL.gold,-2.6+i*.55,3.05,D/2-2.4));
+  const sg=mountedSign("DUCK EXCHANGE",9.0,"#3a2a18","#e0ab33",PAL.cream);
+  sg.position.set(0,H+1.1,D/2+.2); g.add(sg);
+  /* urns on the steps */
   for(const sd of[-1,1]){
-    g.add(cyl(1.0,1.0,gold,sd*7.6,.5,6.4));
-    g.add(ball(1.0,0x4f9e3f,sd*7.6,1.4,6.4));
+    g.add(lathe([[0,0],[.8,0],[.55,.5],[.7,1.1],[.5,1.5],[0,1.5]],PAL.cream,14))
+      .position.set(sd*(W/2+1.4),1.0,D/2+2.2);
+    g.add(ball(.85,0x4f9e3f,sd*(W/2+1.4),2.7,D/2+2.2));
   }
   g.position.set(x,heightAt(x,z),z); g.rotation.y=ry||0;
   worldGroup.add(g); decor.push(g);
-  interactables.push({x,z,r:9,kind:"store",payload:"exchange",group:g});
+  interactables.push({x,z,r:10,kind:"store",payload:"exchange",group:g});
   return g;
 }
+
+/* ═══════ UPGRADE LAB - brick works, sawtooth roof, silo and stack ═══════ */
 function upgradeLab(x,z,ry){
   const g=new THREE.Group();
-  const wall=0x6a6f88, glassC=0x6cf0ff, pipe=0x9aa4ad;
-  g.add(box(13,.6,11,0x565b70,0,.3,0));
-  /* silo body with a dome, nothing like the other roofs */
-  g.add(cyl(4.4,6.4,wall,-2.0,3.4,0));
-  const dome=ball(4.4,0x8a90aa,-2.0,6.6,0); dome.scale.y=.55; g.add(dome);
-  g.add(box(7.0,4.4,7.4,wall,4.0,2.6,0));
-  g.add(box(7.4,.5,7.8,0x50556a,4.0,5.0,0));
-  /* glowing tanks */
+  const W=15,D=11,H=5.6;
+  g.add(plinth(W,D,1.0,PAL.slate));
+  g.add(box(W,H,D,PAL.brickDk,0,1.0+H/2,0));
+  for(const sx of[-1,1]) for(const sz of[-1,1])
+    g.add(pilaster(sx*(W/2-.25),sz*(D/2-.15),H+1.0,PAL.brick));
+  g.add(box(W+.5,.36,D+.5,PAL.brick,0,H+1.1,0));
+  const roof=sawtoothRoof(W,D,4,2.4,PAL.slate); roof.position.y=H+1.3; g.add(roof);
+  /* silo with a lathed dome and ribs */
+  const silo=new THREE.Group();
+  silo.add(lathe([[0,0],[3.0,0],[3.0,8.4],[2.8,8.6],[0,8.6]],PAL.metal,20));
+  for(let i=0;i<5;i++){
+    const r=new THREE.Mesh(new THREE.TorusGeometry(3.05,.14,8,24),mat(PAL.metalDk));
+    r.rotation.x=Math.PI/2; r.position.y=1.2+i*1.7; silo.add(r);
+  }
+  silo.add(lathe([[0,0],[3.1,0],[2.6,1.1],[1.6,1.9],[0,2.2]],PAL.roofBlu,20)).position.y=8.6;
+  silo.add(lathe([[0,0],[.5,0],[.5,.4],[0,.55]],PAL.metalDk,12)).position.y=10.8;
+  /* ladder */
+  for(let i=0;i<14;i++) silo.add(box(.9,.09,.09,PAL.metalDk,0,.7+i*.6,3.15));
+  for(const sd of[-1,1]) silo.add(box(.09,8.4,.09,PAL.metalDk,sd*.42,4.4,3.15));
+  silo.position.set(-W/2-2.6,1.0,0); g.add(silo);
+  /* glowing vats against the wall */
+  const tanks=[];
   for(let i=0;i<3;i++){
-    const tx=4.0-2.2+i*2.2;
-    const t=cyl(.8,3.0,glassC,tx,6.6,0,{});
-    t.material=new THREE.MeshStandardMaterial({color:glassC,emissive:glassC,
-      emissiveIntensity:.9,transparent:true,opacity:.6,roughness:.1});
-    g.add(t); g.add(cyl(.92,.3,pipe,tx,5.2,0)); g.add(cyl(.92,.3,pipe,tx,8.1,0));
-    if(!g.userData.tanks)g.userData.tanks=[];
-    g.userData.tanks.push(t);
+    const t=lathe([[0,0],[.85,0],[.85,3.0],[0,3.0]],0x6cf0ff,14);
+    t.material=new THREE.MeshStandardMaterial({color:0x6cf0ff,emissive:0x6cf0ff,
+      emissiveIntensity:.9,transparent:true,opacity:.55,roughness:.1});
+    t.position.set(3.0+i*2.3,H+1.4,-D/2-1.1); g.add(t); tanks.push(t);
+    g.add(lathe([[0,0],[1.0,0],[1.0,.3],[0,.3]],PAL.metalDk,14)).position.set(3.0+i*2.3,H+1.3,-D/2-1.1);
+    g.add(lathe([[0,0],[1.0,0],[1.0,.3],[0,.3]],PAL.metalDk,14)).position.set(3.0+i*2.3,H+4.4,-D/2-1.1);
   }
-  /* pipework */
-  for(let i=0;i<4;i++){
-    const py=1.2+i*1.3;
-    const pp=cyl(.26,6.2,pipe,1.0,py,4.2); pp.rotation.z=Math.PI/2; g.add(pp);
+  g.userData.tanks=tanks;
+  /* pipework with elbows */
+  for(let i=0;i<3;i++){
+    const py=2.0+i*1.5;
+    const pp=cyl(.24,W*.8,PAL.metal,0,py,D/2+.5); pp.rotation.z=Math.PI/2; g.add(pp);
+    const el=new THREE.Mesh(new THREE.TorusGeometry(.5,.24,8,12,Math.PI/2),mat(PAL.metal));
+    el.position.set(W*.4,py+.5,D/2+.5); el.rotation.z=Math.PI; g.add(el);
   }
-  g.add(cyl(.4,4.0,pipe,-6.0,2.0,2.0));
-  g.add(cyl(.7,.8,pipe,-6.0,4.2,2.0));
-  /* chimney with a puff */
-  g.add(cyl(.7,3.0,0x50556a,-2.0,8.6,0));
-  g.userData.stack=new THREE.Vector3(x-2.0,heightAt(x,z)+10.2,z);
-  /* door, portholes, blinking lights */
-  g.add(box(2.4,3.4,.4,0x2f343f,4.0,1.7,3.8));
-  for(const sd of[-1,1]){
-    const ph=cyl(.9,.3,glassC,4.0+sd*2.2,3.2,3.85,{});
-    ph.rotation.x=Math.PI/2;
-    ph.material=mat(glassC,{emissive:glassC,emissiveIntensity:.7});
-    g.add(ph);
+  /* chimney stack */
+  const stack=new THREE.Group();
+  stack.add(lathe([[0,0],[1.1,0],[.85,7.0],[.85,7.6],[0,7.6]],PAL.brick,16));
+  for(let i=0;i<3;i++){
+    const r=new THREE.Mesh(new THREE.TorusGeometry(.95-i*.03,.12,8,20),mat(PAL.cream));
+    r.rotation.x=Math.PI/2; r.position.y=1.6+i*2.3; stack.add(r);
   }
+  stack.add(lathe([[0,0],[1.05,0],[1.05,.5],[.85,.6],[0,.6]],PAL.slate,16)).position.y=7.6;
+  stack.position.set(W/2-1.8,1.0,-D/2+1.6); g.add(stack);
+  g.userData.stack=new THREE.Vector3(x+W/2-1.8,heightAt(x,z)+9.6,z-D/2+1.6);
+  /* steel-framed entrance and industrial windows */
+  const door=doorUnit(2.6,3.8,PAL.slate,PAL.metal,false);
+  door.position.set(0,1.0,D/2+.06); g.add(door);
+  for(const sd of[-1,1]) for(let i=0;i<2;i++){
+    const wnd=windowUnit(1.9,2.4,PAL.metal);
+    wnd.position.set(sd*(3.2+i*2.6),2.6,D/2+.06); g.add(wnd);
+  }
+  const sg=mountedSign("UPGRADE LAB",8.0,"#0b1c2b","#6cf0ff",PAL.slate);
+  sg.position.set(0,H+2.0,D/2+.2); g.add(sg);
+  /* blinking warning lamps */
   const lights=[];
-  for(let i=0;i<4;i++){
-    const b=ball(.22,0xff5a4d,-5.4+i*.9,5.6,3.4,{emissive:0xff5a4d,emissiveIntensity:1.2});
+  for(let i=0;i<3;i++){
+    const b=ball(.24,0xff5a4d,-4.5+i*4.5,H+1.6,D/2+.3,{emissive:0xff5a4d,emissiveIntensity:1.2});
     g.add(b); lights.push(b);
+    g.add(cyl(.3,.2,PAL.metalDk,-4.5+i*4.5,H+1.4,D/2+.3));
   }
   g.userData.blink=lights;
-  const sg=signBoard("UPGRADE LAB",8.4,"#0b1c2b","#6cf0ff");
-  sg.position.set(4.0,5.6,4.0); g.add(sg);
-  /* junk out front */
-  for(let i=0;i<3;i++) g.add(box(1.3,1.0,1.1,0x50556a,-7.5+i*1.2,.5,5.6,rnd(-.4,.4)));
-  g.add(new THREE.Mesh(new THREE.TorusGeometry(1.1,.2,8,16),mat(pipe)));
-  g.children[g.children.length-1].position.set(-8.0,1.1,7.6);
   g.position.set(x,heightAt(x,z),z); g.rotation.y=ry||0;
   worldGroup.add(g); decor.push(g);
-  interactables.push({x,z,r:9,kind:"store",payload:"lab",group:g});
+  interactables.push({x,z,r:10,kind:"store",payload:"lab",group:g});
   return g;
 }
+
 /* ═══════ the truck you arrived in ═══════ */
 function huntingTruck(x,z,ry){
   const g=new THREE.Group();
@@ -2116,8 +2390,8 @@ function buildLobby(){
     [dogDepot,  -31, 16,  2.0],
     [duckExchange,-31,-16, 1.1]
   ];
-  shops.forEach(([fn,sx,sz,ry])=>{
-    fn(sx,sz,ry+Math.PI);
+  shops.forEach(([fn,sx,sz])=>{
+    fn(sx,sz,Math.atan2(-sx,-sz));      /* façade turned toward the fountain */
     const d=Math.hypot(sx,sz);
     worldGroup.add(pathStrip(sx*(9/d),sz*(9/d),sx*.72,sz*.72,4.2));
   });
@@ -3516,6 +3790,14 @@ function updatePlayer(dt){
   player.pos.addScaledVector(player.vel,dt);
   player.pos.x=clamp(player.pos.x,-ZG*.95,ZG*.95);
   player.pos.z=clamp(player.pos.z,-ZG*.95,ZG*.95);
+  /* the fountain is solid - push the player out of the basin */
+  if(inLobby()){
+    const fr=9.4, d=Math.hypot(player.pos.x,player.pos.z);
+    if(d<fr&&d>.001){
+      player.pos.x=player.pos.x/d*fr; player.pos.z=player.pos.z/d*fr;
+      player.vel.x*=.2; player.vel.z*=.2;
+    }
+  }
   const gy=heightAt(player.pos.x,player.pos.z);
   if(player.pos.y<=gy+.02){ player.pos.y=gy; player.vel.y=0; player.onGround=true; }
   else player.onGround=false;
