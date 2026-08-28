@@ -199,6 +199,12 @@ kbd{background:var(--gold);color:#0b1c2b;border-radius:5px;padding:1px 6px;font-
 .closeX{position:absolute;top:12px;right:14px;width:30px;height:30px;border-radius:50%;
   background:var(--raise);border:1px solid var(--edge);font-size:14px}
 .list{overflow-y:auto;display:flex;flex-direction:column;gap:7px;padding-right:3px}
+.itemPreview{display:none;width:100%;height:150px;border-radius:12px;border:1px solid var(--edge);
+  background:radial-gradient(circle at 50% 30%,#1c3550,#08141f);margin-bottom:4px}
+.itemPreview.show{display:block}
+.itemPreviewName{display:none;text-align:center;font-size:11px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.itemPreviewName.show{display:block}
 .item{display:flex;align-items:center;gap:10px;background:var(--raise);border:1px solid var(--edge);
   border-radius:11px;padding:9px 11px;transition:transform .12s,border-color .12s,box-shadow .12s}
 .item:hover{transform:translateX(2px) scale(1.012);border-color:var(--gold);box-shadow:0 4px 16px -6px rgba(0,0,0,.5)}
@@ -355,6 +361,8 @@ body.touch #touch{display:block}
 <div class="veil" id="vStore"><div class="card" style="max-width:540px">
   <button class="closeX" id="storeX">&times;</button>
   <h2 id="storeTitle">Store</h2><div class="sub" id="storeSub"></div>
+  <canvas id="itemPreview" class="itemPreview"></canvas>
+  <div id="itemPreviewName" class="itemPreviewName"></div>
   <div class="list" id="storeList"></div>
 </div></div>
 
@@ -968,6 +976,9 @@ const ABILITIES=[
 ];
 /* Real dates, pulled from this file's own commit history. Newest first. */
 const CHANGELOG=[
+ {date:"2026-08-27T21:23:29-04:00",title:"Look at what you're buying",notes:[
+   "Click any gun, dog, or cooler in the shop to spin it in a live 3D preview instead of just a flat icon",
+   "Added simple models for the 3 new guns so they don't all look like the starter Spud Launcher"]},
  {date:"2026-08-27T20:54:17-04:00",title:"Cheaper gear, reactive UI, town fixes",notes:[
    "Gun and cooler prices cut roughly a third, with 3 new guns and 2 new coolers filling the gaps",
    "Dogs no longer walk into town still holding ducks in their mouth - anything they're carrying gets stowed before the trip home",
@@ -3026,6 +3037,25 @@ function makeGunModel(id){
     add(box(.16,.38,.20,0x2a1a4a,0,-.26,.06));
     gunTrim(add,0x2a1a4a,0x6cf0ff);
     g.userData.spin=[r1,r2];
+  } else if(id==="ketchup"){
+    add(box(.20,.20,.85,0xb83a2a,0,0,-.28));
+    const bottle=cyl(.16,.6,0xd94a3a,0,.08,-1.05); bottle.rotation.x=Math.PI/2; add(bottle);
+    add(cyl(.10,.16,0x3a2f26,0,.08,-1.4));
+    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
+    gunTrim(add,0x3a2f26,0xd94a3a);
+  } else if(id==="waffle"){
+    add(box(.30,.30,.72,0xc98a3a,0,0,-.24));
+    const plate=new THREE.Mesh(G.box,mat(0x6a4a28)); plate.scale.set(.5,.08,.5);
+    plate.position.set(0,.04,-1.05); add(plate);
+    for(let i=-1;i<=1;i++){ add(box(.04,.12,.5,0xf0d29a,i*.14,.1,-1.05)); add(box(.5,.12,.04,0xf0d29a,0,.1,-1.05+i*.14)); }
+    add(box(.16,.36,.20,0x3a2f26,0,-.26,.06));
+    gunTrim(add,0x3a2f26,0xc98a3a);
+  } else if(id==="kazoo"){
+    add(box(.18,.18,.7,0xc16cff,0,0,-.24));
+    const bell=cone(.30,.5,0xf0e8a0,0,0,-1.1); bell.rotation.x=-Math.PI/2; add(bell);
+    add(ball(.09,0xff6cc4,0,.16,-.55));
+    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
+    gunTrim(add,0x3a2f26,0xc16cff);
   } else { /* spud launcher, the starter */
     add(box(.20,.20,1.0,0x6a4a28,0,0,-.30));
     const tube=cyl(.19,.9,0xb08654,0,0,-1.05); tube.rotation.x=Math.PI/2; add(tube);
@@ -3781,7 +3811,7 @@ $("mTitle").onclick=()=>{save();location.reload();};
 $("helpX").onclick=()=>hideVeil("vHelp");
 $("achX").onclick=()=>hideVeil("vAch");
 $("resX").onclick=()=>hideVeil("vResearch");
-$("storeX").onclick=()=>hideVeil("vStore");
+$("storeX").onclick=()=>{hideVeil("vStore");hideItemPreview();};
 $("mapsX").onclick=()=>hideVeil("vMaps");
 $("shopX").onclick=()=>hideVeil("vShop");
 
@@ -3894,12 +3924,17 @@ function renderStore(){
   $("storeTitle").textContent=STORE_TITLE[storeCat]||"Store";
   $("storeSub").textContent="Coins: "+money(S.coins)+"   Feathers: "+fmt(S.feathers);
   const list=$("storeList"); list.innerHTML="";
-  const row=(ic,nm,ds,cls,right,htmlDs)=>{
+  const row=(ic,nm,ds,cls,right,htmlDs,preview)=>{
     const d=document.createElement("div"); d.className="item"+(cls?" "+cls:"");
     d.innerHTML='<div class="ic">'+ic+'</div><div class="info"><div class="nm"></div><div class="ds"></div></div>';
     d.querySelector(".nm").textContent=nm;
     if(htmlDs) d.querySelector(".ds").innerHTML=ds; else d.querySelector(".ds").textContent=ds;
     if(right)d.appendChild(right); list.appendChild(d);
+    if(preview){
+      d.style.cursor="pointer";
+      d.addEventListener("click",e=>{ if(e.target.closest("button"))return; showItemPreview(preview[0],preview[1]); });
+    }
+    return d;
   };
   const buy=(cost,can,fn,label)=>{
     const b=document.createElement("button");
@@ -3910,18 +3945,18 @@ function renderStore(){
   const hdr=t=>{const d=document.createElement("div");d.className="secLbl";d.textContent=t;list.appendChild(d);};
 
   if(storeCat==="gun"){
-    hdr("Guns");
+    hdr("Guns - click one to look it over");
     WEAPONS.forEach(w=>{
       const owned=has(S.perm.weapons,w.id), eq=S.weapon===w.id;
       const ds=w.desc+" - "+fmt(w.dmg)+" dmg, "+w.rate+"/s, mag "+w.mag;
-      if(eq) row(w.ic,w.name,ds,"eq",tag("EQUIPPED"));
+      if(eq) row(w.ic,w.name,ds,"eq",tag("EQUIPPED"),false,["gun",w.id]);
       else if(owned) row(w.ic,w.name,ds,"own",buy(0,true,()=>{
-        S.weapon=w.id;rebuildGun();ammo=gunMag();renderAmmo();updateHUD();renderStore();save();},"Equip"));
+        S.weapon=w.id;rebuildGun();ammo=gunMag();renderAmmo();updateHUD();renderStore();save();},"Equip"),false,["gun",w.id]);
       else row(w.ic,w.name,ds,"",buy(w.cost,S.coins>=w.cost,()=>{
         if(S.coins<w.cost)return; S.coins-=w.cost; S.perm.weapons.push(w.id); S.weapon=w.id;
         rebuildGun(); ammo=gunMag(); renderAmmo(); SFX.buy();
         toast("Bought the "+w.name+"!"); updateHUD(); renderStore(); checkAch(); save();
-      }));
+      }),false,["gun",w.id]);
     });
     hdr("Attachments - kept forever");
     ATTACH.forEach(at=>{
@@ -3940,17 +3975,17 @@ function renderStore(){
     });
   }
   else if(storeCat==="dog"){
-    hdr("Dogs");
+    hdr("Dogs - click one to look it over");
     DOGS.forEach(d=>{
       const owned=has(S.perm.dogs,d.id), eq=S.dog===d.id;
       const ds=d.desc+" - speed "+d.speed+", carries "+d.carry;
-      if(eq) row(d.ic,d.name,ds,"eq",tag("ACTIVE"));
+      if(eq) row(d.ic,d.name,ds,"eq",tag("ACTIVE"),false,["dog",d.id]);
       else if(owned) row(d.ic,d.name,ds,"own",buy(0,true,()=>{
-        S.dog=d.id;syncDogs();renderStore();save();},"Use"));
+        S.dog=d.id;syncDogs();renderStore();save();},"Use"),false,["dog",d.id]);
       else row(d.ic,d.name,ds,"",buy(d.cost,S.coins>=d.cost,()=>{
         if(S.coins<d.cost)return; S.coins-=d.cost; S.perm.dogs.push(d.id); S.dog=d.id; syncDogs();
         SFX.buy(); toast(d.name+" joined you!"); updateHUD(); renderStore(); checkAch(); save();
-      }));
+      }),false,["dog",d.id]);
     });
     hdr("Coats and kit for your dog");
     COATS.forEach(c=>{
@@ -3963,15 +3998,15 @@ function renderStore(){
     });
   }
   else if(storeCat==="cooler"){
-    hdr("Coolers");
+    hdr("Coolers - click one to look it over");
     COOLERS.forEach((c,i)=>{
       const owned=i<=S.perm.cooler;
-      if(i===S.perm.cooler) row(c.ic,c.name,c.desc+" - holds "+c.cap,"eq",tag("IN USE"));
-      else if(owned) row(c.ic,c.name,c.desc+" - holds "+c.cap,"own",tag("OWNED"));
+      if(i===S.perm.cooler) row(c.ic,c.name,c.desc+" - holds "+c.cap,"eq",tag("IN USE"),false,["cooler",c.id]);
+      else if(owned) row(c.ic,c.name,c.desc+" - holds "+c.cap,"own",tag("OWNED"),false,["cooler",c.id]);
       else row(c.ic,c.name,c.desc+" - holds "+c.cap,"",buy(c.cost,S.coins>=c.cost&&i===S.perm.cooler+1,()=>{
         if(S.coins<c.cost)return; S.coins-=c.cost; S.perm.cooler=i;
         SFX.buy(); toast("Upgraded to the "+c.name+"."); updateHUD(); renderStore(); save();
-      }));
+      }),false,["cooler",c.id]);
     });
     hdr("Cooler modules");
     COOLER_MODS.forEach(m=>{
@@ -4008,6 +4043,64 @@ function renderStore(){
       }
     });
   }
+  if(storeCat==="gun") showItemPreview("gun",S.weapon);
+  else if(storeCat==="dog") showItemPreview("dog",S.dog);
+  else if(storeCat==="cooler") showItemPreview("cooler",coolerDef().id);
+  else hideItemPreview();
+}
+/* a small always-rotating 3D preview for the item currently highlighted in
+   a shop list - the "look at the gun on the shelf" ask, scoped to an inset
+   viewport rather than hijacking the main third-person camera mid-shop */
+let previewRenderer=null,previewScene=null,previewCamera=null,previewObj=null,previewRAF=null;
+function ensurePreview(){
+  if(previewRenderer)return;
+  previewRenderer=new THREE.WebGLRenderer({canvas:$("itemPreview"),antialias:true,alpha:true});
+  previewRenderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  previewRenderer.outputColorSpace=THREE.SRGBColorSpace;
+  previewScene=new THREE.Scene();
+  previewCamera=new THREE.PerspectiveCamera(38,1,.1,20);
+  const key=new THREE.DirectionalLight(0xffffff,2.4); key.position.set(2,3,4); previewScene.add(key);
+  const fill=new THREE.HemisphereLight(0xbcdfff,0x1a1410,.9); previewScene.add(fill);
+}
+function showItemPreview(kind,id){
+  ensurePreview();
+  if(previewObj){ previewScene.remove(previewObj); previewObj=null; }
+  let mesh=null,label="",dist=3.2,yOff=0;
+  if(kind==="gun"){
+    const w=WEAPONS.find(x=>x.id===id); if(!w)return hideItemPreview();
+    mesh=makeGunModel(id); mesh.rotation.y=2.5; label=w.name; dist=2.3;
+  } else if(kind==="dog"){
+    const d=DOGS.find(x=>x.id===id); if(!d)return hideItemPreview();
+    mesh=makeDog(d); mesh.rotation.y=2.4; label=d.name; dist=3.8*(d.scale||1); yOff=.85*(d.scale||1);
+  } else if(kind==="cooler"){
+    const c=COOLERS.find(x=>x.id===id); if(!c)return hideItemPreview();
+    mesh=new THREE.Group();
+    const body=new THREE.Mesh(G.box,mat(PAL.stone)); body.scale.set(1.3,.9,.9); body.position.y=-.1; mesh.add(body);
+    const lid=new THREE.Mesh(G.box,mat(PAL.stoneDk)); lid.scale.set(1.34,.16,.94); lid.position.y=.43; mesh.add(lid);
+    for(const sx of[-1,1]){ const h=new THREE.Mesh(G.box,mat(PAL.metalDk)); h.scale.set(.06,.06,.3); h.position.set(sx*.6,-.05,0); mesh.add(h); }
+    label=c.name; dist=3.0;
+  } else return hideItemPreview();
+  previewObj=mesh; previewScene.add(mesh);
+  previewCamera.position.set(0,yOff+.25,dist);
+  previewCamera.lookAt(0,yOff,0);
+  $("itemPreviewName").textContent=label;
+  $("itemPreviewName").classList.add("show");
+  $("itemPreview").classList.add("show");
+  const cv=$("itemPreview"), w2=cv.clientWidth||360, h2=cv.clientHeight||150;
+  previewRenderer.setSize(w2,h2,false);
+  previewCamera.aspect=w2/h2; previewCamera.updateProjectionMatrix();
+  if(!previewRAF) previewLoop();
+}
+function hideItemPreview(){
+  $("itemPreviewName").classList.remove("show");
+  $("itemPreview").classList.remove("show");
+  if(previewObj&&previewScene){ previewScene.remove(previewObj); previewObj=null; }
+  if(previewRAF){ cancelAnimationFrame(previewRAF); previewRAF=null; }
+}
+function previewLoop(){
+  previewRAF=requestAnimationFrame(previewLoop);
+  if(previewObj) previewObj.rotation.y+=0.014;
+  if(previewRenderer&&previewScene&&previewCamera) previewRenderer.render(previewScene,previewCamera);
 }
 function openResearch(){
   const list=$("resList"); list.innerHTML="";
