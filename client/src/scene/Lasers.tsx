@@ -13,10 +13,11 @@ import {
   ShaderMaterial,
   Vector3,
 } from 'three';
+import { surgeOn } from '@starforge/shared';
 import { onFx } from '../state/fx';
 import { refs } from '../state/refs';
 import { useGame } from '../state/store';
-import { buffActive, cssColor, hostNow, useBundle } from './util';
+import { cssColor, hostNow, useBundle } from './util';
 
 const POOL = 12;
 const BEAM_LIFE = 0.13;
@@ -25,6 +26,7 @@ const FLARE_LIFE = 0.26;
 const MUZZLE = new Vector3(0.9, -0.7, -1.2);
 const Y_UP = new Vector3(0, 1, 0);
 const WHITE = new Color(1, 1, 1);
+const SURGE = new Color('#bff8ff');
 
 const BEAM_VERT = /* glsl */ `
 varying vec3 vN;
@@ -101,7 +103,8 @@ interface Beam {
 /**
  * Pooled drill lasers: one instanced beam mesh and one instanced flare mesh
  * (impact + muzzle) for every laser in flight. Mine fire from the camera rig,
- * other players' from their ships; crits and Hyperdrive burn thicker and whiter.
+ * other players' from their ships. Crits burn thicker and whiter; during a
+ * resonance surge every beam runs thicker, brighter and a little icy.
  */
 export function Lasers() {
   const res = useBundle(
@@ -160,12 +163,13 @@ export function Lasers() {
         b.mine = mine;
         if (origin) b.from.copy(origin);
         b.to.copy(e.to);
-        const hyper = !!st.s && buffActive(st.s, 'hyperdrive', hostNow());
-        b.hot = e.crit || hyper;
+        const surge = !!st.s && surgeOn(st.s, hostNow());
+        b.hot = e.crit || surge;
         b.color.copy(cssColor(e.color));
-        if (b.hot) b.color.lerp(WHITE, e.crit ? 0.55 : 0.35);
-        b.color.multiplyScalar(e.crit ? 3.2 : hyper ? 2.6 : 2);
-        b.width = (mine ? 0.028 : 0.022) * (e.crit ? 2 : 1) * (hyper ? 1.5 : 1);
+        if (e.crit) b.color.lerp(WHITE, 0.55);
+        else if (surge) b.color.lerp(SURGE, 0.35);
+        b.color.multiplyScalar(e.crit ? 3.2 : surge ? 2.6 : 2);
+        b.width = (mine ? 0.028 : 0.022) * (e.crit ? 2 : 1) * (surge ? 1.5 : 1);
         b.t = 1;
         b.ft = 1;
       }),

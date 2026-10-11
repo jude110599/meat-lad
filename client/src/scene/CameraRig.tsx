@@ -5,29 +5,32 @@ import { MathUtils, Vector3, type PerspectiveCamera } from 'three';
 import { onFx } from '../state/fx';
 import { useGame } from '../state/store';
 import { bus } from './bus';
-import { BASE_FOV, STATION_POS } from './layout';
+import { BASE_FOV, visibleRect } from './layout';
 import { damp } from './util';
 
-const ORIGIN = new Vector3(0, 0, 0);
+/** Camera distance that frames the rock when the whole screen is visible. */
 const ROCK_DIST = 7.6;
-const STATION_DIST = 5.4;
+const MIN_DIST = 4.2;
 
-/** Pull back on portrait screens so the subject stays in frame (as the prototype's FitCamera). */
+/** Pull back on portrait views so the rock (and a little of its orbit) stays in frame. */
 function fitFactor(aspect: number): number {
   if (aspect >= 1) return 1;
-  return Math.max(1, Math.min(1.95, (1 / Math.max(aspect, 0.42)) * 0.8));
+  return Math.max(1, Math.min(2.1, (1 / Math.max(aspect, 0.42)) * 0.88));
 }
 
 /**
- * OrbitControls plus everything that moves the camera on its own: the orbit
- * target eases between the rock and the station according to `view`, the
- * distance adapts to the view and the screen shape, shake and quake rumble
- * are applied as a small rotation after the controls update (so they never
- * accumulate into the orbit), and the Quantum Leap punches the FOV.
+ * OrbitControls around the rock plus everything that moves the camera on its
+ * own. The HUD covers part of the canvas (top bar; side panel on wide
+ * screens; tab bar and bottom sheet on phones), so the projection is shifted
+ * with setViewOffset to put the rock in the middle of what is left visible,
+ * and the distance fits the rock to that area's size and shape. Both ease
+ * when the sheet opens or closes or the window resizes. Shake is applied as
+ * a small rotation after the controls update (so it never accumulates into
+ * the orbit), and the Quantum Leap punches the FOV.
  *
- * Target and camera move together, which keeps the user's orbit angle; the
- * distance is only eased right after a view or screen change and stops as
- * soon as the user starts dragging or zooming.
+ * The user's own zoom is kept as a ratio to the fitted distance, so a layout
+ * change re-fits without throwing it away; easing stops as soon as the user
+ * starts zooming.
  */
 export function CameraRig() {
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
@@ -35,15 +38,12 @@ export function CameraRig() {
   const gl = useThree((s) => s.gl);
   const width = useThree((s) => s.size.width);
   const height = useThree((s) => s.size.height);
-  const view = useGame((s) => s.view);
+  const sheet = useGame((s) => s.sheet);
 
-  const desired = useMemo(() => (view === 'station' ? STATION_DIST : ROCK_DIST) * fitFactor(width / Math.max(1, height)), [view, width, height]);
-  const anim = useMemo(() => ({ dist: true, first: true }), []);
-  const tmp = useMemo(() => ({ delta: new Vector3(), off: new Vector3() }), []);
-
-  useEffect(() => {
-    anim.dist = true;
-  }, [desired, anim]);
+  const rect = useMemo(() => visibleRect(width, height, sheet), [width, height, sheet]);
+  const desired = useMemo(() => ROCK_DIST * (height / rect.h) * fitFactor(rect.w / rect.h), [rect, height]);
+  const anim = useMemo(() => ({ dist: true, first: true, base: 0, zoom: 1, cx: 0, cy: 0, w: 0, h: 0 }), []);
+  const tmp = useMemo(() => ({ off: new Vector3() }), []);
 
   useEffect(
     () =>
@@ -80,62 +80,80 @@ export function CameraRig() {
     };
   }, [gl, anim]);
 
-  // Before the controls update (-1): move the orbit target, ease distance, set FOV.
+  useEffect(() => () => camera.clearViewOffset(), [camera]);
+
+  // Before the controls update (-1): ease the view offset and distance, set FOV.
   useFrame((state, dtRaw) => {
     const c = controls.current;
     if (!c) return;
     const dt = Math.min(dtRaw, 0.05);
-    const goal = useGame.getState().view === 'station' ? STATION_POS : ORIGIN;
-    const { delta, off } = tmp;
+    const { off } = tmp;
+    const W = state.size.width;
+    const H = state.size.height;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
 
+    off.copy(camera.position).sub(c.target);
+    // A new layout: ease to the new fit (checked here rather than in an
+    // effect, so no frame ever measures the zoom against the wrong fit).
+    if (anim.base !== desired) {
+      anim.base = desired;
+      anim.dist = true;
+    }
     if (anim.first) {
       anim.first = false;
-      delta.copy(goal).sub(c.target);
-      c.target.add(delta);
-      camera.position.add(delta);
-      off.copy(camera.position).sub(c.target).setLength(desired);
+      anim.cx = cx;
+      anim.cy = cy;
+      anim.w = rect.w;
+      anim.h = rect.h;
+      off.setLength(desired);
       camera.position.copy(c.target).add(off);
       anim.dist = false;
     } else {
-      delta.copy(goal).sub(c.target).multiplyScalar(1 - Math.exp(-dt * 3.2));
-      c.target.add(delta);
-      camera.position.add(delta);
+      anim.cx = damp(anim.cx, cx, 5, dt);
+      anim.cy = damp(anim.cy, cy, 5, dt);
+      anim.w = damp(anim.w, rect.w, 5, dt);
+      anim.h = damp(anim.h, rect.h, 5, dt);
       if (anim.dist) {
-        off.copy(camera.position).sub(c.target);
-        const d = off.length();
-        const nd = damp(d, desired, 3.4, dt);
+        const goal = MathUtils.clamp(desired * anim.zoom, MIN_DIST, maxDist(desired));
+        const nd = damp(off.length(), goal, 4, dt);
         off.setLength(nd);
         camera.position.copy(c.target).add(off);
-        if (Math.abs(nd - desired) < 0.01) anim.dist = false;
+        if (Math.abs(nd - goal) < 0.01) anim.dist = false;
+      } else {
+        // Remember how far the user has zoomed relative to the fit.
+        anim.zoom = off.length() / desired;
       }
     }
+    bus.view.w = anim.w;
+    bus.view.h = anim.h;
 
+    // Shift the projection so the orbit target lands on the visible area's centre.
+    const ox = W / 2 - anim.cx;
+    const oy = H / 2 - anim.cy;
     const fov = BASE_FOV + bus.warp * 34;
-    if (Math.abs(camera.fov - fov) > 0.01) {
+    const v = camera.view;
+    if (!v || !v.enabled || v.fullWidth !== W || v.fullHeight !== H || Math.abs(v.offsetX - ox) > 0.01 || Math.abs(v.offsetY - oy) > 0.01 || Math.abs(camera.fov - fov) > 0.01) {
       camera.fov = fov;
-      camera.updateProjectionMatrix();
+      camera.setViewOffset(W, H, ox, oy, W, H);
     }
-    bus.pointScale = (state.size.height * state.viewport.dpr * 0.5) / Math.tan(MathUtils.degToRad(camera.fov) * 0.5);
+    bus.pointScale = (H * state.viewport.dpr * 0.5) / Math.tan(MathUtils.degToRad(camera.fov) * 0.5);
   }, -2);
 
-  // After the controls update: shake and rumble as a tiny rotation; the next
-  // update's lookAt() resets it, so nothing drifts.
+  // After the controls update: shake as a tiny rotation; the next update's
+  // lookAt() resets it, so nothing drifts.
   useFrame((state, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
     bus.shake = Math.max(0, bus.shake - dt * (0.9 + bus.shake * 1.6));
-    const ev = useGame.getState().s?.event;
-    bus.rumble = damp(bus.rumble, ev?.kind === 'quake' ? 1 : 0, 2, dt);
-    const t = state.clock.elapsedTime;
     const a = bus.shake * bus.shake * 0.09;
-    const r = bus.rumble * 0.0035;
-    if (a + r < 1e-5) return;
-    camera.rotateX((Math.sin(t * 47.3) * 0.6 + Math.sin(t * 83.1 + 1.7) * 0.4) * a + Math.sin(t * 13.1) * Math.sin(t * 3.3) * r);
-    camera.rotateY((Math.sin(t * 52.7 + 0.5) * 0.6 + Math.sin(t * 71.9 + 2.3) * 0.4) * a + Math.sin(t * 11.7 + 1.1) * r);
-    camera.rotateZ(Math.sin(t * 39.1 + 0.9) * a * 0.5 + Math.sin(t * 7.9) * r * 0.6);
+    if (a < 1e-5) return;
+    const t = state.clock.elapsedTime;
+    camera.rotateX((Math.sin(t * 47.3) * 0.6 + Math.sin(t * 83.1 + 1.7) * 0.4) * a);
+    camera.rotateY((Math.sin(t * 52.7 + 0.5) * 0.6 + Math.sin(t * 71.9 + 2.3) * 0.4) * a);
+    camera.rotateZ(Math.sin(t * 39.1 + 0.9) * a * 0.5);
     camera.updateMatrixWorld();
   });
 
-  const station = view === 'station';
   return (
     <OrbitControls
       ref={controls}
@@ -145,8 +163,13 @@ export function CameraRig() {
       dampingFactor={0.08}
       rotateSpeed={0.6}
       zoomSpeed={0.8}
-      minDistance={station ? 2.8 : 4.2}
-      maxDistance={station ? 15 : 19}
+      minDistance={MIN_DIST}
+      maxDistance={maxDist(desired)}
     />
   );
+}
+
+/** Zoom-out limit, with room to spare however small the visible area gets. */
+function maxDist(desired: number): number {
+  return Math.max(19, desired * 1.6);
 }

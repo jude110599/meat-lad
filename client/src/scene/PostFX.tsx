@@ -3,17 +3,20 @@ import { useFrame } from '@react-three/fiber';
 import { Bloom, ChromaticAberration, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ToneMappingMode, type BloomEffect, type ChromaticAberrationEffect } from 'postprocessing';
 import { Vector2 } from 'three';
+import { surgeOn } from '@starforge/shared';
 import { onFx } from '../state/fx';
 import { useGame } from '../state/store';
 import { bus } from './bus';
-import { damp, setCss } from './util';
+import { damp, hostNow, setCss } from './util';
 
 const BLOOM = 1.05;
 
 /**
  * Bloom (mipmap blur), chromatic aberration that spikes on shockwaves,
- * overclocks, leaps and big shakes, ACES tone mapping, vignette and a whisper
- * of film grain. Also routes 'overclock' into the shared tint pulse.
+ * flashes, leaps and big shakes, ACES tone mapping, vignette and a whisper
+ * of film grain. Also routes 'flash' into the shared tint pulse and eases
+ * `bus.surge` while a resonance surge is on (a touch more bloom and fringing
+ * here, a cyan wash in Sky and Lights).
  */
 export function PostFX() {
   const bloom = useRef<BloomEffect>(null);
@@ -29,7 +32,7 @@ export function PostFX() {
             bus.aberration = Math.max(bus.aberration, 0.011);
             bus.bloom = Math.max(bus.bloom, 0.9);
             break;
-          case 'overclock':
+          case 'flash':
             bus.aberration = Math.max(bus.aberration, 0.008);
             bus.bloom = Math.max(bus.bloom, 1.1);
             setCss(bus.tint, e.color);
@@ -53,12 +56,13 @@ export function PostFX() {
     const dt = Math.min(dtRaw, 0.05);
     bus.aberration = damp(bus.aberration, 0, 3, dt);
     bus.bloom = damp(bus.bloom, 0, 2.6, dt);
-    const eventOn = !!useGame.getState().s?.event;
-    const a = (eventOn ? 0.0009 : 0.0002) + bus.aberration + bus.warp * 0.01;
+    const s = useGame.getState().s;
+    bus.surge = damp(bus.surge, s && surgeOn(s, hostNow()) ? 1 : 0, 2, dt);
+    const a = 0.0002 + bus.surge * 0.0005 + bus.aberration + bus.warp * 0.01;
     const c = chroma.current;
     if (c) c.offset.set(a, a * 0.75);
     const b = bloom.current;
-    if (b) b.intensity = BLOOM + bus.bloom + bus.warp * 1.3 + bus.flare * 0.3;
+    if (b) b.intensity = BLOOM + bus.bloom + bus.warp * 1.3 + bus.surge * 0.25;
   });
 
   return (

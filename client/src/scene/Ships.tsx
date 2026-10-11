@@ -147,10 +147,10 @@ export function Ships() {
 }
 
 function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { angles: number[] }; geo: ShipGeo }) {
-  const [name, role, hue] = useGame(
+  const [name, hue] = useGame(
     useShallow((st) => {
       const p = st.s?.players[id];
-      return [p?.name ?? '', p?.role ?? 'miner', p?.hue ?? 200] as const;
+      return [p?.name ?? '', p?.hue ?? 200] as const;
     }),
   );
   const emote = useGame((st) => st.emotes[id]);
@@ -232,12 +232,12 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
     return () => tag.el.remove();
   }, [gl, tag]);
   useEffect(() => {
-    tag.label.textContent = `${name} ${role === 'refiner' ? '⚙' : '⛏'}`;
+    tag.label.textContent = name;
     tag.label.style.color = css;
     tag.label.style.border = `1px solid ${hueColor(hue, 40)}`;
     tag.bubble.style.border = `1px solid ${css}`;
     tag.bubble.style.boxShadow = `0 0 12px ${hueColor(hue, 40)}`;
-  }, [tag, name, role, css, hue]);
+  }, [tag, name, css, hue]);
   useEffect(() => {
     if (emote) tag.bubble.textContent = emoteGlyph(emote.id);
   }, [tag, emote]);

@@ -14,11 +14,11 @@ import {
   type BufferGeometry,
   type Group,
 } from 'three';
-import { RESOURCE_DEFS, rng, surfacePoint } from '@starforge/shared';
+import { RESOURCE_DEFS, rng, surgeOn, surfacePoint } from '@starforge/shared';
 import { act } from '../net/actions';
 import { useGame } from '../state/store';
 import { crystalGeometry } from './geometry';
-import { buffActive, byId, damp, glowTexture, hostNow, SEP, splitIds, useBundle } from './util';
+import { byId, damp, glowTexture, hostNow, SEP, splitIds, tapOk, useBundle } from './util';
 
 const ORE = new Color(RESOURCE_DEFS.ore.color);
 const ORE_HOT = new Color('#ffd27a');
@@ -109,7 +109,7 @@ function SeamCrystal({ id, seed, shared }: { id: number; seed: number; shared: S
     if (cur && cur.hp < anim.hp - 1e-6) anim.flash = 1;
     if (cur) anim.hp = cur.hp;
     anim.flash = Math.max(0, anim.flash - dt * 4);
-    anim.res = damp(anim.res, s && buffActive(s, 'resonance', hostNow()) ? 1 : 0, 3, dt);
+    anim.res = damp(anim.res, s && surgeOn(s, hostNow()) ? 1 : 0, 3, dt);
 
     const target = 0.45 + 0.55 * health;
     anim.scale = damp(anim.scale, target, 7, dt);
@@ -127,7 +127,7 @@ function SeamCrystal({ id, seed, shared }: { id: number; seed: number; shared: S
 
   const onDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (e.nativeEvent.button > 0) return;
+    if (!tapOk(e.nativeEvent)) return;
     // World normal from the hit face, blended with the surface normal so
     // sparks fly away from the rock instead of sideways off the hit sphere.
     if (e.face) tmp.n.copy(e.face.normal).transformDirection(e.object.matrixWorld);
@@ -136,7 +136,7 @@ function SeamCrystal({ id, seed, shared }: { id: number; seed: number; shared: S
     tmp.n.add(tmp.p).normalize();
     // Aim the laser at the crystal itself rather than the invisible hit sphere.
     group.current.localToWorld(tmp.p.set(0, 0.22, 0));
-    act.strike({ seamId: id }, tmp.p, tmp.n);
+    act.strike(id, tmp.p, tmp.n);
   };
 
   if (!placement) return null;

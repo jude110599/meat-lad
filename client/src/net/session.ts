@@ -6,14 +6,11 @@ import {
   RoomHost,
   SAVE_KEY,
   SERVER_TICK_HZ,
-  applyOffline,
   createRoomState,
   fromSave,
-  startEvent,
   toSave,
   type ClientMsg,
   type Hello,
-  type Role,
   type RoomState,
   type ServerMsg,
 } from '@starforge/shared';
@@ -68,13 +65,36 @@ function ss(key: string, value?: string): string | null {
   return null;
 }
 
-export function loadSave(): { state: RoomState; savedAt: number } | null {
+const randomKey = (n: number): string => Array.from({ length: n }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+
+/** Stable per browser: a host remembers your progress in their world by it. */
+function browserKey(): string {
+  let k = ls('starforge_key');
+  if (!k) {
+    k = randomKey(16);
+    ls('starforge_key', k);
+  }
+  return k;
+}
+/** Per tab, so two tabs of one browser are two crewmates. */
+function tabKey(): string {
+  let k = ss('starforge_tab');
+  if (!k) {
+    k = randomKey(8);
+    ss('starforge_tab', k);
+  }
+  return k;
+}
+
+export function loadSave(): { state: RoomState; savedAt: number; mine: RoomState['players'][string] | undefined } | null {
   const raw = ls(SAVE_KEY);
   if (!raw) return null;
   try {
     const f = JSON.parse(raw);
     const state = fromSave(f);
-    return state ? { state, savedAt: Number(f.savedAt) || Date.now() } : null;
+    if (!state) return null;
+    const key = ls('starforge_key');
+    return { state, savedAt: Number(f.savedAt) || Date.now(), mine: Object.values(state.players).find((p) => p.key === key) };
   } catch {
     return null;
   }
@@ -83,8 +103,14 @@ export function loadSave(): { state: RoomState; savedAt: number } | null {
 function hello(): Hello {
   const st = useGame.getState();
   // Players arriving from an invite skip the lobby: fall back to their saved or site name.
-  const name = st.name || ls('starforge_name') || window.MLFriends?.me()?.name || 'Prospector';
-  return { t: 'hello', protocol: PROTOCOL_VERSION, name: name.slice(0, 16), role: st.role };
+  let name = st.name || ls('starforge_name');
+  if (!name) {
+    name = window.MLFriends?.me()?.name ?? null;
+    // Remember it, so a rejoin before the site account has loaded keeps the same name.
+    if (name) ls('starforge_name', name.slice(0, 16));
+  }
+  name ||= 'Prospector';
+  return { t: 'hello', protocol: PROTOCOL_VERSION, name: name.slice(0, 16), key: browserKey(), tab: tabKey() };
 }
 
 let current: { close(): void } | null = null;
@@ -109,7 +135,7 @@ class LocalRoom implements Link {
     this.timers.push(window.setInterval(() => this.tick(), 1000 / SERVER_TICK_HZ));
     // ?sfdebug exposes the room for automated tests (a host can edit its own save anyway).
     if (new URLSearchParams(location.search).has('sfdebug')) {
-      Object.assign(window, { __sf: { host: this.host, store: useGame, event: (k: 'quake' | 'flare') => startEvent(this.host.state, k, Date.now(), Math.random) } });
+      Object.assign(window, { __sf: { host: this.host, store: useGame } });
     }
     this.timers.push(window.setInterval(() => this.save(), 10000));
     addEventListener('pagehide', this.save);
@@ -276,18 +302,13 @@ class GuestLink implements Link {
     if (!this.peer || this.closed) return;
     const conn = this.peer.connect(PEER_PREFIX + this.code, { serialization: 'json', reliable: true });
     this.conn = conn;
-    conn.on('open', () => {
-      const h = hello();
-      const resume = ss('starforge_resume:' + this.code);
-      conn.send(resume ? { ...h, resume } : h);
-    });
+    conn.on('open', () => conn.send(hello()));
     conn.on('data', (raw) => {
       const m = raw as ServerMsg;
       if (!m || typeof m !== 'object') return;
       if (m.t === 'welcome') {
         this.welcomed = true;
         this.retries = 0;
-        ss('starforge_resume:' + this.code, m.resume);
         useGame.getState().set({ screen: 'game' });
       }
       if (m.t === 'error') {
@@ -332,17 +353,15 @@ class GuestLink implements Link {
 
 class SocketLink implements Link {
   private readonly socket: Socket;
-  private resume = '';
 
   constructor(room: string | null, onFail: (why: string) => void) {
     useGame.getState().set({ mode: 'server', code: room, net: 'connecting', netError: null });
     this.socket = io(SERVER_URL!, { transports: ['websocket'] });
-    const join = () => this.socket.emit('hello', { ...hello(), room: useGame.getState().code ?? undefined, resume: this.resume || undefined });
+    const join = () => this.socket.emit('hello', { ...hello(), room: useGame.getState().code ?? undefined });
     this.socket.on('connect', join);
     this.socket.on('connect_error', () => useGame.getState().set({ net: 'reconnecting' }));
     this.socket.on('msg', (m: ServerMsg) => {
       if (m.t === 'welcome') {
-        this.resume = m.resume;
         useGame.getState().set({ code: m.code, screen: 'game' });
       }
       if (m.t === 'error') {
@@ -375,22 +394,11 @@ function backToLobby(why: string): void {
   useGame.getState().set({ screen: 'lobby', mode: null, code: null, net: 'idle', netError: why, s: null });
 }
 
-/** Play in this tab: load the save (with offline gains) or start fresh. Optionally open a party. */
+/** Play in this tab: load the save or start fresh. Offline earnings arrive from the host as an fx. */
 export function startLocal(openParty = false): void {
   stopCurrent();
-  const now = Date.now();
-  const saved = loadSave();
-  let state: RoomState;
-  let offline: { seconds: number; gained: RoomState['wallet'] } | null = null;
-  if (saved) {
-    state = saved.state;
-    const r = applyOffline(state, now - saved.savedAt, now);
-    if (r.seconds > 60 && Object.values(r.gained).some((v) => v > 0)) offline = r;
-  } else {
-    state = createRoomState((Math.random() * 2 ** 31) | 0, now);
-  }
-  const st = useGame.getState();
-  st.set({ mode: 'solo', code: null, net: 'idle', netError: null, screen: 'game', offline });
+  const state = loadSave()?.state ?? createRoomState((Math.random() * 2 ** 31) | 0, Date.now());
+  useGame.getState().set({ mode: 'solo', code: null, net: 'idle', netError: null, screen: 'game', offline: null });
   const room = new LocalRoom(state);
   current = room;
   setLink(room);
@@ -442,4 +450,3 @@ export function resetSave(): void {
 }
 
 export const usesServer = !!SERVER_URL;
-export type { Role };

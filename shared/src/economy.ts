@@ -1,56 +1,38 @@
-import type { ResourceId } from './resources.js';
+import type { ResourceId, Wallet } from './resources.js';
 
 /**
- * Balance curves. Every number the host uses to decide an outcome lives here
- * so the client can predict it and the tests and the balance script can pin
- * it. See DESIGN.md §11 for the reasoning and `npm run balance` for pacing.
+ * Balance data. Every number the host uses to decide an outcome lives here
+ * (formulas that need room state are in sim.ts), so the client can show it
+ * and the tests and `npm run balance` can pin it. See DESIGN.md §9–§13.
  */
 
-/* ---------------- upgrades ---------------- */
+/* ---------------- personal upgrades ---------------- */
 
-export type UpgradeId =
-  | 'drillBit'
-  | 'focusLens'
-  | 'coolant'
-  | 'drone'
-  | 'rig'
-  | 'seismic'
-  | 'smelter'
-  | 'infuser'
-  | 'compressor'
-  | 'condenser'
-  | 'press'
-  | 'reactor';
-
-export type UpgradeTab = 'mining' | 'refinery';
+export type UpgradeId = 'drill' | 'drone' | 'lens' | 'rig' | 'smelter' | 'scanner' | 'harvester' | 'plating';
 
 export interface UpgradeDef {
   id: UpgradeId;
-  tab: UpgradeTab;
   name: string;
+  icon: string;
   desc: string;
   currency: ResourceId;
   baseCost: number;
   /** cost(n) = baseCost * growth^n */
   growth: number;
   maxLevel?: number;
-  /** Hidden until the team has produced this much of a resource this run. */
-  unlock?: { res: ResourceId; amount: number };
+  /** Hidden until the team unlocks this Forge Tree node. */
+  needs?: NodeId;
 }
 
 export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
-  drillBit: { id: 'drillBit', tab: 'mining', name: 'Drill Bit', desc: '+1 ore per strike, ×2 every 25 levels', currency: 'ore', baseCost: 10, growth: 1.18 },
-  focusLens: { id: 'focusLens', tab: 'mining', name: 'Focus Lens', desc: '+1% critical strike chance', currency: 'ore', baseCost: 50, growth: 1.32, maxLevel: 40 },
-  drone: { id: 'drone', tab: 'mining', name: 'Orbital Drone', desc: '+0.6 ore/s, orbits the asteroid', currency: 'ore', baseCost: 25, growth: 1.16 },
-  coolant: { id: 'coolant', tab: 'mining', name: 'Coolant Loop', desc: 'Less heat per strike, vents faster', currency: 'alloy', baseCost: 4, growth: 1.7, maxLevel: 12, unlock: { res: 'alloy', amount: 1 } },
-  rig: { id: 'rig', tab: 'mining', name: 'Auto Rig', desc: 'A drill rig on a seam: 2 strikes/s', currency: 'alloy', baseCost: 25, growth: 1.4, maxLevel: 16, unlock: { res: 'alloy', amount: 20 } },
-  seismic: { id: 'seismic', tab: 'mining', name: 'Seismic Charge', desc: 'Doubles ALL ore income', currency: 'plasma', baseCost: 40, growth: 5, unlock: { res: 'plasma', amount: 20 } },
-  smelter: { id: 'smelter', tab: 'refinery', name: 'Smelter', desc: '+1 alloy/s (eats 10 ore each)', currency: 'ore', baseCost: 600, growth: 1.2, unlock: { res: 'ore', amount: 2500 } },
-  infuser: { id: 'infuser', tab: 'refinery', name: 'Plasma Infuser', desc: '+0.2 plasma/s (eats 25 alloy each)', currency: 'alloy', baseCost: 1000, growth: 1.25, unlock: { res: 'alloy', amount: 6000 } },
-  compressor: { id: 'compressor', tab: 'refinery', name: 'Dark Compressor', desc: '+0.04 dark matter/s (eats 50 plasma each)', currency: 'plasma', baseCost: 400, growth: 1.3, unlock: { res: 'plasma', amount: 1500 } },
-  condenser: { id: 'condenser', tab: 'refinery', name: 'Cosmic Condenser', desc: '+0.01 cosmic energy/s (eats 100 dark matter each)', currency: 'darkMatter', baseCost: 30, growth: 1.4, unlock: { res: 'darkMatter', amount: 250 } },
-  press: { id: 'press', tab: 'refinery', name: 'Hydraulic Press', desc: '+100% yield from manual presses', currency: 'alloy', baseCost: 15, growth: 1.7, maxLevel: 20, unlock: { res: 'alloy', amount: 10 } },
-  reactor: { id: 'reactor', tab: 'refinery', name: 'Fusion Reactor', desc: '+0.6 power/s and +25 max power', currency: 'alloy', baseCost: 30, growth: 1.55, maxLevel: 12, unlock: { res: 'alloy', amount: 60 } },
+  drill: { id: 'drill', name: 'Drill Laser', icon: '⛏️', desc: '+1 ore per tap. Doubles every 25 levels.', currency: 'ore', baseCost: 12, growth: 1.18 },
+  drone: { id: 'drone', name: 'Mining Drone', icon: '🛰️', desc: '+0.5 ore/s. Doubles every 25 levels.', currency: 'ore', baseCost: 15, growth: 1.17 },
+  lens: { id: 'lens', name: 'Focus Lens', icon: '🔍', desc: '+1% chance for a critical tap.', currency: 'ore', baseCost: 120, growth: 1.45, maxLevel: 35 },
+  rig: { id: 'rig', name: 'Auto-Rig', icon: '⚙️', desc: 'Taps a glowing seam for you once a second.', currency: 'ore', baseCost: 5000, growth: 1.4, maxLevel: 10, needs: 'autorig' },
+  smelter: { id: 'smelter', name: 'Smelter', icon: '🔥', desc: 'Refines 0.25% of all the ore you mine into alloy.', currency: 'ore', baseCost: 30000, growth: 1.3, maxLevel: 40, needs: 'smelting' },
+  scanner: { id: 'scanner', name: 'Seam Scanner', icon: '📡', desc: 'Glowing seams pay +25% more.', currency: 'alloy', baseCost: 2000, growth: 2, maxLevel: 10, needs: 'deepscan' },
+  harvester: { id: 'harvester', name: 'Harvester', icon: '🚀', desc: '+40 ore/s. Doubles every 25 levels.', currency: 'alloy', baseCost: 20000, growth: 1.22, needs: 'harvesters' },
+  plating: { id: 'plating', name: 'Alloy Plating', icon: '🛡️', desc: 'Drones and Harvesters +25%.', currency: 'alloy', baseCost: 10000, growth: 1.9, maxLevel: 15, needs: 'plating' },
 };
 
 export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
@@ -68,179 +50,165 @@ export function upgradeCost(id: UpgradeId, level: number): number {
   return Math.ceil(def.baseCost * Math.pow(def.growth, level));
 }
 
-/** Cost of buying `count` levels at once starting from `level` (closed-form geometric sum). */
+/** Cost of `count` levels starting at `level`, exactly as buying them one by one. */
 export function bulkCost(id: UpgradeId, level: number, count: number): number {
-  const { baseCost, growth } = UPGRADES[id];
-  return Math.ceil((baseCost * Math.pow(growth, level) * (Math.pow(growth, count) - 1)) / (growth - 1));
+  let sum = 0;
+  for (let i = 0; i < count; i++) sum += upgradeCost(id, level + i);
+  return sum;
 }
 
-/** Milestone doubling: every 25 levels of a producer doubles its output. */
+/** How many levels `budget` buys from `level`, respecting the max. */
+export function affordable(id: UpgradeId, level: number, budget: number): number {
+  const { baseCost, growth, maxLevel } = UPGRADES[id];
+  const first = baseCost * Math.pow(growth, level);
+  let n = budget < first ? 0 : Math.floor(Math.log((budget * (growth - 1)) / first + 1) / Math.log(growth));
+  n = Math.min(n, 1000);
+  if (maxLevel !== undefined) n = Math.min(n, maxLevel - level);
+  while (n > 0 && bulkCost(id, level, n) > budget) n--;
+  return Math.max(0, n);
+}
+
+/** Every 25 levels of a producer doubles its output. */
 export const milestoneMult = (level: number): number => Math.pow(2, Math.floor(level / 25));
 
-/* ---------------- refinery machines ---------------- */
+/* ---------------- the Forge Tree ---------------- */
 
-export type MachineId = 'smelter' | 'infuser' | 'compressor' | 'condenser';
-export const MACHINES: MachineId[] = ['smelter', 'infuser', 'compressor', 'condenser'];
+export type NodeId =
+  | 'core'
+  | 'autorig'
+  | 'swarm'
+  | 'optics'
+  | 'smelting'
+  | 'teamlink'
+  | 'deepscan'
+  | 'hotsmelt'
+  | 'plating'
+  | 'harvesters'
+  | 'overdrive'
+  | 'nightshift'
+  | 'leap'
+  | 'resonance'
+  | 'memory'
+  | 'starseed'
+  | 'hyperdrill'
+  | 'dyson'
+  | 'singularity'
+  | 'mastery';
 
-export interface MachineDef {
-  id: MachineId;
-  input: ResourceId;
-  output: ResourceId;
-  /** Units of input per unit of output. */
-  ratio: number;
-  /** Output per second per machine level. */
-  rate: number;
-  /** Output per manual press, before press upgrades. */
-  pressBase: number;
-}
-
-export const MACHINE_DEFS: Record<MachineId, MachineDef> = {
-  smelter: { id: 'smelter', input: 'ore', output: 'alloy', ratio: 10, rate: 1, pressBase: 1 },
-  infuser: { id: 'infuser', input: 'alloy', output: 'plasma', ratio: 25, rate: 0.2, pressBase: 0.2 },
-  compressor: { id: 'compressor', input: 'plasma', output: 'darkMatter', ratio: 50, rate: 0.04, pressBase: 0.04 },
-  condenser: { id: 'condenser', input: 'darkMatter', output: 'cosmicEnergy', ratio: 100, rate: 0.01, pressBase: 0.01 },
-};
-
-/* ---------------- skills (Quantum tree) ---------------- */
-
-export type SkillId =
-  | 'ancestralBits'
-  | 'thermalMastery'
-  | 'seamSense'
-  | 'furnaceSoul'
-  | 'gridSurplus'
-  | 'headStart'
-  | 'resonantBond'
-  | 'eventHorizon'
-  | 'sharedWake';
-
-export type SkillBranch = 'excavation' | 'industry' | 'resonance';
-
-export interface SkillDef {
-  id: SkillId;
-  branch: SkillBranch;
+export interface NodeDef {
+  id: NodeId;
   name: string;
+  icon: string;
   desc: string;
-  cost: number;
-  max: number;
+  /** Row from the top (0 is the root) and horizontal slot (-2..2) for drawing. */
+  tier: number;
+  x: number;
+  cost: Partial<Wallet>;
+  /** Every one of these must be unlocked first. */
+  needs: NodeId[];
+  /** Repeatable: each level multiplies the cost by this. */
+  repeat?: number;
 }
 
-export const SKILLS: Record<SkillId, SkillDef> = {
-  ancestralBits: { id: 'ancestralBits', branch: 'excavation', name: 'Ancestral Bits', desc: '+50% strike and rig ore per level', cost: 1, max: 10 },
-  thermalMastery: { id: 'thermalMastery', branch: 'excavation', name: 'Thermal Mastery', desc: 'Hot drilling starts 5 heat earlier per level', cost: 2, max: 4 },
-  seamSense: { id: 'seamSense', branch: 'excavation', name: 'Seam Sense', desc: '+1 mineral seam on the asteroid', cost: 3, max: 3 },
-  furnaceSoul: { id: 'furnaceSoul', branch: 'industry', name: 'Furnace Soul', desc: '+50% refinery output per level', cost: 1, max: 10 },
-  gridSurplus: { id: 'gridSurplus', branch: 'industry', name: 'Grid Surplus', desc: '+25% power from every source', cost: 1, max: 5 },
-  headStart: { id: 'headStart', branch: 'industry', name: 'Head Start', desc: 'Begin each run with 500 ore and 50 alloy per level', cost: 1, max: 5 },
-  resonantBond: { id: 'resonantBond', branch: 'resonance', name: 'Resonant Bond', desc: '+0.25 to the max sync combo', cost: 2, max: 4 },
-  eventHorizon: { id: 'eventHorizon', branch: 'resonance', name: 'Event Horizon', desc: '+50% co-op event rewards', cost: 2, max: 3 },
-  sharedWake: { id: 'sharedWake', branch: 'resonance', name: 'Shared Wake', desc: '+10% offline gains per level', cost: 1, max: 5 },
+/**
+ * Shared by the whole crew: anyone can put their own ore, alloy or cores into
+ * a node, and when it is fully funded it unlocks for everyone, forever
+ * (Quantum Leaps keep it). Prices are steep on purpose: every contribution
+ * is ore that didn't go into your own upgrades.
+ */
+export const NODES: Record<NodeId, NodeDef> = {
+  core: { id: 'core', name: 'Forge Core', icon: '✦', desc: 'Everyone mines ×1.5 ore.', tier: 0, x: 0, cost: { ore: 3_000 }, needs: [] },
+
+  autorig: { id: 'autorig', name: 'Auto-Rigs', icon: '⚙️', desc: 'Unlocks Auto-Rigs: they tap seams for you.', tier: 1, x: -1, cost: { ore: 60_000 }, needs: ['core'] },
+  swarm: { id: 'swarm', name: 'Swarm Logic', icon: '🛰️', desc: 'Everyone’s drones produce ×2.', tier: 1, x: 0, cost: { ore: 120_000 }, needs: ['core'] },
+  optics: { id: 'optics', name: 'Fine Optics', icon: '🔍', desc: 'Critical taps pay ×10 instead of ×5.', tier: 1, x: 1, cost: { ore: 250_000 }, needs: ['core'] },
+
+  smelting: { id: 'smelting', name: 'Smelting', icon: '🔥', desc: 'Unlocks Smelters, which turn part of your ore into alloy.', tier: 2, x: -1, cost: { ore: 2.5e6 }, needs: ['autorig'] },
+  teamlink: { id: 'teamlink', name: 'Crew Link', icon: '🤝', desc: 'All income +25%, and another +25% for each crewmate past the second.', tier: 2, x: 0, cost: { ore: 6e6 }, needs: ['swarm'] },
+  deepscan: { id: 'deepscan', name: 'Deep Scan', icon: '📡', desc: 'Seams pay ×6 instead of ×3, two more seams appear, and Seam Scanners unlock.', tier: 2, x: 1, cost: { ore: 15e6 }, needs: ['optics'] },
+
+  hotsmelt: { id: 'hotsmelt', name: 'Hot Smelting', icon: '♨️', desc: 'Smelters refine twice as much.', tier: 3, x: -1.5, cost: { ore: 120e6, alloy: 300_000 }, needs: ['smelting'] },
+  plating: { id: 'plating', name: 'Alloy Plating', icon: '🛡️', desc: 'Unlocks Alloy Plating for drones and harvesters.', tier: 3, x: -0.5, cost: { ore: 60e6, alloy: 150_000 }, needs: ['smelting'] },
+  harvesters: { id: 'harvesters', name: 'Harvester Fleet', icon: '🚀', desc: 'Unlocks Harvesters: big ships that mine 40 ore/s each.', tier: 3, x: 0.5, cost: { ore: 120e6, alloy: 400_000 }, needs: ['smelting', 'teamlink'] },
+  overdrive: { id: 'overdrive', name: 'Overdrive', icon: '⚡', desc: 'Taps and Auto-Rigs mine ×4.', tier: 3, x: 1.5, cost: { ore: 400e6, alloy: 1e6 }, needs: ['deepscan'] },
+
+  nightshift: { id: 'nightshift', name: 'Night Shift', icon: '🌙', desc: 'Earn 75% instead of 25% while away, for up to 12 hours.', tier: 4, x: -1, cost: { ore: 4e9, alloy: 15e6 }, needs: ['harvesters'] },
+  leap: { id: 'leap', name: 'Quantum Leap', icon: '🌀', desc: 'Lets each of you leap: restart your own run for Star Cores.', tier: 4, x: 0, cost: { ore: 2e9, alloy: 8e6 }, needs: ['harvesters', 'hotsmelt'] },
+  resonance: { id: 'resonance', name: 'Resonance', icon: '〰️', desc: 'Breaking a seam gives the whole crew ×2 ore for 15 s.', tier: 4, x: 1, cost: { ore: 6e9, alloy: 25e6 }, needs: ['overdrive', 'plating'] },
+
+  memory: { id: 'memory', name: 'Stellar Memory', icon: '🧠', desc: 'Start every run with 10 Drill and 10 Drone levels.', tier: 5, x: -1.5, cost: { cores: 4 }, needs: ['leap'] },
+  starseed: { id: 'starseed', name: 'Starseed', icon: '🌱', desc: 'Each Star Core you hold gives +20% instead of +10%.', tier: 5, x: -0.5, cost: { cores: 12 }, needs: ['leap'] },
+  hyperdrill: { id: 'hyperdrill', name: 'Hyperdrill', icon: '💥', desc: 'Taps and Auto-Rigs mine ×10.', tier: 5, x: 0.5, cost: { cores: 25 }, needs: ['leap'] },
+  dyson: { id: 'dyson', name: 'Dyson Swarm', icon: '☀️', desc: 'Drones and Harvesters mine ×10.', tier: 5, x: 1.5, cost: { cores: 40 }, needs: ['leap'] },
+
+  singularity: { id: 'singularity', name: 'Singularity Forge', icon: '🕳️', desc: 'All income ×3.', tier: 6, x: 0, cost: { cores: 100, ore: 5e13 }, needs: ['starseed', 'hyperdrill', 'dyson'] },
+  mastery: { id: 'mastery', name: 'Forge Mastery', icon: '👑', desc: 'All income ×1.5 per level. Each level costs ×10.', tier: 7, x: 0, cost: { cores: 60, ore: 5e14 }, needs: ['singularity'], repeat: 10 },
 };
 
-export const SKILL_IDS = Object.keys(SKILLS) as SkillId[];
-export type SkillLevels = Record<SkillId, number>;
+export const NODE_IDS = Object.keys(NODES) as NodeId[];
 
-export function emptySkills(): SkillLevels {
-  const s = {} as SkillLevels;
-  for (const id of SKILL_IDS) s[id] = 0;
-  return s;
+/** What the next level of a node costs (repeatable nodes grow). */
+export function nodeCost(id: NodeId, level: number): Partial<Wallet> {
+  const def = NODES[id];
+  const k = def.repeat ? Math.pow(def.repeat, level) : 1;
+  const out: Partial<Wallet> = {};
+  for (const [r, v] of Object.entries(def.cost) as [ResourceId, number][]) out[r] = Math.ceil(v * k);
+  return out;
 }
 
-/* ---------------- active mining ---------------- */
+/* ---------------- tapping ---------------- */
 
-export const CRIT_BASE = 0.05;
-export const CRIT_PER_LENS = 0.01;
+export const BASE_CRIT = 0.05;
 export const CRIT_MULT = 5;
+export const CRIT_MULT_OPTICS = 10;
 export const SEAM_MULT = 3;
-/** Depletion jackpot on the hit that finishes a seam. */
-export const DEPLETE_MULT = 4;
+export const SEAM_MULT_DEEP = 6;
+/** Breaking a seam (its last hit) pays this much extra. */
+export const BREAK_MULT = 5;
+export const DRONE_RATE = 0.5;
+export const HARVESTER_RATE = 40;
+/** Auto-Rig strikes per second per level, each worth this share of a tap on a seam. */
+export const RIG_RATE = 1;
+export const RIG_SHARE = 0.25;
+export const SMELT_PER_LEVEL = 0.0025;
 
-export const critChance = (lv: UpgradeLevels, focusBuff: boolean): number =>
-  Math.min(0.6, CRIT_BASE + CRIT_PER_LENS * lv.focusLens + (focusBuff ? 0.2 : 0));
+/* ---------------- comets ---------------- */
 
-/** Ore from one manual strike before crit / seam / heat / combo multipliers. */
-export function strikeBase(lv: UpgradeLevels, sk: SkillLevels, globalMult: number): number {
-  return (1 + lv.drillBit) * milestoneMult(lv.drillBit) * (1 + 0.5 * sk.ancestralBits) * Math.pow(2, lv.seismic) * globalMult;
+export const COMET_MS = 12_000;
+export const COMET_GAP_MIN_MS = 100_000;
+export const COMET_GAP_MAX_MS = 200_000;
+/** A caught comet pays every online crewmate this many seconds of their passive income (at least `COMET_TAPS` taps); the catcher gets double. */
+export const COMET_SECONDS = 40;
+export const COMET_TAPS = 60;
+
+/* ---------------- surge (Resonance) ---------------- */
+
+export const SURGE_MS = 15_000;
+export const SURGE_CAP_MS = 60_000;
+
+/* ---------------- Star Cores and leaps ---------------- */
+
+export const CORE_BONUS = 0.1;
+export const CORE_BONUS_STARSEED = 0.2;
+/** Ore you must mine in a run before a leap pays anything. */
+export const LEAP_MIN_ORE = 1e9;
+
+/**
+ * Star Cores for leaping after mining `ore` this run. Grows with the cube
+ * root, so ten times the ore pays a bit over twice the cores.
+ */
+export function coresFor(ore: number): number {
+  return ore < LEAP_MIN_ORE ? 0 : Math.floor(3 * Math.cbrt(ore / LEAP_MIN_ORE) + 1e-9);
 }
 
-export const DRONE_RATE = 0.6;
-export function droneOrePerSec(lv: UpgradeLevels, globalMult: number): number {
-  return lv.drone * DRONE_RATE * milestoneMult(lv.drone) * Math.pow(2, lv.seismic) * globalMult;
+/** Ore a run needs for its leap to pay `cores` Star Cores. */
+export function oreForCores(cores: number): number {
+  return Math.max(LEAP_MIN_ORE, LEAP_MIN_ORE * Math.pow(cores / 3, 3));
 }
 
-export const RIG_STRIKES_PER_SEC = 2;
-export const RIG_YIELD = 0.5;
+/* ---------------- offline ---------------- */
 
-/* ---------------- heat (Mining Specialist) ---------------- */
-
-export const HEAT_MAX = 100;
-export const HEAT_PER_STRIKE = 7;
-export const HEAT_VENT_PER_SEC = 18;
-export const HEAT_BONUS_THRESHOLD = 70;
-export const OVERHEAT_LOCK_MS = 2000;
-
-export const heatPerStrike = (lv: UpgradeLevels): number => HEAT_PER_STRIKE * Math.pow(0.93, lv.coolant);
-export const heatVent = (lv: UpgradeLevels): number => HEAT_VENT_PER_SEC * (1 + 0.1 * lv.coolant);
-export const hotThreshold = (sk: SkillLevels): number => HEAT_BONUS_THRESHOLD - 5 * sk.thermalMastery;
-
-/* ---------------- power and overclocks (Refinery Operator) ---------------- */
-
-export const POWER_BASE_MAX = 100;
-export const POWER_BASE_REGEN = 0.4;
-export const POWER_PER_PRESS = 1;
-export const powerMax = (lv: UpgradeLevels): number => POWER_BASE_MAX + 25 * lv.reactor;
-export const powerRegen = (lv: UpgradeLevels, sk: SkillLevels): number =>
-  (POWER_BASE_REGEN + 0.6 * lv.reactor) * (1 + 0.25 * sk.gridSurplus);
-
-export type OverclockId = 'thermalDump' | 'focusField' | 'hyperdrive' | 'droneSurge';
-export interface OverclockDef {
-  id: OverclockId;
-  name: string;
-  desc: string;
-  cost: number;
-  /** Buff duration in ms (0 = instant). */
-  ms: number;
-}
-export const OVERCLOCKS: Record<OverclockId, OverclockDef> = {
-  thermalDump: { id: 'thermalDump', name: 'Thermal Dump', desc: 'Vents every miner to 0 heat and unlocks overheated drills', cost: 25, ms: 0 },
-  focusField: { id: 'focusField', name: 'Focus Field', desc: '+20% crit chance for the team', cost: 40, ms: 15000 },
-  droneSurge: { id: 'droneSurge', name: 'Drone Surge', desc: 'Drones mine ×3', cost: 50, ms: 15000 },
-  hyperdrive: { id: 'hyperdrive', name: 'Hyperdrive', desc: 'Every strike yields ×2', cost: 70, ms: 10000 },
-};
-export const OVERCLOCK_IDS = Object.keys(OVERCLOCKS) as OverclockId[];
-
-/** Manual press output for a machine, before combo and buffs. */
-export function pressYield(m: MachineId, lv: UpgradeLevels, sk: SkillLevels, globalMult: number): number {
-  return MACHINE_DEFS[m].pressBase * (1 + lv.press) * (1 + 0.5 * sk.furnaceSoul) * globalMult;
-}
-/** Automatic machine output per second at full input. */
-export function machineRate(m: MachineId, lv: UpgradeLevels, sk: SkillLevels, globalMult: number): number {
-  return MACHINE_DEFS[m].rate * lv[m] * milestoneMult(lv[m]) * (1 + 0.5 * sk.furnaceSoul) * globalMult;
-}
-
-/* ---------------- sync combo ---------------- */
-
-/** A strike and a press within this window count as a sync. */
-export const SYNC_WINDOW_MS = 600;
-export const SYNC_STEP = 0.1;
-export const COMBO_HOLD_MS = 3000;
-export const maxCombo = (sk: SkillLevels): number => 2 + 0.25 * sk.resonantBond;
-
-/* ---------------- prestige: Galactic Quantum Leap ---------------- */
-
-export const LEAP_THRESHOLD = 10; // cosmic energy produced this run
-/** Quantum Points for a leap: floor(sqrt(E / threshold) × (1 + 0.1 × (players − 1))). */
-export function quantumPointsFor(runCosmicEnergy: number, participants = 1): number {
-  if (runCosmicEnergy < LEAP_THRESHOLD) return 0;
-  return Math.floor(Math.sqrt(runCosmicEnergy / LEAP_THRESHOLD) * (1 + 0.1 * (participants - 1)));
-}
-/** Every unspent Quantum Point is +5% to all production. */
-export const quantumMult = (unspentQP: number): number => 1 + 0.05 * unspentQP;
-
-/* ---------------- offline gains ---------------- */
-
+export const OFFLINE_EFF = 0.25;
+export const OFFLINE_EFF_NIGHT = 0.75;
 export const OFFLINE_CAP_S = 8 * 3600;
-export const offlineEfficiency = (sk: SkillLevels): number => 0.5 + 0.1 * sk.sharedWake;
-export function offlineGain(passivePerSec: number, elapsedS: number, efficiency = 0.5): number {
-  return passivePerSec * Math.min(Math.max(0, elapsedS), OFFLINE_CAP_S) * efficiency;
-}
+export const OFFLINE_CAP_NIGHT_S = 12 * 3600;

@@ -1,5 +1,18 @@
-/** Starforge's own update history, newest first. Shown in the lobby and the ☰ menu. */
+/** Starforge's own update history, newest first. Shown in the lobby and the Crew tab. */
 export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
+  {
+    v: '0.3.0',
+    when: 'Oct 11, 2026, 4:35 PM UTC',
+    items: [
+      'A new co-op idea: no more Miner and Refiner roles. Everyone taps the asteroid, buys their own upgrades and builds the same things.',
+      'The Forge Tree: 20 big upgrades the whole crew pays into together with ore, alloy and Star Cores. Each one unlocks for everyone, for good, and opens new upgrades (Auto-Rigs, Smelters, Harvesters, Seam Scanners, Alloy Plating), income multipliers and speed-ups. They are expensive on purpose, so choose together.',
+      'More of an incremental: drones, harvesters and rigs that mine on their own, ×1 / ×10 / Max buying, outputs that double every 25 levels, and earnings while you are away.',
+      'Comets fly past now and then: tap one and the whole crew gets paid, double for you. Breaking seams can trigger crew-wide ore surges later in the tree.',
+      'Quantum Leap is personal now: restart your own run for Star Cores that boost all your mining. The Forge Tree stays.',
+      'Friends who join your world keep their own progress in it and pick up where they left off next time.',
+      'A cleaner, phone-friendly layout: a slim top bar, and Upgrades, Forge Tree and Crew tabs in a bottom sheet (a side panel on bigger screens).',
+    ],
+  },
   {
     v: '0.2.0',
     when: 'Oct 11, 2026, 3:14 PM UTC',

@@ -39,7 +39,7 @@ const SPECKLES = [new Color('#e0a04a'), new Color('#6fd6de'), new Color('#cfc8de
  * function, so seam directions from the host land exactly on the mesh.
  * Colours are assigned per facet for a crisp low-poly look: layered rock
  * tones, strata, dark crevices in the valleys and a few mineral speckles.
- * Also returns a smooth, slightly inflated shell for the heat/resonance glow.
+ * Also returns a smooth, slightly inflated shell for the tap-heat and surge glow.
  */
 export function buildRock(seed: number): { rock: BufferGeometry; shell: BufferGeometry } {
   const rock = new IcosahedronGeometry(1, 11);

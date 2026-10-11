@@ -15,12 +15,10 @@ import {
   SpriteMaterial,
   Vector3,
   WebGLCubeRenderTarget,
-  type DirectionalLight,
   type Group,
 } from 'three';
-import { useGame } from '../state/store';
 import { bus } from './bus';
-import { damp, glowTexture, useBundle } from './util';
+import { glowTexture, isLite, useBundle } from './util';
 
 /* ---------------- nebula: baked once into a cube map ---------------- */
 
@@ -99,9 +97,9 @@ uniform samplerCube uNebula;
 uniform float uReady;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
-uniform float uFlare;
 uniform vec3 uTint;
 uniform float uTintAmt;
+uniform float uSurge;
 varying vec3 vLocal;
 varying vec3 vWorld;
 void main() {
@@ -109,30 +107,31 @@ void main() {
   vec3 col = mix(vec3(0.0035, 0.004, 0.014), enc * enc, uReady);
   vec3 d = normalize(vWorld);
   float sd = max(dot(d, uSunDir), 0.0);
-  col += uSunColor * (pow(sd, 6.0) * 0.05 + pow(sd, 40.0) * 0.12) * (1.0 + uFlare * 3.0);
+  col += uSunColor * (pow(sd, 6.0) * 0.05 + pow(sd, 40.0) * 0.12);
   col += uTint * 0.07 * uTintAmt;
+  // Resonance surge: a faint cyan wash, strongest in the brighter nebula.
+  col += vec3(0.0, 0.03, 0.04) * uSurge * (0.4 + 6.0 * dot(enc * enc, vec3(0.33)));
   gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-const BASE_SUN = new Vector3(6, 4, 5).normalize();
+const SUN_DIR = new Vector3(6, 4, 5).normalize();
 const SUN_DIST = 190;
-const SUN_CALM = new Color('#fff0d6');
-const SUN_FLARE = new Color('#ff5a1f');
-const KEY_CALM = new Color('#fff1dc');
-const KEY_FLARE = new Color('#ff9a52');
+const KEY_POS = SUN_DIR.clone().multiplyScalar(30);
+const SUN = new Color('#fff0d6');
 const SCATTER = new Color('#ffcf9a');
 
 /**
  * Backdrop: an fbm nebula (deep blues, purples and teal) baked once into a
  * cube map and drawn on an inverted sphere that follows the camera and
- * slowly drifts, drei Stars, and a distant sun whose direction drives the
- * key light. During a Solar Flare the sun swings to `event.sunDir`, swells
- * and turns orange-red; it eases back afterwards.
+ * slowly drifts, drei Stars, and a distant sun along which the key light
+ * shines. 'flash' pulses (bus.tint) and a resonance surge (bus.surge) tint
+ * the nebula.
  */
 export function Sky() {
   const gl = useThree((s) => s.gl);
   const coarse = useMemo(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true, []);
+  const lite = useMemo(isLite, []);
 
   const res = useBundle(
     () => ({
@@ -145,19 +144,19 @@ export function Sky() {
         uniforms: {
           uNebula: { value: null },
           uReady: { value: 0 },
-          uSunDir: { value: BASE_SUN.clone() },
+          uSunDir: { value: SUN_DIR.clone() },
           uSunColor: { value: SCATTER.clone() },
-          uFlare: { value: 0 },
           uTint: { value: new Color() },
           uTintAmt: { value: 0 },
+          uSurge: { value: 0 },
         },
         side: BackSide,
         depthWrite: false,
         depthTest: false,
       }),
-      core: new SpriteMaterial({ map: glowTexture(), blending: AdditiveBlending, depthWrite: false, transparent: true, fog: false }),
-      halo: new SpriteMaterial({ map: glowTexture(), blending: AdditiveBlending, depthWrite: false, transparent: true, fog: false }),
-      streak: new SpriteMaterial({ map: glowTexture(), blending: AdditiveBlending, depthWrite: false, transparent: true, fog: false }),
+      core: new SpriteMaterial({ map: glowTexture(), color: SUN.clone().multiplyScalar(3.2), blending: AdditiveBlending, depthWrite: false, transparent: true, fog: false }),
+      halo: new SpriteMaterial({ map: glowTexture(), color: SUN.clone().multiplyScalar(0.9), blending: AdditiveBlending, depthWrite: false, transparent: true, fog: false }),
+      streak: new SpriteMaterial({ map: glowTexture(), color: SUN.clone().multiplyScalar(0.35), blending: AdditiveBlending, depthWrite: false, transparent: true, fog: false }),
     }),
     [coarse],
   );
@@ -185,66 +184,42 @@ export function Sky() {
     const halo = new Sprite(res.halo);
     const streak = new Sprite(res.streak);
     core.renderOrder = halo.renderOrder = streak.renderOrder = -50;
+    core.scale.setScalar(11);
+    halo.scale.setScalar(48);
+    streak.scale.set(150, 3.2, 1);
     return { sky, core, halo, streak };
   }, [res]);
 
   const sunGroup = useRef<Group>(null!);
-  const key = useRef<DirectionalLight>(null!);
-  const st = useMemo(() => ({ dir: BASE_SUN.clone(), target: BASE_SUN.clone(), color: new Color(), flareDir: BASE_SUN.clone() }), []);
 
   useFrame((state, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
     const t = state.clock.elapsedTime;
     const cam = state.camera;
-    const ev = useGame.getState().s?.event;
-    const flaring = ev?.kind === 'flare';
-    if (flaring) st.flareDir.set(ev.sunDir[0], ev.sunDir[1], ev.sunDir[2]).normalize();
-    st.target.copy(flaring ? st.flareDir : BASE_SUN);
-    st.dir.lerp(st.target, 1 - Math.exp(-dt * 1.1));
-    if (st.dir.lengthSq() < 1e-4) st.dir.copy(st.target);
-    st.dir.normalize();
-    bus.flare = damp(bus.flare, flaring ? 1 : 0, 1.4, dt);
-    bus.sunDir.copy(st.dir);
-    const f = bus.flare;
 
     // The sky rides with the camera (infinitely far) and drifts slowly.
     objs.sky.position.copy(cam.position);
     objs.sky.rotation.y += dt * 0.004;
     objs.sky.rotation.x = Math.sin(t * 0.01) * 0.08;
     const u = res.mat.uniforms;
-    (u.uSunDir.value as Vector3).copy(st.dir);
-    u.uFlare.value = f;
     (u.uTint.value as Color).copy(bus.tint);
     u.uTintAmt.value = bus.tintAmt;
+    u.uSurge.value = bus.surge;
 
     // Sun billboard at a fixed angular position.
-    const g = sunGroup.current;
-    g.position.copy(cam.position).addScaledVector(st.dir, SUN_DIST);
-    const flick = 1 + f * (0.08 * Math.sin(t * 9.1) + 0.05 * Math.sin(t * 23.7));
-    st.color.copy(SUN_CALM).lerp(SUN_FLARE, f);
-    res.core.color.copy(st.color).multiplyScalar(3.2 + f * 2.5);
-    res.halo.color.copy(st.color).multiplyScalar(0.9 + f * 1.4);
-    res.streak.color.copy(st.color).multiplyScalar(0.35 + f * 0.6);
-    objs.core.scale.setScalar((11 + f * 9) * flick);
-    objs.halo.scale.setScalar((48 + f * 70) * flick);
-    objs.streak.scale.set((150 + f * 120) * flick, 3.2 + f * 3, 1);
-
-    const k = key.current;
-    k.position.copy(st.dir).multiplyScalar(30);
-    k.intensity = 3.1 + f * 2.6;
-    k.color.copy(KEY_CALM).lerp(KEY_FLARE, f);
+    sunGroup.current.position.copy(cam.position).addScaledVector(SUN_DIR, SUN_DIST);
   });
 
   return (
     <>
       <primitive object={objs.sky} />
-      <Stars radius={110} depth={60} count={3500} factor={3.2} saturation={0.15} fade speed={0.5} />
+      <Stars radius={110} depth={60} count={lite ? 2000 : 3500} factor={3.2} saturation={0.15} fade speed={0.5} />
       <group ref={sunGroup}>
         <primitive object={objs.halo} />
         <primitive object={objs.streak} />
         <primitive object={objs.core} />
       </group>
-      <directionalLight ref={key} position={[18, 12, 15]} intensity={3.1} color="#fff1dc" />
+      <directionalLight position={KEY_POS} intensity={3.1} color="#fff1dc" />
     </>
   );
 }

@@ -6,12 +6,10 @@ import { surfacePoint, type Vec3 } from '@starforge/shared';
  * so results that arrive from the host can be placed in world space.
  */
 export const refs = {
-  /** The spinning asteroid group; seam and node directions are in its local space. */
+  /** The spinning asteroid group; seam directions are in its local space. */
   rock: null as Object3D | null,
   /** World position of each other player's ship, updated every frame by the scene. */
   ships: new Map<string, Vector3>(),
-  /** World position of each refinery machine, set by the station. */
-  machines: new Map<string, Vector3>(),
 };
 
 /** World-space point and outward normal on the rock surface along a local direction. */
