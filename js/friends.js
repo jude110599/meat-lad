@@ -12,12 +12,22 @@
      sentRequests own outgoing requests {id, to, uid, name, ts, req}
      username     the player's current username (mirrors usernames/{name})
      avatar       custom profile picture, a ~128px JPEG data URL (< 30 KB)
+     joinRequests asks to join a party {id, type, game, from, uid, name, ts, code?}:
+                  type "req" is a request to join this player's party, "ok"/"no"
+                  the answer to one this player sent ("ok" carries the code)
 
    Friend requests: A writes a "req" into B's friendRequests and remembers it in
    its own sentRequests. B accepts by adding A to its own friends and writing an
    "ok" with the same id into A's friendRequests; A's page only honours an "ok"
-   that matches one of its sentRequests, then adds B. So the only fields other
-   players ever write are partyInbox and friendRequests.
+   that matches one of its sentRequests, then adds B.
+
+   Join requests work the same way: A (not in a party) writes a "req" into the
+   joinRequests of B, a friend whose presence shows a party. B's page that has
+   that party open shows it; accepting writes an "ok" with the party code into
+   the joinRequests of A's account (looked up from B's own friends list, not
+   from the request), and A's page joins only if the id matches the request it
+   sent. So the only fields other players ever write are partyInbox,
+   friendRequests and joinRequests (the Firestore rules must allow all three).
 
    The main menu also shows a profile card (picture, username + rename, stats
    and achievements read from accounts.games, quackpot/{uid} and Starforge's
@@ -30,7 +40,10 @@
    `party()` returns {code} while the player is in an online party (else null)
    and `join(code)` makes the game join that party code. Optional:
    `visible()` hides the mini list (e.g. mid-run), `onFriends(list)` hears
-   friend-list changes, and `dock:"bottom-left"` moves the mini list down. */
+   friend-list changes, and `dock:"bottom-left"` moves the mini list down.
+   `dock:"none"` hides the mini list for good: the game draws its own from
+   MLFriends.state() (re-read whenever MLFriends.onChange fires) and calls
+   invite / requestJoin / answerJoin / cancelJoin itself. */
 (function(){
 "use strict";
 if(window.MLFriends)return;
@@ -39,7 +52,7 @@ var FB_VER="10.7.0";
 var FB_CONFIG={apiKey:"AIzaSyBa6Kv2Wiot2F-vqX_sOH57Yy6O_HBIwPk",authDomain:"game-701be.firebaseapp.com",
   projectId:"game-701be",storageBucket:"game-701be.firebasestorage.app",messagingSenderId:"637319510154",
   appId:"1:637319510154:web:6f4947e02802c641d89573"};
-var ONLINE_MS=75000, BEAT_MS=30000, INVITE_TTL=10*60000, PARTY_POLL_MS=1500;
+var ONLINE_MS=75000, BEAT_MS=30000, INVITE_TTL=10*60000, PARTY_POLL_MS=1500, JOIN_TTL=2*60000;
 
 /* Every game with online play. `page` is relative to the site root. */
 var GAMES={
@@ -69,6 +82,10 @@ var reqs=[], sent=[];        // own friendRequests / sentRequests
 var myDoc={};                // own accounts doc (games, avatar, username)
 var qpSave=null;             // Quackpot save (its own collection)
 var editName=false;
+var joinIn=[];               // own joinRequests (requests to join my party, answers to mine)
+var pendingJoin=null;        // the request this page sent {id,to,uid,name,entry,ts,req}
+var answeredJoin={};         // request ids this page already answered
+var changeFns=[];            // MLFriends.onChange listeners
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
@@ -115,7 +132,7 @@ function start(){
 function stop(){
   unsubs.concat(friendUnsubs).forEach(function(f){ try{f();}catch(e){} });
   unsubs=[]; friendUnsubs=[]; info={}; friends=[]; inbox=[]; me=null;
-  reqs=[]; sent=[]; myDoc={}; qpSave=null; editName=false;
+  reqs=[]; sent=[]; myDoc={}; qpSave=null; editName=false; joinIn=[]; pendingJoin=null;
   if(beatT)clearInterval(beatT); beatT=null;
 }
 function signedIn(u){
@@ -142,7 +159,9 @@ function signedIn(u){
     if(typeof d.username==="string"&&/^[a-z0-9_]{3,20}$/.test(d.username)&&d.username!==me.name){
       me.name=d.username; lsSet("mlf:name:"+u.uid,me.name);
     }
+    joinIn=(d.joinRequests instanceof Array)?d.joinRequests.filter(function(r){ return r&&r.id&&r.type&&r.from; }):[];
     handleAnswers();
+    handleJoins();
     if(list.join("\n")!==friends.join("\n")){ friends=list; watchFriends(); notifyFriends(); }
     pruneInbox(); render(); showNewInvites();
   },function(){ status="error"; errMsg="Friends are unavailable right now."; render(); }));
@@ -161,7 +180,7 @@ function safeParty(){ try{ var p=adapter.party(); return p&&p.code?p:null; }catc
 /* The mini list shows while a party is open, except where the game says it
    would get in the way (mid-run). */
 function miniVisible(){
-  if(!adapter||!safeParty())return false;
+  if(!adapter||adapter.dock==="none"||!safeParty())return false;
   try{ return adapter.visible?!!adapter.visible():true; }catch(e){ return true; }
 }
 
@@ -283,14 +302,15 @@ function removeFriend(entry){
 }
 
 /* ---------- invites ---------- */
-function invite(fv){
+function invite(fv,quiet){
   var p=adapter&&safeParty();
-  if(!me||!p||!fv.uid)return;
+  if(!me||!p||!fv.uid)return Promise.resolve(false);
   var inv={id:Math.random().toString(36).slice(2,10),from:me.email,fromName:me.name,game:game,code:p.code,ts:Date.now()};
   sentAt[fv.uid]=Date.now(); render();
-  acct(fv.uid).set({partyInbox:FV.arrayUnion(inv)},{merge:true})
-    .then(function(){ toast("Invite sent to "+fv.name); })
-    .catch(function(){ delete sentAt[fv.uid]; render(); toast("Couldn't send that invite."); });
+  setTimeout(function(){ lastHtml=""; render(); },20100);
+  return acct(fv.uid).set({partyInbox:FV.arrayUnion(inv)},{merge:true})
+    .then(function(){ if(!quiet)toast("Invite sent to "+fv.name); return true; })
+    .catch(function(){ delete sentAt[fv.uid]; render(); if(!quiet)toast("Couldn't send that invite."); return false; });
 }
 function liveInvites(){
   return inbox.filter(function(i){ return i&&i.ts&&Date.now()-i.ts<INVITE_TTL&&GAMES[i.game]; })
@@ -324,6 +344,102 @@ function showNewInvites(){
   }
 }
 
+/* ---------- join requests ---------- */
+function fresh(r){ return r&&r.ts&&Date.now()-r.ts<JOIN_TTL; }
+/* A friend's account id and email for an email, from our own friends list. */
+function friendByEmail(email){
+  for(var i=0;i<friends.length;i++){
+    var e=friends[i], f=info[e]||{};
+    if(e===email||f.email===email)return {entry:e,uid:f.uid||null,email:f.email||e};
+  }
+  return null;
+}
+/* Requests to join the party this page has open, from friends, still fresh. */
+function joinAsks(){
+  var p=adapter?safeParty():null;
+  if(!me||!p)return [];
+  return joinIn.filter(function(r){
+    return r.type==="req"&&fresh(r)&&r.game===game&&!answeredJoin[r.id]&&friendByEmail(r.from);
+  }).sort(function(a,b){ return a.ts-b.ts; });
+}
+/* Ask a friend who is in a party to let us in. One request at a time. */
+function requestJoin(entry){
+  if(!me)return Promise.resolve("Sign in on the main menu first.");
+  var f=friendView(entry), em=(info[entry]||{}).email;
+  if(!f.uid||!em)return Promise.resolve(f.name+" hasn't been on the site lately.");
+  if(!f.party)return Promise.resolve(f.name+" isn't in a party right now.");
+  if(pendingJoin)cancelJoin(true);
+  var req={id:rid(),type:"req",game:f.party.game,from:me.email,uid:me.uid,name:me.name,ts:Date.now()};
+  var pj={id:req.id,to:em,uid:f.uid,name:f.name,entry:entry,ts:req.ts,req:req};
+  pendingJoin=pj; render();
+  setTimeout(function(){
+    if(pendingJoin!==pj)return;
+    cancelJoin(true); toast(pj.name+" didn't answer. Try again, or ask them for the code.");
+  },JOIN_TTL);
+  return acct(f.uid).set({joinRequests:FV.arrayUnion(req)},{merge:true})
+    .then(function(){ return "ok:Asked "+f.name+" to let you in."; })
+    .catch(function(){ if(pendingJoin===pj){ pendingJoin=null; render(); } return "Couldn't send that request."; });
+}
+function cancelJoin(quiet){
+  var pj=pendingJoin; if(!pj)return;
+  pendingJoin=null;
+  if(me)acct(pj.uid).set({joinRequests:FV.arrayRemove(pj.req)},{merge:true}).catch(function(){});
+  if(!quiet)render();
+}
+/* Answer a request to join my party: "ok" carries the party code. */
+function answerJoin(id,yes){
+  var r=joinIn.filter(function(x){ return x.id===id&&x.type==="req"; })[0];
+  if(!me||!r||answeredJoin[id])return;
+  answeredJoin[id]=1;
+  var p=adapter?safeParty():null, fr=friendByEmail(r.from);
+  acct(me.uid).set({joinRequests:FV.arrayRemove(r)},{merge:true}).catch(function(){});
+  if(fr&&fr.uid){
+    var ans={id:r.id,type:yes&&p?"ok":"no",game:r.game,from:me.email,uid:me.uid,name:me.name,ts:Date.now()};
+    if(yes&&p)ans.code=p.code;
+    acct(fr.uid).set({joinRequests:FV.arrayUnion(ans)},{merge:true}).catch(function(){});
+  }
+  render();
+}
+/* Answers to the request this page sent, and housekeeping of old entries. */
+function handleJoins(){
+  if(!me)return;
+  var drop=[];
+  joinIn.forEach(function(r){
+    var pj=pendingJoin;
+    if(r.type!=="req"&&pj&&r.id===pj.id&&r.from===pj.to){
+      drop.push(r); pendingJoin=null;
+      if(r.type==="ok"&&r.code){
+        toast((r.name||pj.name)+" let you in. Joining…");
+        joinParty(r.game||game,String(r.code));
+      } else toast((r.name||pj.name)+" can't take you right now.");
+    }
+    // Requests and answers nobody picked up in time (another tab answers its own).
+    else if(r.ts&&Date.now()-r.ts>=JOIN_TTL*2)drop.push(r);
+  });
+  if(drop.length)acct(me.uid).set({joinRequests:FV.arrayRemove.apply(FV,drop)},{merge:true}).catch(function(){});
+}
+/* What a game needs to draw its own friends list (dock:"none"). */
+function publicState(){
+  var p=adapter?safeParty():null;
+  return {
+    status:status, error:status==="error"?errMsg:"",
+    me:me?{name:me.name,email:me.email}:null,
+    friends:sortedFriends().map(function(f){
+      return {entry:f.entry,name:f.name,status:f.status,online:f.online,avatar:f.avatar,known:!!f.uid,
+        party:f.party?{game:f.party.game,code:f.party.code}:null,
+        here:!!(f.party&&p&&f.party.game===game&&f.party.code===p.code),
+        invited:!!(f.uid&&sentAt[f.uid]&&Date.now()-sentAt[f.uid]<20000),
+        requested:!!(pendingJoin&&pendingJoin.entry===f.entry)};
+    }),
+    asks:joinAsks().map(function(r){ return {id:r.id,name:r.name||shortName(r.from),ts:r.ts}; }),
+    pending:pendingJoin?{name:pendingJoin.name,entry:pendingJoin.entry,ts:pendingJoin.ts}:null,
+    party:p?p.code:null
+  };
+}
+function notifyChange(){
+  changeFns.slice().forEach(function(fn){ try{ fn(); }catch(e){} });
+}
+
 /* ---------- profile: picture, username, stats, achievements ---------- */
 function safeAvatar(a){
   return typeof a==="string"&&a.length<60000&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(a)?a:"";
@@ -336,13 +452,21 @@ function loadQuackpot(uid){
     if(o&&o.stats&&(!qpSave||(o.lastSave||0)>=(qpSave.lastSave||0))){ qpSave=o; render(); }
   }).catch(function(){});
 }
+/* This browser's player across Starforge's three save slots (slot 1 is still
+   the old single save until the game has been opened once), stats summed. */
 function starforgeStats(){
-  try{
-    var sv=JSON.parse(lsGet("starforge_save_v3")||"null"), key=lsGet("starforge_key");
-    var ps=sv&&sv.room&&sv.room.players; if(!ps)return null;
-    for(var id in ps)if(ps[id]&&ps[id].key===key)return ps[id];
-  }catch(e){}
-  return null;
+  var key=lsGet("starforge_key"), out=null;
+  ["starforge_save_v3_slot1","starforge_save_v3_slot2","starforge_save_v3_slot3","starforge_save_v3"].forEach(function(k,i){
+    if(i===3&&lsGet("starforge_save_v3_slot1"))return;
+    try{
+      var sv=JSON.parse(lsGet(k)||"null"), ps=sv&&sv.room&&sv.room.players; if(!ps)return;
+      for(var id in ps)if(ps[id]&&ps[id].key===key&&ps[id].stats){
+        out=out||{stats:{ore:0,taps:0,leaps:0,cores:0,funded:0}};
+        for(var s in out.stats)out.stats[s]+=num(ps[id].stats[s]);
+      }
+    }catch(e){}
+  });
+  return out;
 }
 function num(v){ v=+v; return isFinite(v)&&v>0?v:0; }
 function fmt(n){
@@ -716,6 +840,7 @@ function renderMini(){
 var lastHtml="";
 function render(){
   if(!mode)return;
+  notifyChange();
   ensureDom();
   if(mode==="mini"){
     var show=miniVisible();
@@ -843,6 +968,15 @@ window.MLFriends={
   },
   /* The signed-in player's display name and email, or null. */
   me:function(){ return me?{name:me.name,email:me.email}:null; },
+  /* For games that draw their own list (dock:"none"): friends with status,
+     party, here / invited / requested flags; asks (requests to join my
+     party); pending (my own request). Re-read it whenever onChange fires. */
+  state:publicState,
+  onChange:function(fn){ changeFns.push(fn); return function(){ changeFns=changeFns.filter(function(x){ return x!==fn; }); }; },
+  invite:function(entry){ return invite(friendView(entry),true); },
+  requestJoin:requestJoin,
+  cancelJoin:function(){ cancelJoin(false); },
+  answerJoin:answerJoin,
   games:GAMES
 };
 })();

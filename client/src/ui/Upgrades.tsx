@@ -1,11 +1,25 @@
 import {
+  CHAIN_CAP,
+  COMBO_CAP,
+  COMBO_WINDOW_MS,
+  CONTRACTS,
+  FOREMAN_SHARE,
   LEAP_MIN_ORE,
+  MEMORY_LEVELS,
   NODES,
+  RENOWN_BONUS,
+  RENOWN_BONUS_GUILD,
+  ROLES,
+  ROLE_IDS,
   UPGRADES,
   UPGRADE_IDS,
   affordable,
   bulkCost,
   canLeap,
+  chainMult,
+  comboMult,
+  contractLabel,
+  contractReward,
   critChance,
   critMult,
   droneRate,
@@ -13,39 +27,71 @@ import {
   harvesterRate,
   has,
   leapCores,
+  leapMult,
+  nextMilestone,
   nodeOpen,
+  offlineCapS,
+  offlineEff,
+  onlinePlayers,
   oreForCores,
+  refineRate,
+  refineShare,
   rigRate,
+  roleReadyAt,
   seamMult,
   smeltShare,
   tapValue,
   upgradeCost,
   upgradeUnlocked,
+  uplinkMult,
   type PlayerState,
   type RoomState,
   type UpgradeId,
 } from '@starforge/shared';
 import { act } from '../net/actions';
-import { useGame, type BuyMode } from '../state/store';
-import { Amount, ConfirmButton, Icon, liveWallet, resStyle, useMe, useRise, useTicker } from './common';
+import { hostNow, useGame, type BuyMode } from '../state/store';
+import { Amount, ConfirmButton, Icon, fmtDuration, liveWallet, resStyle, useMe, useRise, useTicker } from './common';
+
+/** Your tap streak as it stands now (it lapses COMBO_WINDOW_MS after your last tap). */
+const liveStreak = (p: PlayerState): number => (hostNow() - p.lastStrikeAt <= COMBO_WINDOW_MS ? p.streak : 0);
+
+const milestone = (lv: number): string => `×2 at Lv ${nextMilestone(lv)}`;
 
 /** What an upgrade is doing for you right now. */
 function effect(s: RoomState, p: PlayerState, id: UpgradeId): string {
+  const mates = Math.max(0, onlinePlayers(s).length - 1);
   switch (id) {
     case 'drill':
-      return `${fmt(tapValue(s, p))} ore per tap`;
+      return `${fmt(tapValue(s, p))} ore per tap · ${milestone(p.levels.drill)}`;
     case 'drone':
-      return `${fmt(droneRate(s, p))} ore/s`;
+      return `${fmt(droneRate(s, p))} ore/s · ${milestone(p.levels.drone)}`;
     case 'lens':
       return `${Math.round(critChance(p) * 100)}% crit chance, crits ×${critMult(s)}`;
+    case 'combo': {
+      const k = liveStreak(p);
+      return `Streak ${Math.min(k, COMBO_CAP)}/${COMBO_CAP}: taps ×${comboMult(p, k).toFixed(2)} (full ×${comboMult(p, COMBO_CAP).toFixed(1)})`;
+    }
+    case 'beacon':
+      return `While away: up to ${Math.round(offlineCapS(s, p) / 3600)} h at ${Math.round(offlineEff(s, p) * 100)}%`;
     case 'rig':
       return `${fmt(rigRate(s, p))} ore/s from seams`;
+    case 'chain':
+      return `Crits in a row pay up to ×${chainMult(p, CHAIN_CAP).toFixed(1)} more`;
+    case 'foreman': {
+      const lv = p.levels.foreman;
+      const what = lv >= 3 ? 'everything' : lv === 2 ? 'producers, Lens, Rigs, Combo, Chain and Smelters' : 'Drills, Drones and Harvesters';
+      return `${p.auto ? 'Buys' : 'Paused · buys'} ${what}, up to ${Math.round(FOREMAN_SHARE[Math.min(lv, 3)] * 100)}% of your wallet a level`;
+    }
     case 'smelter':
       return `${(smeltShare(s, p) * 100).toFixed(2)}% of your ore becomes alloy`;
+    case 'refinery':
+      return p.refine ? `${fmt(refineRate(s, p))} alloy/s from ${Math.round(refineShare(p) * 100)}% of your passive ore` : 'Switched off: your passive ore stays ore';
+    case 'uplink':
+      return mates ? `All income ×${uplinkMult(s, p).toFixed(2)} with ${mates} crewmate${mates === 1 ? '' : 's'} online` : 'Nothing while you play alone';
     case 'scanner':
       return `Seams pay ×${fmt(seamMult(s, p))}`;
     case 'harvester':
-      return `${fmt(harvesterRate(s, p))} ore/s`;
+      return `${fmt(harvesterRate(s, p))} ore/s · ${milestone(p.levels.harvester)}`;
     case 'plating':
       return `Drones and Harvesters ×${(1 + 0.25 * p.levels.plating).toFixed(2)}`;
   }
@@ -109,8 +155,8 @@ function UpgradeRow({ s, p, id, mode, budget }: { s: RoomState; p: PlayerState; 
 }
 
 function LeapCard({ s, p }: { s: RoomState; p: PlayerState }) {
-  const cores = leapCores(p);
-  const next = oreForCores(cores + 1);
+  const cores = leapCores(p, s);
+  const next = oreForCores(cores + 1, leapMult(s));
   const ready = canLeap(s, p);
   const per = has(s, 'starseed') ? 20 : 10;
   return (
@@ -119,8 +165,10 @@ function LeapCard({ s, p }: { s: RoomState; p: PlayerState }) {
         <i>🌀</i> Quantum Leap
       </h3>
       <p>
-        Restart your own run (ore, alloy and upgrades) for Star Cores. Each core you hold gives +{per}% ore, and the Forge Tree stays.
-        {has(s, 'memory') && ' Stellar Memory starts you at Drill 10 and Drone 10.'}
+        Restart your own run (ore, alloy and upgrades) for Star Cores. Each core you hold gives +{per}% ore, and the Forge Tree and renown stay.
+        {has(s, 'memory') && ` Stellar Memory starts you at Drill ${MEMORY_LEVELS} and Drone ${MEMORY_LEVELS}.`}
+        {has(s, 'echo') && ' Quantum Echo keeps your capped upgrades.'}
+        {has(s, 'corelens') && ' Core Lens pays ×1.5 cores.'}
       </p>
       <div className="leaprow">
         <span>
@@ -131,6 +179,124 @@ function LeapCard({ s, p }: { s: RoomState; p: PlayerState }) {
       <ConfirmButton className="primary wide" disabled={!ready} onConfirm={act.leap} armed={<>Tap again to leap for +{cores} ★</>}>
         {ready ? <>Leap for +{cores} Star Core{cores === 1 ? '' : 's'}</> : <>Mine {fmt(LEAP_MIN_ORE)} ore in one run</>}
       </ConfirmButton>
+    </div>
+  );
+}
+
+/** The crew's shared goal: everyone online gets paid when it is done. */
+function ContractCard({ s, p }: { s: RoomState; p: PlayerState }) {
+  const c = s.contract;
+  const now = hostNow();
+  const per = Math.round((has(s, 'guild') ? RENOWN_BONUS_GUILD : RENOWN_BONUS) * 100);
+  const renown = (
+    <p className="hint">
+      Renown {s.renown ?? 0}: +{(s.renown ?? 0) * per}% income for everyone in this world, kept through leaps.
+    </p>
+  );
+  if (!c) {
+    const wait = Math.max(0, (s.nextContractAt || now) - now) / 1000;
+    return (
+      <div className="card">
+        <h3>
+          <i>📋</i> Crew contract
+        </h3>
+        <p>{wait > 0 ? `Next contract in ${fmtDuration(wait)}.` : 'A new contract is on its way.'}</p>
+        {renown}
+      </div>
+    );
+  }
+  const def = CONTRACTS[c.kind];
+  const pct = Math.min(1, c.progress / c.goal);
+  const mine = c.by[p.id] ?? 0;
+  return (
+    <div className="card">
+      <h3>
+        <i>{def.icon}</i> Crew contract
+      </h3>
+      <p>
+        {contractLabel(c, fmt)}. Pays everyone online about <b>{fmt(contractReward(s, p))}</b> ore each and +1 renown.
+      </p>
+      <div className="leaprow">
+        <span>
+          <b>{fmt(Math.min(c.progress, c.goal))}</b> / {fmt(c.goal)}
+          {mine > 0 && c.kind !== 'streak' && <> · you {fmt(mine)}</>}
+        </span>
+        <span>{fmtDuration(Math.max(0, c.until - now) / 1000)} left</span>
+      </div>
+      <div className="bar">
+        <i style={{ width: `${pct * 100}%` }} />
+      </div>
+      {renown}
+    </div>
+  );
+}
+
+/** Optional specialisation: double one part of your game and boost your crewmates' share of it. */
+function RoleCard({ s, p }: { s: RoomState; p: PlayerState }) {
+  const now = hostNow();
+  const ready = roleReadyAt(p);
+  const wait = Math.max(0, ready - now) / 1000;
+  const mates = onlinePlayers(s).filter((q) => q.id !== p.id && q.role);
+  const role = p.role ? ROLES[p.role] : null;
+  return (
+    <div className="card">
+      <h3>
+        <i>{role ? role.icon : '📜'}</i> Crew role{role ? `: ${role.name}` : ''}
+      </h3>
+      <p>
+        {role
+          ? `${role.desc} ${role.aura.replace('Crewmates’', 'Your crewmates’').replace('Crewmates', 'Your crewmates')}`
+          : 'Pick a specialty to double one part of your game and boost your crewmates’ share of it. You can still do everything.'}
+      </p>
+      <div className="nd-needs">
+        {ROLE_IDS.map((id) => (
+          <button
+            key={id}
+            className={'chip ' + (p.role === id ? 'owned' : 'open')}
+            disabled={p.role === id || wait > 0}
+            aria-pressed={p.role === id}
+            title={`${ROLES[id].desc} ${ROLES[id].aura}`}
+            onClick={() => act.prefs({ role: id })}
+          >
+            {ROLES[id].icon} {ROLES[id].name}
+          </button>
+        ))}
+        {p.role && (
+          <button className="chip" disabled={wait > 0} onClick={() => act.prefs({ role: null })}>
+            No role
+          </button>
+        )}
+      </div>
+      {(wait > 0 || mates.length > 0) && (
+        <p className="hint">
+          {mates.length > 0 && <>Crew: {mates.map((q) => `${q.name} (${ROLES[q.role!]?.name ?? q.role})`).join(', ')}. </>}
+          {wait > 0 && <>You can switch again in {fmtDuration(wait)}.</>}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** On/off switches for the Foreman and the Refinery, once you own them. */
+function SwitchesCard({ p }: { p: PlayerState }) {
+  if (!p.levels.foreman && !p.levels.refinery) return null;
+  return (
+    <div className="card">
+      <h3>
+        <i>🤖</i> Automation
+      </h3>
+      <div className="nd-needs">
+        {p.levels.foreman > 0 && (
+          <button className={'chip ' + (p.auto ? 'owned' : '')} aria-pressed={p.auto} onClick={() => act.prefs({ auto: !p.auto })}>
+            {UPGRADES.foreman.icon} Foreman {p.auto ? 'on' : 'off'}
+          </button>
+        )}
+        {p.levels.refinery > 0 && (
+          <button className={'chip ' + (p.refine ? 'owned' : '')} aria-pressed={p.refine} onClick={() => act.prefs({ refine: !p.refine })}>
+            {UPGRADES.refinery.icon} Refinery {p.refine ? 'on' : 'off'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -182,6 +348,9 @@ export function UpgradesTab() {
           })}
         </div>
       )}
+      {has(s, 'core') && <ContractCard s={s} p={p} />}
+      {has(s, 'charter') && <RoleCard s={s} p={p} />}
+      <SwitchesCard p={p} />
       {has(s, 'leap') && <LeapCard s={s} p={p} />}
     </div>
   );

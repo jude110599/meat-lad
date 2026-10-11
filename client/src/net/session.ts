@@ -14,7 +14,7 @@ import {
   type RoomState,
   type ServerMsg,
 } from '@starforge/shared';
-import { useGame } from '../state/store';
+import { useGame, type Slot } from '../state/store';
 import { setLink, type Link } from './actions';
 import { onServerMsg } from './dispatch';
 
@@ -86,18 +86,65 @@ function tabKey(): string {
   return k;
 }
 
-export function loadSave(): { state: RoomState; savedAt: number; mine: RoomState['players'][string] | undefined } | null {
-  const raw = ls(SAVE_KEY);
+/* ---------------- save slots ---------------- */
+
+/** Three local worlds. Slot 1 inherits the old single save (`starforge_save_v3`). */
+export const SLOTS: readonly Slot[] = [1, 2, 3];
+export const slotKey = (n: Slot): string => `${SAVE_KEY}_slot${n}`;
+
+function rm(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Move the pre-slot save into slot 1, once. The old key is removed only after
+ * the copy reads back, so a full storage never loses a world; if slot 1 is
+ * already taken the old save is left alone.
+ */
+export function migrateSaves(): void {
+  const old = ls(SAVE_KEY);
+  if (!old || ls(slotKey(1))) return;
+  ls(slotKey(1), old);
+  if (ls(slotKey(1)) === old) rm(SAVE_KEY);
+}
+
+export interface SlotSave {
+  slot: Slot;
+  state: RoomState;
+  savedAt: number;
+  /** This browser's player in that world, if it has played there. */
+  mine: RoomState['players'][string] | undefined;
+}
+
+export function loadSave(slot: Slot = useGame.getState().slot): SlotSave | null {
+  migrateSaves();
+  const raw = ls(slotKey(slot));
   if (!raw) return null;
   try {
     const f = JSON.parse(raw);
     const state = fromSave(f);
     if (!state) return null;
     const key = ls('starforge_key');
-    return { state, savedAt: Number(f.savedAt) || Date.now(), mine: Object.values(state.players).find((p) => p.key === key) };
+    return { slot, state, savedAt: Number(f.savedAt) || Date.now(), mine: Object.values(state.players).find((p) => p.key === key) };
   } catch {
     return null;
   }
+}
+
+/** Whether a slot holds anything at all (even a save this version can't read). */
+export const slotUsed = (slot: Slot): boolean => !!ls(slotKey(slot));
+
+export function deleteSlot(slot: Slot): void {
+  rm(slotKey(slot));
+}
+
+export function selectSlot(slot: Slot): void {
+  ls('starforge_slot', String(slot));
+  useGame.getState().set({ slot });
 }
 
 function hello(): Hello {
@@ -126,7 +173,10 @@ class LocalRoom implements Link {
   private simAt = Date.now();
   private closed = false;
 
-  constructor(state: RoomState) {
+  constructor(
+    state: RoomState,
+    readonly slot: Slot,
+  ) {
     this.host = new RoomHost(state, (to, m) => this.deliver(to, m), newCode());
     const r = this.host.join(hello());
     if ('error' in r) throw new Error(r.error);
@@ -163,7 +213,7 @@ class LocalRoom implements Link {
   };
 
   save = (): void => {
-    if (!this.closed) ls(SAVE_KEY, JSON.stringify(toSave(this.host.state)));
+    if (!this.closed) ls(slotKey(this.slot), JSON.stringify(toSave(this.host.state)));
   };
 
   private deliver(to: string, m: ServerMsg): void {
@@ -394,18 +444,22 @@ function backToLobby(why: string): void {
   useGame.getState().set({ screen: 'lobby', mode: null, code: null, net: 'idle', netError: why, s: null });
 }
 
-/** Play in this tab: load the save or start fresh. Offline earnings arrive from the host as an fx. */
-export function startLocal(openParty = false): void {
+/** Play in this tab from a save slot (the selected one by default): load it or start fresh. Offline earnings arrive from the host as an fx. */
+export function startLocal(openParty = false, slot: Slot = useGame.getState().slot): void {
   stopCurrent();
-  const state = loadSave()?.state ?? createRoomState((Math.random() * 2 ** 31) | 0, Date.now());
+  selectSlot(slot);
+  const state = loadSave(slot)?.state ?? createRoomState((Math.random() * 2 ** 31) | 0, Date.now());
   useGame.getState().set({ mode: 'solo', code: null, net: 'idle', netError: null, screen: 'game', offline: null });
-  const room = new LocalRoom(state);
+  const room = new LocalRoom(state, slot);
   current = room;
   setLink(room);
+  // Save a brand-new world straight away, so its slot shows up as taken.
+  room.save();
   if (openParty) room.openParty();
 }
 
-export function openParty(): void {
+/** Host a party: on the dedicated server when there is one, else from a save slot in this tab. */
+export function openParty(slot?: Slot): void {
   if (SERVER_URL) {
     stopCurrent();
     const link = new SocketLink(null, backToLobby);
@@ -413,8 +467,8 @@ export function openParty(): void {
     setLink(link);
     return;
   }
-  if (current instanceof LocalRoom) current.openParty();
-  else startLocal(true);
+  if (current instanceof LocalRoom && (slot === undefined || slot === current.slot)) current.openParty();
+  else startLocal(true, slot);
 }
 
 export function closeParty(): void {
@@ -432,21 +486,18 @@ export function joinParty(raw: string): void {
   setLink(link);
 }
 
-/** Leave whatever party we're in and keep playing solo. */
-export function leaveParty(): void {
-  if (current instanceof LocalRoom) current.closeParty();
-  else startLocal(false);
+/** Save, leave any party and go back to Starforge's own title screen. */
+export function exitToTitle(): void {
+  stopCurrent();
+  useGame.getState().set({ screen: 'lobby', mode: null, code: null, net: 'idle', netError: null, s: null, offline: null, sheet: false, node: null });
 }
 
-/** Wipe the local save (Settings → Reset). */
+/** Wipe the world in the current save slot and start that slot over. */
 export function resetSave(): void {
+  const slot = current instanceof LocalRoom ? current.slot : useGame.getState().slot;
   stopCurrent();
-  try {
-    localStorage.removeItem(SAVE_KEY);
-  } catch {
-    /* ignore */
-  }
-  startLocal(false);
+  deleteSlot(slot);
+  startLocal(false, slot);
 }
 
 export const usesServer = !!SERVER_URL;

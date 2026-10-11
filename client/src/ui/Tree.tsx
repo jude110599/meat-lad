@@ -5,6 +5,7 @@ import {
   UPGRADES,
   UPGRADE_IDS,
   fmt,
+  fundBonus,
   has,
   nodeCost,
   nodeFundable,
@@ -61,10 +62,10 @@ export function nodeProgress(s: RoomState, id: NodeId): number {
   return cost.reduce((a, [r, v]) => a + Math.min(1, (funded[r] ?? 0) / v), 0) / cost.length;
 }
 
-/** Could this wallet pay everything still owed on the node? */
-export function canFinish(s: RoomState, id: NodeId, w: Wallet): boolean {
+/** Could this wallet pay everything still owed on the node? Pass the player to count a Refiner's bonus. */
+export function canFinish(s: RoomState, id: NodeId, w: Wallet, p?: PlayerState): boolean {
   if (!nodeFundable(s, id)) return false;
-  return (Object.entries(nodeRemaining(s, id)) as [ResourceId, number][]).every(([r, v]) => w[r] >= v);
+  return (Object.entries(nodeRemaining(s, id)) as [ResourceId, number][]).every(([r, v]) => w[r] * (p ? fundBonus(s, p, r) : 1) >= v - 1e-9);
 }
 
 /* ---------------- pieces ---------------- */
@@ -113,13 +114,13 @@ function Burst() {
   );
 }
 
-function TreeNode({ s, w, id, x, y }: { s: RoomState; w: Wallet; id: NodeId; x: number; y: number }) {
+function TreeNode({ s, p, w, id, x, y }: { s: RoomState; p: PlayerState; w: Wallet; id: NodeId; x: number; y: number }) {
   const set = useGame((st) => st.set);
   const def = NODES[id];
   const st = status(s, id);
   const lv = nodeLevel(s, id);
   const pct = st === 'owned' ? 1 : st === 'open' ? nodeProgress(s, id) : 0;
-  const ready = st === 'open' && canFinish(s, id, w);
+  const ready = st === 'open' && canFinish(s, id, w, p);
   const done = useRise(lv);
   return (
     <button
@@ -157,7 +158,7 @@ function useWidth(ref: React.RefObject<HTMLElement | null>): number {
 /** Where the map was scrolled when it was last closed; null until it has been opened once. */
 let savedScroll: number | null = null;
 
-function TreeMap({ s, w }: { s: RoomState; w: Wallet }) {
+function TreeMap({ s, p, w }: { s: RoomState; p: PlayerState; w: Wallet }) {
   const ref = useRef<HTMLDivElement>(null);
   const W = useWidth(ref);
   const owned = NODE_IDS.filter((id) => has(s, id)).length;
@@ -244,7 +245,7 @@ function TreeMap({ s, w }: { s: RoomState; w: Wallet }) {
         </div>
         {NODE_IDS.map((id) => {
           const { x, y } = pos(id);
-          return <TreeNode key={id} s={s} w={w} id={id} x={x} y={y} />;
+          return <TreeNode key={id} s={s} p={p} w={w} id={id} x={x} y={y} />;
         })}
       </div>
     </>
@@ -260,7 +261,10 @@ function FundResource({ s, p, w, id, r, cost }: { s: RoomState; p: PlayerState; 
   const funded = s.tree[id]?.funded?.[r] ?? 0;
   const owed = Math.max(0, cost - funded);
   const have = w[r];
-  const all = Math.min(owed, have);
+  // A Refiner's ore and alloy count for more than they cost.
+  const bonus = fundBonus(s, p, r);
+  const all = Math.min(owed / bonus, have);
+  const finishes = all * bonus >= owed - 1e-9;
   const rate = r === 'ore' ? p.rates.ore : r === 'alloy' ? p.rates.alloy : 0;
   const chip = useRise(funded);
   return (
@@ -280,7 +284,7 @@ function FundResource({ s, p, w, id, r, cost }: { s: RoomState; p: PlayerState; 
         <>
           <div className="fbtns">
             {SHARES.map(({ pct, label }) => {
-              const raw = Math.min(owed, have * pct);
+              const raw = Math.min(owed / bonus, have * pct);
               const amt = r === 'cores' ? Math.floor(raw) : raw;
               return (
                 <button key={label} disabled={amt < 1} onClick={() => act.fund(id, r, amt)}>
@@ -290,7 +294,7 @@ function FundResource({ s, p, w, id, r, cost }: { s: RoomState; p: PlayerState; 
               );
             })}
             <ConfirmButton
-              className={all >= owed ? 'finish' : ''}
+              className={finishes ? 'finish' : ''}
               disabled={all <= 0}
               onConfirm={() => act.fund(id, r, all)}
               armed={
@@ -300,16 +304,17 @@ function FundResource({ s, p, w, id, r, cost }: { s: RoomState; p: PlayerState; 
                 </>
               }
             >
-              {all >= owed ? 'Finish it' : 'All I can'}
+              {finishes ? 'Finish it' : 'All I can'}
               <small>{fmt(all)}</small>
             </ConfirmButton>
           </div>
           <p className="fnote">
             You have {fmt(have)} {RES_LABEL[r]}.
+            {bonus > 1 && ` As a Refiner, yours counts ×${bonus}.`}
             {r === 'cores'
               ? ' Cores you spend stop boosting your ore.'
-              : rate > 0 && owed > have
-                ? ` The rest is about ${fmtDuration((owed - have) / rate)} of your passive income.`
+              : rate > 0 && !finishes
+                ? ` The rest is about ${fmtDuration((owed / bonus - have) / rate)} of your passive income.`
                 : ''}
           </p>
         </>
@@ -329,7 +334,7 @@ function NodeDetail({ s, p, w, id }: { s: RoomState; p: PlayerState; w: Wallet; 
   const leadsTo = NODE_IDS.filter((n) => NODES[n].needs.includes(id));
   const by = Object.entries(s.tree[id]?.by ?? {}).sort((a, b) => b[1] - a[1]);
   const done = useRise(lv);
-  const ready = st === 'open' && canFinish(s, id, w);
+  const ready = st === 'open' && canFinish(s, id, w, p);
 
   // A node's page always opens at its top, wherever the map was scrolled.
   useLayoutEffect(() => {
@@ -435,5 +440,5 @@ export function TreeTab() {
   const p = useMe();
   if (!s || !p) return null;
   const w = liveWallet(p, snapAt);
-  return node ? <NodeDetail s={s} p={p} w={w} id={node} /> : <TreeMap s={s} w={w} />;
+  return node ? <NodeDetail s={s} p={p} w={w} id={node} /> : <TreeMap s={s} p={p} w={w} />;
 }

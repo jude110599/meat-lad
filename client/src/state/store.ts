@@ -3,7 +3,9 @@ import type { NodeId, OfflineGain, PlayerState, RoomState } from '@starforge/sha
 
 export type SessionMode = 'solo' | 'host' | 'guest' | 'server';
 export type NetStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
-export type Tab = 'upgrades' | 'tree' | 'crew';
+export type Tab = 'upgrades' | 'tree' | 'crew' | 'menu';
+/** Local save slots (session.ts keeps one world per slot). */
+export type Slot = 1 | 2 | 3;
 export type BuyMode = 1 | 10 | 'max';
 export type Tone = 'info' | 'good' | 'bad' | 'event';
 
@@ -51,6 +53,8 @@ export interface GameStore {
   leap: { cores: number; at: number } | null;
   /** Latest emote per player id. */
   emotes: Record<string, { id: string; at: number }>;
+  /** The save slot solo play and hosting use. */
+  slot: Slot;
 
   set(p: Partial<GameStore>): void;
   toast(text: string, tone?: Tone): void;
@@ -59,6 +63,16 @@ export interface GameStore {
 }
 
 let toastId = 0;
+
+function initialSlot(): Slot {
+  try {
+    const n = Number(localStorage.getItem('starforge_slot'));
+    if (n === 1 || n === 2 || n === 3) return n;
+  } catch {
+    /* storage unavailable */
+  }
+  return 1;
+}
 
 export const useGame = create<GameStore>((set, get) => ({
   screen: 'lobby',
@@ -79,6 +93,7 @@ export const useGame = create<GameStore>((set, get) => ({
   offline: null,
   leap: null,
   emotes: {},
+  slot: initialSlot(),
 
   set: (p) => set(p),
   toast: (text, tone = 'info') => {

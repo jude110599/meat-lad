@@ -1,6 +1,6 @@
 import { emptyLevels } from './economy.js';
 import { RESOURCES, emptyWallet } from './resources.js';
-import { createRoomState, type PlayerState, type RoomState } from './sim.js';
+import { createRoomState, freshPlayer, settleTree, type PlayerState, type RoomState } from './sim.js';
 
 /**
  * Saving a world: the solo player or the host keeps the room in
@@ -19,6 +19,7 @@ export interface SaveFile {
 export function toSave(s: RoomState, now = Date.now()): SaveFile {
   const room: RoomState = JSON.parse(JSON.stringify(s));
   room.comet = null;
+  room.contract = null;
   room.surgeUntil = 0;
   for (const p of Object.values(room.players)) {
     if (p.online) p.seenAt = now;
@@ -38,7 +39,10 @@ export function fromSave(f: unknown, now = Date.now()): RoomState | null {
     if (!p || typeof p.key !== 'string') continue;
     const wallet = { ...emptyWallet(), ...p.wallet };
     for (const k of RESOURCES) if (!Number.isFinite(wallet[k])) wallet[k] = 0;
+    // Fields added after a save was written (roles, Foreman, streaks…) take their defaults.
+    const fresh = freshPlayer(id, p.key, p.name, p.hue, now);
     players[id] = {
+      ...fresh,
       ...p,
       id,
       online: false,
@@ -46,12 +50,14 @@ export function fromSave(f: unknown, now = Date.now()): RoomState | null {
       levels: { ...emptyLevels(), ...p.levels },
       run: { ...{ ore: 0, alloy: 0, startedAt: now }, ...p.run },
       rates: { ore: 0, alloy: 0 },
-      stats: { ...{ ore: 0, taps: 0, leaps: 0, cores: 0, funded: 0 }, ...p.stats },
+      stats: { ...fresh.stats, ...p.stats },
       seenAt: Number(p.seenAt) || Number(file.savedAt) || now,
       rigAcc: 0,
+      streak: 0,
+      chain: 0,
     };
   }
-  return {
+  const room: RoomState = {
     ...base,
     ...r,
     v: 3,
@@ -62,5 +68,12 @@ export function fromSave(f: unknown, now = Date.now()): RoomState | null {
     comet: null,
     surgeUntil: 0,
     nextCometAt: now + 45_000,
+    contract: null,
+    nextContractAt: 0,
+    renown: Number(r.renown) || 0,
+    contractsDone: Number(r.contractsDone) || 0,
   };
+  // Node prices change between versions: finish nodes a save already paid for.
+  settleTree(room);
+  return room;
 }

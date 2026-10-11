@@ -8,12 +8,14 @@ import {
   CylinderGeometry,
   ExtrudeGeometry,
   LatheGeometry,
+  MathUtils,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   OctahedronGeometry,
   PlaneGeometry,
+  Quaternion,
   ShaderMaterial,
   Shape,
   SphereGeometry,
@@ -25,14 +27,17 @@ import {
   type Group,
 } from 'three';
 import { useShallow } from 'zustand/react/shallow';
+import { CAM_HZ, packCam, type CamQ } from '@starforge/shared';
+import { act } from '../net/actions';
 import { onFx } from '../state/fx';
 import { hueColor, refs } from '../state/refs';
 import { useGame } from '../state/store';
 import { sparks } from './bus';
+import { crewCams } from './crewCams';
 import { mergeParts, ribbonMatrix, type Part } from './fxkit';
-import { SEP, glowTexture, isLite, setCss, splitIds, useBundle } from './util';
+import { visibleRect } from './layout';
+import { SEP, damp, glowTexture, isLite, setCss, splitIds, useBundle } from './util';
 
-const ORIGIN = new Vector3();
 const WHITE = new Color(1, 1, 1);
 const UP = new Vector3(0, 1, 0);
 /** Screen-space spread of the ring the ships hover on, around the rock's silhouette. */
@@ -44,6 +49,27 @@ const HALO_PUSH = 1.55;
  * in order of preference. Slots that a HUD panel covers are skipped.
  */
 const CANDIDATES = [2.55, -2.55, Math.PI, 1.95, -1.95, 0.55, -0.55, 1.3, -1.3, 0];
+
+/*
+ * A crewmate whose client reports its camera (see CamMsg) flies at that
+ * camera, nose toward what they're looking at, so you can see where they're
+ * watching from; their laser fires from there. Older clients don't report
+ * one and keep the screen-slot halo above.
+ */
+/** How far in front of their lens the ship sits, along their view. */
+const CAM_INSET = 0.7;
+/** Keep the ship between these distances from the planet's centre. */
+const CAM_MIN_R = 3.3;
+const CAM_MAX_R = 12;
+/** Ease rate toward the reported camera (reports arrive at CAM_HZ). */
+const CAM_EASE = 2.6;
+/** Ship size when it flies at a crewmate's camera (it is usually as far away as your own camera). */
+const CAM_SCALE = 1.35;
+/** Fade a ship out as it comes within this far of my own camera. */
+const NEAR_HIDE = 0.9;
+const NEAR_FADE = 1.4;
+/** Planet radius for "is the ship behind the planet" (tags dim). */
+const OCCLUDE_R = 2.3;
 
 /** A point on the halo for `angle`, given the camera position seen from the rock. */
 function haloPoint(camPos: Vector3, angle: number, out: Vector3, tmp: { cam: Vector3; up: Vector3; right: Vector3 }, bob = 0): Vector3 {
@@ -58,6 +84,19 @@ function haloPoint(camPos: Vector3, angle: number, out: Vector3, tmp: { cam: Vec
     .multiplyScalar(HALO_PUSH)
     .addScaledVector(up, Math.cos(angle) * HALO_R + bob)
     .addScaledVector(right, Math.sin(angle) * HALO_R);
+}
+
+const tagRect = { x: 0, y: 0, w: 0, h: 0 };
+const occ = { d: new Vector3() };
+/** Does the planet stand between the camera and point `p`? */
+function behindPlanet(cam: Vector3, p: Vector3): boolean {
+  const d = occ.d.copy(p).sub(cam);
+  const len = d.length();
+  if (!(len > 1e-6)) return false;
+  d.divideScalar(len);
+  const t = -cam.dot(d); // closest approach to the centre along the ray
+  if (t <= 0 || t >= len) return false;
+  return cam.lengthSq() - t * t < OCCLUDE_R * OCCLUDE_R;
 }
 
 /** Emote ids the HUD might send, mapped to a glyph; unknown ids are shown as-is. */
@@ -216,8 +255,12 @@ void main() {
 `;
 
 /**
- * Other online players' ships, hovering beside the rock in fixed screen
- * slots, facing it: a sleek faceted hull with swept wings and twin tail
+ * Other online players' ships, each flying where that player's camera is
+ * (eased toward the camera they report a few times a second), nose toward
+ * what they're looking at, so you can see where everyone watches from; a
+ * crewmate on an older client hovers in a screen slot beside the planet
+ * instead. Their name tag follows the ship, or sits at the edge of the view
+ * with an arrow when the ship is off screen. A sleek faceted hull with swept wings and twin tail
  * fins painted in the player's colour, a glowing cockpit, twin engines with
  * flickering glows, exhaust plumes and a light spark trail, blinking wingtip
  * lights, a little recoil when they fire, a name tag and emote bubbles.
@@ -245,7 +288,7 @@ export function Ships() {
   const slots = useMemo(() => ({ angles: CANDIDATES.slice(), next: 0, p: new Vector3(), tmp: { cam: new Vector3(), up: new Vector3(), right: new Vector3() } }), []);
   useFrame((state) => {
     const now = state.clock.elapsedTime;
-    if (now < slots.next || !ids.length) return;
+    if (now < slots.next || !ids.some((id) => !crewCams.has(id))) return;
     slots.next = now + 0.5;
     const rect = gl.domElement.getBoundingClientRect();
     const free: number[] = [];
@@ -264,11 +307,42 @@ export function Ships() {
 
   return (
     <>
+      <CamReporter active={ids.length > 0} />
       {ids.map((id, i) => (
         <Ship key={id} id={id} slot={i} slots={slots} geo={geo} />
       ))}
     </>
   );
+}
+
+/**
+ * Tells the host where my camera is, at most CAM_HZ times a second, only
+ * while a crewmate is online to see it, and only when it moved by more than
+ * a quantum (or every few seconds, so a host that just restarted relaying
+ * catches up). Quantised to centi-units and thousandths: ~40 bytes a report.
+ */
+function CamReporter({ active }: { active: boolean }) {
+  const st = useMemo(() => ({ next: 0, last: null as CamQ | null, lastAt: 0, dir: new Vector3() }), []);
+  useEffect(() => {
+    if (!active) st.last = null;
+  }, [active, st]);
+  useFrame((state) => {
+    if (!active) return;
+    const now = performance.now();
+    if (now < st.next) return;
+    st.next = now + 1000 / CAM_HZ;
+    const cam = state.camera;
+    cam.getWorldDirection(st.dir);
+    const c = packCam(cam.position.x, cam.position.y, cam.position.z, st.dir.x, st.dir.y, st.dir.z);
+    if (!c) return;
+    const last = st.last;
+    const moved = !last || c.some((v, i) => Math.abs(v - last[i]) > (i < 3 ? 1 : 2));
+    if (!moved && now - st.lastAt < 3000) return;
+    st.last = c;
+    st.lastAt = now;
+    act.cam(c);
+  });
+  return null;
 }
 
 function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { angles: number[] }; geo: ShipGeo }) {
@@ -375,16 +449,30 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
       background: 'rgba(8,10,18,0.66)',
       textShadow: '0 1px 3px rgba(0,0,0,0.9)',
     });
+    // Off-screen, the tag slides to the edge of the view with an arrow toward the ship.
+    const arrow = document.createElement('span');
+    Object.assign(arrow.style, {
+      display: 'none',
+      width: '0',
+      height: '0',
+      marginRight: '5px',
+      borderTop: '4px solid transparent',
+      borderBottom: '4px solid transparent',
+      borderLeft: '7px solid currentColor',
+      verticalAlign: '0px',
+    });
+    const nameEl = document.createElement('span');
+    label.append(arrow, nameEl);
     box.append(bubble, label);
     el.append(box);
-    return { el, bubble, label, p: new Vector3() };
+    return { el, box, bubble, label, arrow, nameEl, p: new Vector3(), v: new Vector3(), mode: '', opacity: '' };
   }, []);
   useEffect(() => {
     gl.domElement.parentElement?.appendChild(tag.el);
     return () => tag.el.remove();
   }, [gl, tag]);
   useEffect(() => {
-    tag.label.textContent = name;
+    tag.nameEl.textContent = name;
     tag.label.style.color = css;
     tag.label.style.border = `1px solid ${hueColor(hue, 40)}`;
     tag.bubble.style.border = `1px solid ${css}`;
@@ -398,6 +486,15 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
       placed: false,
       pos: new Vector3(),
       target: new Vector3(),
+      dir: new Vector3(0, 0, 1),
+      rad: 6,
+      tdir: new Vector3(),
+      look: new Vector3(0, 0, -1),
+      lookGoal: new Vector3(0, 0, -1),
+      qs: new Quaternion(),
+      qe: new Quaternion(),
+      scale: 1,
+      vis: 1,
       nose: new Vector3(),
       basis: { cam: new Vector3(), up: new Vector3(), right: new Vector3() },
       shown: false,
@@ -431,35 +528,79 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
   useFrame((state, dtRaw) => {
     const dt = Math.min(Math.max(dtRaw, 0), 0.05);
     const t = state.clock.elapsedTime;
-    // Teammates hover on a halo around the rock's silhouette as seen from
-    // this camera, a little in front of it, so they stay in view wherever
-    // the camera orbits and never sit dead centre over the rock.
-    const a = slots.angles[slot % slots.angles.length] + Math.sin(t * 0.21 + anim.phase) * 0.08;
-    haloPoint(state.camera.position, a, anim.target, anim.basis, Math.sin(t * 1.3 + anim.phase) * 0.06);
+    const cam = state.camera;
+    const cc = crewCams.get(id);
+    if (cc) {
+      // Where they really are: at their camera, a touch toward what they're looking at.
+      anim.target.copy(cc.pos).addScaledVector(cc.dir, CAM_INSET);
+      const r = anim.target.length();
+      if (r > 1e-3) anim.target.multiplyScalar(MathUtils.clamp(r, CAM_MIN_R, CAM_MAX_R) / r);
+      else anim.target.set(0, 0, CAM_MIN_R);
+      anim.lookGoal.copy(cc.dir);
+    } else {
+      // No camera reported (an older client): hover on a halo around the
+      // planet's silhouette as seen from this camera, a little in front of it.
+      const a = slots.angles[slot % slots.angles.length] + Math.sin(t * 0.21 + anim.phase) * 0.08;
+      haloPoint(cam.position, a, anim.target, anim.basis, Math.sin(t * 1.3 + anim.phase) * 0.06);
+      anim.lookGoal.copy(anim.target).negate();
+      if (anim.lookGoal.lengthSq() < 1e-8) anim.lookGoal.set(0, 0, -1);
+      anim.lookGoal.normalize();
+    }
+    const scaleGoal = cc ? CAM_SCALE : 1;
+    const tr = anim.target.length();
+    if (tr > 1e-6) anim.tdir.copy(anim.target).divideScalar(tr);
+    else anim.tdir.set(0, 0, 1);
     if (!anim.placed) {
-      anim.pos.copy(anim.target);
+      anim.dir.copy(anim.tdir);
+      anim.rad = tr;
+      anim.look.copy(anim.lookGoal);
+      anim.scale = scaleGoal;
       anim.placed = true;
-    } else anim.pos.lerp(anim.target, 1 - Math.exp(-dt * 2));
+    } else {
+      // Ease around the planet (not through it): rotate the direction, ease the radius.
+      const k = 1 - Math.exp(-dt * CAM_EASE);
+      anim.qs.setFromUnitVectors(anim.dir, anim.tdir);
+      anim.qe.identity().slerp(anim.qs, k);
+      anim.dir.applyQuaternion(anim.qe);
+      if (anim.dir.lengthSq() < 1e-8) anim.dir.copy(anim.tdir);
+      anim.dir.normalize();
+      anim.rad = damp(anim.rad, tr, CAM_EASE, dt);
+      anim.look.lerp(anim.lookGoal, k);
+      if (anim.look.lengthSq() < 1e-6) anim.look.copy(anim.dir).negate();
+      anim.look.normalize();
+      anim.scale = damp(anim.scale, scaleGoal, 3, dt);
+    }
+    if (!Number.isFinite(anim.rad)) anim.rad = CAM_MIN_R;
+    anim.pos.copy(anim.dir).multiplyScalar(anim.rad);
+    // Fade out as it comes right up to my own camera (we're looking from the same spot).
+    const dc = anim.pos.distanceTo(cam.position);
+    anim.vis = damp(anim.vis, MathUtils.clamp((dc - NEAR_HIDE) / NEAR_FADE, 0, 1), 8, dt);
+    const sc = anim.scale * Math.max(0.001, anim.vis);
+    const visible = anim.vis > 0.02;
     anim.kick = Math.max(0, anim.kick - dt * 6);
     const g = root.current;
+    g.visible = visible;
     g.position.copy(anim.pos);
-    g.lookAt(ORIGIN);
+    g.scale.setScalar(sc);
+    anim.a.copy(anim.pos).add(anim.look);
+    g.lookAt(anim.a);
     g.rotateZ(Math.sin(t * 0.9 + anim.phase) * 0.12);
     g.rotateX(Math.sin(t * 0.7 + anim.phase * 2) * 0.04);
+    if (cc) g.translateY(Math.sin(t * 1.3 + anim.phase) * 0.05);
     if (anim.kick > 0) g.translateZ(-0.05 * anim.kick * anim.kick);
     g.updateMatrixWorld();
     anim.nose.set(0, -0.05, 0.4).applyMatrix4(g.matrixWorld);
 
     // Engines: flickering glow sprites, exhaust plumes streaming back, a light trail of sparks.
-    const cam = state.camera;
     const boost = 1 + anim.kick * 0.5;
+    for (const m of objs.plumes) m.visible = visible;
     anim.back.set(0, 0, -1).transformDirection(g.matrixWorld);
     for (let i = 0; i < 2; i++) {
       const f = 0.85 + Math.sin(t * 31 + anim.phase + i * 2.1) * 0.1 + Math.sin(t * 17 + i) * 0.06;
       objs.thrusters[i].scale.setScalar(0.3 * f * boost);
       anim.a.copy(ENGINES[i]).applyMatrix4(g.matrixWorld);
-      anim.b.copy(anim.a).addScaledVector(anim.back, PLUME_LEN * (0.85 + 0.15 * f) * boost);
-      ribbonMatrix(objs.plumes[i].matrix, anim.a, anim.b, 0.12 * boost, cam.position);
+      anim.b.copy(anim.a).addScaledVector(anim.back, PLUME_LEN * (0.85 + 0.15 * f) * boost * sc);
+      ribbonMatrix(objs.plumes[i].matrix, anim.a, anim.b, 0.12 * boost * sc, cam.position);
       objs.plumes[i].matrixWorldNeedsUpdate = true;
       mats.plumes[i].uniforms.uTime.value = t;
     }
@@ -468,7 +609,7 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
       anim.acc -= 1;
       const i = Math.random() < 0.5 ? 0 : 1;
       anim.a.copy(ENGINES[i]).applyMatrix4(g.matrixWorld);
-      sparks(anim.a, anim.back, mats.thruster.color, 1, 1.4, { spread: 0.25, life: 0.7, size: 0.7, drag: 1.2, white: 0.4 });
+      if (visible) sparks(anim.a, anim.back, mats.thruster.color, 1, 1.4, { spread: 0.25, life: 0.7, size: 0.7, drag: 1.2, white: 0.4 });
     }
     // Wingtip nav lights double-blink, out of step.
     for (let i = 0; i < 2; i++) {
@@ -484,16 +625,53 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
       tag.bubble.style.opacity = show ? '1' : '0';
       tag.bubble.style.transform = show ? 'translate(-50%, 0) scale(1)' : 'translate(-50%, 6px) scale(0.6)';
     }
-    // Project the tag anchor (just above the ship) to screen space.
-    tag.p.set(0, 0.34, 0).applyMatrix4(g.matrixWorld).project(state.camera);
-    if (tag.p.z > 1 || Math.abs(tag.p.x) > 1.2 || Math.abs(tag.p.y) > 1.2) {
-      tag.el.style.display = 'none';
+    // Name tag: just above the ship when it is in view (dimmed while the
+    // planet hides it); otherwise pinned to the edge of the visible area with
+    // an arrow pointing the way to it.
+    tag.p.set(0, 0.34, 0).applyMatrix4(g.matrixWorld);
+    tag.v.copy(tag.p).applyMatrix4(cam.matrixWorldInverse);
+    tag.p.project(cam);
+    const W = state.size.width;
+    const H = state.size.height;
+    const rect = visibleRect(W, H, useGame.getState().sheet, tagRect);
+    let x = (tag.p.x * 0.5 + 0.5) * W;
+    let y = (-tag.p.y * 0.5 + 0.5) * H;
+    const inView =
+      visible && anim.vis > 0.3 && tag.v.z < -0.05 && Number.isFinite(x + y) && x > rect.x + 6 && x < rect.x + rect.w - 6 && y > rect.y + 18 && y < rect.y + rect.h - 2;
+    let mode = 'ship';
+    let opacity = '1';
+    if (inView) {
+      if (behindPlanet(cam.position, anim.pos)) opacity = '0.5';
     } else {
-      tag.el.style.display = 'block';
-      const x = (tag.p.x * 0.5 + 0.5) * state.size.width;
-      const y = (-tag.p.y * 0.5 + 0.5) * state.size.height;
-      tag.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+      mode = 'edge';
+      let dx = tag.v.x;
+      let dy = -tag.v.y;
+      const l = Math.hypot(dx, dy);
+      if (!(l > 1e-6)) {
+        dx = 0;
+        dy = 1;
+      } else {
+        dx /= l;
+        dy /= l;
+      }
+      const hx = Math.max(8, rect.w / 2 - 64);
+      const hy = Math.max(8, rect.h / 2 - 26);
+      const k = Math.min(Math.abs(dx) > 1e-6 ? hx / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-6 ? hy / Math.abs(dy) : Infinity);
+      x = rect.x + rect.w / 2 + dx * k;
+      y = rect.y + rect.h / 2 + dy * k;
+      tag.arrow.style.transform = `rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
     }
+    if (mode !== tag.mode) {
+      tag.mode = mode;
+      tag.box.style.transform = mode === 'ship' ? 'translate(-50%, -100%)' : 'translate(-50%, -50%)';
+      tag.arrow.style.display = mode === 'ship' ? 'none' : 'inline-block';
+      tag.el.style.display = 'block';
+    }
+    if (opacity !== tag.opacity) {
+      tag.opacity = opacity;
+      tag.label.style.opacity = opacity;
+    }
+    if (Number.isFinite(x + y)) tag.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
   });
 
   return (

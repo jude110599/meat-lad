@@ -18,6 +18,8 @@ import { hueColor } from '../state/refs';
 import { hostNow, useGame, type Tab } from '../state/store';
 import { Amount, Icon, RES_LABEL, Tick, fmtDuration, liveWallet, resStyle, useMe, useTicker, type IconName } from './common';
 import { CrewTab } from './Crew';
+import { JoinAsks } from './Friends';
+import { MenuTab } from './Menu';
 import { TreeTab, canFinish } from './Tree';
 import { UpgradesTab } from './Upgrades';
 
@@ -97,13 +99,14 @@ function badges(s: RoomState, p: PlayerState, w: Wallet): Record<Tab, number> {
     return upgradeUnlocked(s, id) && !(def.maxLevel !== undefined && p.levels[id] >= def.maxLevel) && w[def.currency] >= upgradeCost(id, p.levels[id]);
   });
   const tree = NODE_IDS.some((id) => canFinish(s, id, w));
-  return { upgrades: up ? 1 : 0, tree: tree ? 1 : 0, crew: 0 };
+  return { upgrades: up ? 1 : 0, tree: tree ? 1 : 0, crew: 0, menu: 0 };
 }
 
 const TABS: { id: Tab; icon: IconName; label: string }[] = [
   { id: 'upgrades', icon: 'pick', label: 'Upgrades' },
   { id: 'tree', icon: 'tree', label: 'Forge Tree' },
   { id: 'crew', icon: 'crew', label: 'Crew' },
+  { id: 'menu', icon: 'menu', label: 'Menu' },
 ];
 
 function Dock({ s, p }: { s: RoomState; p: PlayerState }) {
@@ -127,6 +130,7 @@ function Dock({ s, p }: { s: RoomState; p: PlayerState }) {
             {tab === 'upgrades' && <UpgradesTab />}
             {tab === 'tree' && <TreeTab />}
             {tab === 'crew' && <CrewTab />}
+            {tab === 'menu' && <MenuTab />}
           </div>
         </div>
       </div>
@@ -231,6 +235,7 @@ export function Hud() {
     <div className="hud">
       <TopBar s={s} p={p} />
       <Toasts />
+      <JoinAsks />
       <Hint s={s} p={p} />
       <Dock s={s} p={p} />
       <OfflineCard />
