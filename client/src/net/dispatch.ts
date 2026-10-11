@@ -74,6 +74,7 @@ function handleFx(f: Fx): void {
       });
       if (f.broke) emitFx({ kind: 'burst', at: hit.point, normal: hit.normal, color: '#fff3c4', count: 60, speed: 9 });
       emitFx({ kind: 'scorch', at: hit.point, normal: hit.normal, hot: f.crit || f.broke });
+      emitFx({ kind: 'impact', at: hit.point, normal: hit.normal, by: f.playerId, crit: f.crit, broke: f.broke, seam: f.seamId != null });
       // Other players' numbers stay small so your own read clearly.
       if (mine || f.crit || f.broke)
         emitFx({
@@ -99,8 +100,11 @@ function handleFx(f: Fx): void {
       st.set({ s: { ...s, players, seams } });
       break;
     }
-    case 'buy':
+    case 'buy': {
+      const by = s.players[f.playerId];
+      if (by) emitFx({ kind: 'upgrade', by: f.playerId, id: f.id, color: hueColor(by.hue, 70), mine });
       break;
+    }
     case 'fund': {
       const node = NODES[f.node];
       if (f.done) {

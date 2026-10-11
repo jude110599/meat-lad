@@ -36,8 +36,11 @@ export function PostFX() {
       onFx((e) => {
         switch (e.kind) {
           case 'shockwave':
-            bus.aberration = Math.max(bus.aberration, 0.011);
-            bus.bloom = Math.max(bus.bloom, 0.9);
+            bus.aberration = Math.max(bus.aberration, 0.006);
+            bus.bloom = Math.max(bus.bloom, 0.5);
+            break;
+          case 'upgrade':
+            if (e.mine) bus.bloom = Math.max(bus.bloom, 0.25);
             break;
           case 'flash':
             bus.aberration = Math.max(bus.aberration, 0.008);
@@ -46,7 +49,7 @@ export function PostFX() {
             bus.tintAmt = 1;
             break;
           case 'leap':
-            bus.aberration = Math.max(bus.aberration, 0.016);
+            bus.aberration = Math.max(bus.aberration, 0.009);
             bus.bloom = Math.max(bus.bloom, 1.4);
             break;
           case 'shake':
@@ -60,12 +63,12 @@ export function PostFX() {
   );
 
   useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.05);
+    const dt = Math.min(Math.max(dtRaw, 0), 0.05);
     bus.aberration = damp(bus.aberration, 0, 3, dt);
     bus.bloom = damp(bus.bloom, 0, 2.6, dt);
     const s = useGame.getState().s;
     bus.surge = damp(bus.surge, s && surgeOn(s, hostNow()) ? 1 : 0, 2, dt);
-    const a = 0.0002 + bus.surge * 0.0005 + bus.aberration + bus.warp * 0.01;
+    const a = 0.0002 + bus.surge * 0.0005 + bus.aberration + bus.warp * 0.005;
     const c = chroma.current;
     if (c) c.offset.set(a, a * 0.75);
     const b = bloom.current;
