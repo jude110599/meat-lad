@@ -175,9 +175,12 @@ const TOKEN_KEY = 'starforge_resume';
  */
 export async function connect(): Promise<Authority> {
   const q = new URLSearchParams(location.search);
-  if (q.has('offline')) return new LocalAuthority();
+  const configured = import.meta.env.VITE_SERVER_URL as string | undefined;
+  const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  // Static hosting (GitHub Pages) with no server configured: play offline straight away.
+  if (q.has('offline') || (!configured && !isLocalHost)) return new LocalAuthority();
 
-  const url = import.meta.env.VITE_SERVER_URL ?? `${location.protocol}//${location.hostname}:${DEFAULT_PORT}`;
+  const url = configured ?? `${location.protocol}//${location.hostname}:${DEFAULT_PORT}`;
   const role: Role = q.get('role') === 'refiner' ? 'refiner' : 'miner';
   const socket: ClientSocket = io(url, { transports: ['websocket'], timeout: 1500, reconnectionAttempts: 2 });
 

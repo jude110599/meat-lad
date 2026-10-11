@@ -61,7 +61,7 @@ This repo is an arcade of browser games (`index.html` menu plus one self-contain
 
 Starforge is a **separate, larger successor**, not a rewrite of Deepcore. Deepcore stays as it is. Concepts proven in Deepcore are deliberately carried over: the heat mechanic with a "hot drilling" bonus, sync-strike combos between the two roles, and the two event archetypes (cave-in → Seismic Shockwave, magma surge → Solar Flare).
 
-Unlike the other games, Starforge has a build step and a server, so it lives in its own top-level folders (`/client`, `/server`, `/shared`) with its own `package.json`. Nothing in the existing games, the menu, or the existing workflows is touched. See §4.3 for how it would be published.
+Unlike the other games, Starforge has a build step and a server, so it lives in its own top-level folders (`/client`, `/server`, `/shared`) with its own `package.json`. The existing games and workflows are untouched; the only shared file changed is `index.html`, which gains a Starforge card linking to the built game in `/starforge/` (§4.3).
 
 ---
 
@@ -131,13 +131,16 @@ Open `http://localhost:5173`. The client connects to the server, creates a room,
 
 ### 4.3 Publishing
 
-The existing site deploys the repo root to GitHub Pages. Starforge's client must be **built** before it can be served, and its server must run somewhere that supports WebSockets. Proposed (not yet implemented, needs sign-off because it changes the live site):
+The existing site deploys the repo root to GitHub Pages straight from `main`, with no build step. Starforge's client needs building, so the built output is committed:
 
-1. A workflow builds `client/` with `VITE_SERVER_URL` set and publishes `client/dist` to `/starforge/` on Pages (`vite.config.ts` already uses `base: './'`).
-2. The server runs as a container (Fly.io / Railway / Render) with managed Redis and MongoDB Atlas.
-3. A card is added to `index.html` linking to `starforge/`.
+```bash
+npm run build:site   # builds client/ into /starforge (index.html + assets/)
+```
 
-Until a server is deployed, the Pages build still works: it simply runs in offline mode.
+* `/starforge/` is served by Pages at `<site>/starforge/` and linked from a card in `index.html`. `vite.config.ts` uses `base: './'` so it works under any sub-path.
+* With no `VITE_SERVER_URL` set at build time, a build served from anywhere other than localhost goes straight to **offline mode**, so the live page is single-player until a server exists.
+* **Online play on the live site** needs the server hosted somewhere that supports WebSockets (Fly.io / Railway / Render) with managed Redis and MongoDB Atlas, then a rebuild with `VITE_SERVER_URL=https://<server>` and `CORS_ORIGINS` set to the Pages origin.
+* Later, a workflow can build on push instead of committing `/starforge`, scoped to `client/**` and `shared/**` paths so it never interacts with the existing workflows.
 
 ---
 
@@ -561,7 +564,7 @@ When a player rejoins: `gain = passivePerSec × min(elapsed, 8 h) × 50%` (`offl
 | **M1: persistence** | `RedisStore` + `MongoStore` adapters behind `ProgressStore`, offline gains card, time sync | next |
 | **M2: refinery** | Refinery station scene and pipeline graph, power and overclocks, automated rigs, conveyors, alloy-priced automation, rig loadouts | |
 | **M3: depth** | Voxel terrain with server-authoritative carving, co-op events, Quantum Leap + skill tree, `Decimal` migration | |
-| **M4: live** | Pages build at `/starforge/`, hosted server, public lobby, accounts, menu card in `index.html` | needs sign-off (touches the live site) |
+| **M4: live** | Hosted server, online play on the live site, public lobby, accounts (the offline Pages build and menu card ship in M0) | |
 
 ---
 
