@@ -2,7 +2,7 @@
 export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   {
     v: '0.4.0',
-    when: 'Oct 11, 2026, 7:15 PM UTC',
+    when: 'Oct 11, 2026, 3:15 PM ET',
     items: [
       'Fixed the screen going black. One glitched pixel could spread across the whole view; that can no longer happen. The game also rebuilds the 3D view by itself if your phone drops it (for example after switching apps).',
       'A brand-new asteroid: craters, ridges and rust-and-iron rock with molten cracks that pulse and flare as you tap, purple crystals, a little debris belt, and a squash and wobble when you hit it.',
@@ -15,7 +15,7 @@ export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   },
   {
     v: '0.3.0',
-    when: 'Oct 11, 2026, 4:35 PM UTC',
+    when: 'Oct 11, 2026, 12:35 PM ET',
     items: [
       'A new co-op idea: no more Miner and Refiner roles. Everyone taps the asteroid, buys their own upgrades and builds the same things.',
       'The Forge Tree: 20 big upgrades the whole crew pays into together with ore, alloy and Star Cores. Each one unlocks for everyone, for good, and opens new upgrades (Auto-Rigs, Smelters, Harvesters, Seam Scanners, Alloy Plating), income multipliers and speed-ups. They are expensive on purpose, so choose together.',
@@ -28,7 +28,7 @@ export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   },
   {
     v: '0.2.0',
-    when: 'Oct 11, 2026, 3:14 PM UTC',
+    when: 'Oct 11, 2026, 11:14 AM ET',
     items: [
       'Real online co-op for up to 4 players. Host a party and friends join with a 5-letter code or link, with no game server needed.',
       'Friends list: your friends from the main menu show at the bottom left while a party is open, with online dots and an Invite button. Invites pop up wherever your friend is and bring them straight into your party.',
@@ -41,7 +41,7 @@ export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   },
   {
     v: '0.1.0',
-    when: 'Oct 11, 2026, 3:31 AM UTC',
+    when: 'Oct 10, 2026, 11:31 PM ET',
     items: ['First playable prototype.'],
   },
 ];
