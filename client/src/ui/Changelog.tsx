@@ -1,6 +1,19 @@
 /** Starforge's own update history, newest first. Shown in the lobby and the Crew tab. */
 export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   {
+    v: '0.4.0',
+    when: 'Oct 11, 2026, 7:15 PM UTC',
+    items: [
+      'Fixed the screen going black. One glitched pixel could spread across the whole view; that can no longer happen. The game also rebuilds the 3D view by itself if your phone drops it (for example after switching apps).',
+      'A brand-new asteroid: craters, ridges and rust-and-iron rock with molten cracks that pulse and flare as you tap, purple crystals, a little debris belt, and a squash and wobble when you hit it.',
+      'A ringed gas giant with its own moon now hangs in the background, with a richer nebula, twinkling stars and better lighting.',
+      'New models: drones with solar panels and blinking lights in your colour, big Harvester haulers with tractor beams, drill-tower Auto-Rigs that spin and plunge, and sleeker crew ships with engine trails.',
+      'More effects: brighter lasers with impact flares, sparks and flying rock chunks, ore that flies up to your counter, gold crit bursts, a glowing comet with two tails, upgrade bursts, drifting space dust and a new warp tunnel for Quantum Leap.',
+      'A cooler look all round: glassy panels, counters that pop when they grow, shiny buttons that glow when you can afford them, and a flash when you buy.',
+      'The Forge Tree is now a glowing star map: gem nodes, energy flowing along unlocked paths, glowing progress rings and a burst when a node unlocks. Labels no longer crowd on phones.',
+    ],
+  },
+  {
     v: '0.3.0',
     when: 'Oct 11, 2026, 4:35 PM UTC',
     items: [
