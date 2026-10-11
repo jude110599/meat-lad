@@ -22,6 +22,7 @@ import {
   buyUpgrade,
   catchComet,
   coresFor,
+  oreForCores,
   createRoomState,
   crewMult,
   dropPlayer,
@@ -232,6 +233,14 @@ describe('the Forge Tree', () => {
 });
 
 describe('Quantum Leap', () => {
+  it('pays cores on a cube-root curve, and oreForCores is its inverse', () => {
+    assert.equal(coresFor(LEAP_MIN_ORE - 1), 0);
+    assert.equal(coresFor(LEAP_MIN_ORE), 3);
+    for (let n = 4; n < 2000; n += 7) {
+      assert.equal(coresFor(oreForCores(n)), n);
+      assert.equal(coresFor(oreForCores(n) * 0.999), n - 1);
+    }
+  });
   it('needs the node and a big enough run', () => {
     const s = room();
     s.players.p0.run.ore = LEAP_MIN_ORE * 4;
@@ -364,6 +373,17 @@ describe('RoomHost', () => {
     assert.notEqual(a.playerId, b.playerId);
     const again = h.join({ ...hello('k'), tab: 't1' }, T0 + 5);
     assert.ok('playerId' in again && again.playerId === a.playerId);
+  });
+
+  it("never sends anyone's browser key to the crew", () => {
+    const { h, sent } = host();
+    const r = h.join({ ...hello('secret-key'), name: 'Ann' }, T0);
+    assert.ok('playerId' in r);
+    h.tick(T0 + 1000);
+    const states = [r.welcome, ...sent].flatMap((m) => (m.t === 'welcome' || m.t === 'snap' ? [m.state] : []));
+    assert.ok(states.length >= 2);
+    assert.ok(!JSON.stringify(states).includes('secret-key'));
+    assert.equal(h.state.players[r.playerId].key, 'secret-key');
   });
 
   it('turns intents into state and effects', () => {

@@ -48,7 +48,7 @@ export class RoomHost {
     if (tab) this.tabs.set(player.id, tab);
     this.emit({ k: 'joined', playerId: player.id, name: player.name });
     if (offline) this.emit({ k: 'offline', playerId: player.id, ...offline });
-    return { playerId: player.id, welcome: { t: 'welcome', playerId: player.id, code: this.code, state: this.state } };
+    return { playerId: player.id, welcome: { t: 'welcome', playerId: player.id, code: this.code, state: publicState(this.state) } };
   }
 
   leave(playerId: string, now = Date.now()): void {
@@ -125,7 +125,7 @@ export class RoomHost {
 
   private snapNow(now = Date.now()): void {
     this.lastSnap = now;
-    this.send('*', { t: 'snap', state: this.state });
+    this.send('*', { t: 'snap', state: publicState(this.state) });
   }
   private emit(fx: Fx): void {
     this.pending.push(fx);
@@ -136,6 +136,13 @@ export class RoomHost {
     this.pending = [];
     this.send('*', { t: 'fx', fx });
   }
+}
+
+/** The room as crewmates see it: browser keys stay on the host, so nobody can sign in as someone else. */
+function publicState(s: RoomState): RoomState {
+  const players: RoomState['players'] = {};
+  for (const [id, p] of Object.entries(s.players)) players[id] = { ...p, key: '' };
+  return { ...s, players };
 }
 
 function num(v: unknown): number | null {

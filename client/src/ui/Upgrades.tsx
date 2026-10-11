@@ -14,6 +14,7 @@ import {
   has,
   leapCores,
   nodeOpen,
+  oreForCores,
   rigRate,
   seamMult,
   smeltShare,
@@ -92,7 +93,7 @@ function UpgradeRow({ s, p, id, mode, budget }: { s: RoomState; p: PlayerState; 
 
 function LeapCard({ s, p }: { s: RoomState; p: PlayerState }) {
   const cores = leapCores(p);
-  const next = Math.max(LEAP_MIN_ORE, Math.pow(cores + 1, 2) * 1e8);
+  const next = oreForCores(cores + 1);
   const ready = canLeap(s, p);
   const per = has(s, 'starseed') ? 20 : 10;
   return (

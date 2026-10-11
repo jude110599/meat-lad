@@ -3,7 +3,7 @@
  * a second (half of them on glowing seams), buys the personal upgrade that
  * pays itself back fastest, and saves up for a Forge Tree node whenever one
  * costs less than SAVE_FOR seconds of income. Prints when each node unlocks
- * and when Quantum Leaps happen, to compare against DESIGN.md §7.
+ * and when Quantum Leaps happen, to compare against DESIGN.md §12.3.
  */
 import {
   NODES,
@@ -133,7 +133,7 @@ while (now < end && leaps < LEAPS) {
     if (!best) break;
     buyUpgrade(s, 'p', best, 1);
   }
-  if (canLeap(s, p) && leapCores(p) >= 4 + leaps * 6) {
+  if (canLeap(s, p) && leapCores(p) >= Math.max(4, Math.ceil(0.4 * p.stats.cores))) {
     log(`LEAP ${leaps + 1}: +${leapCores(p)} cores (mined ${fmt(p.run.ore)} this run)`);
     leap(s, 'p', now);
     leaps++;

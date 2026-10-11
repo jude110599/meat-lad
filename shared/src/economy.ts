@@ -3,7 +3,7 @@ import type { ResourceId, Wallet } from './resources.js';
 /**
  * Balance data. Every number the host uses to decide an outcome lives here
  * (formulas that need room state are in sim.ts), so the client can show it
- * and the tests and `npm run balance` can pin it. See DESIGN.md §5–§7.
+ * and the tests and `npm run balance` can pin it. See DESIGN.md §9–§13.
  */
 
 /* ---------------- personal upgrades ---------------- */
@@ -136,13 +136,13 @@ export const NODES: Record<NodeId, NodeDef> = {
   leap: { id: 'leap', name: 'Quantum Leap', icon: '🌀', desc: 'Lets each of you leap: restart your own run for Star Cores.', tier: 4, x: 0, cost: { ore: 2e9, alloy: 8e6 }, needs: ['harvesters', 'hotsmelt'] },
   resonance: { id: 'resonance', name: 'Resonance', icon: '〰️', desc: 'Breaking a seam gives the whole crew ×2 ore for 15 s.', tier: 4, x: 1, cost: { ore: 6e9, alloy: 25e6 }, needs: ['overdrive', 'plating'] },
 
-  memory: { id: 'memory', name: 'Stellar Memory', icon: '🧠', desc: 'Start every run with 10 Drill and 10 Drone levels.', tier: 5, x: -1.5, cost: { cores: 3 }, needs: ['leap'] },
-  starseed: { id: 'starseed', name: 'Starseed', icon: '🌱', desc: 'Each Star Core you hold gives +20% instead of +10%.', tier: 5, x: -0.5, cost: { cores: 8 }, needs: ['leap'] },
-  hyperdrill: { id: 'hyperdrill', name: 'Hyperdrill', icon: '💥', desc: 'Taps and Auto-Rigs mine ×10.', tier: 5, x: 0.5, cost: { cores: 12 }, needs: ['leap'] },
-  dyson: { id: 'dyson', name: 'Dyson Swarm', icon: '☀️', desc: 'Drones and Harvesters mine ×10.', tier: 5, x: 1.5, cost: { cores: 15 }, needs: ['leap'] },
+  memory: { id: 'memory', name: 'Stellar Memory', icon: '🧠', desc: 'Start every run with 10 Drill and 10 Drone levels.', tier: 5, x: -1.5, cost: { cores: 4 }, needs: ['leap'] },
+  starseed: { id: 'starseed', name: 'Starseed', icon: '🌱', desc: 'Each Star Core you hold gives +20% instead of +10%.', tier: 5, x: -0.5, cost: { cores: 12 }, needs: ['leap'] },
+  hyperdrill: { id: 'hyperdrill', name: 'Hyperdrill', icon: '💥', desc: 'Taps and Auto-Rigs mine ×10.', tier: 5, x: 0.5, cost: { cores: 25 }, needs: ['leap'] },
+  dyson: { id: 'dyson', name: 'Dyson Swarm', icon: '☀️', desc: 'Drones and Harvesters mine ×10.', tier: 5, x: 1.5, cost: { cores: 40 }, needs: ['leap'] },
 
-  singularity: { id: 'singularity', name: 'Singularity Forge', icon: '🕳️', desc: 'All income ×3.', tier: 6, x: 0, cost: { cores: 40, ore: 1e12 }, needs: ['starseed', 'hyperdrill', 'dyson'] },
-  mastery: { id: 'mastery', name: 'Forge Mastery', icon: '👑', desc: 'All income ×1.5 per level. Each level costs ×10.', tier: 7, x: 0, cost: { cores: 25, ore: 1e13 }, needs: ['singularity'], repeat: 10 },
+  singularity: { id: 'singularity', name: 'Singularity Forge', icon: '🕳️', desc: 'All income ×3.', tier: 6, x: 0, cost: { cores: 100, ore: 5e13 }, needs: ['starseed', 'hyperdrill', 'dyson'] },
+  mastery: { id: 'mastery', name: 'Forge Mastery', icon: '👑', desc: 'All income ×1.5 per level. Each level costs ×10.', tier: 7, x: 0, cost: { cores: 60, ore: 5e14 }, needs: ['singularity'], repeat: 10 },
 };
 
 export const NODE_IDS = Object.keys(NODES) as NodeId[];
@@ -193,9 +193,17 @@ export const CORE_BONUS_STARSEED = 0.2;
 /** Ore you must mine in a run before a leap pays anything. */
 export const LEAP_MIN_ORE = 1e9;
 
-/** Star Cores for leaping after mining `ore` this run. */
+/**
+ * Star Cores for leaping after mining `ore` this run. Grows with the cube
+ * root, so ten times the ore pays a bit over twice the cores.
+ */
 export function coresFor(ore: number): number {
-  return ore < LEAP_MIN_ORE ? 0 : Math.floor(Math.sqrt(ore / 1e8));
+  return ore < LEAP_MIN_ORE ? 0 : Math.floor(3 * Math.cbrt(ore / LEAP_MIN_ORE) + 1e-9);
+}
+
+/** Ore a run needs for its leap to pay `cores` Star Cores. */
+export function oreForCores(cores: number): number {
+  return Math.max(LEAP_MIN_ORE, LEAP_MIN_ORE * Math.pow(cores / 3, 3));
 }
 
 /* ---------------- offline ---------------- */
