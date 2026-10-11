@@ -1,4 +1,4 @@
-import type { RoomState } from '@starforge/shared';
+import { fromSave, toSave, type RoomState } from '@starforge/shared';
 
 /**
  * Persistence boundary. The game loop only ever talks to this interface so
@@ -21,10 +21,10 @@ export class MemoryStore implements ProgressStore {
 
   async loadRoom(code: string): Promise<RoomState | null> {
     const raw = this.rooms.get(code);
-    return raw ? (JSON.parse(raw) as RoomState) : null;
+    return raw ? fromSave(JSON.parse(raw)) : null;
   }
 
   async saveRoom(code: string, state: RoomState): Promise<void> {
-    this.rooms.set(code, JSON.stringify(state));
+    this.rooms.set(code, JSON.stringify(toSave(state)));
   }
 }

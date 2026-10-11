@@ -1,114 +1,88 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import {
+  RoomHost,
   SERVER_TICK_HZ,
-  SNAPSHOT_HZ,
-  addPlayer,
-  applyStrike,
-  buyUpgrade,
   createRoomState,
-  globalMult,
-  passiveOrePerSec,
-  tickRoom,
-  type ClientToServerEvents,
+  onlinePlayers,
+  type ClientMsg,
+  type Hello,
   type RoomState,
-  type Role,
-  type ServerToClientEvents,
-  type Snapshot,
+  type ServerMsg,
 } from '@starforge/shared';
 import type { ProgressStore } from '../persistence/Store.js';
 
-export type GameServer = Server<ClientToServerEvents, ServerToClientEvents>;
-export type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+/** Socket.io events: one `hello` to join, then `msg` both ways. */
+export interface ClientToServer {
+  hello: (h: Hello & { room?: string }) => void;
+  msg: (m: ClientMsg) => void;
+}
+export interface ServerToClient {
+  msg: (m: ServerMsg) => void;
+}
+export type GameServer = Server<ClientToServer, ServerToClient>;
+export type GameSocket = Socket<ClientToServer, ServerToClient>;
 
-const SAVE_EVERY_TICKS = SERVER_TICK_HZ * 30;
+const SAVE_EVERY_MS = 30_000;
 
 /**
- * One co-op expedition. Owns the authoritative RoomState, runs the fixed
- * 20 Hz simulation tick and fans out 10 Hz snapshots to its Socket.io room.
+ * One co-op expedition on the dedicated server. The rules and the protocol
+ * live in RoomHost (shared with the in-browser PeerJS host); this class only
+ * maps Socket.io connections onto it and runs the tick timer.
  */
 export class Room {
-  readonly state: RoomState;
-  /** resumeToken -> playerId, so a dropped client can reclaim its slot. */
-  private readonly tokens = new Map<string, string>();
-  private readonly online = new Set<string>();
+  readonly host: RoomHost;
   private timer: NodeJS.Timeout | null = null;
-  private lastTickAt = Date.now();
+  private lastSave = Date.now();
 
   constructor(
     readonly code: string,
     private readonly io: GameServer,
     private readonly store: ProgressStore,
-    seed = randomInt(1, 2 ** 31 - 1),
+    state: RoomState = createRoomState(randomInt(1, 2 ** 31 - 1)),
   ) {
-    this.state = createRoomState(seed);
+    this.host = new RoomHost(state, (to, msg) => this.deliver(to, msg), code);
   }
 
   get size(): number {
-    return this.online.size;
+    return onlinePlayers(this.host.state).length;
   }
 
   start(): void {
-    const ticksPerSnapshot = SERVER_TICK_HZ / SNAPSHOT_HZ;
     this.timer = setInterval(() => {
       const now = Date.now();
-      const dt = (now - this.lastTickAt) / 1000;
-      this.lastTickAt = now;
-      tickRoom(this.state, dt, now);
-      if (this.state.tick % ticksPerSnapshot === 0) this.io.to(this.code).emit('snapshot', this.snapshot());
-      if (this.state.tick % SAVE_EVERY_TICKS === 0) void this.store.saveRoom(this.code, this.state);
+      this.host.tick(now);
+      if (now - this.lastSave > SAVE_EVERY_MS) {
+        this.lastSave = now;
+        void this.store.saveRoom(this.code, this.host.state);
+      }
     }, 1000 / SERVER_TICK_HZ);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    void this.store.saveRoom(this.code, this.state);
+    void this.store.saveRoom(this.code, this.host.state);
   }
 
-  join(socket: GameSocket, name: string, role: Role, resumeToken?: string) {
-    let playerId = resumeToken ? this.tokens.get(resumeToken) : undefined;
-    let token = resumeToken;
-    if (!playerId || !this.state.players[playerId]) {
-      playerId = randomBytes(6).toString('hex');
-      token = randomBytes(16).toString('hex');
-      this.tokens.set(token, playerId);
-      addPlayer(this.state, playerId, name.slice(0, 24) || 'Prospector', role);
+  /** Admit a socket. Returns false if the room refused it. */
+  join(socket: GameSocket, hello: Hello): boolean {
+    const r = this.host.join(hello);
+    if ('error' in r) {
+      socket.emit('msg', { t: 'error', error: r.error });
+      return false;
     }
-    this.online.add(playerId);
+    const id = r.playerId;
     void socket.join(this.code);
-    socket.to(this.code).emit('player:joined', this.state.players[playerId]);
-
-    const id = playerId;
-    socket.on('mine:strike', (p) => {
-      if (!p || typeof p.seq !== 'number') return;
-      const seamId = typeof p.seamId === 'number' ? p.seamId : null;
-      const out = applyStrike(this.state, id, seamId, Date.now(), Math.random());
-      if (typeof out === 'string') socket.emit('mine:reject', { seq: p.seq, reason: out });
-      else this.io.to(this.code).emit('mine:result', { ...out, seq: p.seq });
-    });
-    socket.on('shop:buy', (p) => {
-      if (p && buyUpgrade(this.state, p.id)) this.io.to(this.code).emit('snapshot', this.snapshot());
-    });
-    socket.on('disconnect', () => {
-      this.online.delete(id);
-      this.io.to(this.code).emit('player:left', { id });
-    });
-
-    return { playerId: id, resumeToken: token!, seed: this.state.seed, snapshot: this.snapshot() };
+    void socket.join(`p:${id}`);
+    socket.emit('msg', r.welcome);
+    socket.on('msg', (m) => this.host.handle(id, m));
+    socket.on('disconnect', () => this.host.leave(id));
+    return true;
   }
 
-  snapshot(): Snapshot {
-    const s = this.state;
-    return {
-      tick: s.tick,
-      serverTime: Date.now(),
-      wallet: s.wallet,
-      levels: s.levels,
-      seams: s.seams,
-      players: Object.values(s.players).filter((p) => this.online.has(p.id)),
-      quantumPoints: s.quantumPoints,
-      orePerSec: passiveOrePerSec(s.levels, globalMult(s)),
-    };
+  private deliver(to: string, msg: ServerMsg): void {
+    if (to === '*') this.io.to(this.code).emit('msg', msg);
+    else this.io.to(`p:${to}`).emit('msg', msg);
   }
 }

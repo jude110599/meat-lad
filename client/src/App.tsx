@@ -1,26 +1,27 @@
-import { useEffect, useState } from 'react';
-import { connect, type Authority } from './net/authority';
+import { useEffect } from 'react';
 import { GameScene } from './scene/GameScene';
+import { attachFriends } from './ui/friends';
 import { Hud } from './ui/Hud';
+import { Lobby } from './ui/Lobby';
+import { joinParty } from './net/session';
 import { useGame } from './state/store';
 
 export function App() {
-  const [auth, setAuth] = useState<Authority | null>(null);
-  const ready = useGame((s) => s.ready);
+  const screen = useGame((s) => s.screen);
+  const ready = useGame((s) => !!s.s);
 
   useEffect(() => {
-    let alive = true;
-    void connect().then((a) => alive && setAuth(a));
-    return () => {
-      alive = false;
-    };
+    // Arriving from an invite link or a friend's invite: ?join=CODE
+    const code = new URLSearchParams(location.search).get('join');
+    if (code) joinParty(code);
+    attachFriends();
   }, []);
 
-  if (!auth || !ready) return <div className="boot">Spinning up the drill…</div>;
+  if (screen === 'lobby' || !ready) return <Lobby />;
   return (
     <>
-      <GameScene auth={auth} />
-      <Hud auth={auth} />
+      <GameScene />
+      <Hud />
     </>
   );
 }
