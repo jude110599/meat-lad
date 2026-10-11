@@ -177,7 +177,7 @@ void main() {
   // Bands of light rising from the surface to the hauler.
   float s = sin((y * 6.0 - uTime * 1.6) * 6.2832) * 0.5 + 0.5;
   float bands = 0.45 + 0.55 * smoothstep(0.6, 1.0, s);
-  float fade = smoothstep(0.0, 0.1, y) * smoothstep(1.0, 0.82, y);
+  float fade = smoothstep(0.0, 0.1, y) * (1.0 - smoothstep(0.82, 1.0, y));
   gl_FragColor = vec4(vCol * (0.14 + rim * 0.85) * bands * fade, 1.0);
 }
 `;

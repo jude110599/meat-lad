@@ -146,7 +146,7 @@ void main() {
   // Bright leading edge at r = 1, soft glow inside it.
   float x = clamp((vR - 0.55) / 0.45, 0.0, 1.0);
   float edge = x * x * x * x * x * x * 1.6 + x * x * 0.35;
-  float rim = smoothstep(1.0, 0.95, vR);
+  float rim = 1.0 - smoothstep(0.95, 1.0, vR);
   gl_FragColor = vec4(vCol * edge * rim, 1.0);
 }
 `;

@@ -31,7 +31,7 @@ void main() {
   // Sharp bright leading edge, soft trailing glow.
   float x = clamp((vR - ${INNER.toFixed(2)}) / ${(1 - INNER).toFixed(2)}, 0.0, 1.0);
   float edge = pow(x, uSharp) * 2.2 + x * x * 0.4;
-  float fadeOut = smoothstep(1.0, 0.94, x);
+  float fadeOut = 1.0 - smoothstep(0.94, 1.0, x);
   gl_FragColor = vec4(uColor * edge * fadeOut * uAlpha, 1.0);
 }
 `;
@@ -226,7 +226,7 @@ export function Shockwaves() {
       w.dur = small ? 0.75 : 0.9 + strength * 0.5;
       w.maxR = small ? 4.6 : 7 + strength * 9;
       w.tilt = (Math.random() - 0.5) * 0.6;
-      (w.ringMat.uniforms.uColor.value as Color).copy(color).multiplyScalar(small ? 1.1 : 0.9 + strength * 0.9);
+      (w.ringMat.uniforms.uColor.value as Color).copy(color).multiplyScalar(small ? 1.1 : 0.8 + strength * 0.7);
       (w.echoMat.uniforms.uColor.value as Color).copy(color).lerp(WHITE, 0.4).multiplyScalar(small ? 0.7 : 0.6 + strength * 0.4);
       (w.shellMat.uniforms.uColor.value as Color).copy(color).multiplyScalar(0.4 + strength * 0.3);
       (w.raysMat.uniforms.uColor.value as Color).copy(color).lerp(WHITE, 0.3).multiplyScalar(0.7 + strength * 0.4);
@@ -317,7 +317,7 @@ export function Shockwaves() {
       w.flat.rotation.set(-Math.PI / 2 + w.tilt, 0, w.tilt * 0.5);
       w.shell.visible = w.t < 0.5;
       w.shell.scale.setScalar(ROCK_R + (w.maxR * 0.5 - ROCK_R) * e);
-      w.shellMat.uniforms.uAlpha.value = a * (1 - w.t) * 0.45;
+      w.shellMat.uniforms.uAlpha.value = a * (1 - w.t) * 0.3;
       // Rays: a quick fan of light behind the rock.
       w.rays.visible = w.t < 0.7;
       w.rays.quaternion.copy(cam.quaternion);

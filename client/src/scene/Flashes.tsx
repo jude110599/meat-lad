@@ -52,7 +52,7 @@ void main() {
     float r = sqrt(max(d, 0.0));
     float x = (r - (1.0 - th)) / th;
     float band = x < 0.0 ? exp(-x * x * 2.5) : exp(-x * x * 14.0);
-    float rim = smoothstep(1.0, 0.96, r);
+    float rim = 1.0 - smoothstep(0.96, 1.0, r);
     gl_FragColor = vec4((vCol + vec3(lum * 0.25)) * band * rim, 1.0);
     return;
   }
