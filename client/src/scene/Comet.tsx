@@ -57,7 +57,7 @@ uniform vec3 uEnd;
 varying vec2 vUv;
 void main() {
   // y runs from the head (0) to the end of the tail (1).
-  float along = vUv.y;
+  float along = clamp(vUv.y, 0.0, 1.0);
   float across = abs(vUv.x * 2.0 - 1.0);
   float width = mix(0.18, 1.0, sqrt(along));
   float body = exp(-pow(across / width, 2.0) * 3.0);

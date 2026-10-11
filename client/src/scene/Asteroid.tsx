@@ -34,7 +34,7 @@ varying vec3 vN;
 varying vec3 vV;
 varying vec3 vLocal;
 void main() {
-  float f = 1.0 - max(dot(normalize(vN), normalize(vV)), 0.0);
+  float f = clamp(1.0 - dot(normalize(vN), normalize(vV)), 0.0, 1.0);
   float rim = pow(f, 2.4);
   // Heat crawls over the surface.
   float crawl = 0.7 + 0.3 * sin(vLocal.y * 5.0 + uTime * 3.1) * sin(vLocal.x * 4.3 - uTime * 2.2 + vLocal.z * 3.0);

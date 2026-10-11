@@ -1,28 +1,35 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Bloom, ChromaticAberration, EffectComposer, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
+import { Bloom, ChromaticAberration, EffectComposer, FXAA, Noise, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ToneMappingMode, type BloomEffect, type ChromaticAberrationEffect } from 'postprocessing';
 import { Vector2 } from 'three';
 import { surgeOn } from '@starforge/shared';
 import { onFx } from '../state/fx';
 import { useGame } from '../state/store';
 import { bus } from './bus';
+import { makeSanitizePass } from './Sanitize';
 import { damp, hostNow, setCss } from './util';
 
 const BLOOM = 1.05;
 
 /**
- * Bloom (mipmap blur), chromatic aberration that spikes on shockwaves,
+ * A sanitize pass first (see Sanitize.ts), then bloom (mipmap blur),
+ * chromatic aberration that spikes on shockwaves,
  * flashes, leaps and big shakes, ACES tone mapping, vignette and a whisper
  * of film grain. Also routes 'flash' into the shared tint pulse and eases
  * `bus.surge` while a resonance surge is on (a touch more bloom and fringing
  * here, a cyan wash in Sky and Lights).
+ *
+ * Phones skip MSAA (multisampled half-float targets cost a lot of GPU memory,
+ * which is what gets a phone's WebGL context dropped) and use FXAA instead.
  */
 export function PostFX() {
   const bloom = useRef<BloomEffect>(null);
   const chroma = useRef<ChromaticAberrationEffect>(null);
   const offset = useMemo(() => new Vector2(0.0003, 0.0002), []);
   const coarse = useMemo(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true, []);
+  const sanitize = useMemo(makeSanitizePass, []);
+  useEffect(() => () => sanitize.dispose(), [sanitize]);
 
   useEffect(
     () =>
@@ -66,10 +73,12 @@ export function PostFX() {
   });
 
   return (
-    <EffectComposer multisampling={coarse ? 2 : 4}>
+    <EffectComposer multisampling={coarse ? 0 : 4}>
+      <primitive object={sanitize} dispose={null} />
       <Bloom ref={bloom} mipmapBlur intensity={BLOOM} luminanceThreshold={0.78} luminanceSmoothing={0.25} radius={0.72} />
       <ChromaticAberration ref={chroma} offset={offset} radialModulation modulationOffset={0.12} />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      {coarse ? <FXAA /> : <></>}
       <Vignette offset={0.26} darkness={0.72} />
       <Noise opacity={0.045} premultiply />
     </EffectComposer>

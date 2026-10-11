@@ -52,7 +52,7 @@ varying vec3 vV;
 varying float vY;
 varying vec3 vCol;
 void main() {
-  float f = abs(dot(normalize(vN), normalize(vV)));
+  float f = clamp(abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
   float glow = pow(f, 1.4);
   float core = pow(f, 6.0);
   float taper = smoothstep(0.0, 0.06, vY);

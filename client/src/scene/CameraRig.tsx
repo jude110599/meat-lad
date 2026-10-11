@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ComponentRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { MathUtils, Vector3, type PerspectiveCamera } from 'three';
@@ -11,6 +11,7 @@ import { damp } from './util';
 /** Camera distance that frames the rock when the whole screen is visible. */
 const ROCK_DIST = 7.6;
 const MIN_DIST = 4.2;
+const HOME = new Vector3(0, 1.6, ROCK_DIST);
 
 /** Pull back on portrait views so the rock (and a little of its orbit) stays in frame. */
 function fitFactor(aspect: number): number {
@@ -31,6 +32,11 @@ function fitFactor(aspect: number): number {
  * The user's own zoom is kept as a ratio to the fitted distance, so a layout
  * change re-fits without throwing it away; easing stops as soon as the user
  * starts zooming.
+ *
+ * A NaN anywhere in the camera blacks out the whole view for good (every
+ * later frame eases from it), so a collapsed canvas (0 px tall while a phone
+ * rotates or backgrounds the page) leaves the camera alone, and if the
+ * position still goes bad the camera is put back and the controls rebuilt.
  */
 export function CameraRig() {
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
@@ -41,7 +47,11 @@ export function CameraRig() {
   const sheet = useGame((s) => s.sheet);
 
   const rect = useMemo(() => visibleRect(width, height, sheet), [width, height, sheet]);
-  const desired = useMemo(() => ROCK_DIST * (height / rect.h) * fitFactor(rect.w / rect.h), [rect, height]);
+  const desired = useMemo(() => {
+    const d = ROCK_DIST * (height / rect.h) * fitFactor(rect.w / rect.h);
+    return Number.isFinite(d) && d > 0 ? d : ROCK_DIST;
+  }, [rect, height]);
+  const [controlsKey, setControlsKey] = useState(0);
   const anim = useMemo(() => ({ dist: true, first: true, base: 0, zoom: 1, cx: 0, cy: 0, w: 0, h: 0 }), []);
   const tmp = useMemo(() => ({ off: new Vector3() }), []);
 
@@ -90,6 +100,7 @@ export function CameraRig() {
     const { off } = tmp;
     const W = state.size.width;
     const H = state.size.height;
+    if (W < 2 || H < 2 || rect.w < 1 || rect.h < 1) return;
     const cx = rect.x + rect.w / 2;
     const cy = rect.y + rect.h / 2;
 
@@ -143,6 +154,17 @@ export function CameraRig() {
   // After the controls update: shake as a tiny rotation; the next update's
   // lookAt() resets it, so nothing drifts.
   useFrame((state, dtRaw) => {
+    const p = camera.position;
+    if (!Number.isFinite(p.x + p.y + p.z) || !Number.isFinite(camera.quaternion.w)) {
+      camera.position.copy(HOME);
+      camera.quaternion.identity();
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      anim.first = true;
+      bus.shake = 0;
+      setControlsKey((k) => k + 1);
+      return;
+    }
     const dt = Math.min(dtRaw, 0.05);
     bus.shake = Math.max(0, bus.shake - dt * (0.9 + bus.shake * 1.6));
     const a = bus.shake * bus.shake * 0.09;
@@ -156,6 +178,7 @@ export function CameraRig() {
 
   return (
     <OrbitControls
+      key={controlsKey}
       ref={controls}
       makeDefault
       enablePan={false}

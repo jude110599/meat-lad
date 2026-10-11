@@ -44,7 +44,7 @@ uniform float uAlpha;
 varying vec3 vN;
 varying vec3 vV;
 void main() {
-  float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+  float f = clamp(1.0 - abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
   gl_FragColor = vec4(uColor * pow(f, 3.0) * uAlpha, 1.0);
 }
 `;

@@ -75,7 +75,8 @@ void main() {
   // Dust lanes.
   col *= 0.45 + 0.75 * smoothstep(0.28, 0.68, w);
   // A brighter galactic band.
-  float band = exp(-pow(dot(d, normalize(vec3(0.25, 1.0, -0.3))) * 2.6, 2.0));
+  float k = dot(d, normalize(vec3(0.25, 1.0, -0.3))) * 2.6;
+  float band = exp(-k * k);
   col *= 0.55 + 0.9 * band;
   // Stored square-rooted so 8-bit texels keep precision in the darks.
   gl_FragColor = vec4(sqrt(max(col, vec3(0.0))), 1.0);
