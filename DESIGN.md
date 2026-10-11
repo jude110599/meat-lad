@@ -1,9 +1,9 @@
 # Starforge: Technical Design Specification
 
-**Status:** v0.1, prototype scaffold. **Owner:** Lead Game Developer / Systems Architect.
-**Scope:** a high-performance 3D multiplayer incremental mining game with asymmetric co-op roles, an authoritative server, and an exponential economy with a shared prestige layer.
+**Status:** v0.2, playable online co-op build. **Owner:** Lead Game Developer / Systems Architect.
+**Scope:** a 3D multiplayer incremental mining game with asymmetric co-op roles, host-authoritative networking that runs on static hosting, a five-tier refinery economy, co-op events and a shared prestige layer.
 
-This document is the source of truth for system design, network protocol and balance. Where a number appears in both this file and `shared/src/economy.ts`, the code wins and this file should be corrected.
+This document is the source of truth for system design, network protocol and balance. Where a number appears in both this file and `shared/src/economy.ts` / `shared/src/sim.ts`, the code wins and this file should be corrected.
 
 ---
 
@@ -15,78 +15,61 @@ This document is the source of truth for system design, network protocol and bal
 4. [Repository layout, running and deploying](#4-repository-layout-running-and-deploying)
 5. [Runtime architecture](#5-runtime-architecture)
 6. [Network protocol](#6-network-protocol)
-7. [3D world and rendering](#7-3d-world-and-rendering)
-8. [Core mining gameplay](#8-core-mining-gameplay)
-9. [Asymmetric roles](#9-asymmetric-roles)
-10. [Co-op events and mini-bosses](#10-co-op-events-and-mini-bosses)
-11. [Incremental economy and balance curves](#11-incremental-economy-and-balance-curves)
-12. [Prestige: the Galactic Quantum Leap](#12-prestige-the-galactic-quantum-leap)
-13. [Persistence and offline progress](#13-persistence-and-offline-progress)
-14. [Security and anti-cheat](#14-security-and-anti-cheat)
-15. [Performance budgets](#15-performance-budgets)
-16. [Testing and tooling](#16-testing-and-tooling)
-17. [Roadmap](#17-roadmap)
-18. [Open questions](#18-open-questions)
+7. [Social layer: friends and party invites](#7-social-layer-friends-and-party-invites)
+8. [3D world and rendering](#8-3d-world-and-rendering)
+9. [Core mining gameplay](#9-core-mining-gameplay)
+10. [Asymmetric roles](#10-asymmetric-roles)
+11. [Co-op events](#11-co-op-events)
+12. [Incremental economy and balance](#12-incremental-economy-and-balance)
+13. [Prestige: the Galactic Quantum Leap](#13-prestige-the-galactic-quantum-leap)
+14. [Persistence and offline progress](#14-persistence-and-offline-progress)
+15. [Security and anti-cheat](#15-security-and-anti-cheat)
+16. [Performance budgets](#16-performance-budgets)
+17. [Testing and tooling](#17-testing-and-tooling)
+18. [Roadmap](#18-roadmap)
+19. [Open questions](#19-open-questions)
 
 ---
 
 ## 1. Product summary
 
-Up to four players share one **expedition**: a rotating asteroid in a 3D scene. **Mining Specialists** fire drill lasers at the rock and its glowing mineral seams, juggling heat for bonus yield. **Refinery Operators** run a 3D processing station that turns ore into higher-tier materials and feeds power overclocks back to the miners. Drones, rigs and conveyors visibly automate the work as the expedition grows. Periodic **co-op events** (Seismic Shockwaves, Solar Flares) require synchronized inputs from both roles. When the team has produced enough Cosmic Energy, it can vote to perform a **Galactic Quantum Leap**: surface progress resets and every participant earns permanent Quantum Points for a cosmic skill tree.
+Up to four players share one **expedition**: a rotating asteroid beside an orbital refinery station. **Miners** fire drill lasers at the rock and its glowing seams, riding heat for a bonus without overheating. **Refiners** press the station's machines to refine ore up a five-tier chain and spend station power on team-wide overclocks. Drones, auto-rigs and an ore stream make automation visible. Every few minutes a **co-op event** (Seismic Shockwave or Solar Flare) needs the whole team. When the team has made enough Cosmic Energy, anyone can propose a **Galactic Quantum Leap**; on a passing vote the run resets and everyone earns Quantum Points for a permanent skill tree.
 
 Design pillars:
 
 | Pillar | What it means in practice |
 |---|---|
-| **Tactile 3D clicks** | Every strike lands on a real point on a real mesh, with a laser, sparks, a number and a camera kick within one frame. Feedback is never delayed by the network. |
-| **Visible automation** | Passive income is never just a number. If you bought 40 drones, you can see 40 drones. |
-| **Roles that need each other** | A miner alone can progress, but slowly. Refiners multiply what miners produce, and co-op events can only be solved together. |
-| **Numbers go up, forever** | Geometric costs, milestone doublings and a prestige layer that is designed to be repeated. |
-| **One rules implementation** | Every outcome is computed by pure functions in `/shared`, run by the server online and by the browser offline. |
+| **Tactile 3D clicks** | Every strike lands on a real point of a real mesh, with a laser, sparks, a scorch mark, a number and a camera kick within one frame. Feedback never waits on the network. |
+| **Visible automation** | Passive income is never just a number: drones orbit and dive, rigs drill on seams, ore streams to the station, machines pulse. |
+| **Roles that need each other** | A solo player can do everything, but strikes and presses in sync build a combo, events want both roles, and leaps pay more with more players. |
+| **Numbers go up** | Geometric costs, milestone doublings, tier unlocks and a repeatable prestige layer. |
+| **One rules implementation** | Every outcome is computed by pure functions in `/shared`, run by whoever hosts the room: a player's browser or the optional server. |
 
 ---
 
 ## 2. Relationship to the rest of this repository
 
-This repo is an arcade of browser games (`index.html` menu plus one self-contained HTML file per game, deployed to GitHub Pages from `main`). One of those games, **Deepcore** (`deepcore.html`), is already a co-op mining incremental:
+This repo is an arcade of browser games (`index.html` menu plus one HTML file per game, deployed to GitHub Pages from `main`). **Deepcore** (`deepcore.html`) is a same-device co-op mining incremental; Starforge is its larger, networked successor and borrows its heat band, sync combo and event archetypes. Deepcore stays as it is.
 
-| | Deepcore (existing) | Starforge (this design) |
-|---|---|---|
-| Rendering | 2D canvas, one file | Three.js via React Three Fiber, bundled with Vite |
-| Players | 1 or 2 on the **same device** (split stations) | 1 to 4 over the **network**, authoritative server |
-| Save | `localStorage` | Redis (hot) + MongoDB (durable); `localStorage`-free offline mode |
-| Roles | Driller / Refiner | Mining Specialist / Refinery Operator |
-| Chain | ore → alloy → compound → energy | ore → alloy → plasma → dark matter → cosmic energy |
-| Prestige | Collapse the Shaft → Core Shards | Galactic Quantum Leap → Quantum Points (shared vote) |
+Starforge has a build step, so it lives in `/client`, `/server` and `/shared` with its own npm workspaces, and its built output is committed to `/starforge/` (§4.3).
 
-Starforge is a **separate, larger successor**, not a rewrite of Deepcore. Deepcore stays as it is. Concepts proven in Deepcore are deliberately carried over: the heat mechanic with a "hot drilling" bonus, sync-strike combos between the two roles, and the two event archetypes (cave-in → Seismic Shockwave, magma surge → Solar Flare).
-
-Unlike the other games, Starforge has a build step and a server, so it lives in its own top-level folders (`/client`, `/server`, `/shared`) with its own `package.json`. The existing games and workflows are untouched; the only shared file changed is `index.html`, which gains a Starforge card linking to the built game in `/starforge/` (§4.3).
+Starforge also plugs into the **site-wide friends list** (`js/friends.js`, §7), shared with Meat Lad, Beetdown and Alien Attack, so a friend can be invited into a Starforge party from the main menu or from inside any game.
 
 ---
 
 ## 3. Technology stack and decisions
 
-### 3.1 Chosen stack
-
 | Layer | Choice | Why |
 |---|---|---|
-| Language | **TypeScript** everywhere | One type system across client, server and protocol; protocol shapes are compile-checked on both ends. |
-| Rendering | **Three.js + React Three Fiber (R3F)** + `@react-three/drei` + `@react-three/postprocessing` | R3F gives declarative scene composition and React-driven HUD state, while still allowing imperative hot paths (`useFrame`, instanced meshes, pooled buffers). Bloom is what makes emissive seams, lasers and plasma read as "glowing". |
-| Build | **Vite** | Instant dev server, HMR for scene code, tiny static output. |
-| Client state | **Zustand** | Chosen over Redux Toolkit: the client store is a replica written by one authority, not a reducer graph, and Zustand's selector subscriptions let R3F components read state without re-rendering the Canvas tree. Transient FX bypass the store entirely (§5.4). |
-| Networking | **Socket.io 4** over WebSocket, authoritative Node server | Rooms, acknowledgements, reconnection and a Redis adapter for horizontal scale are built in. WebRTC was rejected: peer-hosted state cannot be authoritative, and NAT traversal adds failure modes for no latency gain at this tick rate. |
-| Server runtime | **Node 22** with `tsx` | Runs the same TS sources as the client imports, no separate compile in dev. |
-| Hot state | **Redis 7** | Room state, presence, rate-limit counters, Socket.io adapter pub/sub. |
-| Durable state | **MongoDB 7** | Player profiles, Quantum skill trees, lifetime stats, expedition history. Document-shaped data with frequent schema evolution. |
-| Big numbers | `number` now, **`break_eternity.js` `Decimal`** from milestone M3 | Doubles overflow at ~1.8e308. Tiers past Dark Matter will exceed that. The shared economy functions are the only place that does arithmetic, so the switch is contained. |
-| Tests | Node's built-in `node:test` runner via `tsx` | Zero extra dependencies; the shared rules are pure functions and need nothing more. |
+| Language | **TypeScript** everywhere | One type system across client, server and protocol. |
+| Rendering | **Three.js + React Three Fiber** + drei + postprocessing | Declarative scene composition with imperative hot paths (`useFrame`, instancing, pooled buffers); bloom and chromatic aberration sell the glow. |
+| Build | **Vite** | Fast dev server, small static output, `base: './'` for any sub-path. |
+| Client state | **Zustand** | The store is a replica written by one authority; selector subscriptions keep the Canvas from re-rendering. Transient FX bypass the store (§5.4). |
+| Networking (live site) | **PeerJS / WebRTC data channels**, host-authoritative | GitHub Pages cannot run a server. The hosting player's browser runs the authoritative `RoomHost`; guests send intents. Same model the site's other multiplayer games use, and the same PeerJS cloud signalling. |
+| Networking (optional) | **Socket.io 4** dedicated server | Wraps the same `RoomHost`. Used when a build sets `VITE_SERVER_URL`; this is the path to public lobbies and server-side persistence later. |
+| Tests | `node:test` via `tsx`, plus Playwright end-to-end in development | Pure rules need nothing more. |
 
-### 3.2 Rejected alternatives
-
-* **Raw WebGL**: full control, but rebuilding a scene graph, raycasting and postprocessing is months of work R3F gives for free.
-* **Redux Toolkit**: its strengths (action logs, devtools time travel, normalized reducers) matter less when the server is the reducer. Zustand is smaller and faster to subscribe from inside the render loop.
-* **Colyseus**: attractive state-sync framework, but its schema serializer fights with the shared pure-function rules approach. Revisit if delta compression becomes a bottleneck (§6.6).
+**Why host-authoritative P2P instead of "server or nothing":** v0.1 rejected WebRTC because peer-hosted state cannot be trusted. That is still true against a malicious host, but in a friends-only co-op game the host is a friend, and the alternative was single-player only on the live site. The rules are written once and transport-agnostic (`RoomHost`), so moving a room to the dedicated server needs no rules changes.
 
 ---
 
@@ -95,52 +78,50 @@ Unlike the other games, Starforge has a build step and a server, so it lives in 
 ### 4.1 Layout
 
 ```
-/DESIGN.md                 this document
-/package.json              npm workspaces root: shared, server, client
-/tsconfig.base.json        strict TS settings shared by all three packages
+/DESIGN.md
+/package.json              npm workspaces: shared, server, client
 /shared/                   @starforge/shared: the rules. Pure, isomorphic, no I/O.
-  src/resources.ts         resource tiers, colors, refinery ratios
-  src/economy.ts           upgrade defs, cost curves, crit, heat, prestige, offline formulas
-  src/asteroid.ts          seeded PRNG + deterministic asteroid surface function
-  src/sim.ts               RoomState, applyStrike, tickRoom, buyUpgrade
-  src/protocol.ts          Socket.io event map and payload types, protocol version
-  src/format.ts            1.23K / 4.5Qa number formatting
-  src/economy.test.ts      unit tests for curves and the simulation
-/server/                   @starforge/server: authoritative Socket.io server
-  src/index.ts             HTTP + Socket.io bootstrap, lobby / room codes, /health
-  src/game/Room.ts         one expedition: 20 Hz tick, 10 Hz snapshots, intent handlers
-  src/persistence/Store.ts ProgressStore interface + MemoryStore (Redis/Mongo adapters planned)
-/client/                   @starforge/client: Vite + React + R3F
-  src/net/authority.ts     Authority interface; RemoteAuthority (server) and LocalAuthority (offline)
-  src/state/store.ts       Zustand replica of the room
-  src/state/fx.ts          transient FX event bus (lasers, bursts, floaters, shake)
-  src/scene/               GameScene, Asteroid + seams, Drones, particle/laser/floater effects
-  src/ui/Hud.tsx           resource counters, heat bar, upgrade shop
+  src/resources.ts         resource tiers, colours, ratios
+  src/economy.ts           upgrades, unlocks, machines, skills, overclocks, curves, prestige, offline
+  src/asteroid.ts          seeded PRNG + deterministic asteroid surface
+  src/sim.ts               RoomState and every rule: strikes, presses, shop, events, votes, tick
+  src/host.ts              RoomHost: one authoritative room, transport-agnostic
+  src/protocol.ts          wire messages (Hello, ClientMsg, ServerMsg, Fx), PROTOCOL_VERSION
+  src/save.ts              save format, load with migration defaults, offline simulation
+  src/economy.test.ts      unit tests
+  scripts/balance.ts       headless pacing bot
+/server/                   optional dedicated host (Socket.io), wraps RoomHost
+/client/                   Vite + React + R3F
+  src/net/session.ts       solo / host (PeerJS) / guest (PeerJS) / server (Socket.io) sessions, saving
+  src/net/dispatch.ts      applies host messages to the store and turns Fx into effects and toasts
+  src/net/actions.ts       every player intent (strike, press, buy, overclock, vote…)
+  src/state/               Zustand store, FX bus, shared world-space refs
+  src/scene/               3D scene: sky, asteroid, seams, rigs, drones, station, ships, events, effects
+  src/ui/                  lobby, HUD, tabs, events, votes, friends hook-up
+/starforge/                committed production build served by GitHub Pages
+/js/friends.js             site-wide friends list and party invites (§7)
 ```
 
 ### 4.2 Running locally
 
 ```bash
 npm install
-npm run dev          # server on :3001 and client on :5173 together
+npm run dev:client   # http://localhost:5173 — solo, host and join all work in the browser
 npm test             # shared rules tests
 npm run typecheck    # all three packages
+npm run balance      # pacing bot (optional hours argument)
+npm run dev          # also starts the optional Socket.io server on :3001
 ```
 
-Open `http://localhost:5173`. The client connects to the server, creates a room, and writes `?room=CODE` into the URL; open that URL in a second tab (optionally with `&role=refiner`) to join the same expedition. If the server is not running, the client falls back to **offline mode** after ~2 s and runs the same rules locally (`?offline` forces this).
+Open the client, press **Host a party**, then open the printed `?join=CODE` link in a second browser or window. Signalling goes through the public PeerJS cloud; `?peer=host:port` (or `VITE_PEER_HOST` at build time) points it at a self-hosted PeerServer instead.
 
 ### 4.3 Publishing
-
-The existing site deploys the repo root to GitHub Pages straight from `main`, with no build step. Starforge's client needs building, so the built output is committed:
 
 ```bash
 npm run build:site   # builds client/ into /starforge (index.html + assets/)
 ```
 
-* `/starforge/` is served by Pages at `<site>/starforge/` and linked from a card in `index.html`. `vite.config.ts` uses `base: './'` so it works under any sub-path.
-* With no `VITE_SERVER_URL` set at build time, a build served from anywhere other than localhost goes straight to **offline mode**, so the live page is single-player until a server exists.
-* **Online play on the live site** needs the server hosted somewhere that supports WebSockets (Fly.io / Railway / Render) with managed Redis and MongoDB Atlas, then a rebuild with `VITE_SERVER_URL=https://<server>` and `CORS_ORIGINS` set to the Pages origin.
-* Later, a workflow can build on push instead of committing `/starforge`, scoped to `client/**` and `shared/**` paths so it never interacts with the existing workflows.
+The build is committed, so GitHub Pages serves it at `<site>/starforge/` with no workflow changes. Multiplayer works on the live site out of the box through PeerJS. Building with `VITE_SERVER_URL=https://…` switches Host/Join to the dedicated server.
 
 ---
 
@@ -149,428 +130,302 @@ npm run build:site   # builds client/ into /starforge (index.html + assets/)
 ### 5.1 Authority model
 
 ```
-        intents (strike, buy, route, vote)                    rules: @starforge/shared
- ┌────────────┐  ───────────────────────────►  ┌──────────────────────────────┐
- │  Client    │                                │  Server Room (per expedition)│
- │  (replica) │  ◄───────────────────────────  │  RoomState  ← applyStrike    │
- └────────────┘   results + 10 Hz snapshots    │             ← tickRoom 20 Hz │
-       │                                       │             ← buyUpgrade     │
-       │ offline: same Authority interface     └──────────────┬───────────────┘
-       ▼                                                      │ write-behind 30 s
- ┌────────────────┐                                    ┌──────┴──────┐  ┌─────────┐
- │ LocalAuthority │ runs the same shared rules         │   Redis     │  │ MongoDB │
- └────────────────┘ in the browser                     └─────────────┘  └─────────┘
+ guest browser                         host browser (or the dedicated server)
+ ┌──────────────┐  intents (ClientMsg)  ┌─────────────────────────────────────┐
+ │ store replica│ ────────────────────► │ RoomHost                            │
+ │ scene + HUD  │ ◄──────────────────── │   handle(): applyStrike, applyPress,│
+ └──────────────┘  snap 10 Hz + fx      │   buyUpgrade, overclock, votes…     │
+                                        │   tick() 20 Hz: tickRoom()           │
+ host's own UI ◄── same messages ────── │   save to localStorage every 10 s   │
+                                        └─────────────────────────────────────┘
 ```
 
-* Clients send **intents only**. They never send amounts, crit flags, or positions the server trusts.
-* The server owns all randomness (crit rolls, seam spawns from its seed sequence, event timing).
-* `shared/src/sim.ts` is a set of pure functions over plain JSON. The server and `LocalAuthority` both call them, so there is exactly one implementation of every rule. The client's UI code holds an `Authority` and does not know which one it has.
+* Clients send **intents only** (`{t:'strike', seq, seamId}`), never amounts or rolls. The host owns all randomness.
+* `RoomHost` takes a `send(to, msg)` callback, so the PeerJS host, the Socket.io server and solo play all wrap the same class. Solo is simply a host with no peers.
+* The host's own UI receives the same `welcome` / `snap` / `fx` messages as guests (deep-cloned), so there is a single client code path.
 
-### 5.2 Server loop
-
-Each `Room`:
+### 5.2 Host loop
 
 | Loop | Rate | Work |
 |---|---|---|
-| Simulation tick | 20 Hz (`SERVER_TICK_HZ`) | `tickRoom(state, dt)`: drone and rig output, heat venting, refinery throughput, event timers. |
-| Snapshot | 10 Hz (`SNAPSHOT_HZ`) | Broadcast `snapshot` to the Socket.io room. |
-| Intents | event-driven | `mine:strike` resolved immediately with `applyStrike` and broadcast as `mine:result`. |
-| Persistence | every 30 s and on room close | `ProgressStore.saveRoom`. |
-
-`dt` is measured, not assumed, so a delayed tick catches up instead of losing production. Long stalls (>1 s) will be clamped and the remainder credited through the offline-gain path (§13.3) to avoid a single giant tick.
+| Simulation | 20 Hz | `tickRoom`: drones, rigs, refinery, heat, power, combo decay, events, votes, smoothed rates. Background tabs are throttled by the browser, so the host catches up in 1 s steps (up to 5 min) when its timer fires late. |
+| Snapshot | 10 Hz + immediately after purchases, role changes and votes | full `RoomState` (~3 KB JSON with four players) |
+| Fx | after every intent and tick | batched `Fx[]`: strikes, presses, buys, joins, event notes… |
+| Save | every 10 s, on tab hide and on page hide | `localStorage['starforge_save_v2']` |
 
 ### 5.3 Client replica and prediction
 
-* **Counter interpolation:** the HUD shows `wallet.ore + orePerSec × (now − snapshotAt)` every animation frame, so the counter ticks smoothly at 60+ fps between 10 Hz snapshots.
-* **Cosmetic prediction:** on pointer-down the client immediately fires the laser to the exact hit point and stores `{seq → point, normal}`. When `mine:result` arrives with the same `seq`, the burst, floating number and shake play at that point. Typical LAN/regional latency (20 to 80 ms) is hidden by the laser travel; the yield itself is never predicted, so there is nothing to roll back.
-* **Other players' strikes** arrive without a local point; they are drawn at the struck seam (or a random seam) transformed into world space through the rock's current matrix.
-* **Rejected intents** (`mine:reject`) just drop the pending entry. The UI reflects overheat from the replicated `heat` and `lockedUntil`.
+* **Counters** interpolate `wallet + rates × (now − snapAt)` between snapshots.
+* **Strikes** fire the laser immediately and remember `{seq → point, normal}`; the host's `strike` fx with the same `seq` plays the burst, scorch, floater and shake at that exact point. The ore counter, heat and seam HP are patched from the fx so the HUD reacts before the next snapshot.
+* **Other players' strikes** are drawn from their ship to the struck seam or node, transformed through the rock's current matrix (`rockPoint`).
+* **Clock skew:** event, buff, vote and overheat deadlines are host-epoch. The client keeps `skew = state.now − Date.now()` (smoothed) and compares deadlines against `hostNow()`.
 
 ### 5.4 Two kinds of client state
 
 | Kind | Where | Examples | Re-renders React? |
 |---|---|---|---|
-| Replicated game state | Zustand store (`state/store.ts`) | wallet, levels, seams, players, heat | Yes, via selectors |
-| Transient effects | FX bus (`state/fx.ts`) | laser, particle burst, floater, camera shake | No; consumers animate in `useFrame` |
-
-Keeping hundreds of sparks per second out of React state is what keeps the scene at frame rate during rapid clicking.
+| Replicated game state | `state/store.ts` | the RoomState replica, session, tab, toasts | Yes, via selectors |
+| Transient effects | `state/fx.ts` | laser, burst, scorch, float, shake, press, shockwave, leap | No; scene components animate in `useFrame` |
 
 ---
 
 ## 6. Network protocol
 
-### 6.1 Transport
+### 6.1 Transports
 
-Socket.io 4 over WebSocket only (`transports: ['websocket']`, no long-polling fallback), JSON payloads. `PROTOCOL_VERSION` (currently `1`) is checked in the handshake; a mismatch is rejected with `protocol-mismatch` and the client prompts a reload.
+* **PeerJS** (default): the host registers peer id `starforge-v2-<CODE>` (`PEER_PREFIX`); guests `peer.connect()` to it with JSON serialization on a reliable, ordered data channel. Codes are 5 characters from a 32-symbol alphabet with no 0/O/1/I; on an id collision the host picks a new code.
+* **Socket.io** (optional): one `hello` event (with an optional `room`), then `msg` events both ways carrying the same `ClientMsg` / `ServerMsg` shapes.
 
-### 6.2 Handshake and lobby
+`PROTOCOL_VERSION` is `2`; a mismatch is refused with `protocol-mismatch` and the guest is told to reload.
+
+### 6.2 Handshake
 
 ```
-client                                   server
-  │ connect (ws)                            │
-  │ hello {protocol, name, role,            │
-  │        room?, resumeToken?}  ─────────► │ validate version
-  │                                         │ room? join : create (6-char code, no 0/O/1/I)
-  │                                         │ resumeToken? reclaim slot : new player
-  │ ◄─────────  ack Welcome {room, playerId,│
-  │             resumeToken, seed, snapshot}│
-  │ ◄─────────  player:joined (to others)   │
+guest                                         host
+  │ connect (WebRTC or ws)                      │
+  │ hello {protocol, name, role, resume?} ────► │ validate version and capacity (4)
+  │                                             │ resume token known? reclaim slot : new player
+  │ ◄──── welcome {playerId, resume, code, state}│
+  │ ◄──── fx [joined]  (to everyone)            │
 ```
 
-* **Room codes:** 6 characters from a 32-symbol alphabet (~1.07e9 codes). Share links are `?room=CODE`.
-* **Capacity:** `MAX_PLAYERS_PER_ROOM = 4`. Target composition is 2 miners + 2 refiners; any mix is allowed, and solo players hold both roles once the refinery ships (M2).
-* **Reconnect:** the client keeps `resumeToken` in `sessionStorage`. On reconnect it re-sends `hello` with the room and token and gets the same `playerId` back. Empty rooms linger 60 s before being closed and saved.
-* **Matchmaking (M4):** a public lobby list in Redis (`lobby:open` sorted set by open slots, filtered by "needs miner / needs refiner").
+* **Reconnect:** guests keep the resume token in `sessionStorage` per party code and retry three times with backoff, reclaiming the same player.
+* **Host leaves:** a deliberate close sends `error: host-left`; a dropped host is detected by the channel closing. Guests return to the lobby with the reason and can continue solo.
+* **Errors:** `protocol-mismatch`, `room-full`, `room-not-found` (server only), `host-left`.
 
-### 6.3 Events
+### 6.3 Messages
 
-Client → server (intents):
+Client → host (`ClientMsg`): `strike {seq, seamId|null, nodeId|null}`, `press {seq, machine}`, `buy {id, count?}`, `skill {id}`, `toggle {machine, on}`, `overclock {id}`, `role {role}`, `stabilize`, `shield`, `leap`, `vote {yes}`, `emote {id}`.
 
-| Event | Payload | Ack | Notes |
-|---|---|---|---|
-| `hello` | `HelloPayload` | `Welcome \| {error}` | once per connection |
-| `mine:strike` | `{seq, seamId \| null}` | none | rate-limited (§14) |
-| `shop:buy` | `{id: UpgradeId}` | none | result visible in next snapshot (sent immediately) |
-| `ping` | `clientTime` | `serverTime` | clock offset estimation for event sync windows |
-| `refinery:route` *(M2)* | `{nodeId, outputId}` | none | reroute a pipeline edge |
-| `refinery:overclock` *(M2)* | `{targetPlayerId, kind}` | none | spends power on a miner buff |
-| `event:input` *(M3)* | `{eventId, inputId, t}` | none | synchronized boss inputs |
-| `leap:vote` *(M3)* | `{yes: boolean}` | none | prestige vote |
+Host → client (`ServerMsg`): `welcome`, `snap {state}`, `fx {fx: Fx[]}`, `error {error}`.
 
-Server → client:
+`Fx` kinds: `strike`, `press`, `stabilize`, `shield`, `overclock`, `buy`, `skill`, `reject`, `joined`, `left`, `vote`, `emote`, and `note` wrapping tick notes (`eventStart`, `eventEnd`, `leap`, `voteFailed`).
 
-| Event | Payload | Rate |
-|---|---|---|
-| `snapshot` | `Snapshot` (wallet, levels, seams, players, orePerSec, quantumPoints) | 10 Hz + on purchases |
-| `mine:result` | `StrikeOutcome & {seq}` | per accepted strike, broadcast to the room |
-| `mine:reject` | `{seq, reason}` | to the striker only |
-| `player:joined` / `player:left` | `PlayerState` / `{id}` | on change |
-| `event:start` / `event:state` / `event:end` *(M3)* | event descriptor, progress, outcome | on change, 10 Hz during events |
+### 6.4 Bandwidth
 
-All payload types live in `shared/src/protocol.ts` and are applied as Socket.io generics on both ends, so a shape change fails type-checking in both packages.
-
-### 6.4 Bandwidth budget
-
-A full snapshot with four players is ~1.1 KB of JSON. At 10 Hz to 4 players that is ~44 KB/s per room outbound. A `mine:result` is ~180 bytes; at the 20 strikes/s/player cap with 4 miners that is 80 results/s × 4 recipients ≈ 58 KB/s worst case. Target per room is **< 120 KB/s** outbound, i.e. ~1,000 concurrent rooms per 1 Gbps node before CPU becomes the limit. Delta snapshots (§6.6) roughly halve the steady-state figure.
-
-### 6.5 Time sync
-
-`ping` round trips (every 5 s, median of last 5) estimate `serverOffset`. Co-op events schedule inputs in server time; the client converts to local time for its timing UI. Accepted input windows are evaluated server-side with the striker's measured half-RTT subtracted, capped at 150 ms of compensation.
-
-### 6.6 Scaling path
-
-1. **Single node** (now): rooms in memory, `MemoryStore`.
-2. **Multi node**: `@socket.io/redis-adapter` for cross-node broadcast; a room is pinned to one node (`room:{code}:node` in Redis) and the load balancer routes by room code (sticky). Rooms are not migrated live; on node drain they are saved and reloaded on another node at next join.
-3. **Delta snapshots** (if bandwidth matters): send only changed top-level fields keyed by tick, full snapshot every 2 s.
+A snapshot is ~3 KB; at 10 Hz to three guests that is ~90 KB/s from the host, well within a home upload. The PeerJS JSON channel caps a single message at 16 KB, which a full four-player state stays far below. Delta snapshots are the next step if rooms grow.
 
 ---
 
-## 7. 3D world and rendering
+## 7. Social layer: friends and party invites
 
-### 7.1 Scene graph
+`js/friends.js` is one script shared by the main menu and every multiplayer game (Meat Lad, Beetdown, Alien Attack, Starforge). It uses the Firebase account the site already has, and stores everything on the player's existing `accounts/{uid}` document so it works under the existing Firestore rules:
 
-```
-<Canvas>
-  background + fog + Stars
-  ambientLight, directionalLight (key: distant star), pointLight (rim: refinery glow)
-  <Asteroid>                group rotating slowly; registers itself as rockRef for world transforms
-    mesh                    icosphere(detail 6) displaced by surfaceRadius(), flat-shaded, vertex colors
-    <SeamCrystal> × N       5 emissive octahedron shards + pointLight + invisible hit sphere
-  <Drones>                  InstancedMesh bodies + InstancedMesh beams, ≤ 64 visible
-  <Particles>               one pooled THREE.Points cloud, 3,000 particles, additive
-  <Laser>                   camera-anchored beam to the hit point
-  <Floaters>                drei <Html> yield numbers
-  <CameraShake>, <FitCamera>
-  <OrbitControls>           orbit and zoom only, no pan
-  <EffectComposer>          Bloom (mipmap) + Vignette
-```
-
-### 7.2 The asteroid surface
-
-`shared/src/asteroid.ts` defines `surfaceRadius(direction, seed)`: a base radius of 2.2 modulated by nine seeded sinusoidal lobes. Because it is deterministic and shared, the server can place a seam by sending only a unit direction, and the client renders it exactly on the visible surface. No geometry is ever sent over the network.
-
-### 7.3 Destructible terrain (M3)
-
-The prototype rock is a single displaced mesh with a destructible **seam layer** (seams have HP, deplete, and respawn). The full design replaces the mesh with a **chunked signed-distance voxel field**:
-
-* 32³ voxels per chunk, 6 × 6 × 6 chunks per asteroid, density stored as `Int8Array`.
-* Meshing with **surface nets** (smoother than marching cubes, fewer triangles) in a Web Worker, transferable buffers back to the main thread.
-* The server is authoritative over **edits**, not meshes: a strike that carves emits `terrain:carve {chunk, center, radius, seq}`. Clients apply carves to their local field and remesh the affected chunks (≤ 8 per carve).
-* Ore richness is a second channel in the field; carving into a rich region reveals seams.
-* A new expedition (or a Quantum Leap) regenerates the field from a new seed, so terrain never needs to persist beyond room state.
-
-### 7.4 Lighting and VFX
-
-* Seams are emissive with `emissiveIntensity` pulsing 2.2 to 4.7 and a short-range point light, so they light the surrounding rock. Bloom threshold 0.6 makes only emissive and additive elements bloom.
-* Particle bursts scale with outcome: plain 18, seam 36, crit 70, depletion 160 + 60 white-hot.
-* Resource tiers have fixed colors (`RESOURCE_DEFS.*.color`) used consistently for HUD, particles and seams of that tier.
-* Planned: solar flare event darkens the key light and drives a full-screen chromatic aberration pulse; seismic shockwave sends a displacement ring across the rock in a vertex shader.
-
----
-
-## 8. Core mining gameplay
-
-### 8.1 Active mining (implemented)
-
-| Action | Rule (from `sim.ts` / `economy.ts`) |
+| Field | Contents |
 |---|---|
-| Strike rock | `strikeBase = (1 + drillBit) × 2^floor(drillBit/25) × quantumMult` |
-| Strike a seam | × `SEAM_MULT` (3); seam loses 1 HP (2 on a crit) |
-| Deplete a seam | × 4 jackpot on the final hit; a new seam spawns elsewhere |
-| Critical strike | chance `min(50%, 5% + 1% × focusLens)`, × `CRIT_MULT` (5) |
-| Hot drilling | while heat ≥ 70, all strikes × 2 |
-| Heat | +`7 × 0.94^coolant` per strike, vents `18 × (1 + 0.08 × coolant)`/s; at 100 the drill locks for 2 s |
+| `friends` | array of friend emails (the same array Beetdown and Meat Lad already use) |
+| `presence` | `{ts, game, name, party}` heartbeat every 30 s; a friend is online if seen < 75 s ago |
+| `partyInbox` | invites `{id, from, fromName, game, code, ts}`, valid for 10 minutes |
 
-Heat turns clicking into a rhythm: ride just under 100 to stay in the ×2 band, then back off. With no coolant upgrades, about 14 strikes in quick succession overheat the drill.
-
-### 8.2 Mining rig customization (M2)
-
-The Mining Specialist's rig has three slots, swappable outside of events:
-
-| Slot | Options | Trade-off |
-|---|---|---|
-| Emitter | Laser (default), Pulse Drill, Plasma Lance | Laser: single target. Pulse: 3-strike burst, +40% heat. Lance: hold to channel, damage ramps, no crits. |
-| Lens | Focus, Wide, Prism | Crit chance vs. splash to nearby seams vs. converts 10% of yield into the next tier up. |
-| Heat sink | Passive, Vented, Cryo | Vent rate vs. hot-band width vs. overheat lock duration. |
-
-Rig cosmetics (paint, emitter color, beam shape) are profile-level and persist across leaps.
-
-### 8.3 Passive automation
-
-| Automation | Status | Behaviour |
-|---|---|---|
-| **Orbital drones** | implemented | `0.5 ore/s` each, ×2 every 25 levels. Each has its own orbit plane and dives to the surface with a mining beam. One instanced draw call for all drones. |
-| **Automated rigs** | M2 | Placed on the surface at a chosen seam; mine that seam at 1 strike/s with the owner's rig stats minus crits. Visible as a tripod drill with a pulsing beam. |
-| **Conveyors** | M2 | Catmull-Rom splines from rigs to the refinery dock. Ore travels as instanced cubes along the spline (`t += speed × dt`), so throughput is literally visible. Conveyor throughput caps rig output. |
+* **Main menu:** `MLFriends.menu()` shows a side panel with **Add friend** (by username or email), each friend's status ("playing Starforge", "in a Starforge party" with a **Join** button, "online · on the menu", "offline · seen 5m ago") and incoming invites.
+* **In a game:** `MLFriends.attach({game, party, join, dock})`. While the player has a party open, a mini list shows friends with online dots and **Invite** buttons. An invite pops up for the friend wherever they are on the site; **Join** either calls the game's `join(code)` (same game) or navigates to `<game>/?join=CODE`.
+* **Starforge** reports its party code while hosting or joined, docks the mini list bottom-left, and handles `?join=CODE` by joining as a guest. The lobby pre-fills the player name from the site username.
 
 ---
 
-## 9. Asymmetric roles
+## 8. 3D world and rendering
 
-### 9.1 Mining Specialist (frontline)
+### 8.1 Scene
 
-Camera orbits the asteroid. Inputs: strike, choose seams, manage heat, place rigs (M2), respond to event prompts. Owns heat and rig loadout. Contributes ore.
+* **Sky:** a drifting fbm-noise nebula sphere, stars, and a distant sun that drives the key light. During a Solar Flare the sun swings to the flare direction, swells and turns orange.
+* **Asteroid:** a displaced icosphere from the shared `surfaceRadius`, layered vertex colours, a fresnel heat-glow shell that follows the local miner's heat (and flickers on overheat), pooled scorch decals that cool from orange to black, a squash "thunk" on hits, and a cyan rim while the Resonance buff runs.
+* **Seams:** emissive crystal clusters that shrink with HP; generous invisible hit spheres for touch.
+* **Station:** a hub, rotating ring and four machine modules tinted with their output colour. Unbuilt machines are wireframe ghosts; built ones pulse with production and punch on every press. An ore stream arcs from the rock to the smelter.
+* **Automation:** instanced drones that orbit and dive with beams (faster under Drone Surge, dark and sparking when fried), and drill rigs standing on seams.
+* **Players:** each teammate has a ship in their colour parked in orbit, with a name tag, role icon and emote bubbles. Their lasers fire from their ship.
+* **Events:** quake nodes (unstable red, primed cyan, locked green with a light pillar), periodic shockwave rings and camera rumble; a flare shield bubble whose strength follows the team shield, with flare streaks raining in.
+* **Post:** bloom, chromatic aberration that spikes on shockwaves, overclocks and leaps, vignette and subtle noise. A Quantum Leap plays a warp (FOV punch and star streaks) under a white flash.
 
-### 9.2 Refinery Operator (station)
+### 8.2 The asteroid surface
 
-Camera views a station diorama beside the asteroid. Inputs: route pipeline edges, set smelter recipes, allocate power, fire overclocks, respond to event prompts. Owns **power** and **pipeline**.
+`surfaceRadius(direction, seed)` is a base radius of 2.2 modulated by nine seeded sinusoidal lobes. Seams and quake nodes are sent as unit directions only; every client places them on the same visible surface.
 
-**Processing pipeline (M2).** A directed graph of machines placed on a grid:
+### 8.3 Destructible terrain (later)
 
-| Machine | Input → Output | Base rate |
-|---|---|---|
-| Smelter | 10 ore → 1 alloy | 1/s |
-| Plasma Infuser | 25 alloy → 1 plasma | 0.25/s |
-| Dark Compressor | 50 plasma → 1 dark matter | 0.05/s |
-| Cosmic Condenser | 100 dark matter → 1 cosmic energy | 0.01/s |
-| Splitter / Merger | routing | n/a |
+A chunked signed-distance voxel field with surface-nets meshing in a worker, host-authoritative carve events, and ore richness as a second channel remains the plan for a later milestone (§18).
 
-Ratios match `RESOURCE_DEFS.*.ratio`. Each machine draws power; the station generates power from a reactor that burns alloy. Throughput upgrades multiply machine rate; adding a machine in parallel needs routing work, which is the Refiner's skill expression.
+---
 
-**Overclocks (power → miner buffs).** Spend banked power for timed buffs on a chosen miner:
+## 9. Core mining gameplay
+
+| Action | Rule |
+|---|---|
+| Strike | `strikeBase = (1 + drillBit) × 2^floor(drillBit/25) × (1 + 0.5 × ancestralBits) × 2^seismic × quantumMult` |
+| Seam | ×3; the seam loses 1 HP (2 on a crit). Seams have 8 HP; five are on the rock (+1 per Seam Sense). |
+| Crack a seam | ×4 jackpot on the final hit; a new seam spawns elsewhere |
+| Crit | `min(60%, 5% + 1% × focusLens (+20% Focus Field))`, ×5 |
+| Hot drill | heat ≥ `70 − 5 × thermalMastery`: ×2 |
+| Heat | +`7 × 0.93^coolant` per strike, vents `18 × (1 + 0.1 × coolant)`/s; at 100 the drill locks for 2 s |
+| Sync combo | a strike and a press within 600 ms add +0.1 to the team combo (max `2 + 0.25 × resonantBond`), held 3 s then decaying; it multiplies strikes and presses |
+| Rate limit | 20 strikes/s per player, 12.5 presses/s |
+
+**Automation:** Orbital Drones give 0.6 ore/s each (×2 per 25 levels, ×2 per Seismic Charge). Auto Rigs strike seams twice a second at half a seam strike, wearing seams down and earning their jackpots.
+
+---
+
+## 10. Asymmetric roles
+
+Roles are a soft specialisation: anyone can do anything, the camera and default tab follow the role, and players switch any time from the HUD.
+
+* **Miner:** camera on the asteroid; strikes, heat management, quake nodes.
+* **Refiner:** camera on the station; presses machines (keys 1–4) for burst output, toggles machines to manage the chain, fires overclocks, and stabilizes quake nodes.
+
+**Refinery:**
+
+| Machine | Input → output | Rate per level | Unlocks after making |
+|---|---|---|---|
+| Smelter | 10 ore → 1 alloy | 1/s | 2,500 ore |
+| Plasma Infuser | 25 alloy → 1 plasma | 0.2/s | 6,000 alloy |
+| Dark Compressor | 50 plasma → 1 dark matter | 0.04/s | 1,500 plasma |
+| Cosmic Condenser | 100 dark matter → 1 cosmic energy | 0.01/s | 250 dark matter |
+
+Machines process top tier first each tick so a unit is never refined twice. A press yields the machine's base rate × (1 + Hydraulic Press levels) × combo and adds power. A machine must be built before it can be pressed.
+
+**Power and overclocks:** power regenerates at `(0.4 + 0.6 × reactor) × (1 + 0.25 × gridSurplus)`/s plus 1 per press, up to `100 + 25 × reactor`.
 
 | Overclock | Effect | Duration | Cost |
 |---|---|---|---|
-| Thermal Dump | instantly vent 60 heat | instant | 20 power |
-| Focus Field | +15% crit chance | 10 s | 40 power |
-| Hyperdrive | strike rate cap 20 → 30/s and ×2 yield | 8 s | 80 power |
-
-### 9.3 Synergies
-
-* **Sync strike** (from Deepcore): a miner strike and a refiner "press" within 500 ms builds a combo up to ×2 for both.
-* Refined alloy is the currency for drones and coolant tiers, so miners depend on refiners for automation.
-* Solo players can switch roles at will with a 2 s swap animation; the role they are not in runs at 25% efficiency, which makes co-op roughly 2× faster than solo at equal skill.
+| Thermal Dump | every miner to 0 heat, unlocks overheated drills | instant | 25 |
+| Focus Field | +20% crit for the team | 15 s | 40 |
+| Drone Surge | drones ×3 | 15 s | 50 |
+| Hyperdrive | every strike ×2 | 10 s | 70 |
 
 ---
 
-## 10. Co-op events and mini-bosses
+## 11. Co-op events
 
-Events start on a server timer (every 4 to 7 minutes, never during another event) and are only offered when at least one player is in each role, or a solo player has unlocked both.
+Events start once a Smelter exists, every 3.5 to 6 minutes, never during a vote, and only while someone is online.
 
-### 10.1 Seismic Shockwave
+### 11.1 Seismic Shockwave (25 s)
 
-* A fault line glows across the asteroid; **three** resonance nodes appear on the surface.
-* Miners must strike all three nodes; refiners must hold the **damper** input for each node in the same 400 ms window as its strike (server-time window, §6.5).
-* 6 successful pairs in 20 s → reward: all seams refilled + ×3 ore for 30 s. Failure → the shockwave knocks 30% of unprocessed ore off conveyors.
+Three resonance nodes appear on the rock. A miner's strike **primes** a node for 2.5 s; a **Stabilize** press while it is primed locks it. Lock all three to win: every seam refills and ore is ×3 for 30 s. Fail: the quake shakes loose 10% of banked ore and jams every drill for 3 s.
 
-### 10.2 Solar Flare
+### 11.2 Solar Flare (22 s)
 
-* The key light swings to a flare-facing direction; a shadow-side safe zone rotates around the rock.
-* Miners must keep their rig aimed inside the safe zone (camera alignment, checked server-side from submitted aim direction at 5 Hz), or heat climbs 3× faster.
-* Refiners must divert power to shields in a rhythm prompt (4 beats per bar).
-* Survive 30 s → reward: one free Plasma per 10 alloy for 60 s. Failure → drones disabled for 20 s.
+The team shield starts at 60 and drains 7/s; every **Shield** press adds 8, and heat per strike doubles. Keep it above zero until the flare passes: +30 s of plasma income (at least 3) and the refinery runs ×2 for 30 s. Fail: drones are offline for 20 s.
 
-### 10.3 Event protocol
-
-`event:start {id, kind, startsAt, endsAt, nodes[]}` → `event:input` from clients → `event:state {progress, pairs}` at 10 Hz → `event:end {success, rewards}`. All judgement is server-side.
+Event Horizon multiplies reward durations and amounts by `1 + 0.5 × level`. All judgement is on the host.
 
 ---
 
-## 11. Incremental economy and balance curves
+## 12. Incremental economy and balance
 
-### 11.1 Resource chain
+### 12.1 Resource chain
 
-| Tier | Resource | Produced by | Ratio | Color |
+| Tier | Resource | Produced by | Ratio | Colour |
 |---|---|---|---|---|
 | 1 | Raw Ore | strikes, drones, rigs | n/a | `#ffb03a` |
 | 2 | Refined Alloy | Smelter | 10 ore | `#cfd6e6` |
 | 3 | Exotic Plasma | Plasma Infuser | 25 alloy | `#4de8ff` |
-| 4 | Dark Matter Compound | Dark Compressor | 50 plasma | `#b07cff` |
+| 4 | Dark Matter | Dark Compressor | 50 plasma | `#b07cff` |
 | 5 | Cosmic Energy | Cosmic Condenser | 100 dark matter | `#ffe28a` |
 
-One Cosmic Energy therefore embodies 10 × 25 × 50 × 100 = **1.25 million** ore.
+### 12.2 Upgrades
 
-### 11.2 Cost curves
+`cost(n) = ceil(base × growth^n)`; the HUD offers single and bulk buys (up to 100 at once, `bulkCost` closed form).
 
-Every upgrade uses `cost(n) = ceil(base × growth^n)`, and bulk purchases use the closed-form geometric sum `base × growth^n × (growth^k − 1) / (growth − 1)` (`bulkCost`).
+| Upgrade | Currency | Base | Growth | Max | Unlock |
+|---|---|---|---|---|---|
+| Drill Bit | ore | 10 | 1.18 | | |
+| Focus Lens | ore | 50 | 1.32 | 40 | |
+| Orbital Drone | ore | 25 | 1.16 | | |
+| Coolant Loop | alloy | 4 | 1.7 | 12 | 1 alloy |
+| Auto Rig | alloy | 25 | 1.4 | 16 | 20 alloy |
+| Seismic Charge (×2 all ore) | plasma | 40 | 5 | | 20 plasma |
+| Smelter | ore | 600 | 1.2 | | 2,500 ore |
+| Plasma Infuser | alloy | 1,000 | 1.25 | | 6,000 alloy |
+| Dark Compressor | plasma | 400 | 1.3 | | 1,500 plasma |
+| Cosmic Condenser | dark matter | 30 | 1.4 | | 250 dark matter |
+| Hydraulic Press | alloy | 15 | 1.7 | 20 | 10 alloy |
+| Fusion Reactor | alloy | 30 | 1.55 | 12 | 60 alloy |
 
-| Upgrade | Currency | Base | Growth | Lv 10 | Lv 25 | Lv 50 | Lv 100 |
-|---|---|---|---|---|---|---|---|
-| Drill Bit | ore | 10 | 1.15 | 41 | 330 | 10.8K | 11.7M |
-| Focus Lens (max 45) | ore | 50 | 1.35 | 1.0K | 90.6K | n/a | n/a |
-| Coolant Loop (max 12) | ore | 75 | 1.60 | 8.2K | n/a | n/a | n/a |
-| Orbital Drone | ore | 25 | 1.12 | 78 | 426 | 7.2K | 2.1M |
+Unlocks count what the team **made this run** (`run.made`), so each tier opens as a visible milestone and hides clutter early on. Producers double every 25 levels (`milestoneMult`), giving the classic sawtooth.
 
-In M2, Coolant and Drone costs move to alloy so that mining automation depends on refining.
+### 12.3 Pacing
 
-### 11.3 Production growth
+`npm run balance` plays a greedy bot that strikes seams 4×/s, stays under overheat, presses twice a second and buys everything it can. First run, solo, measured:
 
-* Producers grow **linearly per level** and **double every 25 levels** (`milestoneMult`). Costs grow geometrically, so each milestone is a visible spike that briefly outpaces cost, then the curve flattens again until the next one. This is the classic incremental sawtooth.
-* Per-tier multiplier upgrades (M2) are bought with the tier above (e.g. a plasma-priced ×2 to all ore), so climbing the chain always feeds back into the bottom of it.
+| Milestone | Bot time | Target for a human co-op pair |
+|---|---|---|
+| Smelter / first alloy | ~0:11 | 1 to 2 min |
+| First plasma | ~3 min | 5 to 10 min |
+| First dark matter | ~10 min | 15 to 25 min |
+| First cosmic energy | ~39 min | ~40 to 60 min |
+| Leap available (10 CE) | ~1 h 43 min | 1.5 to 2.5 h |
 
-### 11.4 Pacing targets
+The bot clicks faster than people do, so humans land later; the sync combo and events let a coordinated party beat the bot.
 
-| Milestone | Target time (first run, active co-op) |
+---
+
+## 13. Prestige: the Galactic Quantum Leap
+
+* **Unlock:** 10 Cosmic Energy made this run (`LEAP_THRESHOLD`).
+* **Vote:** anyone proposes; it passes as soon as every connected player says yes, or by majority when the 15 s timer ends. Solo, it is instant.
+* **Reward:** `QP = floor(sqrt(runCE / 10) × (1 + 0.1 × (players − 1)))`. Square-root scaling rewards longer runs with diminishing returns; a full party earns +30%.
+* **Passive:** every unspent QP is +5% to everything (`quantumMult`).
+* **Resets** wallet, levels, power, seams and the asteroid seed. **Keeps** QP, skills, lifetime stats, event record.
+
+| Branch | Nodes (cost, max) |
 |---|---|
-| First drone | < 1 min |
-| First alloy | ~3 min |
-| First plasma | ~15 min |
-| First dark matter | ~45 min |
-| First cosmic energy | ~2 h |
-| First Quantum Leap available (1,000 CE) | ~6 to 8 h |
-| Second leap | ~50% of the first, thanks to Quantum Points |
-
-These will be validated with a headless balance simulator (§16.2) before any number is tuned by hand.
-
-### 11.5 Big numbers
-
-Values will exceed `Number.MAX_VALUE` around the third leap. At M3 the economy functions switch to `break_eternity.js` `Decimal` (supports up to 10↑↑1e308), stored as strings in Mongo and as `{m, e}` pairs on the wire. `fmt()` already switches to scientific notation past decillions.
+| Excavation | Ancestral Bits +50% strike and rig ore (1, 10) · Thermal Mastery hot band 5 lower (2, 4) · Seam Sense +1 seam (3, 3) |
+| Industry | Furnace Soul +50% refinery (1, 10) · Grid Surplus +25% power (1, 5) · Head Start 500 ore + 50 alloy per run (1, 5) |
+| Resonance | Resonant Bond +0.25 max combo (2, 4) · Event Horizon +50% event rewards (2, 3) · Shared Wake +10% offline (1, 5) |
 
 ---
 
-## 12. Prestige: the Galactic Quantum Leap
+## 14. Persistence and offline progress
 
-* **Unlock:** 1,000 Cosmic Energy produced in the current run (`LEAP_THRESHOLD`).
-* **Vote:** any player can propose; it passes when every connected player votes yes, or by majority after 30 s. All connected players leap together, which is what makes the prestige "shared".
-* **Reward:** `QP = floor( sqrt(runCosmicEnergy / 1000) × (1 + 0.1 × (participants − 1)) )` per participant (`quantumPointsFor`). Square-root scaling means pushing a run longer is rewarded but with diminishing returns, so leaping repeatedly is optimal. The co-op factor gives up to +30% for a full room.
-* **Passive effect:** every **unspent** QP is +2% to all production (`quantumMult`), so hoarding is a valid strategy.
-* **Resets:** wallet, upgrade levels, rigs, conveyors, pipeline layout, terrain seed. **Keeps:** QP, the cosmic skill tree, rig cosmetics, lifetime stats.
-
-### 12.1 Cosmic skill tree
-
-Three branches, each node costs QP and has a max level:
-
-| Branch | Example nodes |
-|---|---|
-| **Excavation** (miner) | Ancestral Bits: +25% strike yield/level · Thermal Mastery: hot band starts at 60 · Seam Sense: +1 seam on the rock |
-| **Industry** (refiner) | Furnace Soul: +25% refinery rate/level · Grid Surplus: +20% power · Head Start: begin a run with 500 alloy/level |
-| **Resonance** (co-op) | Resonant Bond: +0.5 max sync combo · Event Horizon: event rewards ×1.5 · Shared Wake: offline gains efficiency 50% → 75% |
-
-Spending QP trades the +2% passive for a targeted bonus; nodes are tuned so the first few points in each branch are worth more than hoarding.
+* **Where:** the host's browser saves its expedition to `localStorage` (`starforge_save_v2`): wallet, levels, skills, QP, seams, run and lifetime stats. Players, votes and live events are session-only. A guest plays in the host's world and keeps their own solo save untouched.
+* **Migrations:** `fromSave` rebuilds a state from `createRoomState` defaults and overlays the save, so fields added later get sane values. The `v` field gates breaking changes.
+* **Offline gains:** on load, `applyOffline` runs the real passive economy (drones, rigs, machines) in 10 s steps for `min(away, 8 h) × (50% + 10% × sharedWake)` and shows a "welcome back" card with the gains per resource.
+* **Dedicated server:** `ProgressStore` (`MemoryStore` today) saves rooms every 30 s and on close, using the same save format, and can reload a room by code. Redis and MongoDB adapters slot in behind that interface.
 
 ---
 
-## 13. Persistence and offline progress
+## 15. Security and anti-cheat
 
-### 13.1 Redis (hot)
-
-| Key | Type | Contents | TTL |
-|---|---|---|---|
-| `room:{code}` | hash | serialized `RoomState` fields | 24 h after last activity |
-| `room:{code}:node` | string | owning server node id | refreshed every tick batch |
-| `room:{code}:players` | set | connected player ids | none (maintained) |
-| `rl:strike:{playerId}` | string | token bucket for rate limiting | 2 s |
-| `lobby:open` | sorted set | room codes by open slots | maintained |
-| `session:{resumeToken}` | string | `playerId` and room code | 24 h |
-
-### 13.2 MongoDB (durable)
-
-```ts
-// players
-{ _id, displayName, createdAt, lastSeenAt,
-  quantumPoints, skillTree: { [nodeId]: level },
-  cosmetics: { rigPaint, beamColor }, lifetime: { ore, strikes, leaps, events } }
-
-// expeditions (one per room lifetime)
-{ _id: roomCode, seed, createdAt, closedAt, members: [playerId],
-  state: RoomStateSnapshot, leaps: [{ at, participants, qpEach }] }
-```
-
-Write-behind from Redis to Mongo every 30 s and on room close. All schema changes ship with a version field and a forward migration run on load.
-
-### 13.3 Offline gains
-
-When a player rejoins: `gain = passivePerSec × min(elapsed, 8 h) × 50%` (`offlineGain`), computed from the room's saved passive rate and `lastSeenAt`, then shown in a "while you were away" card. In a shared expedition the room keeps running while anyone is online, so offline gains only apply to rooms that were fully empty.
+* **Intents only;** the host validates every payload (unknown ids rejected with `Object.hasOwn`, numbers checked, names clipped to 16 characters) and enforces rate limits inside the rules.
+* **Trust model:** in P2P mode the host is trusted. That is acceptable for friends-only co-op; anything competitive (public lobbies, leaderboards) must run on the dedicated server.
+* **Resume tokens** are random per join and never derived from player ids.
+* `?sfdebug` exposes the local room to automated tests; it only affects a room the player already hosts and could edit through its save anyway.
 
 ---
 
-## 14. Security and anti-cheat
-
-* **Intents only.** The client cannot send amounts, crit results or upgrade outcomes.
-* **Rate limits.** `MIN_STRIKE_INTERVAL_MS = 50` (20 strikes/s) per player is enforced inside `applyStrike`; in multi-node mode a Redis token bucket backs it up. Sustained rejection triggers a 10 s soft lock and a log entry.
-* **Input validation.** Every handler type-checks its payload; `buyUpgrade` rejects unknown ids with `Object.hasOwn` since ids arrive from the network.
-* **Resume tokens** are 128-bit random, stored server-side; player ids are not secrets and are never accepted as credentials.
-* **Auth (M4):** optional account linking via OAuth (Google / Discord) so profiles follow players across devices. Anonymous play keeps a device-bound token.
-* **Clock-dependent fields** (`lockedUntil`) are server-epoch; the client corrects them with `serverOffset` (§6.5) once time sync lands, so the overheat UI is accurate across skewed clocks.
-* **CORS** for Socket.io is limited to `CORS_ORIGINS`.
-
----
-
-## 15. Performance budgets
+## 16. Performance budgets
 
 | Budget | Target | How |
 |---|---|---|
-| Frame rate | 60 fps on a 2020 mid-range laptop, 45+ on a recent phone | `dpr={[1, 2]}`, bloom with mipmap blur, no shadows on mobile |
-| Draw calls | < 60 | instanced drones / conveyor items / rigs, one particle cloud, shared seam material per seam |
-| Triangles | < 300K | prototype asteroid is a deliberately faceted icosphere (detail 6, ~1K tris); voxel chunks LOD'd by distance |
-| Particles | 3,000 pooled | ring buffer, no allocations per burst |
-| Main-thread GC | no allocations in `useFrame` hot paths | reused vectors/matrices; remeshing in a worker |
-| Input → feedback | < 16 ms | laser and floater are client-side; only yield waits on the server |
-| Server tick | < 2 ms per room at 20 Hz | pure functions, no I/O inside ticks |
+| Frame rate | 60 fps on a mid-range laptop, 45+ on a recent phone | dpr ≤ 1.75, mipmap bloom, no shadows |
+| Draw calls | < 80 | instanced drones, rigs, decals; one particle cloud |
+| Particles | ~4,000 pooled | ring buffer, no per-burst allocation |
+| GC | no allocations in `useFrame` hot paths | reused vectors and matrices |
+| Input → feedback | < 16 ms | laser and prediction are local; only yield waits on the host |
+| Host tick | < 1 ms | pure functions, no I/O |
 
 ---
 
-## 16. Testing and tooling
+## 17. Testing and tooling
 
-### 16.1 Today
-
-* `npm test`: `node:test` suite over the shared rules (cost curves, bulk cost, prestige, offline cap, deterministic asteroid, strike/crit/seam/rate-limit/overheat/drone simulation).
-* `npm run typecheck`: strict TypeScript for all three packages, including the Socket.io event map on both ends.
-
-### 16.2 Planned
-
-* **Balance simulator:** a headless script that plays `sim.ts` with scripted strategies (idle, active miner, co-op pair) and prints time-to-milestone tables against §11.4. Runs in CI and fails on >20% drift.
-* **Protocol contract tests:** a server instance plus two `socket.io-client` bots in-process, asserting join, strike broadcast, reconnect with token, and room-full.
-* **Visual smoke test:** Playwright opens the client in offline mode, clicks the asteroid, and checks the ore counter increases and the canvas is non-empty.
-* **CI workflow** for `npm ci && npm run typecheck && npm test`, scoped to `client/**`, `server/**`, `shared/**` paths so it never interacts with the existing deploy workflows.
+* `npm test`: node:test over cost curves, unlocks, prestige and voting, offline gains, the asteroid, strikes, crits, seams, overheat, drones, presses, machines, combo, overclocks, both events, saving, and `RoomHost` (join, intents, broadcasts, reconnect, version and capacity checks).
+* `npm run typecheck`: strict TypeScript for all packages.
+* `npm run balance`: pacing bot (§12.3).
+* **End to end (development):** a Playwright script runs a local PeerServer and a faked Firebase, has one player host from the lobby, a friend join through the main menu's friends list, and checks strikes, refiner presses, a flare, a quake, a leap vote and leaving, with screenshots on desktop and phone.
 
 ---
 
-## 17. Roadmap
+## 18. Roadmap
 
 | Milestone | Contents | State |
 |---|---|---|
-| **M0: scaffold** | Workspaces, shared rules + tests, authoritative Socket.io server, rooms + reconnect, R3F scene with clickable asteroid, emissive seams, laser, particle bursts, floaters, drones, heat, upgrade shop, live resource counter, offline fallback | **this PR** |
-| **M1: persistence** | `RedisStore` + `MongoStore` adapters behind `ProgressStore`, offline gains card, time sync | next |
-| **M2: refinery** | Refinery station scene and pipeline graph, power and overclocks, automated rigs, conveyors, alloy-priced automation, rig loadouts | |
-| **M3: depth** | Voxel terrain with server-authoritative carving, co-op events, Quantum Leap + skill tree, `Decimal` migration | |
-| **M4: live** | Hosted server, online play on the live site, public lobby, accounts (the offline Pages build and menu card ship in M0) | |
+| M0 scaffold | workspaces, rules, R3F scene, offline play | done |
+| M1 co-op | refinery tiers and machines, power and overclocks, events, Quantum Leap and skills, host-authoritative PeerJS multiplayer on the live site, saves and offline gains, friends list and invites | **this version** |
+| M2 depth | rig loadouts, conveyor routing graph, more event types and mini-bosses, achievements | next |
+| M3 scale | dedicated hosting with Redis/Mongo, public lobbies, cloud saves on the site account, `Decimal` numbers, voxel terrain | |
 
 ---
 
-## 18. Open questions
+## 19. Open questions
 
-1. **Hosting:** which provider for the Node server and the managed Redis / Mongo, and is a cost ceiling set?
-2. **Shared vs. personal wallets:** the prototype uses one shared team wallet per expedition (simplest, most co-operative). Should players also have a personal stash that persists across expeditions?
-3. **Solo viability:** is a 25% off-role efficiency the right solo penalty, or should solo players get a bot partner?
-4. **Menu integration:** should Starforge eventually replace Deepcore on the menu, or sit beside it?
+1. **Cloud saves:** mirror the expedition to the site account (`games.starforge`) so progress follows the player across devices?
+2. **Host migration:** when a host leaves, should the most active guest inherit the room (state is already on every client) instead of everyone returning to the lobby?
+3. **Solo balance:** solo players can sync-combo alone by alternating strikes and presses; is that too strong compared with a real pair?

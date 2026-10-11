@@ -1,65 +1,65 @@
-import type { UpgradeId, UpgradeLevels } from './economy.js';
-import type { Wallet } from './resources.js';
-import type { PlayerState, Role, Seam, StrikeOutcome, StrikeReject } from './sim.js';
+import type { MachineId, OverclockId, SkillId, UpgradeId } from './economy.js';
+import type { PressOutcome, Reject, Role, RoomState, StabilizeOutcome, StrikeOutcome, TickNote } from './sim.js';
 
 /**
- * Socket.io wire protocol. Clients only ever send *intents*; the server
- * resolves them against the authoritative RoomState and broadcasts results.
+ * Wire protocol, shared by both transports:
+ *   - PeerJS (WebRTC data channels): a player's browser hosts the room. This
+ *     is what the live site uses, since GitHub Pages can't run a server.
+ *   - Socket.io: the optional dedicated server in /server, one `msg` event.
+ * Clients only ever send intents; the host resolves them and broadcasts.
  * Bump PROTOCOL_VERSION on any breaking change to these shapes.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const SERVER_TICK_HZ = 20;
 export const SNAPSHOT_HZ = 10;
 export const DEFAULT_PORT = 3001;
 export const MAX_PLAYERS_PER_ROOM = 4;
+export const PEER_PREFIX = 'starforge-v2-';
 
-export interface HelloPayload {
+export interface Hello {
+  t: 'hello';
   protocol: number;
   name: string;
   role: Role;
-  /** Room code to join; omitted to create a new room. */
-  room?: string;
-  /** Reconnect token from a previous `welcome`, to reclaim the same player slot. */
-  resumeToken?: string;
+  /** Reconnect token from a previous welcome, to reclaim the same player slot. */
+  resume?: string;
 }
 
-export interface StrikeIntent {
-  /** Client sequence number, echoed back so the client can match predictions. */
-  seq: number;
-  seamId: number | null;
-}
+export type ClientMsg =
+  | Hello
+  | { t: 'strike'; seq: number; seamId: number | null; nodeId: number | null }
+  | { t: 'press'; seq: number; machine: MachineId }
+  /** Buy up to `count` levels (default 1, at most 100) as far as the wallet allows. */
+  | { t: 'buy'; id: UpgradeId; count?: number }
+  | { t: 'skill'; id: SkillId }
+  | { t: 'toggle'; machine: MachineId; on: boolean }
+  | { t: 'overclock'; id: OverclockId }
+  | { t: 'role'; role: Role }
+  | { t: 'stabilize' }
+  | { t: 'shield' }
+  | { t: 'leap' }
+  | { t: 'vote'; yes: boolean }
+  | { t: 'ping'; id: string }
+  | { t: 'emote'; id: string };
 
-/** Full room view sent on join and periodically thereafter. */
-export interface Snapshot {
-  tick: number;
-  serverTime: number;
-  wallet: Wallet;
-  levels: UpgradeLevels;
-  seams: Seam[];
-  players: PlayerState[];
-  quantumPoints: number;
-  orePerSec: number;
-}
+/** Short-lived things that happened, for effects and toasts. */
+export type Fx =
+  | ({ k: 'strike'; seq: number } & StrikeOutcome)
+  | ({ k: 'press'; seq: number } & PressOutcome)
+  | ({ k: 'stabilize' } & StabilizeOutcome)
+  | { k: 'shield'; playerId: string; shield: number }
+  | { k: 'overclock'; playerId: string; id: OverclockId }
+  | { k: 'buy'; playerId: string; id: UpgradeId; level: number }
+  | { k: 'skill'; playerId: string; id: SkillId }
+  | { k: 'reject'; playerId: string; seq: number; reason: Reject }
+  | { k: 'joined'; playerId: string; name: string }
+  | { k: 'left'; playerId: string; name: string }
+  | { k: 'vote'; playerId: string }
+  | { k: 'emote'; playerId: string; id: string }
+  | { k: 'note'; note: TickNote };
 
-export interface Welcome {
-  room: string;
-  playerId: string;
-  resumeToken: string;
-  seed: number;
-  snapshot: Snapshot;
-}
-
-export interface ClientToServerEvents {
-  hello: (p: HelloPayload, ack: (r: Welcome | { error: string }) => void) => void;
-  'mine:strike': (p: StrikeIntent) => void;
-  'shop:buy': (p: { id: UpgradeId }) => void;
-  ping: (clientTime: number, ack: (serverTime: number) => void) => void;
-}
-
-export interface ServerToClientEvents {
-  snapshot: (s: Snapshot) => void;
-  'mine:result': (r: StrikeOutcome & { seq: number }) => void;
-  'mine:reject': (r: { seq: number; reason: StrikeReject }) => void;
-  'player:joined': (p: PlayerState) => void;
-  'player:left': (p: { id: string }) => void;
-}
+export type ServerMsg =
+  | { t: 'welcome'; playerId: string; resume: string; code: string; state: RoomState }
+  | { t: 'snap'; state: RoomState }
+  | { t: 'fx'; fx: Fx[] }
+  | { t: 'error'; error: 'protocol-mismatch' | 'room-full' | 'room-not-found' | 'host-left' };

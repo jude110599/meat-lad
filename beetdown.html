@@ -8,6 +8,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+<script src="js/friends.js"></script>
 <style>
 :root{
   /* muddy and worn rather than neon: everything sits in a narrow desaturated
@@ -815,17 +816,23 @@ function applyBeetdownSave(doc){
   if(!(save.diffBeat instanceof Array))save.diffBeat=[];
   try{localStorage.setItem(SKEY,JSON.stringify(save));}catch(e){}
 }
+/* presence and partyInbox belong to the shared friends list (js/friends.js),
+   which writes them on its own - never write back the copy loaded at sign-in. */
+function acctPayload(){
+  var o={}; for(var k in acctDoc)if(k!=="presence"&&k!=="partyInbox")o[k]=acctDoc[k];
+  return o;
+}
 function pushAccount(){
   if(!cloudId||!acctDoc)return;
   if(acctPushT)clearTimeout(acctPushT);
   acctPushT=setTimeout(function(){ acctPushT=null;
     acctDoc.games.beetdown=save; acctDoc.ts=Date.now();
-    fbDb.collection("accounts").doc(cloudId).set(acctDoc,{merge:true}).catch(function(){}); },900);
+    fbDb.collection("accounts").doc(cloudId).set(acctPayload(),{merge:true}).catch(function(){}); },900);
 }
 function pushAccountNow(){
   if(!cloudId||!acctDoc)return Promise.resolve(false);
   acctDoc.games.beetdown=save; acctDoc.ts=Date.now();
-  return fbDb.collection("accounts").doc(cloudId).set(acctDoc,{merge:true})
+  return fbDb.collection("accounts").doc(cloudId).set(acctPayload(),{merge:true})
     .then(function(){return true;}).catch(function(){return false;});
 }
 function acctSignUp(email,pw){
@@ -4134,6 +4141,21 @@ window.__bd={
     return {matsBefore:before,matsAfter:me.mats,gained:me.mats-before};
   }
 };
+/* ═════════════ SHARED FRIENDS LIST ═════════════
+   js/friends.js shows a mini friends list beside the co-op screen while a
+   plot is open, with Invite buttons and online dots, and pops up invites
+   from friends. Joining from an invite (here, or from another page with
+   ?join=CODE) lands on the co-op screen and joins the plot. */
+if(window.MLFriends)MLFriends.attach({game:"beetdown",
+  party:function(){ return party.on?{code:party.code}:null; },
+  visible:function(){ return state!=="play"&&state!=="lvlup"; },
+  join:function(code){
+    if(state!=="menu"){ toast("Finish this run, then join from the menu"); return false; }
+    if(party.on){ if(party.code===code)return true; party.leave(); }
+    $("bParty").onclick(); party.join(code); return true;
+  },
+  onFriends:function(list){ if(acctDoc){ acctDoc.friends=list; renderFriends(); renderInviteList(); } }
+});
 })();
 </script>
 </body>
