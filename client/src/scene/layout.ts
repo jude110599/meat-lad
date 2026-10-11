@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { MACHINES, type MachineId } from '@starforge/shared';
+import type { MachineId } from '@starforge/shared';
 
 /** World position of the refinery station hub. */
 export const STATION_POS = new Vector3(6, -1.2, -3.5);
@@ -34,8 +34,6 @@ export function machineIntake(m: MachineId, out: Vector3): Vector3 {
   return machineWorld(m, out).add(INTAKE_LIFT);
 }
 const INTAKE_LIFT = new Vector3(0, 0.42, 0);
-
-export { MACHINES };
 
 /** Base vertical field of view; Warp punches it wider. */
 export const BASE_FOV = 50;

@@ -82,7 +82,9 @@ export function loadSave(): { state: RoomState; savedAt: number } | null {
 
 function hello(): Hello {
   const st = useGame.getState();
-  return { t: 'hello', protocol: PROTOCOL_VERSION, name: st.name || 'Prospector', role: st.role };
+  // Players arriving from an invite skip the lobby: fall back to their saved or site name.
+  const name = st.name || ls('starforge_name') || window.MLFriends?.me()?.name || 'Prospector';
+  return { t: 'hello', protocol: PROTOCOL_VERSION, name: name.slice(0, 16), role: st.role };
 }
 
 let current: { close(): void } | null = null;

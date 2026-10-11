@@ -1,52 +1,64 @@
-import { useEffect } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
-import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
-import type { Authority } from '../net/authority';
+import { Canvas } from '@react-three/fiber';
+import { useGame } from '../state/store';
 import { Asteroid } from './Asteroid';
+import { CameraRig } from './CameraRig';
 import { Drones } from './Drones';
-import { CameraShake, Floaters, Laser, Particles } from './Effects';
+import { FlareShield } from './FlareShield';
+import { Floaters } from './Floaters';
+import { Lasers } from './Lasers';
+import { BASE_FOV } from './layout';
+import { Lights } from './Lights';
+import { OreStreams } from './OreStreams';
+import { Particles } from './Particles';
+import { PostFX } from './PostFX';
+import { Ships } from './Ships';
+import { Shockwaves } from './Shockwaves';
+import { Sky } from './Sky';
+import { Station } from './Station';
+import { Warp } from './Warp';
 
-/** Pull the camera back on portrait screens so the whole asteroid stays in frame. */
-function FitCamera() {
-  const { camera, size } = useThree();
-  useEffect(() => {
-    const aspect = size.width / size.height;
-    const dist = aspect >= 1 ? 7.5 : Math.min(14, 7.5 / Math.max(aspect, 0.45) * 0.8);
-    camera.position.setLength(dist);
-  }, [camera, size.width, size.height]);
-  return null;
+export { STATION_POS } from './layout';
+
+/** Everything that needs a room. */
+function World() {
+  return (
+    <>
+      <Asteroid />
+      <FlareShield />
+      <Station />
+      <OreStreams />
+      <Drones />
+      <Ships />
+      <Lasers />
+      <Particles />
+      <Floaters />
+      <Shockwaves />
+    </>
+  );
 }
 
-export function GameScene({ auth }: { auth: Authority }) {
+/**
+ * The full-screen 3D view. Sky, lights, camera and post-processing are
+ * always on; the asteroid, station and everything game-specific mount once
+ * the first room snapshot has arrived.
+ */
+export function GameScene() {
+  const ready = useGame((st) => st.s !== null);
   return (
     <Canvas
-      camera={{ position: [0, 1.2, 7.5], fov: 50, near: 0.1, far: 200 }}
-      dpr={[1, 2]}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      className="scene"
+      style={{ position: 'fixed', inset: 0 }}
+      dpr={[1, 1.75]}
+      gl={{ antialias: true, powerPreference: 'high-performance', stencil: false }}
+      camera={{ position: [0, 1.6, 7.6], fov: BASE_FOV, near: 0.1, far: 500 }}
     >
-      <color attach="background" args={['#05060c']} />
-      <fog attach="fog" args={['#05060c', 14, 40]} />
-      <Stars radius={80} depth={40} count={4000} factor={3} saturation={0} fade speed={0.4} />
-
-      <ambientLight intensity={0.15} />
-      {/* Key light: a distant star. Rim light: the refinery station glow. */}
-      <directionalLight position={[6, 4, 5]} intensity={1.6} color="#fff1dc" />
-      <pointLight position={[-6, -2, -4]} intensity={30} color="#5a7cff" />
-
-      <Asteroid auth={auth} />
-      <Drones />
-      <Particles />
-      <Laser />
-      <Floaters />
-      <CameraShake />
-      <FitCamera />
-
-      <OrbitControls enablePan={false} minDistance={4.5} maxDistance={14} enableDamping dampingFactor={0.08} rotateSpeed={0.6} />
-      <EffectComposer>
-        <Bloom intensity={1.1} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
-        <Vignette offset={0.25} darkness={0.75} />
-      </EffectComposer>
+      <color attach="background" args={['#03040a']} />
+      <Sky />
+      <Lights />
+      <CameraRig />
+      {ready && <World />}
+      <Warp />
+      <PostFX />
     </Canvas>
   );
 }

@@ -118,6 +118,13 @@ export function useBundle<T extends Record<string, Disposable | Disposable[]>>(m
   return v;
 }
 
+/** Allocation-free lookup by id (avoids a closure per frame). */
+export function byId<T extends { id: number }>(xs: readonly T[] | undefined, id: number): T | undefined {
+  if (!xs) return undefined;
+  for (let i = 0; i < xs.length; i++) if (xs[i].id === id) return xs[i];
+  return undefined;
+}
+
 /** Comma-free join for id lists used as cheap, stable zustand selector results. */
 export const SEP = '\u0001';
 export const splitIds = (key: string): string[] => (key ? key.split(SEP) : []);

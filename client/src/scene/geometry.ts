@@ -28,10 +28,10 @@ function field(ls: Lobe[], x: number, y: number, z: number): number {
 }
 
 const TONE_CREVICE = new Color('#120e10');
-const TONE_WARM = new Color('#4d3c30');
-const TONE_COOL = new Color('#37343f');
-const TONE_TAN = new Color('#6e5a47');
-const TONE_RUST = new Color('#5a3326');
+const TONE_WARM = new Color('#5e4a3b');
+const TONE_COOL = new Color('#45414f');
+const TONE_TAN = new Color('#85705a');
+const TONE_RUST = new Color('#6e4030');
 const SPECKLES = [new Color('#e0a04a'), new Color('#6fd6de'), new Color('#cfc8de'), new Color('#ff8a3a')];
 
 /**
@@ -106,11 +106,11 @@ export function buildRock(seed: number): { rock: BufferGeometry; shell: BufferGe
     const strata = Math.sin((cx * strataAxis[0] + cy * strataAxis[1] + cz * strataAxis[2]) * strataFreq + fn * 2.5);
     c.multiplyScalar(0.86 + 0.14 * strata);
     // Crevices: valleys go nearly black.
-    c.lerp(TONE_CREVICE, MathUtils.smoothstep(0.42 - h, 0, 0.42) * 0.85);
+    c.lerp(TONE_CREVICE, MathUtils.smoothstep(0.42 - h, 0, 0.42) * 0.6);
     // Per-facet grit.
     c.multiplyScalar(0.82 + rr() * 0.32);
     // Mineral speckles, mostly on exposed faces.
-    if (rr() < 0.018 + 0.02 * h) {
+    if (rr() < 0.007 + 0.012 * h) {
       c.copy(SPECKLES[Math.floor(rr() * SPECKLES.length)]).multiplyScalar(0.55 + rr() * 0.45);
     }
     for (let k = 0; k < 3; k++) c.toArray(colors, (f + k) * 3);
@@ -120,7 +120,7 @@ export function buildRock(seed: number): { rock: BufferGeometry; shell: BufferGe
   rock.computeBoundingSphere();
 
   // Smooth shell for the fresnel glow.
-  const ico = new IcosahedronGeometry(1, 5);
+  const ico = new IcosahedronGeometry(1, 9);
   ico.deleteAttribute('uv');
   ico.deleteAttribute('normal');
   const shell = mergeVertices(ico);
