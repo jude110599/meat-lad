@@ -6,21 +6,34 @@ import {
   Color,
   ConeGeometry,
   CylinderGeometry,
+  ExtrudeGeometry,
+  LatheGeometry,
+  Matrix4,
+  Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  OctahedronGeometry,
+  PlaneGeometry,
+  ShaderMaterial,
+  Shape,
   SphereGeometry,
   Sprite,
   SpriteMaterial,
+  Vector2,
   Vector3,
+  type BufferGeometry,
   type Group,
-  type Mesh,
 } from 'three';
 import { useShallow } from 'zustand/react/shallow';
+import { onFx } from '../state/fx';
 import { hueColor, refs } from '../state/refs';
 import { useGame } from '../state/store';
-import { SEP, glowTexture, setCss, splitIds, useBundle } from './util';
+import { sparks } from './bus';
+import { mergeParts, ribbonMatrix, type Part } from './fxkit';
+import { SEP, glowTexture, isLite, setCss, splitIds, useBundle } from './util';
 
 const ORIGIN = new Vector3();
+const WHITE = new Color(1, 1, 1);
 const UP = new Vector3(0, 1, 0);
 /** Screen-space spread of the ring the ships hover on, around the rock's silhouette. */
 const HALO_R = 2.35;
@@ -80,22 +93,134 @@ const EMOTES: Record<string, string> = {
 };
 export const emoteGlyph = (id: string): string => EMOTES[id] ?? id;
 
-type ShipGeo = ReturnType<typeof makeShipGeometry>;
+const at = (g: BufferGeometry, x: number, y: number, z: number) => g.translate(x, y, z);
+const alongZ = (g: BufferGeometry) => g.rotateX(Math.PI / 2);
+
+/** A flat shape in the XZ plane (x right, y of the shape = forward), `depth` thick, centred on y = 0. */
+function plate(pts: [number, number][], depth: number): BufferGeometry {
+  const sh = new Shape(pts.map(([x, z]) => new Vector2(x, z)));
+  return new ExtrudeGeometry(sh, { depth, bevelEnabled: false })
+    .rotateX(Math.PI / 2)
+    .translate(0, depth / 2, 0);
+}
+const mirror = (pts: [number, number][]): [number, number][] => pts.map(([x, z]) => [-x, z] as [number, number]).reverse();
+
+/** A tail fin standing on y = 0 (the shape's x = forward, y = up), `depth` thick. */
+function fin(pts: [number, number][], depth: number): BufferGeometry {
+  const sh = new Shape(pts.map(([z, y]) => new Vector2(z, y)));
+  return new ExtrudeGeometry(sh, { depth, bevelEnabled: false })
+    .rotateY(-Math.PI / 2)
+    .translate(depth / 2, 0, 0);
+}
+
+const WING: [number, number][] = [
+  [0.07, 0.13],
+  [0.37, -0.09],
+  [0.39, -0.2],
+  [0.07, -0.25],
+];
+const WING_TIP: [number, number][] = [
+  [0.27, -0.02],
+  [0.37, -0.09],
+  [0.39, -0.2],
+  [0.29, -0.215],
+];
+const FIN: [number, number][] = [
+  [-0.12, 0],
+  [-0.27, 0],
+  [-0.31, 0.14],
+  [-0.24, 0.14],
+];
+
+/** Model space: +Z is the nose, +Y up, the hull about 0.75 long with a 0.8 span. */
 function makeShipGeometry() {
+  const body = new LatheGeometry(
+    [
+      [0.001, -0.31],
+      [0.062, -0.31],
+      [0.088, -0.22],
+      [0.098, -0.05],
+      [0.082, 0.12],
+      [0.05, 0.27],
+      [0.001, 0.42],
+    ].map(([r, y]) => new Vector2(r, y)),
+    8,
+  )
+    .rotateX(Math.PI / 2)
+    .scale(1, 0.72, 1);
+  const hull: Part[] = [
+    [body, '#d4dae3'],
+    [plate(WING.concat(mirror(WING)), 0.022), '#aab3bf'],
+    [at(alongZ(new CylinderGeometry(0.046, 0.052, 0.3, 10)), 0.135, -0.012, -0.12), '#8f99a6'],
+    [at(alongZ(new CylinderGeometry(0.046, 0.052, 0.3, 10)), -0.135, -0.012, -0.12), '#8f99a6'],
+    [at(alongZ(new CylinderGeometry(0.054, 0.054, 0.022, 10)), 0.135, -0.012, 0.03), '#3b414a'],
+    [at(alongZ(new CylinderGeometry(0.054, 0.054, 0.022, 10)), -0.135, -0.012, 0.03), '#3b414a'],
+    [at(alongZ(new CylinderGeometry(0.052, 0.04, 0.05, 10)), 0.135, -0.012, -0.29), '#353a42'],
+    [at(alongZ(new CylinderGeometry(0.052, 0.04, 0.05, 10)), -0.135, -0.012, -0.29), '#353a42'],
+    [at(new BoxGeometry(0.032, 0.03, 0.2), 0, 0.068, -0.1), '#9ba4b0'],
+    [at(alongZ(new CylinderGeometry(0.014, 0.018, 0.08, 6)), 0, -0.05, 0.27), '#454c56'],
+  ];
+  const paint: Part[] = [
+    [plate(WING_TIP, 0.027), '#ffffff'],
+    [plate(mirror(WING_TIP), 0.027), '#ffffff'],
+    [at(fin(FIN, 0.014).rotateZ(-0.38), 0.07, 0.04, 0), '#ffffff'],
+    [at(fin(FIN, 0.014).rotateZ(0.38), -0.07, 0.04, 0), '#ffffff'],
+    [at(alongZ(new ConeGeometry(0.053, 0.15, 8)).scale(1, 0.74, 1), 0, 0, 0.345), '#ffffff'],
+  ];
+  const glow: Part[] = [
+    [at(alongZ(new CylinderGeometry(0.036, 0.036, 0.01, 12)), 0.135, -0.012, -0.317), '#ffffff'],
+    [at(alongZ(new CylinderGeometry(0.036, 0.036, 0.01, 12)), -0.135, -0.012, -0.317), '#ffffff'],
+    [at(new BoxGeometry(0.008, 0.012, 0.2), 0.093, 0.004, -0.04), '#9a9a9a'],
+    [at(new BoxGeometry(0.008, 0.012, 0.2), -0.093, 0.004, -0.04), '#9a9a9a'],
+    [at(new OctahedronGeometry(0.014, 0), 0, -0.05, 0.315), '#ffffff'],
+  ];
   return {
-    body: new CylinderGeometry(0.06, 0.12, 0.5, 7).rotateX(Math.PI / 2),
-    nose: new ConeGeometry(0.06, 0.18, 7).rotateX(Math.PI / 2),
-    wing: new BoxGeometry(0.64, 0.022, 0.17),
-    fin: new BoxGeometry(0.02, 0.15, 0.13),
-    canopy: new SphereGeometry(0.055, 10, 8),
-    tip: new SphereGeometry(0.022, 6, 5),
-    flame: new ConeGeometry(0.07, 0.3, 8, 1, true).rotateX(-Math.PI / 2),
+    hull: mergeParts(hull),
+    paint: mergeParts(paint),
+    glow: mergeParts(glow),
+    canopy: new SphereGeometry(0.06, 12, 8).scale(0.85, 0.62, 1.9).translate(0, 0.05, 0.1),
+    ribbon: new PlaneGeometry(1, 1).translate(0, 0.5, 0),
   };
 }
+type ShipGeo = ReturnType<typeof makeShipGeometry>;
+
+const ENGINES = [new Vector3(0.135, -0.012, -0.33), new Vector3(-0.135, -0.012, -0.33)];
+const NAV = [new Vector3(0.385, 0, -0.16), new Vector3(-0.385, 0, -0.16)];
+const PLUME_LEN = 0.75;
+const TRAIL_RATE = isLite() ? 8 : 16;
+
+const PLUME_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const PLUME_FRAG = /* glsl */ `
+uniform float uTime;
+uniform float uSeed;
+uniform vec3 uColor;
+varying vec2 vUv;
+void main() {
+  // y: 0 at the nozzle, 1 at the end of the plume.
+  float x = vUv.x * 2.0 - 1.0;
+  float y = clamp(vUv.y, 0.0, 1.0);
+  float w = mix(0.32, 1.0, y);
+  float q = (x * x) / (w * w);
+  float body = exp(-q * 3.0) * max(0.0, 1.0 - x * x);
+  float core = exp(-q * 22.0) * (1.0 - y) * (1.0 - y);
+  float flick = 0.72 + 0.18 * sin(y * 26.0 - uTime * 38.0 + uSeed) + 0.1 * sin(y * 61.0 - uTime * 71.0 + uSeed * 2.0);
+  float fade = (1.0 - y) * (1.0 - y) * smoothstep(0.0, 0.04, y);
+  gl_FragColor = vec4((uColor * body * flick + vec3(core * 1.6)) * fade, 1.0);
+}
+`;
 
 /**
  * Other online players' ships, hovering beside the rock in fixed screen
- * slots, facing it, with a thruster glow, a name tag and emote bubbles.
+ * slots, facing it: a sleek faceted hull with swept wings and twin tail
+ * fins painted in the player's colour, a glowing cockpit, twin engines with
+ * flickering glows, exhaust plumes and a light spark trail, blinking wingtip
+ * lights, a little recoil when they fire, a name tag and emote bubbles.
  * Keeps `refs.ships` (laser origins) current every frame.
  */
 export function Ships() {
@@ -158,11 +283,23 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
 
   const mats = useBundle(
     () => ({
-      hull: new MeshStandardMaterial({ color: '#c9cfdc', metalness: 0.65, roughness: 0.32, flatShading: true }),
-      paint: new MeshStandardMaterial({ metalness: 0.4, roughness: 0.4, flatShading: true }),
-      glow: new MeshBasicMaterial({ toneMapped: false }),
-      flame: new MeshBasicMaterial({ transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }),
+      hull: new MeshStandardMaterial({ vertexColors: true, metalness: 0.3, roughness: 0.42, flatShading: true, emissive: '#111826' }),
+      paint: new MeshStandardMaterial({ metalness: 0.25, roughness: 0.4, flatShading: true }),
+      glow: new MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
+      canopy: new MeshStandardMaterial({ color: '#0b1a2a', metalness: 0.5, roughness: 0.15, emissive: '#ffffff', emissiveIntensity: 1 }),
+      plumes: [0, 1].map(
+        (i) =>
+          new ShaderMaterial({
+            vertexShader: PLUME_VERT,
+            fragmentShader: PLUME_FRAG,
+            uniforms: { uTime: { value: 0 }, uSeed: { value: i * 3.7 }, uColor: { value: new Color() } },
+            transparent: true,
+            depthWrite: false,
+            blending: AdditiveBlending,
+          }),
+      ),
       thruster: new SpriteMaterial({ map: glowTexture(), blending: AdditiveBlending, depthWrite: false, transparent: true }),
+      nav: [0, 1].map(() => new SpriteMaterial({ map: glowTexture(), blending: AdditiveBlending, depthWrite: false, transparent: true })),
     }),
     [],
   );
@@ -170,20 +307,35 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
   useEffect(() => {
     mats.paint.color.copy(color);
     mats.paint.emissive.copy(color);
-    mats.paint.emissiveIntensity = 0.15;
-    mats.glow.color.copy(color).multiplyScalar(2.6);
-    mats.flame.color.copy(color).lerp(new Color(1, 1, 1), 0.35).multiplyScalar(2.2);
-    mats.thruster.color.copy(color).multiplyScalar(2);
+    mats.paint.emissiveIntensity = 0.22;
+    mats.glow.color.copy(color).lerp(WHITE, 0.15).multiplyScalar(2.8);
+    mats.canopy.emissive.copy(color).lerp(WHITE, 0.35).multiplyScalar(0.7);
+    for (const m of mats.plumes) (m.uniforms.uColor.value as Color).copy(color).lerp(WHITE, 0.2).multiplyScalar(1.8);
+    mats.thruster.color.copy(color).lerp(WHITE, 0.3).multiplyScalar(2.2);
   }, [color, mats]);
 
-  const thruster = useMemo(() => {
-    const s = new Sprite(mats.thruster);
-    s.position.set(0, 0, -0.33);
-    return s;
-  }, [mats]);
+  const objs = useMemo(() => {
+    const thrusters = ENGINES.map((p) => {
+      const s = new Sprite(mats.thruster);
+      s.position.copy(p);
+      return s;
+    });
+    const navs = NAV.map((p, i) => {
+      const s = new Sprite(mats.nav[i]);
+      s.position.copy(p);
+      return s;
+    });
+    const plumes = mats.plumes.map((m) => {
+      const mesh = new Mesh(geo.ribbon, m);
+      mesh.matrixAutoUpdate = false;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 4;
+      return mesh;
+    });
+    return { thrusters, navs, plumes };
+  }, [mats, geo]);
 
   const root = useRef<Group>(null!);
-  const flame = useRef<Mesh>(null!);
   const gl = useThree((st) => st.gl);
 
   // Name tag and emote bubble as plain DOM next to the canvas, positioned
@@ -250,6 +402,12 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
       basis: { cam: new Vector3(), up: new Vector3(), right: new Vector3() },
       shown: false,
       phase: Math.random() * 10,
+      kick: 0,
+      acc: 0,
+      a: new Vector3(),
+      b: new Vector3(),
+      back: new Vector3(),
+      m: new Matrix4(),
     }),
     [],
   );
@@ -261,8 +419,17 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
     };
   }, [id, anim]);
 
+  // Recoil when this ship fires.
+  useEffect(
+    () =>
+      onFx((e) => {
+        if (e.kind === 'laser' && e.from === id) anim.kick = 1;
+      }),
+    [id, anim],
+  );
+
   useFrame((state, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.05);
+    const dt = Math.min(Math.max(dtRaw, 0), 0.05);
     const t = state.clock.elapsedTime;
     // Teammates hover on a halo around the rock's silhouette as seen from
     // this camera, a little in front of it, so they stay in view wherever
@@ -273,16 +440,43 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
       anim.pos.copy(anim.target);
       anim.placed = true;
     } else anim.pos.lerp(anim.target, 1 - Math.exp(-dt * 2));
+    anim.kick = Math.max(0, anim.kick - dt * 6);
     const g = root.current;
     g.position.copy(anim.pos);
     g.lookAt(ORIGIN);
     g.rotateZ(Math.sin(t * 0.9 + anim.phase) * 0.12);
+    g.rotateX(Math.sin(t * 0.7 + anim.phase * 2) * 0.04);
+    if (anim.kick > 0) g.translateZ(-0.05 * anim.kick * anim.kick);
     g.updateMatrixWorld();
-    anim.nose.set(0, 0, 0.42).applyMatrix4(g.matrixWorld);
+    anim.nose.set(0, -0.05, 0.4).applyMatrix4(g.matrixWorld);
 
-    const f = 0.85 + Math.sin(t * 31 + anim.phase) * 0.1 + Math.sin(t * 17) * 0.08;
-    flame.current.scale.set(f, f, 0.8 + f * 0.6);
-    thruster.scale.setScalar(0.42 * f);
+    // Engines: flickering glow sprites, exhaust plumes streaming back, a light trail of sparks.
+    const cam = state.camera;
+    const boost = 1 + anim.kick * 0.5;
+    anim.back.set(0, 0, -1).transformDirection(g.matrixWorld);
+    for (let i = 0; i < 2; i++) {
+      const f = 0.85 + Math.sin(t * 31 + anim.phase + i * 2.1) * 0.1 + Math.sin(t * 17 + i) * 0.06;
+      objs.thrusters[i].scale.setScalar(0.3 * f * boost);
+      anim.a.copy(ENGINES[i]).applyMatrix4(g.matrixWorld);
+      anim.b.copy(anim.a).addScaledVector(anim.back, PLUME_LEN * (0.85 + 0.15 * f) * boost);
+      ribbonMatrix(objs.plumes[i].matrix, anim.a, anim.b, 0.12 * boost, cam.position);
+      objs.plumes[i].matrixWorldNeedsUpdate = true;
+      mats.plumes[i].uniforms.uTime.value = t;
+    }
+    anim.acc += dt * TRAIL_RATE;
+    if (anim.acc >= 1) {
+      anim.acc -= 1;
+      const i = Math.random() < 0.5 ? 0 : 1;
+      anim.a.copy(ENGINES[i]).applyMatrix4(g.matrixWorld);
+      sparks(anim.a, anim.back, mats.thruster.color, 1, 1.4, { spread: 0.25, life: 0.7, size: 0.7, drag: 1.2, white: 0.4 });
+    }
+    // Wingtip nav lights double-blink, out of step.
+    for (let i = 0; i < 2; i++) {
+      const ph = (t * 0.8 + anim.phase + i * 0.5) % 1;
+      const on = ph < 0.05 || (ph > 0.12 && ph < 0.17) ? 1 : 0;
+      mats.nav[i].color.copy(color).lerp(WHITE, 0.3).multiplyScalar(0.3 + on * 2.4);
+      objs.navs[i].scale.setScalar(0.09 + on * 0.07);
+    }
 
     const show = !!emote && Date.now() - emote.at < 3000;
     if (show !== anim.shown) {
@@ -303,16 +497,22 @@ function Ship({ id, slot, slots, geo }: { id: string; slot: number; slots: { ang
   });
 
   return (
-    <group ref={root}>
-      <mesh geometry={geo.body} material={mats.hull} />
-      <mesh geometry={geo.nose} material={mats.paint} position={[0, 0, 0.33]} />
-      <mesh geometry={geo.wing} material={mats.paint} position={[0, -0.01, -0.06]} />
-      <mesh geometry={geo.fin} material={mats.paint} position={[0, 0.08, -0.18]} />
-      <mesh geometry={geo.canopy} material={mats.glow} position={[0, 0.06, 0.08]} scale={[1, 0.7, 1.5]} />
-      <mesh geometry={geo.tip} material={mats.glow} position={[0.32, -0.01, -0.06]} />
-      <mesh geometry={geo.tip} material={mats.glow} position={[-0.32, -0.01, -0.06]} />
-      <mesh ref={flame} geometry={geo.flame} material={mats.flame} position={[0, 0, -0.27]} />
-      <primitive object={thruster} />
-    </group>
+    <>
+      <group ref={root} name={'ship:' + id}>
+        <mesh geometry={geo.hull} material={mats.hull} />
+        <mesh geometry={geo.paint} material={mats.paint} />
+        <mesh geometry={geo.glow} material={mats.glow} />
+        <mesh geometry={geo.canopy} material={mats.canopy} />
+        {objs.thrusters.map((s, i) => (
+          <primitive key={'t' + i} object={s} />
+        ))}
+        {objs.navs.map((s, i) => (
+          <primitive key={'n' + i} object={s} />
+        ))}
+      </group>
+      {objs.plumes.map((m, i) => (
+        <primitive key={'p' + i} object={m} />
+      ))}
+    </>
   );
 }

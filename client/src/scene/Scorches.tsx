@@ -13,6 +13,8 @@ import {
   type Group,
 } from 'three';
 import { onFx } from '../state/fx';
+import { useGame } from '../state/store';
+import { surfaceFrame } from './geometry';
 
 const COUNT = 48;
 
@@ -101,7 +103,10 @@ export function Scorches({ parent }: { parent: RefObject<Group | null> }) {
     return { geo, mat, mesh, birth, hot, seed, head: 0, time: 0 };
   }, []);
 
-  const tmp = useMemo(() => ({ inv: new Matrix4(), m: new Matrix4(), p: new Vector3(), n: new Vector3(), q: new Quaternion(), q2: new Quaternion(), s: new Vector3() }), []);
+  const tmp = useMemo(
+    () => ({ inv: new Matrix4(), m: new Matrix4(), p: new Vector3(), n: new Vector3(), sn: new Vector3(), q: new Quaternion(), q2: new Quaternion(), s: new Vector3() }),
+    [],
+  );
 
   useEffect(() => {
     const off = onFx((e) => {
@@ -111,7 +116,15 @@ export function Scorches({ parent }: { parent: RefObject<Group | null> }) {
       g.updateWorldMatrix(true, false);
       tmp.inv.copy(g.matrixWorld).invert();
       tmp.n.copy(e.normal).transformDirection(tmp.inv);
-      tmp.p.copy(e.at).applyMatrix4(tmp.inv).addScaledVector(tmp.n, 0.012);
+      tmp.p.copy(e.at).applyMatrix4(tmp.inv);
+      // Snap onto the rendered surface (craters and ridges move it a little
+      // off the shared one) and lie flat on it.
+      const seed = useGame.getState().s?.seed;
+      if (seed != null && tmp.p.lengthSq() > 1e-6) {
+        surfaceFrame(tmp.p, seed, tmp.p, tmp.sn);
+        tmp.n.lerp(tmp.sn, 0.75).normalize();
+      }
+      tmp.p.addScaledVector(tmp.n, 0.014);
       tmp.q.setFromUnitVectors(Z, tmp.n);
       tmp.q2.setFromAxisAngle(Z, Math.random() * Math.PI * 2);
       tmp.q.multiply(tmp.q2);

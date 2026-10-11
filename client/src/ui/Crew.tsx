@@ -5,7 +5,7 @@ import { closeParty, joinParty, leaveParty, openParty, resetSave, usesServer } f
 import { hueColor } from '../state/refs';
 import { useGame } from '../state/store';
 import { Changelog } from './Changelog';
-import { ConfirmButton, useMe } from './common';
+import { ConfirmButton, Icon, useMe } from './common';
 
 const EMOTES = ['👋', '👍', '🔥', '💎', '🎉', '⏳'];
 
@@ -26,7 +26,15 @@ function Party() {
         <>
           <p className="hint">Play with up to 3 friends in your world. They keep their own progress here and help grow your Forge Tree.</p>
           <button className="primary wide" disabled={net === 'connecting'} onClick={openParty}>
-            {net === 'connecting' ? 'Opening party…' : '👥 Open a party'}
+            <span className="lbl">
+              {net === 'connecting' ? (
+                'Opening party…'
+              ) : (
+                <>
+                  <Icon name="crew" /> Open a party
+                </>
+              )}
+            </span>
           </button>
           <form
             className="join"
@@ -47,7 +55,15 @@ function Party() {
           <div className="code">
             <span>Party code</span>
             <b>{code}</b>
-            <button onClick={copy}>{copied ? 'Copied ✓' : 'Copy invite link'}</button>
+            <button onClick={copy} className={copied ? 'copied' : ''}>
+              {copied ? (
+                <>
+                  <Icon name="check" /> Copied
+                </>
+              ) : (
+                'Copy invite link'
+              )}
+            </button>
           </div>
           <p className="hint">Friends join with this code, or from the friends list if they're signed in on the main menu.</p>
           {mode === 'host' && (
@@ -88,21 +104,23 @@ function Mates({ s }: { s: RoomState }) {
       <h3>
         Crew <em>{online.length}/4</em>
       </h3>
-      {online.map((p) => {
-        const e = emotes[p.id];
-        return (
-          <div key={p.id} className="mate" style={{ ['--c' as string]: hueColor(p.hue, 64) }}>
-            <i />
-            <b>
-              {p.name}
-              {p.id === me && <small> (you)</small>}
-              {e && Date.now() - e.at < 4000 && <span className="emote">{e.id}</span>}
-            </b>
-            <span>{fmt(passiveOrePerSec(s, p))}/s</span>
-            {p.wallet.cores > 0 && <span className="cores">★{fmt(p.wallet.cores)}</span>}
-          </div>
-        );
-      })}
+      <div className="mates">
+        {online.map((p) => {
+          const e = emotes[p.id];
+          return (
+            <div key={p.id} className="mate" style={{ ['--c' as string]: hueColor(p.hue, 64) }}>
+              <i />
+              <b>
+                {p.name}
+                {p.id === me && <small> (you)</small>}
+                {e && Date.now() - e.at < 4000 && <span className="emote">{e.id}</span>}
+              </b>
+              <span>{fmt(passiveOrePerSec(s, p))}/s</span>
+              {p.wallet.cores > 0 && <span className="cores">★{fmt(p.wallet.cores)}</span>}
+            </div>
+          );
+        })}
+      </div>
       {away > 0 && mode !== 'guest' && (
         <p className="hint">
           {away} crewmate{away === 1 ? '' : 's'} away. Their progress is saved in this world.
@@ -184,7 +202,7 @@ export function CrewTab() {
       </section>
       <section className="foot">
         <a className="ghost" href="../">
-          ← All games
+          <Icon name="back" /> All games
         </a>
         {(mode === 'solo' || mode === 'host') && (
           <ConfirmButton className="ghost danger" onConfirm={resetSave} armed="Really wipe this world?">

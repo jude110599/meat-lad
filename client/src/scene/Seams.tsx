@@ -14,10 +14,10 @@ import {
   type BufferGeometry,
   type Group,
 } from 'three';
-import { RESOURCE_DEFS, rng, surgeOn, surfacePoint } from '@starforge/shared';
+import { RESOURCE_DEFS, rng, surgeOn } from '@starforge/shared';
 import { act } from '../net/actions';
 import { useGame } from '../state/store';
-import { crystalGeometry } from './geometry';
+import { crystalGeometry, surfaceFrame } from './geometry';
 import { byId, damp, glowTexture, hostNow, SEP, splitIds, tapOk, useBundle } from './util';
 
 const ORE = new Color(RESOURCE_DEFS.ore.color);
@@ -51,7 +51,7 @@ function SeamCrystal({ id, seed, shared }: { id: number; seed: number; shared: S
 
   const res = useBundle(
     () => ({
-      mat: new MeshStandardMaterial({ color: '#2a1606', emissive: ORE, emissiveIntensity: 2.5, roughness: 0.22, metalness: 0.15, flatShading: true }),
+      mat: new MeshStandardMaterial({ color: '#2a1606', emissive: ORE, emissiveIntensity: 2.5, roughness: 0.22, metalness: 0.15 }),
       glowMat: new SpriteMaterial({ map: glowTexture(), color: ORE, blending: AdditiveBlending, depthWrite: false, transparent: true }),
     }),
     [],
@@ -90,8 +90,14 @@ function SeamCrystal({ id, seed, shared }: { id: number; seed: number; shared: S
   const placement = useMemo(() => {
     if (!dir) return null;
     const n = new Vector3(dir[0], dir[1], dir[2]).normalize();
-    const p = new Vector3(...surfacePoint(dir, seed)).addScaledVector(n, -0.04);
-    const q = new Quaternion().setFromUnitVectors(Y_UP, n);
+    // Sit on the rendered surface (it has craters the shared one doesn't),
+    // standing mostly upright and leaning a little with the slope.
+    const p = new Vector3();
+    const sn = new Vector3();
+    surfaceFrame(n, seed, p, sn);
+    const up = n.clone().lerp(sn, 0.35).normalize();
+    p.addScaledVector(up, -0.04);
+    const q = new Quaternion().setFromUnitVectors(Y_UP, up);
     return { p, q };
   }, [dir, seed]);
 

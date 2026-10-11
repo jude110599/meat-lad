@@ -1,239 +1,154 @@
 import { useEffect, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
-import {
-  AdditiveBlending,
-  Color,
-  CylinderGeometry,
-  DynamicDrawUsage,
-  InstancedBufferAttribute,
-  InstancedMesh,
-  Matrix4,
-  PlaneGeometry,
-  Quaternion,
-  ShaderMaterial,
-  Vector3,
-} from 'three';
-import { surgeOn } from '@starforge/shared';
+import { useFrame, useThree } from '@react-three/fiber';
+import { Color, DynamicDrawUsage, InstancedBufferAttribute, InstancedMesh, Matrix4, PlaneGeometry, Vector3 } from 'three';
+import { RESOURCE_DEFS, surgeOn } from '@starforge/shared';
 import { onFx } from '../state/fx';
-import { refs } from '../state/refs';
+import { hueColor, refs } from '../state/refs';
 import { useGame } from '../state/store';
+import { Flashes } from './Flashes';
+import { flash, makeBeamMaterial, ribbonMatrix } from './fxkit';
 import { cssColor, hostNow, useBundle } from './util';
 
 const POOL = 12;
-const BEAM_LIFE = 0.13;
-const FLARE_LIFE = 0.26;
+const BEAM_LIFE = 0.16;
 /** My laser fires from a point fixed relative to the camera (bottom right). */
 const MUZZLE = new Vector3(0.9, -0.7, -1.2);
-const Y_UP = new Vector3(0, 1, 0);
 const WHITE = new Color(1, 1, 1);
 const SURGE = new Color('#bff8ff');
-
-const BEAM_VERT = /* glsl */ `
-varying vec3 vN;
-varying vec3 vV;
-varying float vY;
-varying vec3 vCol;
-void main() {
-  vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * mat3(instanceMatrix) * normal);
-  vV = normalize(-mv.xyz);
-  vY = uv.y;
-#ifdef USE_INSTANCING_COLOR
-  vCol = instanceColor;
-#else
-  vCol = vec3(1.0);
-#endif
-  gl_Position = projectionMatrix * mv;
-}
-`;
-const BEAM_FRAG = /* glsl */ `
-varying vec3 vN;
-varying vec3 vV;
-varying float vY;
-varying vec3 vCol;
-void main() {
-  float f = abs(dot(normalize(vN), normalize(vV)));
-  float glow = pow(f, 1.4);
-  float core = pow(f, 6.0);
-  float taper = smoothstep(0.0, 0.06, vY);
-  vec3 c = vCol * glow * 1.3 + vec3(1.0) * core * min(1.5, length(vCol));
-  gl_FragColor = vec4(c * taper, 1.0);
-}
-`;
-
-const FLARE_VERT = /* glsl */ `
-varying vec2 vUv;
-varying vec3 vCol;
-void main() {
-  vUv = uv;
-#ifdef USE_INSTANCING_COLOR
-  vCol = instanceColor;
-#else
-  vCol = vec3(1.0);
-#endif
-  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-}
-`;
-const FLARE_FRAG = /* glsl */ `
-varying vec2 vUv;
-varying vec3 vCol;
-void main() {
-  vec2 c = vUv * 2.0 - 1.0;
-  float d = dot(c, c);
-  if (d > 1.0) discard;
-  float glow = exp(-d * 4.0) * (1.0 - d);
-  float core = exp(-d * 40.0);
-  // Four-point star.
-  float star = exp(-abs(c.x) * 26.0) * exp(-abs(c.y) * 2.5) + exp(-abs(c.y) * 26.0) * exp(-abs(c.x) * 2.5);
-  gl_FragColor = vec4(vCol * (glow + star * 0.8) + vec3(core * 2.0) * length(vCol) * 0.4, 1.0);
-}
-`;
+const GOLD = new Color('#ffd36a');
+const ORE = new Color(RESOURCE_DEFS.ore.color);
+const BREAK = new Color('#ffb46a');
 
 interface Beam {
   t: number;
-  ft: number;
   mine: boolean;
   from: Vector3;
   to: Vector3;
   color: Color;
   width: number;
-  hot: boolean;
 }
 
 /**
- * Pooled drill lasers: one instanced beam mesh and one instanced flare mesh
- * (impact + muzzle) for every laser in flight. Mine fire from the camera rig,
- * other players' from their ships. Crits burn thicker and whiter; during a
- * resonance surge every beam runs thicker, brighter and a little icy.
+ * Pooled drill lasers: camera-facing ribbons with a white-hot core inside a
+ * coloured glow and energy rippling down them, one instanced draw for every
+ * laser in flight. Mine fire from the camera rig, other players' from their
+ * ships. Each shot flashes at the muzzle and flares where it lands; crits
+ * (from the strike result, 'impact') add a gold star burst, an anamorphic
+ * streak and rings in the striker's colour. During a resonance surge every
+ * beam runs thicker, brighter and a little icy.
+ *
+ * Also renders the shared flash pool (Flashes.tsx).
  */
 export function Lasers() {
+  const camera = useThree((s) => s.camera);
   const res = useBundle(
     () => ({
-      beamGeo: new CylinderGeometry(1, 1, 1, 8, 1, true).translate(0, 0.5, 0),
-      flareGeo: new PlaneGeometry(1, 1),
-      beamMat: new ShaderMaterial({ vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG, transparent: true, depthWrite: false, blending: AdditiveBlending }),
-      flareMat: new ShaderMaterial({ vertexShader: FLARE_VERT, fragmentShader: FLARE_FRAG, transparent: true, depthWrite: false, blending: AdditiveBlending }),
+      geo: new PlaneGeometry(1, 1).translate(0, 0.5, 0),
+      mat: makeBeamMaterial({ core: 1, flow: 70, freq: 7, taper: 0.3 }),
     }),
     [],
   );
 
-  const meshes = useMemo(() => {
-    const beams = new InstancedMesh(res.beamGeo, res.beamMat, POOL);
-    const flares = new InstancedMesh(res.flareGeo, res.flareMat, POOL * 2);
-    beams.instanceColor = new InstancedBufferAttribute(new Float32Array(POOL * 3), 3).setUsage(DynamicDrawUsage);
-    flares.instanceColor = new InstancedBufferAttribute(new Float32Array(POOL * 6), 3).setUsage(DynamicDrawUsage);
-    for (const m of [beams, flares]) {
-      m.frustumCulled = false;
-      m.count = 0;
-      m.instanceMatrix.setUsage(DynamicDrawUsage);
-    }
-    beams.renderOrder = 6;
-    flares.renderOrder = 7;
-    return { beams, flares };
+  const beams = useMemo(() => {
+    const m = new InstancedMesh(res.geo, res.mat, POOL);
+    m.instanceColor = new InstancedBufferAttribute(new Float32Array(POOL * 3), 3).setUsage(DynamicDrawUsage);
+    m.instanceMatrix.setUsage(DynamicDrawUsage);
+    m.frustumCulled = false;
+    m.count = 0;
+    m.renderOrder = 6;
+    return m;
   }, [res]);
-  useEffect(
-    () => () => {
-      meshes.beams.dispose();
-      meshes.flares.dispose();
-    },
-    [meshes],
-  );
+  useEffect(() => () => beams.dispose(), [beams]);
 
   const pool = useMemo<Beam[]>(
-    () =>
-      Array.from({ length: POOL }, () => ({ t: 0, ft: 0, mine: false, from: new Vector3(), to: new Vector3(), color: new Color(), width: 0.03, hot: false })),
+    () => Array.from({ length: POOL }, () => ({ t: 0, mine: false, from: new Vector3(), to: new Vector3(), color: new Color(), width: 0.1 })),
     [],
   );
-  const head = useMemo(() => ({ i: 0 }), []);
-  const tmp = useMemo(() => ({ m: new Matrix4(), q: new Quaternion(), s: new Vector3(), d: new Vector3(), p: new Vector3(), c: new Color() }), []);
+  const tmp = useMemo(() => ({ head: 0, m: new Matrix4(), c: new Color(), c2: new Color(), p: new Vector3() }), []);
 
   useEffect(
     () =>
       onFx((e) => {
-        if (e.kind !== 'laser') return;
-        const st = useGame.getState();
-        const mine = e.from === st.me;
-        let origin: Vector3 | undefined;
-        if (!mine) {
-          origin = refs.ships.get(e.from);
-          if (!origin) return;
+        if (e.kind === 'laser') {
+          const st = useGame.getState();
+          const mine = e.from === st.me;
+          let origin: Vector3 | undefined;
+          if (mine) {
+            camera.updateMatrixWorld();
+            origin = tmp.p.copy(MUZZLE).applyMatrix4(camera.matrixWorld);
+          } else {
+            origin = refs.ships.get(e.from);
+            if (!origin) return;
+          }
+          const b = pool[tmp.head];
+          tmp.head = (tmp.head + 1) % POOL;
+          b.mine = mine;
+          b.from.copy(origin);
+          b.to.copy(e.to);
+          const surge = !!st.s && surgeOn(st.s, hostNow());
+          b.color.copy(cssColor(e.color));
+          if (e.crit) b.color.lerp(WHITE, 0.5);
+          else if (surge) b.color.lerp(SURGE, 0.35);
+          b.color.multiplyScalar(e.crit ? 2.6 : surge ? 2.3 : 1.8);
+          b.width = (mine ? 0.12 : 0.1) * (e.crit ? 1.5 : 1) * (surge ? 1.35 : 1);
+          b.t = 1;
+          // Muzzle flash and the impact: a star flare and a quick ring.
+          const hot = e.crit || surge;
+          flash(b.from, tmp.c.copy(b.color).multiplyScalar(0.8), { kind: 'glow', size: mine ? 0.32 : 0.36, size1: 0.12, life: 0.12 });
+          flash(b.to, tmp.c.copy(b.color).lerp(WHITE, 0.25).multiplyScalar(0.8), { kind: 'star', size: hot ? 0.7 : 0.5, size1: hot ? 0.95 : 0.7, life: 0.2, lift: 0.25 });
+          flash(b.to, tmp.c.copy(b.color).multiplyScalar(0.3), { kind: 'ring', size: 0.1, size1: hot ? 0.7 : 0.48, life: 0.22, lift: 0.22 });
+        } else if (e.kind === 'impact') {
+          if (!e.crit && !e.broke) {
+            // A plain hit on a seam glints ore-gold.
+            if (e.seam) flash(e.at, tmp.c.copy(ORE).multiplyScalar(1.6), { kind: 'glow', size: 0.5, size1: 0.3, life: 0.3, lift: 0.22 });
+            return;
+          }
+          const st = useGame.getState();
+          const hue = st.s?.players[e.by]?.hue ?? 50;
+          const own = tmp.c2.copy(cssColor(hueColor(hue, 62)));
+          const big = e.broke ? 1.35 : 1;
+          const mine = e.by === st.me;
+          const k = (mine ? 1 : 0.7) * big;
+          flash(e.at, tmp.c.copy(GOLD).multiplyScalar(3), { kind: 'star', size: 0.9 * k, size1: 1.9 * k, life: 0.42, lift: 0.4 });
+          flash(e.at, tmp.c.copy(GOLD).lerp(WHITE, 0.4).multiplyScalar(2), { kind: 'streak', size: 0.28 * k, size1: 0.4 * k, aspect: 9, life: 0.34, lift: 0.42 });
+          flash(e.at, tmp.c.copy(own).multiplyScalar(2.6), { kind: 'ring', size: 0.2, size1: 1.8 * k, life: 0.5, lift: 0.3 });
+          flash(e.at, tmp.c.copy(GOLD).multiplyScalar(1.8), { kind: 'ring', size: 0.15, size1: 1.15 * k, life: 0.42, lift: 0.32, delay: 0.07 });
+          if (e.broke) flash(e.at, tmp.c.copy(BREAK).multiplyScalar(2.2), { kind: 'ring', size: 0.3, size1: 2.6, life: 0.7, lift: 0.3, delay: 0.03 });
         }
-        const b = pool[head.i];
-        head.i = (head.i + 1) % POOL;
-        b.mine = mine;
-        if (origin) b.from.copy(origin);
-        b.to.copy(e.to);
-        const surge = !!st.s && surgeOn(st.s, hostNow());
-        b.hot = e.crit || surge;
-        b.color.copy(cssColor(e.color));
-        if (e.crit) b.color.lerp(WHITE, 0.55);
-        else if (surge) b.color.lerp(SURGE, 0.35);
-        b.color.multiplyScalar(e.crit ? 3.2 : surge ? 2.6 : 2);
-        b.width = (mine ? 0.028 : 0.022) * (e.crit ? 2 : 1) * (surge ? 1.5 : 1);
-        b.t = 1;
-        b.ft = 1;
       }),
-    [pool, head],
+    [pool, tmp, camera],
   );
 
   useFrame((state, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.05);
+    const dt = Math.min(Math.max(dtRaw, 0), 0.05);
     const cam = state.camera;
-    const { beams, flares } = meshes;
-    let nb = 0;
-    let nf = 0;
+    res.mat.uniforms.uTime.value = state.clock.elapsedTime;
+    let n = 0;
     for (let i = 0; i < POOL; i++) {
       const b = pool[i];
-      if (b.ft <= 0) continue;
+      if (b.t <= 0) continue;
       b.t = Math.max(0, b.t - dt / BEAM_LIFE);
-      b.ft = Math.max(0, b.ft - dt / FLARE_LIFE);
+      if (b.t <= 0) continue;
       if (b.mine) b.from.copy(MUZZLE).applyMatrix4(cam.matrixWorld);
-
-      if (b.t > 0) {
-        tmp.d.copy(b.to).sub(b.from);
-        const len = tmp.d.length();
-        tmp.q.setFromUnitVectors(Y_UP, tmp.d.divideScalar(Math.max(1e-4, len)));
-        const w = b.width * (0.35 + 0.65 * b.t);
-        tmp.m.compose(b.from, tmp.q, tmp.s.set(w, len, w));
-        beams.setMatrixAt(nb, tmp.m);
-        beams.setColorAt(nb, tmp.c.copy(b.color).multiplyScalar(b.t));
-        nb++;
-      }
-
-      // Impact flare (billboard), bigger on hot hits; pulled toward the camera
-      // so the surface doesn't clip it.
-      const k = b.ft;
-      const size = (b.hot ? 0.75 : 0.5) * (0.6 + (1 - k) * 0.8);
-      tmp.p.copy(cam.position).sub(b.to).setLength(0.22).add(b.to);
-      tmp.m.compose(tmp.p, cam.quaternion, tmp.s.set(size, size, size));
-      flares.setMatrixAt(nf, tmp.m);
-      flares.setColorAt(nf, tmp.c.copy(b.color).multiplyScalar(k * k * 0.9));
-      nf++;
-      // Muzzle flash, shorter.
-      if (b.t > 0) {
-        const ms = (b.mine ? 0.16 : 0.22) * (0.6 + b.t * 0.6);
-        tmp.m.compose(b.from, cam.quaternion, tmp.s.set(ms, ms, ms));
-        flares.setMatrixAt(nf, tmp.m);
-        flares.setColorAt(nf, tmp.c.copy(b.color).multiplyScalar(b.t * 0.7));
-        nf++;
-      }
+      const age = 1 - b.t;
+      // Snaps open wide, then thins out as it fades.
+      const w = b.width * (age < 0.15 ? 0.7 + (age / 0.15) * 0.5 : 0.45 + 0.75 * b.t);
+      ribbonMatrix(tmp.m, b.from, b.to, w, cam.position);
+      beams.setMatrixAt(n, tmp.m);
+      beams.setColorAt(n, tmp.c.copy(b.color).multiplyScalar(b.t * Math.sqrt(b.t)));
+      n++;
     }
-    beams.count = nb;
-    flares.count = nf;
-    if (nb) {
+    beams.count = n;
+    if (n) {
       beams.instanceMatrix.needsUpdate = true;
       if (beams.instanceColor) beams.instanceColor.needsUpdate = true;
-    }
-    if (nf) {
-      flares.instanceMatrix.needsUpdate = true;
-      if (flares.instanceColor) flares.instanceColor.needsUpdate = true;
     }
   });
 
   return (
     <>
-      <primitive object={meshes.beams} />
-      <primitive object={meshes.flares} />
+      <primitive object={beams} />
+      <Flashes />
     </>
   );
 }
