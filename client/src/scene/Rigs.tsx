@@ -16,23 +16,38 @@ import {
   type Group,
 } from 'three';
 import { surfacePoint } from '@starforge/shared';
+import { hueColor } from '../state/refs';
 import { useGame } from '../state/store';
 import { sparks } from './bus';
-import { SEP, useBundle } from './util';
+import { roundRobin, SEP, setCss, useBundle } from './util';
 
 const MAX_RIGS = 16;
 const Y_UP = new Vector3(0, 1, 0);
 const X_AXIS = new Vector3(1, 0, 0);
 const SPARK = new Color('#ffb860');
-const WORK_LIGHT = new Color('#6dffc0');
 
-/** Auto rigs: `min(16, levels.rig)` tripod drills standing around the seams. */
+/**
+ * Auto-Rigs: `min(16, Σ levels.rig)` over online players, tripod drills
+ * standing around the seams, shared round-robin between owners. Each rig's
+ * work light glows in its owner's hue.
+ */
 export function Rigs() {
-  const count = useGame((st) => Math.min(MAX_RIGS, st.s?.levels.rig ?? 0));
+  const key = useGame((st) => {
+    const s = st.s;
+    if (!s) return '';
+    const out: string[] = [];
+    for (const p of Object.values(s.players)) if (p.online && p.levels.rig > 0) out.push(`${p.id} ${p.hue} ${p.levels.rig}`);
+    return out.sort().join(SEP);
+  });
   const seamKey = useGame((st) => (st.s ? st.s.seams.map((x) => x.id).join(SEP) : ''));
   const seed = useGame((st) => st.s?.seed ?? 1);
-  if (count <= 0 || !seamKey) return null;
-  return <RigField count={count} seamKey={seamKey} seed={seed} />;
+  const lights = useMemo(() => {
+    const owners = key ? key.split(SEP).map((row) => row.split(' ').map(Number)) : [];
+    const color = owners.map(([, hue]) => setCss(new Color(), hueColor(hue, 66)));
+    return roundRobin(owners.map((o) => o[2]), MAX_RIGS).map((i) => color[i]);
+  }, [key]);
+  if (lights.length <= 0 || !seamKey) return null;
+  return <RigField count={lights.length} lights={lights} seamKey={seamKey} seed={seed} />;
 }
 
 function easeOutBack(t: number): number {
@@ -41,7 +56,7 @@ function easeOutBack(t: number): number {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-function RigField({ count, seamKey, seed }: { count: number; seamKey: string; seed: number }) {
+function RigField({ count, lights, seamKey, seed }: { count: number; lights: Color[]; seamKey: string; seed: number }) {
   const res = useBundle(
     () => ({
       legGeo: new CylinderGeometry(0.011, 0.016, 1, 5).translate(0, 0.5, 0),
@@ -183,7 +198,7 @@ function RigField({ count, seamKey, seed }: { count: number; seamKey: string; se
       tmp.local.makeTranslation(0, 0.37, 0);
       light.setMatrixAt(r, tmp.out.multiplyMatrices(tmp.rig, tmp.local));
       const pulse = 0.5 + 0.5 * Math.sin(t * 4.2 + r * 1.7);
-      tmp.c.copy(WORK_LIGHT).multiplyScalar(1.2 + pulse * 2.6);
+      tmp.c.copy(lights[r] ?? SPARK).multiplyScalar(1.2 + pulse * 2.6);
       light.setColorAt(r, tmp.c);
 
       if (t >= state.nextSpark[r] && state.pop[r] >= 1) {

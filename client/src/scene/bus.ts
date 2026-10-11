@@ -1,4 +1,4 @@
-import { Color, Vector3 } from 'three';
+import { Color, type Vector3 } from 'three';
 
 /**
  * Scene-internal mutable state shared between components that animate in
@@ -26,22 +26,24 @@ type WaveFn = (color: Color, strength: number) => void;
 export const bus = {
   /** Decaying camera shake amplitude (fed by 'shake' fx). */
   shake: 0,
-  /** Continuous low rumble 0..1 (quake). */
-  rumble: 0,
   /** Chromatic aberration spike, decays in PostFX. */
   aberration: 0,
   /** Bloom intensity bump, decays in PostFX. */
   bloom: 0,
-  /** Overclock tint colour and strength (decays in Lights). */
+  /** 'flash' tint colour and strength (decays in Lights). */
   tint: new Color(1, 1, 1),
   tintAmt: 0,
-  /** Eased solar flare amount 0..1 and the current sun direction (written by Sky). */
-  flare: 0,
-  sunDir: new Vector3(6, 4, 5).normalize(),
+  /** Eased resonance surge amount 0..1 (written by PostFX), for the cyan wash in Sky and Lights. */
+  surge: 0,
   /** Quantum Leap warp envelope 0..1 (written by Warp). */
   warp: 0,
   /** Pixels per world unit at distance 1, for size-attenuated point sprites (written by CameraRig). */
   pointScale: 800,
+  /**
+   * Eased size (CSS px) of the screen area the HUD leaves visible. CameraRig
+   * shifts the projection so the orbit target sits at its centre.
+   */
+  view: { w: 1, h: 1 },
 
   sparks: null as SparkFn | null,
   floater: null as FloatFn | null,

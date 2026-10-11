@@ -2,7 +2,7 @@
 export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   {
     v: '0.3.0',
-    when: 'WHEN_PLACEHOLDER',
+    when: 'Oct 11, 2026, 4:35 PM UTC',
     items: [
       'A new co-op idea: no more Miner and Refiner roles. Everyone taps the asteroid, buys their own upgrades and builds the same things.',
       'The Forge Tree: 20 big upgrades the whole crew pays into together with ore, alloy and Star Cores. Each one unlocks for everyone, for good, and opens new upgrades (Auto-Rigs, Smelters, Harvesters, Seam Scanners, Alloy Plating), income multipliers and speed-ups. They are expensive on purpose, so choose together.',

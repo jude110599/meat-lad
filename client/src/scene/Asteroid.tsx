@@ -1,17 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { AdditiveBlending, Color, FrontSide, MeshStandardMaterial, ShaderMaterial, Vector3, type Group, type Mesh } from 'three';
-import { HEAT_MAX, hotThreshold } from '@starforge/shared';
+import { surgeOn } from '@starforge/shared';
 import { act } from '../net/actions';
 import { onFx } from '../state/fx';
 import { refs } from '../state/refs';
 import { useGame } from '../state/store';
 import { buildRock } from './geometry';
-import { QuakeNodes } from './QuakeNodes';
 import { Rigs } from './Rigs';
 import { Scorches } from './Scorches';
 import { Seams } from './Seams';
-import { buffActive, damp, hostNow, useBundle, useDisposable } from './util';
+import { damp, hostNow, tapOk, useBundle, useDisposable } from './util';
 
 const SHELL_VERT = /* glsl */ `
 varying vec3 vN;
@@ -29,7 +28,6 @@ void main() {
 const SHELL_FRAG = /* glsl */ `
 uniform float uTime;
 uniform float uHeat;
-uniform float uLocked;
 uniform float uRes;
 uniform vec3 uHeatColor;
 varying vec3 vN;
@@ -40,11 +38,8 @@ void main() {
   float rim = pow(f, 2.4);
   // Heat crawls over the surface.
   float crawl = 0.7 + 0.3 * sin(vLocal.y * 5.0 + uTime * 3.1) * sin(vLocal.x * 4.3 - uTime * 2.2 + vLocal.z * 3.0);
-  // Overheated: hard stutter.
-  float stutter = step(0.45, fract(sin(floor(uTime * 16.0) * 91.7) * 43758.5453));
-  float flick = mix(1.0, 0.35 + 0.95 * stutter, uLocked);
-  vec3 col = uHeatColor * uHeat * (rim * 1.7 + f * 0.22) * crawl * flick;
-  // Resonance: a cool cyan rim.
+  vec3 col = uHeatColor * uHeat * (rim * 1.7 + f * 0.22) * crawl;
+  // Resonance surge: a cool cyan rim.
   col += vec3(0.25, 0.95, 1.0) * uRes * (pow(f, 3.0) * 2.2 + 0.03);
   gl_FragColor = vec4(col, 1.0);
 }
@@ -52,11 +47,18 @@ void main() {
 
 const ORANGE = new Color('#ff8a2a');
 const RED = new Color('#ff2414');
+/** Heat each of my strikes adds, and how fast it bleeds off (per second). */
+const HEAT_PER_TAP = 0.065;
+const HEAT_COOL = 0.9;
 
 /**
- * The spinning rock. `refs.rock` is the spin group (seam and node directions
- * live in its local space); an inner squash group carries the "thunk" on every
- * burst so seams, rigs and scorch marks squash with the surface.
+ * The spinning rock. `refs.rock` is the spin group (seam directions live in
+ * its local space); an inner squash group carries the "thunk" on every burst
+ * so seams, rigs and scorch marks squash with the surface.
+ *
+ * The rock glows hotter the faster I tap: every laser I fire adds heat that
+ * bleeds off over a second or two, so a steady frenzy keeps it orange-red.
+ * A resonance surge adds a cyan rim.
  */
 export function Asteroid() {
   const seed = useGame((s) => s.s?.seed ?? 1);
@@ -70,7 +72,6 @@ export function Asteroid() {
         uniforms: {
           uTime: { value: 0 },
           uHeat: { value: 0 },
-          uLocked: { value: 0 },
           uRes: { value: 0 },
           uHeatColor: { value: ORANGE.clone() },
         },
@@ -85,7 +86,7 @@ export function Asteroid() {
   const spin = useRef<Group>(null!);
   const squash = useRef<Group>(null!);
   const shell = useRef<Mesh>(null!);
-  const sim = useMemo(() => ({ x: 0, v: 0, heat: 0, hot: 0, res: 0 }), []);
+  const sim = useMemo(() => ({ x: 0, v: 0, taps: 0, heat: 0, hot: 0, res: 0 }), []);
   const normal = useMemo(() => new Vector3(), []);
 
   useLayoutEffect(() => {
@@ -99,8 +100,9 @@ export function Asteroid() {
   useEffect(
     () =>
       onFx((e) => {
-        // Only bursts on the rock thunk it (the station may emit bursts too).
-        if (e.kind === 'burst' && e.at.lengthSq() < 16) sim.v -= Math.min(0.75, 0.22 + e.count * 0.012);
+        // Only bursts on the rock thunk it (a caught comet bursts further out).
+        if (e.kind === 'burst' && e.at.lengthSq() < 10.5) sim.v -= Math.min(0.75, 0.22 + e.count * 0.012);
+        else if (e.kind === 'laser' && e.from === useGame.getState().me) sim.taps = Math.min(1, sim.taps + HEAT_PER_TAP);
       }),
     [sim],
   );
@@ -116,32 +118,26 @@ export function Asteroid() {
     sim.x = Math.max(-0.07, Math.min(0.05, sim.x + sim.v * dt));
     squash.current.scale.set(1 + sim.x * 0.8, 1 + sim.x, 1 + sim.x * 0.8);
 
-    const st = useGame.getState();
-    const s = st.s;
-    const me = s?.players[st.me];
-    const now = hostNow();
-    const heat = me ? me.heat / HEAT_MAX : 0;
-    const hot = !!(me && s && me.heat >= hotThreshold(s.skills));
-    const locked = !!me && now < me.lockedUntil;
-    sim.heat = damp(sim.heat, heat, 7, dt);
-    sim.hot = damp(sim.hot, hot || locked ? 1 : 0, 6, dt);
-    sim.res = damp(sim.res, s && buffActive(s, 'resonance', now) ? 1 : 0, 3, dt);
+    const s = useGame.getState().s;
+    sim.taps = Math.max(0, sim.taps - sim.taps * HEAT_COOL * dt - 0.01 * dt);
+    sim.heat = damp(sim.heat, sim.taps, 7, dt);
+    sim.hot = damp(sim.hot, sim.taps > 0.7 ? 1 : 0, 4, dt);
+    sim.res = damp(sim.res, s && surgeOn(s, hostNow()) ? 1 : 0, 3, dt);
 
     const u = shellMat.uniforms;
     u.uTime.value = state.clock.elapsedTime;
     u.uHeat.value = Math.pow(sim.heat, 1.3) * (1.2 + sim.hot * 1.1);
     (u.uHeatColor.value as Color).copy(ORANGE).lerp(RED, sim.hot);
-    u.uLocked.value = locked ? 1 : 0;
     u.uRes.value = sim.res;
     shell.current.visible = u.uHeat.value > 0.004 || sim.res > 0.004;
   });
 
   const onDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (e.nativeEvent.button > 0) return;
+    if (!tapOk(e.nativeEvent)) return;
     if (e.face) normal.copy(e.face.normal).transformDirection(e.object.matrixWorld);
     else normal.copy(e.point).normalize();
-    act.strike({}, e.point, normal);
+    act.strike(null, e.point, normal);
   };
 
   return (
@@ -150,7 +146,6 @@ export function Asteroid() {
         <mesh geometry={geo.rock} material={rockMat} onPointerDown={onDown} />
         <mesh ref={shell} geometry={geo.shell} material={shellMat} renderOrder={2} />
         <Seams />
-        <QuakeNodes />
         <Rigs />
         <Scorches parent={squash} />
       </group>

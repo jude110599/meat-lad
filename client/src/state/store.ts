@@ -89,7 +89,7 @@ export const useGame = create<GameStore>((set, get) => ({
   openTab: (t) => {
     const st = get();
     if (st.sheet && st.tab === t) set({ sheet: false });
-    else set({ tab: t, sheet: true });
+    else set({ tab: t, sheet: true, ...(st.tab !== t ? { node: null } : {}) });
   },
 }));
 

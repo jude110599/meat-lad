@@ -3,9 +3,12 @@ import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, BufferAttribute, BufferGeometry, DynamicDrawUsage, Points, ShaderMaterial, type Color, type Vector3 } from 'three';
 import { onFx } from '../state/fx';
 import { bus, type SparkOpts } from './bus';
-import { cssColor } from './util';
+import { cssColor, isLite } from './util';
 
-const MAX = 4000;
+/** Phones and narrow windows get half the pool and thinner bursts. */
+const LITE = isLite();
+const MAX = LITE ? 2000 : 4000;
+const COUNT_SCALE = LITE ? 0.6 : 1;
 
 const VERT = /* glsl */ `
 attribute float aSize;
@@ -90,7 +93,7 @@ export function Particles() {
       const sizeMul = o?.size ?? 1;
       const dragK = o?.drag ?? 2.2;
       const white = o?.white ?? 0.2;
-      const n = Math.min(count | 0, 400);
+      const n = Math.min(Math.ceil(count * COUNT_SCALE), 400);
       for (let k = 0; k < n; k++) {
         const i = sys.head;
         sys.head = (sys.head + 1) % MAX;

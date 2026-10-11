@@ -24,6 +24,12 @@ declare global {
  * a friend who accepts lands on starforge/?join=CODE.
  */
 export function attachFriends(): void {
+  // On phones the list starts folded to a small pill, so it doesn't cover the rock.
+  try {
+    if (innerWidth < WIDE_MIN_PX && localStorage.getItem('mlf:min:starforge') === null) localStorage.setItem('mlf:min:starforge', '1');
+  } catch {
+    /* storage unavailable */
+  }
   window.MLFriends?.attach({
     game: 'starforge',
     dock: 'bottom-left',

@@ -64,8 +64,8 @@ interface Wave {
 
 /**
  * Expanding rings of light from the rock: a camera-facing ring, a tilted
- * equatorial ring and a faint fresnel sphere. Fired by 'shockwave' fx (event
- * start/end) and by the quake's periodic pulses via `shockwave()` in bus.ts.
+ * equatorial ring and a faint fresnel sphere. Fired by 'shockwave' fx (a
+ * Forge Tree node unlocked, a surge began) or directly via `shockwave()` in bus.ts.
  */
 export function Shockwaves() {
   const res = useBundle(

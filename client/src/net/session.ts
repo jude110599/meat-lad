@@ -103,7 +103,13 @@ export function loadSave(): { state: RoomState; savedAt: number; mine: RoomState
 function hello(): Hello {
   const st = useGame.getState();
   // Players arriving from an invite skip the lobby: fall back to their saved or site name.
-  const name = st.name || ls('starforge_name') || window.MLFriends?.me()?.name || 'Prospector';
+  let name = st.name || ls('starforge_name');
+  if (!name) {
+    name = window.MLFriends?.me()?.name ?? null;
+    // Remember it, so a rejoin before the site account has loaded keeps the same name.
+    if (name) ls('starforge_name', name.slice(0, 16));
+  }
+  name ||= 'Prospector';
   return { t: 'hello', protocol: PROTOCOL_VERSION, name: name.slice(0, 16), key: browserKey(), tab: tabKey() };
 }
 

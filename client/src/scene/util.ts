@@ -1,7 +1,6 @@
-import { useEffect, useMemo, type DependencyList } from 'react';
+import { useEffect, useMemo, useState, type DependencyList } from 'react';
 import { CanvasTexture, Color, SRGBColorSpace, type Texture } from 'three';
-import type { BuffId, RoomState } from '@starforge/shared';
-import { useGame } from '../state/store';
+import { WIDE_MIN_PX } from '../state/store';
 
 /* ---------------- colours ---------------- */
 
@@ -36,18 +35,11 @@ export function cssColor(css: string): Color {
 /* ---------------- time ---------------- */
 
 /**
- * The host's clock, extrapolated from the last snapshot. Buff expiries,
- * overheat locks and node primes are host epoch ms; comparing them with this
- * instead of Date.now() keeps guests correct even when their clock is skewed.
+ * The host's clock. Surge and comet deadlines are host epoch ms; comparing
+ * them with this instead of Date.now() keeps guests correct even when their
+ * clock is skewed.
  */
-export function hostNow(): number {
-  const st = useGame.getState();
-  if (!st.s || st.snapAt <= 0) return Date.now();
-  const since = performance.now() - st.snapAt;
-  return st.s.now + Math.min(5000, Math.max(0, since));
-}
-
-export const buffActive = (s: RoomState, b: BuffId, now: number): boolean => (s.buffs[b] ?? 0) > now;
+export { hostNow } from '../state/store';
 
 /** Frame-rate independent exponential approach. */
 export function damp(current: number, target: number, lambda: number, dt: number): number {
@@ -63,6 +55,76 @@ export function wobble(t: number, seed = 0): number {
 export function hash01(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
+}
+
+/* ---------------- device ---------------- */
+
+const LITE_QUERY = `(pointer: coarse), (max-width: ${WIDE_MIN_PX - 1}px)`;
+
+/** Phones and narrow windows: lower pixel ratio and fewer particles. */
+export function isLite(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.(LITE_QUERY).matches === true;
+}
+
+/** isLite() that follows the window across resizes and rotations. */
+export function useLite(): boolean {
+  const [lite, setLite] = useState(isLite);
+  useEffect(() => {
+    const mq = window.matchMedia?.(LITE_QUERY);
+    if (!mq) return;
+    const on = () => setLite(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return lite;
+}
+
+/* ---------------- input ---------------- */
+
+/** Touches currently down: where and when each landed, and whether it has dragged. */
+const touches = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
+let tracking = false;
+
+function trackTouches(): void {
+  if (tracking || typeof window === 'undefined') return;
+  tracking = true;
+  // Capture phase on window, so this runs before R3F's handlers see the event.
+  const opts = { capture: true, passive: true } as const;
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.pointerType === 'mouse') return;
+      if (e.isPrimary) touches.clear();
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
+    },
+    opts,
+  );
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      const d = touches.get(e.pointerId);
+      if (d && !d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) d.moved = true;
+    },
+    opts,
+  );
+  const up = (e: PointerEvent) => touches.delete(e.pointerId);
+  window.addEventListener('pointerup', up, opts);
+  window.addEventListener('pointercancel', up, opts);
+}
+trackTouches();
+
+/**
+ * Should this pointerdown strike? Strikes fire on pointerdown with no click
+ * delay. Only the main mouse button counts, and a finger that lands while
+ * another one is dragging or holding (a pinch or an orbit) is part of that
+ * gesture, not a tap. Quick taps with two thumbs still both count.
+ */
+export function tapOk(e: PointerEvent): boolean {
+  if (e.button > 0) return false;
+  if (e.isPrimary) return true;
+  const now = performance.now();
+  for (const [id, d] of touches) if (id !== e.pointerId && (d.moved || now - d.t > 250)) return false;
+  return true;
 }
 
 /* ---------------- textures ---------------- */
@@ -123,6 +185,26 @@ export function byId<T extends { id: number }>(xs: readonly T[] | undefined, id:
   if (!xs) return undefined;
   for (let i = 0; i < xs.length; i++) if (xs[i].id === id) return xs[i];
   return undefined;
+}
+
+/**
+ * Hand out up to `cap` visible units round-robin between owners, so everyone
+ * shows up even when one of them owns hundreds. Returns each unit's owner index.
+ */
+export function roundRobin(counts: readonly number[], cap: number): number[] {
+  const left = counts.slice();
+  const out: number[] = [];
+  let more = true;
+  while (out.length < cap && more) {
+    more = false;
+    for (let i = 0; i < left.length && out.length < cap; i++) {
+      if (left[i] <= 0) continue;
+      left[i]--;
+      out.push(i);
+      more = true;
+    }
+  }
+  return out;
 }
 
 /** Comma-free join for id lists used as cheap, stable zustand selector results. */

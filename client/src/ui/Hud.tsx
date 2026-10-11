@@ -161,7 +161,7 @@ function OfflineCard() {
         <div className="gains">
           {RESOURCES.filter((r) => offline.gained[r] > 0).map((r) => (
             <span key={r}>
-              +<Amount r={r} v={offline.gained[r]} /> {RES_LABEL[r]}
+              <Amount r={r} v={offline.gained[r]} /> {RES_LABEL[r]}
             </span>
           ))}
         </div>
