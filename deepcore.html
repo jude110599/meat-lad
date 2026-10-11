@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Deepcore</title>
+<style>
+:root{
+  --bg:#07080c;--panel:rgba(14,16,24,.82);--line:rgba(255,255,255,.09);--ink:#e9e6f2;--soft:#8a87a0;
+  --amber:#ffb03a;--amber2:#ff6a1f;--cyan:#38e1ff;--cyan2:#3a7bff;--violet:#b07cff;--gold:#ffe28a;--bad:#ff4d5e;
+  --ui:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;--num:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--ui);overflow:hidden;touch-action:manipulation}
+#fx{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;z-index:1;padding:env(safe-area-inset-top,0) 10px 10px}
+/* top bar */
+#top{display:flex;align-items:center;gap:10px;padding:10px 2px;flex-wrap:wrap}
+#top h1{font-size:17px;letter-spacing:.32em;font-weight:800;background:linear-gradient(90deg,var(--amber),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent;margin-right:6px}
+.res{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.pill{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px 9px;display:flex;flex-direction:column;min-width:78px;transition:transform .12s}
+.pill b{font-family:var(--num);font-size:15px;font-variant-numeric:tabular-nums}
+.pill span{font-size:8.5px;letter-spacing:.16em;color:var(--soft);text-transform:uppercase}
+.pill.ore b{color:var(--amber)}.pill.alloy b{color:#cfd6e6}.pill.comp b{color:var(--violet)}.pill.en b{color:var(--cyan)}.pill.sh b{color:var(--gold)}
+.pill.bloom{transform:scale(1.12)}
+#btnMenu{width:40px;height:40px;border-radius:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:19px;cursor:pointer}
+#btnPrestige{display:none;padding:9px 13px;border-radius:11px;border:1px solid var(--gold);background:rgba(255,226,138,.12);color:var(--gold);font-weight:800;font-size:12px;letter-spacing:.06em;cursor:pointer;animation:glow 1.6s ease-in-out infinite}
+@keyframes glow{50%{box-shadow:0 0 18px rgba(255,226,138,.45)}}
+#pop{position:absolute;right:10px;top:58px;background:#11131c;border:1px solid var(--line);border-radius:13px;padding:8px;display:none;flex-direction:column;gap:5px;min-width:200px;z-index:30;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+#pop.show{display:flex}
+#pop button{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:9px;font-weight:700;font-size:12px;letter-spacing:.05em;cursor:pointer;text-align:left}
+#pop button:hover{background:rgba(255,255,255,.1)}
+/* stations */
+#stations{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px;min-height:0}
+.st{display:flex;flex-direction:column;min-height:0;border-radius:16px;border:1px solid var(--line);overflow:hidden;position:relative}
+.st.p1{box-shadow:inset 0 0 0 1px rgba(255,176,58,.12)}.st.p2{box-shadow:inset 0 0 0 1px rgba(56,225,255,.12)}
+.sthd{display:flex;align-items:baseline;gap:8px;padding:9px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sthd b{font-size:12px;letter-spacing:.24em}.p1 .sthd b{color:var(--amber)}.p2 .sthd b{color:var(--cyan)}
+.sthd small{color:var(--soft);font-size:10.5px}.sthd .rt{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--soft)}
+.scene{flex:1;min-height:150px;cursor:pointer;position:relative}
+.scene .hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:10px;letter-spacing:.2em;color:rgba(255,255,255,.45);pointer-events:none}
+.meter{height:7px;margin:0 12px 8px;border-radius:5px;background:rgba(255,255,255,.07);overflow:hidden}
+.meter i{display:block;height:100%;width:0;border-radius:5px;transition:width .1s}
+#heatBar{background:linear-gradient(90deg,#ffb03a,#ff3b1f)}
+.ups{background:var(--panel);border-top:1px solid var(--line);padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.up{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:10px;padding:7px 9px;text-align:left;color:var(--ink);cursor:pointer;display:flex;flex-direction:column;gap:2px;transition:background .15s,transform .08s,opacity .15s;font-family:var(--ui)}
+.up:active{transform:scale(.97)}
+.up .n{font-size:11.5px;font-weight:800;display:flex;gap:6px}.up .n em{font-style:normal;color:var(--soft);font-weight:600;margin-left:auto;font-family:var(--num)}
+.up .d{font-size:9.5px;color:var(--soft);line-height:1.25}
+.up .c{font-family:var(--num);font-size:10.5px}
+.up.no{opacity:.45}.up.ok.s1:hover{background:rgba(255,176,58,.12)}.up.ok.s2:hover{background:rgba(56,225,255,.1)}
+.up .k{font-size:8.5px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--soft)}
+.c.ore{color:var(--amber)}.c.alloy{color:#cfd6e6}.c.comp{color:var(--violet)}
+#autoBtn{grid-column:1/-1;font-size:10px;letter-spacing:.14em;padding:6px;text-align:center;font-weight:800}
+/* event banner */
+#event{position:fixed;left:50%;top:84px;transform:translateX(-50%);z-index:20;background:rgba(20,10,10,.92);border:1px solid var(--bad);border-radius:14px;padding:10px 18px;text-align:center;display:none;min-width:270px}
+#event.show{display:block;animation:pulse .7s ease-in-out infinite alternate}
+#event.magma{border-color:var(--amber2)}
+@keyframes pulse{to{box-shadow:0 0 30px rgba(255,77,94,.5)}}
+#event b{display:block;letter-spacing:.2em;font-size:13px;color:#ffb1b8}#event.magma b{color:var(--amber)}
+#event span{font-size:11px;color:var(--soft)}
+#event .meter{margin:7px 0 0}#evBar{background:var(--bad)}
+#combo{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:none;font-weight:900;font-size:30px;letter-spacing:.06em;opacity:0;color:var(--gold);text-shadow:0 0 24px rgba(255,226,138,.7);transition:opacity .3s}
+/* modal */
+#veil{position:fixed;inset:0;background:rgba(3,4,8,.78);z-index:40;display:none;align-items:center;justify-content:center;padding:16px}
+#veil.show{display:flex}
+.card{background:#0f111a;border:1px solid var(--line);border-radius:18px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:20px}
+.card h2{font-size:18px;letter-spacing:.2em;margin-bottom:4px}.card .sub{color:var(--soft);font-size:12px;margin-bottom:14px}
+.card p,.card li{font-size:13px;line-height:1.5;color:#cfcbe0}.card ul{padding-left:18px;margin:6px 0 12px}
+.card h3{font-size:11px;letter-spacing:.2em;color:var(--soft);margin:14px 0 6px}
+.btn{background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--ink);padding:11px 16px;border-radius:11px;font-weight:800;letter-spacing:.08em;cursor:pointer;font-size:12px}
+.btn.pri{background:linear-gradient(90deg,var(--amber),var(--cyan));color:#06070b;border:0}
+.btn.gold{background:var(--gold);color:#1a1405;border:0}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.perm{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.perm .up{padding:10px}
+kbd{font-family:var(--num);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;background:rgba(255,255,255,.05)}
+.log b{color:var(--gold)}
+@media (max-width:760px){
+  #stations{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+  .scene{min-height:90px}
+  .ups{grid-template-columns:1fr 1fr;gap:5px;padding:6px}
+  .up .d{display:none}
+  .pill{min-width:62px;padding:4px 7px}.pill b{font-size:13px}
+  #top h1{font-size:14px}
+  .sthd .k1{display:none}
+}
+</style>
+</head>
+<body>
+<canvas id="fx"></canvas>
+<div id="app">
+  <div id="top">
+    <h1>DEEPCORE</h1>
+    <div class="res">
+      <div class="pill ore" id="pOre"><b>0</b><span>Ore</span></div>
+      <div class="pill alloy" id="pAlloy"><b>0</b><span>Alloy</span></div>
+      <div class="pill comp" id="pComp"><b>0</b><span>Compound</span></div>
+      <div class="pill en" id="pEn"><b>0</b><span>Cosmic Energy</span></div>
+      <div class="pill sh" id="pSh" style="display:none"><b>0</b><span>Core Shards</span></div>
+    </div>
+    <button id="btnPrestige">COLLAPSE THE SHAFT</button>
+    <button id="btnMenu" aria-label="Menu">☰</button>
+    <div id="pop">
+      <button id="mHow">How to play</button>
+      <button id="mNew">What's new</button>
+      <button id="mShards">Core Shard tree</button>
+      <button id="mSound">Sound: On</button>
+      <button id="mReset">Wipe save</button>
+      <button id="mHome">Back to Main Menu</button>
+    </div>
+  </div>
+  <div id="stations">
+    <div class="st p1">
+      <div class="sthd"><b>DRILLER</b><small>Player 1</small><small class="k1">· strike <kbd>F</kbd> / <kbd>Space</kbd> · buy <kbd>1</kbd>–<kbd>4</kbd></small><span class="rt" id="rt1"></span></div>
+      <div class="scene" id="sc1"><div class="hint">TAP THE ROCK TO STRIKE</div></div>
+      <div class="meter"><i id="heatBar"></i></div>
+      <div class="ups" id="ups1"></div>
+    </div>
+    <div class="st p2">
+      <div class="sthd"><b>REFINER</b><small>Player 2</small><small class="k1">· refine <kbd>J</kbd> / <kbd>Enter</kbd> · buy <kbd>7</kbd>–<kbd>0</kbd></small><span class="rt" id="rt2"></span></div>
+      <div class="scene" id="sc2"><div class="hint">TAP THE CRUCIBLE TO REFINE</div></div>
+      <div class="meter"><i id="vatBar" style="background:linear-gradient(90deg,var(--cyan2),var(--cyan))"></i></div>
+      <div class="ups" id="ups2"></div>
+    </div>
+  </div>
+</div>
+<div id="event"><b id="evT"></b><span id="evS"></span><div class="meter"><i id="evBar"></i></div></div>
+<div id="combo"></div>
+<div id="veil"><div class="card" id="card"></div></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const VERSION="1.0";
+const CHANGELOG=[
+  {v:"1.0",t:"Breaking Ground",items:[
+    "Deepcore launches: a two-player co-op mining incremental. One player drills, the other refines, and each one pays for the other's upgrades.",
+    "Four resources in a chain: Ore → Alloy → Compound → Cosmic Energy.",
+    "Sync strikes: hit the rock and the crucible within half a second of each other to build a combo multiplier of up to ×2.",
+    "Heat: hard drilling runs hot and pays double ore above 70%, but at 100% the drill locks. Every refine press vents some of that heat.",
+    "Events: Cave-ins need six sync strikes in 15 seconds. Magma Surges need the Refiner to keep the Driller from overheating.",
+    "Collapse the Shaft once you have 10 Cosmic Energy to earn Core Shards for a permanent upgrade tree. Strata keep going past the Void Core forever.",
+    "Adaptive soundtrack: bass, drums and a lead come in as you work faster, combo up or run hot."]}
+];
+
+/* ---------- numbers ---------- */
+const SUF=["","K","M","B","T","Qa","Qi","Sx","Sp","Oc","No","Dc"];
+function fmt(n){
+  if(!isFinite(n))return"∞";
+  if(n<10&&n%1)return n.toFixed(1);
+  if(n<1000)return Math.floor(n).toString();
+  const e=Math.floor(Math.log10(n)/3);
+  if(e<SUF.length)return(n/Math.pow(1000,e)).toFixed(n/Math.pow(1000,e)<100?2:1)+SUF[e];
+  return n.toExponential(2).replace("+","");
+}
+
+/* ---------- state ---------- */
+const DEF={
+  bit:   {side:1,key:"1",name:"Drill Bit",     desc:"+1 ore per strike",                    res:"ore",  base:10, g:1.55},
+  drone: {side:1,key:"2",name:"Mining Drone",  desc:"+0.6 ore/s, fully automated",           res:"alloy",base:4,  g:1.17},
+  cool:  {side:1,key:"3",name:"Coolant Loop",  desc:"Less heat per strike, cools faster",    res:"alloy",base:25, g:1.9},
+  charge:{side:1,key:"4",name:"Seismic Charge",desc:"Doubles ALL ore output",               res:"comp", base:8,  g:3.2},
+  press: {side:2,key:"7",name:"Hydraulic Press",desc:"+1 alloy per refine press",           res:"ore",  base:20, g:1.5},
+  smelt: {side:2,key:"8",name:"Smelter",       desc:"Auto 1 alloy/s (eats 5 ore each)",      res:"ore",  base:60, g:1.18},
+  synth: {side:2,key:"9",name:"Synthesizer",   desc:"Auto 0.25 compound/s (eats 10 alloy each)",res:"alloy",base:80,g:1.22},
+  cond:  {side:2,key:"0",name:"Cosmic Condenser",desc:"Auto 0.05 energy/s (eats 25 compound each)",res:"comp",base:30,g:1.3},
+};
+const PERM={
+  anc:  {name:"Ancestral Bits",desc:"+25% strike ore per level",base:5,max:20},
+  swarm:{name:"Swarm Memory",  desc:"+25% drone ore per level", base:5,max:20},
+  furn: {name:"Furnace Soul",  desc:"+25% all refining per level",base:8,max:20},
+  bond: {name:"Resonant Bond", desc:"+0.5 to the max sync combo",base:15,max:4},
+  head: {name:"Head Start",    desc:"Start each shaft with 150 ore and 30 alloy per level",base:3,max:10},
+};
+const RES_NAME={ore:"ore",alloy:"alloy",comp:"compound",en:"energy"};
+function fresh(){return{ore:0,alloy:0,comp:0,en:0,lv:{bit:0,drone:0,cool:0,charge:0,press:0,smelt:0,synth:0,cond:0},
+  runOre:0,runEn:0,shards:0,perm:{anc:0,swarm:0,furn:0,bond:0,head:0},prestiges:0,auto:true,sound:true,seenHelp:false,t:Date.now(),lifeOre:0,bestStrata:0};}
+let S=fresh();
+const SAVE="deepcore_v1";
+function save(){S.t=Date.now();try{localStorage.setItem(SAVE,JSON.stringify(S));}catch(e){}}
+function load(){
+  try{const r=localStorage.getItem(SAVE);if(!r)return;const o=JSON.parse(r),f=fresh();
+    S=Object.assign(f,o);S.lv=Object.assign(f.lv,o.lv||{});S.perm=Object.assign(f.perm,o.perm||{});}catch(e){}
+}
+
+/* ---------- derived values ---------- */
+const STRATA=[
+  {n:"Topsoil",       a:"#3a2a1c",b:"#1d140c",r:"#5a4330",gem:"#ffb03a"},
+  {n:"Basalt Shelf",  a:"#26262e",b:"#121218",r:"#3d3d4a",gem:"#ff8a3a"},
+  {n:"Crystal Caverns",a:"#1a2240",b:"#0b0f22",r:"#2c3a6e",gem:"#7cf0ff"},
+  {n:"Magma Mantle",  a:"#3a1410",b:"#1a0705",r:"#5c1f14",gem:"#ff5a1f"},
+  {n:"Void Core",     a:"#1c0f33",b:"#08040f",r:"#2f1a52",gem:"#c08bff"},
+];
+function strataIx(){return Math.max(0,Math.floor(Math.log10(Math.max(1,S.runOre))/2));}
+function strata(i){if(i<STRATA.length)return STRATA[i];const b=STRATA[4];return{n:"Abyss "+(i-3),a:b.a,b:b.b,r:b.r,gem:`hsl(${(i*47)%360},90%,70%)`};}
+const strataMult=()=>1+.5*strataIx();
+const allMult=()=>1+.05*S.shards;
+const maxCombo=()=>2+.5*S.perm.bond;
+function strikeOre(){return(1+S.lv.bit)*(1+.25*S.perm.anc)*Math.pow(2,S.lv.charge)*strataMult()*allMult()*(heat>70?2:1)*combo*(richT>0?2:1);}
+function droneRate(){return S.lv.drone*.6*(1+.25*S.perm.swarm)*Math.pow(2,S.lv.charge)*strataMult()*allMult()*(richT>0?2:1);}
+const refMult=()=>(1+.25*S.perm.furn)*allMult();
+function cost(k){return Math.ceil(DEF[k].base*Math.pow(DEF[k].g,S.lv[k]));}
+function permCost(k){return PERM[k].base*(S.perm[k]+1);}
+function shardGain(){return S.runEn<10?0:Math.floor(10*Math.sqrt(S.runEn/10));}
+
+/* ---------- runtime ---------- */
+let heat=0,overT=0,combo=1,comboT=0,last1=-9,last2=-9,richT=0,shake=0,now=0;
+let ev=null,evNext=70;
+const presses=[];
+
+/* ---------- audio ---------- */
+let AC=null,master,mus,layers={},sfxBus;
+function initAudio(){
+  if(AC)return;try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
+  master=AC.createGain();master.gain.value=S.sound?.8:0;master.connect(AC.destination);
+  sfxBus=AC.createGain();sfxBus.gain.value=.6;sfxBus.connect(master);
+  mus=AC.createGain();mus.gain.value=.32;mus.connect(master);
+  for(const k of["pad","bass","drums","lead"]){const g=AC.createGain();g.gain.value=k==="pad"?1:0;g.connect(mus);layers[k]=g;}
+  startMusic();
+}
+function env(g,t,a,peak,d){g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(peak,t+a);g.gain.exponentialRampToValueAtTime(.0001,t+a+d);}
+function tone(type,f,t,a,peak,d,dest,f2){const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+a+d);o.connect(g);g.connect(dest);env(g,t,a,peak,d);o.start(t);o.stop(t+a+d+.05);}
+let noiseBuf=null;
+function noise(t,d,peak,hp,dest){if(!noiseBuf){noiseBuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const c=noiseBuf.getChannelData(0);for(let i=0;i<c.length;i++)c[i]=Math.random()*2-1;}
+  const s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();s.buffer=noiseBuf;f.type=hp>0?"highpass":"lowpass";f.frequency.value=Math.abs(hp);s.connect(f);f.connect(g);g.connect(dest);env(g,t,.002,peak,d);s.start(t);s.stop(t+d+.05);}
+const sfx={
+  strike(){if(!AC)return;const t=AC.currentTime,p=1+Math.random()*.1;noise(t,.12,.5,-900,sfxBus);tone("sine",95*p,t,.003,.6,.16,sfxBus,45);if(heat>70)tone("sawtooth",220*p,t,.003,.08,.08,sfxBus,120);},
+  refine(){if(!AC)return;const t=AC.currentTime,p=[880,988,1175][Math.floor(Math.random()*3)];tone("triangle",p,t,.002,.25,.35,sfxBus);tone("sine",p*2.01,t,.002,.08,.2,sfxBus);noise(t,.05,.12,4000,sfxBus);},
+  buy(side){if(!AC)return;const t=AC.currentTime,b=side===1?330:494;[0,1,2].forEach(i=>tone("square",b*[1,1.25,1.5][i],t+i*.05,.005,.07,.12,sfxBus));},
+  sync(){if(!AC)return;const t=AC.currentTime;tone("sine",660*combo/1.2,t,.005,.18,.25,sfxBus);tone("sine",990*combo/1.2,t+.04,.005,.12,.25,sfxBus);},
+  fanfare(){if(!AC)return;const t=AC.currentTime;[523,659,784,1047].forEach((f,i)=>{tone("square",f,t+i*.09,.005,.09,.3,sfxBus);tone("triangle",f/2,t+i*.09,.005,.14,.35,sfxBus);});},
+  over(){if(!AC)return;const t=AC.currentTime;tone("sawtooth",300,t,.01,.18,.7,sfxBus,60);noise(t,.6,.25,1500,sfxBus);},
+  alarm(){if(!AC)return;const t=AC.currentTime;for(let i=0;i<3;i++)tone("square",i%2?620:440,t+i*.16,.005,.1,.13,sfxBus);},
+  rumble(){if(!AC)return;const t=AC.currentTime;noise(t,.9,.4,-200,sfxBus);tone("sine",40,t,.05,.5,.8,sfxBus,28);},
+};
+/* adaptive music: A minor, 112 bpm, 16th steps */
+const BPM=112,STEP=60/BPM/4;
+const CHORDS=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
+const mf=m=>440*Math.pow(2,(m-69)/12);
+let step=0,nextT=0;
+function startMusic(){nextT=AC.currentTime+.1;setInterval(sched,25);}
+function sched(){
+  while(nextT<AC.currentTime+.12){playStep(step,nextT);step++;nextT+=STEP;}
+}
+function playStep(s,t){
+  const bar=Math.floor(s/16)%4,st=s%16,ch=CHORDS[bar];
+  if(st===0)ch.forEach(n=>{const o=AC.createOscillator(),g=AC.createGain();o.type="sawtooth";o.frequency.value=mf(n);const f=AC.createBiquadFilter();f.type="lowpass";f.frequency.value=700;o.connect(f);f.connect(g);g.connect(layers.pad);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.05,t+.6);g.gain.linearRampToValueAtTime(0,t+16*STEP);o.start(t);o.stop(t+16*STEP+.1);});
+  if(st%2===0&&layers.bass.gain.value>.01){const n=ch[0]-12+(st%8===6?7:0);tone("sawtooth",mf(n),t,.005,.13,STEP*1.6,layers.bass);}
+  if(layers.drums.gain.value>.01){if(st%4===0){tone("sine",120,t,.002,.7,.18,layers.drums,40);}if(st%4===2)noise(t,.04,.18,7000,layers.drums);if(st===4||st===12)noise(t,.14,.3,1800,layers.drums);}
+  if(layers.lead.gain.value>.01&&st%2===1){const n=ch[(st>>1)%3]+12+((st>>3)&1?12:0);tone("square",mf(n),t,.004,.05,STEP*1.3,layers.lead);}
+}
+function setLayer(k,v){if(!AC)return;const g=layers[k].gain;g.setTargetAtTime(v,AC.currentTime,.6);}
+
+/* ---------- actions ---------- */
+function intensity(){const c=now-3;while(presses.length&&presses[0]<c)presses.shift();return presses.length/3;}
+function syncCheck(other){
+  if(now-other<.45){combo=Math.min(maxCombo(),combo+.25);comboT=2.2;sfx.sync();
+    const c=$("combo");c.textContent="SYNC ×"+combo.toFixed(2);c.style.opacity=1;
+    if(ev&&ev.type==="cave"){ev.n++;if(ev.n>=ev.need)endEvent(true);}
+    burst(W/2,H/2,14,"#ffe28a",3);
+  }
+}
+function strike(px,py){
+  initAudio();
+  if(overT>0){return;}
+  const r=rect(1);const x=px??r.x+r.w/2+(Math.random()-.5)*r.w*.4,y=py??r.y+r.h*.45+(Math.random()-.5)*r.h*.3;
+  const g=strikeOre();S.ore+=g;S.runOre+=g;S.lifeOre+=g;
+  heat+=7/(1+.35*S.lv.cool);
+  if(heat>=100){heat=100;overT=3;sfx.over();shake=14;float(r.x+r.w/2,r.y+r.h*.3,"OVERHEATED","#ff4d5e",18);}
+  last1=now;presses.push(now);syncCheck(last2);
+  drillKick=1;sfx.strike();shake=Math.max(shake,3+Math.min(6,Math.log10(g+1)));
+  const s=strata(strataIx());
+  burst(x,y,10,heat>70?"#ff6a1f":"#ffd27a",4);burst(x,y,5,s.gem,2.2,true);
+  cracks.push({x:x-r.x,y:y-r.y,a:Math.random()*6.3,life:1,len:20+Math.random()*30});
+  float(x,y-10,"+"+fmt(g),heat>70?"#ff8a3a":"#ffb03a",13+Math.min(8,Math.log10(g+1)*2));
+  streamOre(x,y,Math.min(4,1+Math.floor(Math.log10(g+1))));
+  bloom("pOre");
+}
+function refine(px,py){
+  initAudio();
+  const r=rect(2);const x=px??r.x+r.w/2,y=py??r.y+r.h*.55;
+  heat=Math.max(0,heat-6);
+  last2=now;presses.push(now);syncCheck(last1);
+  if(ev&&ev.type==="magma")ev.n++;
+  const batch=1+S.lv.press,useOre=Math.min(S.ore,batch*5);
+  sfx.refine();
+  if(useOre<1){float(x,y-20,"need ore","#8a87a0",11);burst(x,y,4,"#38e1ff",1.5);return;}
+  S.ore-=useOre;const g=useOre/5*refMult()*combo;S.alloy+=g;
+  burst(x,y,10,"#38e1ff",3.5);burst(x,y,6,"#ffffff",2);
+  float(x,y-20,"+"+fmt(g)+" alloy","#cfd6e6",13);
+  vatPulse=1;bloom("pAlloy");
+}
+function buy(k){
+  initAudio();
+  const d=DEF[k],c=cost(k);
+  if(S[d.res]<c){const b=btns[k];b.animate([{transform:"translateX(-4px)"},{transform:"translateX(4px)"},{transform:"none"}],{duration:160});return;}
+  S[d.res]-=c;S.lv[k]++;sfx.buy(d.side);
+  const b=btns[k].getBoundingClientRect();burst(b.left+b.width/2,b.top+b.height/2,16,d.side===1?"#ffb03a":"#38e1ff",3);
+  if(S.lv[k]%10===0){sfx.fanfare();float(b.left+b.width/2,b.top-6,d.name.toUpperCase()+" "+S.lv[k]+"!","#ffe28a",15);}
+  refreshUI(true);
+}
+
+/* ---------- events ---------- */
+function startEvent(){
+  const magma=strataIx()>=2&&Math.random()<.45;
+  ev=magma?{type:"magma",t:12,max:12,n:0,ok:true}:{type:"cave",t:15,max:15,n:0,need:6};
+  sfx.alarm();shake=10;sfx.rumble();
+  const e=$("event");e.className="show"+(magma?" magma":"");
+  $("evT").textContent=magma?"MAGMA SURGE":"CAVE-IN!";
+}
+function endEvent(win){
+  const e=$("event");e.className="";
+  if(ev.type==="cave"){
+    if(win){const g=Math.max(80,droneRate()*60+strikeOre()/combo*25);S.ore+=g;S.runOre+=g;richT=20;sfx.fanfare();
+      float(W/2,H*.4,"CLEARED! +"+fmt(g)+" ore · rich vein ×2 for 20s","#ffe28a",17);burst(W/2,H*.4,40,"#ffe28a",5);}
+    else{S.ore*=.9;S.alloy*=.9;float(W/2,H*.4,"BURIED - lost 10% ore & alloy","#ff4d5e",16);shake=16;sfx.rumble();}
+  }else{
+    if(win){const g=Math.max(5,S.lv.synth*.25*refMult()*40);S.comp+=g;sfx.fanfare();
+      float(W/2,H*.4,"SURGE HELD! +"+fmt(g)+" compound","#ffe28a",17);burst(W/2,H*.4,40,"#ff8a3a",5);}
+    else float(W/2,H*.4,"THE MAGMA WON","#ff4d5e",16);
+  }
+  ev=null;evNext=100+Math.random()*60;
+}
+
+/* ---------- prestige ---------- */
+function prestige(){
+  const g=shardGain();if(!g)return;
+  S.shards+=g;S.prestiges++;
+  const keep={shards:S.shards,perm:S.perm,prestiges:S.prestiges,sound:S.sound,seenHelp:true,lifeOre:S.lifeOre,bestStrata:S.bestStrata,auto:S.auto};
+  S=Object.assign(fresh(),keep);
+  S.ore=150*S.perm.head;S.alloy=30*S.perm.head;
+  heat=0;combo=1;ev=null;$("event").className="";evNext=70;
+  sfx.fanfare();shake=24;
+  for(let i=0;i<5;i++)setTimeout(()=>burst(W*Math.random(),H*Math.random(),30,"#ffe28a",6),i*120);
+  float(W/2,H/2,"+"+g+" CORE SHARDS","#ffe28a",24);
+  save();openShards();refreshUI(true);
+}
+
+/* ---------- UI ---------- */
+const btns={};
+function buildUps(){
+  for(const k in DEF){const d=DEF[k],b=document.createElement("button");b.className="up s"+d.side;
+    b.innerHTML=`<span class="n">${d.name}<em></em></span><span class="d">${d.desc}</span><span class="c ${d.res}"></span>`;
+    b.onclick=()=>buy(k);btns[k]=b;$("ups"+d.side).appendChild(b);}
+  const a=document.createElement("button");a.className="up";a.id="autoBtn";a.onclick=()=>{S.auto=!S.auto;refreshUI(true);};$("ups2").appendChild(a);
+}
+let uiT=0;
+function refreshUI(force){
+  for(const k in DEF){const b=btns[k],d=DEF[k],c=cost(k),ok=S[d.res]>=c;
+    b.classList.toggle("ok",ok);b.classList.toggle("no",!ok);
+    b.querySelector("em").textContent="Lv "+S.lv[k];
+    b.querySelector(".c").innerHTML=`${fmt(c)} ${RES_NAME[d.res]} <span class="k">${d.key}</span>`;}
+  $("autoBtn").textContent=S.auto?"AUTO-MACHINES: RUNNING (tap to pause)":"AUTO-MACHINES: PAUSED (tap to run)";
+  $("pOre").firstChild.textContent=fmt(S.ore);$("pAlloy").firstChild.textContent=fmt(S.alloy);
+  $("pComp").firstChild.textContent=fmt(S.comp);$("pEn").firstChild.textContent=fmt(S.en);
+  $("pSh").style.display=S.shards||S.prestiges?"flex":"none";$("pSh").firstChild.textContent=fmt(S.shards);
+  const g=shardGain(),pb=$("btnPrestige");pb.style.display=g?"block":"none";pb.textContent="COLLAPSE THE SHAFT (+"+g+")";
+  const st=strata(strataIx());
+  $("rt1").textContent=st.n+" · "+fmt(droneRate())+" ore/s";
+  $("rt2").textContent=S.lv.smelt||S.lv.synth||S.lv.cond?(S.auto?"machines running":"machines paused"):"";
+}
+function bloom(id){const e=$(id);e.classList.add("bloom");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("bloom"),110);}
+function modal(html){$("card").innerHTML=html;$("veil").classList.add("show");}
+function closeModal(){$("veil").classList.remove("show");}
+$("veil").onclick=e=>{if(e.target===$("veil"))closeModal();};
+function openHelp(){modal(`<h2>DEEPCORE</h2><div class="sub">A co-op mining incremental for one or two players</div>
+<p>Two stations share one shaft. The <b style="color:var(--amber)">Driller</b> breaks rock for ore. The <b style="color:var(--cyan)">Refiner</b> turns ore into alloy, then compound, then Cosmic Energy.</p>
+<h3>WHY YOU NEED EACH OTHER</h3><ul>
+<li>Driller upgrades cost alloy and compound, which only the Refiner makes. Refiner upgrades cost ore.</li>
+<li><b>Sync strikes:</b> a strike and a refine within half a second of each other build a combo (up to ×2) that boosts both.</li>
+<li><b>Heat:</b> fast drilling heats the drill. Above 70% every strike pays double, but at 100% it locks for 3 seconds. Each refine press vents 6 heat.</li></ul>
+<h3>CONTROLS</h3><ul>
+<li>Player 1: <kbd>F</kbd> or <kbd>Space</kbd> to strike, <kbd>1</kbd>–<kbd>4</kbd> to buy.</li>
+<li>Player 2: <kbd>J</kbd> or <kbd>Enter</kbd> to refine, <kbd>7</kbd>–<kbd>0</kbd> to buy.</li>
+<li>Playing solo or on a phone? Tap both scenes, and alternate quickly to keep the combo going.</li></ul>
+<h3>EVENTS</h3><ul><li><b>Cave-in:</b> land 6 sync strikes in 15 seconds or lose 10% of your ore and alloy.</li>
+<li><b>Magma Surge</b> (Crystal Caverns and deeper): heat climbs fast for 12 seconds. The Refiner has to vent so the drill doesn't overheat.</li></ul>
+<h3>GOING DEEPER</h3><p>Every 100× more ore mined in a shaft opens a new stratum with +50% ore. With 10 Cosmic Energy you can collapse the shaft for Core Shards. Each unspent shard gives +5% to everything, or you can spend them on permanent upgrades.</p>
+<div class="row"><button class="btn pri" onclick="closeModal()">START DIGGING</button></div>`);}
+function openLog(){modal(`<h2>WHAT'S NEW</h2><div class="sub">Deepcore v${VERSION}</div>`+CHANGELOG.map(c=>`<h3>v${c.v} · ${c.t.toUpperCase()}</h3><ul class="log">${c.items.map(i=>`<li>${i}</li>`).join("")}</ul>`).join("")+`<div class="row"><button class="btn" onclick="closeModal()">CLOSE</button></div>`);}
+function openShards(){
+  const body=Object.keys(PERM).map(k=>{const p=PERM[k],max=S.perm[k]>=p.max,c=permCost(k),ok=!max&&S.shards>=c;
+    return`<button class="up ${ok?"ok":"no"}" onclick="buyPerm('${k}')"><span class="n">${p.name}<em>${S.perm[k]}/${p.max}</em></span><span class="d" style="display:block">${p.desc}</span><span class="c" style="color:var(--gold)">${max?"MAXED":c+" shards"}</span></button>`;}).join("");
+  modal(`<h2>CORE SHARDS</h2><div class="sub">You have <b style="color:var(--gold)">${S.shards}</b> shards. Each unspent shard gives +5% to all output (now ×${allMult().toFixed(2)}).</div><div class="perm">${body}</div>
+  <p style="margin-top:12px;font-size:12px;color:var(--soft)">Shafts collapsed: ${S.prestiges}. Shards come from Cosmic Energy: 10 energy gives 10 shards, and it grows with the square root after that.</p>
+  <div class="row"><button class="btn" onclick="closeModal()">BACK TO THE SHAFT</button></div>`);
+}
+window.buyPerm=k=>{const c=permCost(k);if(S.perm[k]>=PERM[k].max||S.shards<c)return;S.shards-=c;S.perm[k]++;sfx.buy(1);save();openShards();refreshUI(true);};
+window.closeModal=closeModal;
+$("btnPrestige").onclick=()=>{const g=shardGain();modal(`<h2>COLLAPSE THE SHAFT?</h2><div class="sub">Start a new, deeper dig</div>
+<p>You will get <b style="color:var(--gold)">${g} Core Shards</b>. Ore, alloy, compound, energy and every station upgrade reset. Shards and the Core Shard tree stay.</p>
+<div class="row"><button class="btn" onclick="closeModal()">KEEP DIGGING</button><button class="btn gold" id="doPr">COLLAPSE IT</button></div>`);$("doPr").onclick=()=>{closeModal();prestige();};};
+const pop=$("pop");
+$("btnMenu").onclick=e=>{e.stopPropagation();pop.classList.toggle("show");};
+document.addEventListener("pointerdown",e=>{if(pop.classList.contains("show")&&!pop.contains(e.target)&&e.target!==$("btnMenu"))pop.classList.remove("show");});
+$("mHow").onclick=()=>{pop.classList.remove("show");openHelp();};
+$("mNew").onclick=()=>{pop.classList.remove("show");openLog();};
+$("mShards").onclick=()=>{pop.classList.remove("show");openShards();};
+$("mSound").onclick=()=>{S.sound=!S.sound;$("mSound").textContent="Sound: "+(S.sound?"On":"Off");initAudio();if(master)master.gain.setTargetAtTime(S.sound?.8:0,AC.currentTime,.05);save();};
+$("mReset").onclick=()=>{pop.classList.remove("show");modal(`<h2>WIPE SAVE?</h2><p>This deletes everything, Core Shards included. It can't be undone.</p><div class="row"><button class="btn" onclick="closeModal()">CANCEL</button><button class="btn" style="border-color:var(--bad);color:var(--bad)" id="doWipe">WIPE</button></div>`);
+  $("doWipe").onclick=()=>{try{localStorage.removeItem(SAVE);}catch(e){}S=fresh();heat=0;combo=1;closeModal();refreshUI(true);};};
+$("mHome").onclick=()=>{save();location.href="index.html";};
+
+/* input */
+$("sc1").addEventListener("pointerdown",e=>{e.preventDefault();strike(e.clientX,e.clientY);});
+$("sc2").addEventListener("pointerdown",e=>{e.preventDefault();refine(e.clientX,e.clientY);});
+const KEYBUY={};for(const k in DEF)KEYBUY[DEF[k].key]=k;
+addEventListener("keydown",e=>{
+  if($("veil").classList.contains("show")){if(e.key==="Escape")closeModal();return;}
+  if(e.repeat)return;const k=e.key.toLowerCase();
+  if(k==="f"||k===" "){e.preventDefault();strike();}
+  else if(k==="j"||k==="enter"){e.preventDefault();refine();}
+  else if(KEYBUY[k])buy(KEYBUY[k]);
+  else if(k==="escape")pop.classList.remove("show");
+});
+
+/* ---------- FX canvas ---------- */
+const cv=$("fx"),cx=cv.getContext("2d");let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;cx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener("resize",resize);resize();
+function rect(i){const r=$("sc"+i).getBoundingClientRect();return{x:r.left,y:r.top,w:r.width,h:r.height};}
+const parts=[],floats=[],cracks=[],streams=[];let vatPulse=0;
+function burst(x,y,n,col,sp,chunk){for(let i=0;i<n&&parts.length<500;i++){const a=Math.random()*Math.PI*2,v=(.4+Math.random())*sp*60;
+  parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-(chunk?80:20),life:0,max:.4+Math.random()*.5,col,s:chunk?2.5+Math.random()*3:1+Math.random()*2,g:chunk?520:160,chunk});}}
+function float(x,y,t,col,size){floats.push({x,y,t,col,size,life:0});if(floats.length>40)floats.shift();}
+function streamOre(x,y,n){const r2=rect(2);for(let i=0;i<n&&streams.length<80;i++)streams.push({x0:x,y0:y,x1:r2.x+r2.w/2+(Math.random()-.5)*30,y1:r2.y+r2.h*.55,t:-i*.06,cx:(x+r2.x+r2.w/2)/2+(Math.random()-.5)*80,cy:Math.min(y,r2.y)-60-Math.random()*60});}
+/* rocks per stratum, seeded */
+function rng(s){return()=>(s=(s*16807)%2147483647)/2147483647;}
+const rockCache={};
+function rocks(i){if(rockCache[i])return rockCache[i];const R=rng(1000+i*77),a=[];for(let k=0;k<26;k++)a.push({x:R(),y:R(),r:.04+R()*.09,gem:R()<.3,sh:R()*6});return rockCache[i]=a;}
+let drillA=0,drillKick=0;
+function drawDriller(r){
+  const i=strataIx(),s=strata(i);
+  const g=cx.createLinearGradient(0,r.y,0,r.y+r.h);g.addColorStop(0,s.a);g.addColorStop(1,s.b);
+  cx.save();cx.beginPath();cx.roundRect?cx.roundRect(r.x,r.y,r.w,r.h,0):cx.rect(r.x,r.y,r.w,r.h);cx.clip();
+  cx.fillStyle=g;cx.fillRect(r.x,r.y,r.w,r.h);
+  /* strata bands */
+  for(let b=0;b<5;b++){cx.fillStyle=`rgba(0,0,0,${.08+b*.03})`;const y=r.y+r.h*(.15+b*.18)+Math.sin(now*.2+b)*2;cx.beginPath();cx.moveTo(r.x,y);
+    for(let x=0;x<=r.w;x+=r.w/8)cx.lineTo(r.x+x,y+Math.sin(x*.03+b*2)*8);cx.lineTo(r.x+r.w,y+14);cx.lineTo(r.x,y+14);cx.fill();}
+  for(const k of rocks(i)){const x=r.x+k.x*r.w,y=r.y+k.y*r.h*.85,rr=k.r*Math.min(r.w,r.h);
+    cx.fillStyle=k.gem?s.gem:s.r;cx.globalAlpha=k.gem?.55+.35*Math.sin(now*2+k.sh):.8;cx.beginPath();
+    for(let p=0;p<6;p++){const a=p/6*Math.PI*2+k.sh,q=rr*(k.gem?.5:1)*(.8+.2*Math.sin(p*3+k.sh));p?cx.lineTo(x+Math.cos(a)*q,y+Math.sin(a)*q):cx.moveTo(x+Math.cos(a)*q,y+Math.sin(a)*q);}
+    cx.fill();if(k.gem){cx.shadowColor=s.gem;cx.shadowBlur=12;cx.fill();cx.shadowBlur=0;}}
+  cx.globalAlpha=1;
+  /* cracks */
+  cx.strokeStyle="rgba(255,230,180,.8)";cx.lineWidth=1.4;
+  for(const c of cracks){cx.globalAlpha=c.life;cx.beginPath();let x=r.x+c.x,y=r.y+c.y;cx.moveTo(x,y);
+    for(let j=0;j<4;j++){const a=c.a+(j%2?.5:-.4);x+=Math.cos(a)*c.len/4;y+=Math.sin(a)*c.len/4;cx.lineTo(x,y);}cx.stroke();}
+  cx.globalAlpha=1;
+  /* drones */
+  const nd=Math.min(12,S.lv.drone);
+  for(let d=0;d<nd;d++){const a=now*(.6+d*.05)+d*1.7,x=r.x+r.w/2+Math.cos(a)*r.w*(.25+.1*(d%3)),y=r.y+r.h*.4+Math.sin(a*1.3)*r.h*.22;
+    cx.fillStyle="#cfd6e6";cx.fillRect(x-4,y-2,8,4);cx.fillStyle="#ffb03a";cx.fillRect(x-1,y+2,2,2+Math.random()*3);
+    if(Math.random()<.04*(1+S.lv.charge))burst(x,y+4,1,s.gem,1);}
+  /* drill */
+  const dx=r.x+r.w/2,dy=r.y+r.h-14-drillKick*10;drillA+=(overT>0?.02:.15+heat*.004);
+  const hc=heat/100;
+  cx.fillStyle="#3b3f4d";cx.fillRect(dx-22,dy,44,18);
+  cx.save();cx.translate(dx,dy);
+  const bg=cx.createLinearGradient(-16,0,16,0);bg.addColorStop(0,`rgb(${120+135*hc},${120-40*hc},${130-100*hc})`);bg.addColorStop(.5,`rgb(${200+55*hc},${200-80*hc},${210-180*hc})`);bg.addColorStop(1,`rgb(${110+120*hc},${110-40*hc},${120-100*hc})`);
+  cx.fillStyle=bg;cx.beginPath();cx.moveTo(-16,0);cx.lineTo(16,0);cx.lineTo(0,-42);cx.closePath();cx.fill();
+  cx.strokeStyle="rgba(0,0,0,.35)";cx.lineWidth=2;for(let l=0;l<4;l++){const o=((drillA*12+l*10)%40);cx.beginPath();cx.moveTo(-16+o*.4,-o);cx.lineTo(16-o*.4,-o+6);cx.stroke();}
+  if(heat>60){cx.shadowColor="#ff4a1f";cx.shadowBlur=30*hc;cx.fillStyle=`rgba(255,90,30,${(hc-.6)*1.2})`;cx.beginPath();cx.moveTo(-16,0);cx.lineTo(16,0);cx.lineTo(0,-42);cx.fill();cx.shadowBlur=0;}
+  cx.restore();
+  /* heat haze */
+  if(heat>50){const hg=cx.createRadialGradient(dx,dy,10,dx,dy,r.h*.9);hg.addColorStop(0,`rgba(255,80,20,${(hc-.5)*.5})`);hg.addColorStop(1,"rgba(255,80,20,0)");cx.fillStyle=hg;cx.fillRect(r.x,r.y,r.w,r.h);}
+  if(overT>0){cx.fillStyle=`rgba(255,40,60,${.15+.1*Math.sin(now*14)})`;cx.fillRect(r.x,r.y,r.w,r.h);cx.fillStyle="#ff4d5e";cx.font="900 18px "+getComputedStyle(document.body).fontFamily;cx.textAlign="center";cx.fillText("OVERHEATED "+overT.toFixed(1),r.x+r.w/2,r.y+30);}
+  if(richT>0){cx.strokeStyle=`rgba(255,226,138,${.4+.3*Math.sin(now*6)})`;cx.lineWidth=4;cx.strokeRect(r.x+2,r.y+2,r.w-4,r.h-4);}
+  cx.restore();
+}
+function drawRefiner(r){
+  cx.save();cx.beginPath();cx.rect(r.x,r.y,r.w,r.h);cx.clip();
+  const g=cx.createLinearGradient(0,r.y,0,r.y+r.h);g.addColorStop(0,"#0b1424");g.addColorStop(1,"#05070f");cx.fillStyle=g;cx.fillRect(r.x,r.y,r.w,r.h);
+  /* pipes */
+  cx.strokeStyle="rgba(56,225,255,.12)";cx.lineWidth=6;for(let p=0;p<3;p++){cx.beginPath();cx.moveTo(r.x,r.y+r.h*(.2+p*.15));cx.lineTo(r.x+r.w*.2,r.y+r.h*(.2+p*.15));cx.lineTo(r.x+r.w*.35,r.y+r.h*.55);cx.stroke();}
+  const flow=(now*40)%20;cx.strokeStyle="rgba(56,225,255,.4)";cx.lineWidth=2;cx.setLineDash([4,16]);cx.lineDashOffset=-flow;
+  for(let p=0;p<3;p++){cx.beginPath();cx.moveTo(r.x,r.y+r.h*(.2+p*.15));cx.lineTo(r.x+r.w*.2,r.y+r.h*(.2+p*.15));cx.lineTo(r.x+r.w*.35,r.y+r.h*.55);cx.stroke();}
+  cx.setLineDash([]);
+  /* crucible */
+  const cxp=r.x+r.w/2,cyp=r.y+r.h*.6,cw=Math.min(r.w*.32,110),chh=Math.min(r.h*.28,60);
+  const act=Math.min(1,(S.auto?S.lv.smelt*.08:0)+vatPulse);
+  const glow=cx.createRadialGradient(cxp,cyp,4,cxp,cyp,cw*1.8);glow.addColorStop(0,`rgba(56,225,255,${.25+.4*act})`);glow.addColorStop(1,"rgba(56,225,255,0)");cx.fillStyle=glow;cx.fillRect(r.x,r.y,r.w,r.h);
+  cx.fillStyle="#262b3a";cx.beginPath();cx.moveTo(cxp-cw,cyp-chh*.3);cx.lineTo(cxp+cw,cyp-chh*.3);cx.lineTo(cxp+cw*.75,cyp+chh);cx.lineTo(cxp-cw*.75,cyp+chh);cx.closePath();cx.fill();
+  const mg=cx.createLinearGradient(cxp-cw,0,cxp+cw,0);mg.addColorStop(0,"#1a6bff");mg.addColorStop(.5,`rgb(${120+135*vatPulse},240,255)`);mg.addColorStop(1,"#1a6bff");
+  cx.fillStyle=mg;cx.beginPath();cx.ellipse(cxp,cyp-chh*.3,cw*.95,chh*.22+vatPulse*4,0,0,Math.PI*2);cx.fill();
+  if(Math.random()<.15+act*.5)parts.push({x:cxp+(Math.random()-.5)*cw*1.4,y:cyp-chh*.3,vx:(Math.random()-.5)*10,vy:-30-Math.random()*40,life:0,max:.8,col:"#8cecff",s:1.5+Math.random()*2,g:-10});
+  /* synthesizer rings */
+  for(let k=0;k<Math.min(6,S.lv.synth);k++){cx.strokeStyle=`rgba(176,124,255,${.35+.2*Math.sin(now*3+k)})`;cx.lineWidth=2;cx.beginPath();cx.ellipse(r.x+r.w*.82,r.y+r.h*.35,14+k*5,(14+k*5)*.4,now*.5+k,0,Math.PI*2);cx.stroke();}
+  /* condensers orbiting an energy core */
+  if(S.lv.cond||S.en>0){const ex=r.x+r.w*.82,ey=r.y+r.h*.35,pr=8+3*Math.sin(now*4)+Math.min(10,Math.log10(S.en+1)*3);
+    const eg=cx.createRadialGradient(ex,ey,1,ex,ey,pr*2.5);eg.addColorStop(0,"#fff");eg.addColorStop(.3,"#38e1ff");eg.addColorStop(1,"rgba(56,225,255,0)");cx.fillStyle=eg;cx.beginPath();cx.arc(ex,ey,pr*2.5,0,7);cx.fill();
+    for(let k=0;k<Math.min(8,S.lv.cond);k++){const a=now*1.4+k/Math.max(1,Math.min(8,S.lv.cond))*6.28;cx.fillStyle="#b07cff";cx.beginPath();cx.arc(ex+Math.cos(a)*34,ey+Math.sin(a)*14,3,0,7);cx.fill();}}
+  cx.restore();
+}
+function drawFx(dt){
+  for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.life+=dt;if(p.life>p.max){parts.splice(i,1);continue;}
+    p.vy+=p.g*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;cx.globalAlpha=1-p.life/p.max;cx.fillStyle=p.col;
+    if(p.chunk)cx.fillRect(p.x-p.s/2,p.y-p.s/2,p.s,p.s);else{cx.beginPath();cx.arc(p.x,p.y,p.s,0,7);cx.fill();}}
+  cx.globalCompositeOperation="lighter";
+  for(let i=streams.length-1;i>=0;i--){const s=streams[i];s.t+=dt*1.6;if(s.t>=1){streams.splice(i,1);vatPulse=Math.min(1,vatPulse+.1);continue;}if(s.t<0)continue;
+    const t=s.t,u=1-t,x=u*u*s.x0+2*u*t*s.cx+t*t*s.x1,y=u*u*s.y0+2*u*t*s.cy+t*t*s.y1;
+    cx.globalAlpha=.9;cx.fillStyle="#ffb03a";cx.beginPath();cx.arc(x,y,3,0,7);cx.fill();cx.globalAlpha=.25;cx.beginPath();cx.arc(x,y,8,0,7);cx.fill();}
+  cx.globalCompositeOperation="source-over";
+  cx.textAlign="center";
+  for(let i=floats.length-1;i>=0;i--){const f=floats[i];f.life+=dt;if(f.life>1.3){floats.splice(i,1);continue;}
+    cx.globalAlpha=Math.min(1,(1.3-f.life)*2);cx.fillStyle=f.col;cx.font=`900 ${f.size*(1+.3*Math.max(0,.15-f.life)/.15)}px Helvetica,Arial,sans-serif`;
+    cx.shadowColor=f.col;cx.shadowBlur=10;cx.fillText(f.t,f.x,f.y-f.life*40);cx.shadowBlur=0;}
+  cx.globalAlpha=1;
+}
+
+/* ---------- main loop ---------- */
+let lastF=performance.now(),saveT=0;
+function tick(t){
+  const dt=Math.min(.1,(t-lastF)/1000);lastF=t;now+=dt;
+  /* production */
+  const dr=droneRate();S.ore+=dr*dt;S.runOre+=dr*dt;S.lifeOre+=dr*dt;
+  if(S.auto){
+    const m=refMult();
+    let want=S.lv.smelt*dt,need=want*5,f=need?Math.min(1,S.ore/need):0;S.ore-=need*f;S.alloy+=want*f*m;
+    want=S.lv.synth*.25*dt;need=want*10;f=need?Math.min(1,S.alloy/need):0;S.alloy-=need*f;S.comp+=want*f*m;
+    want=S.lv.cond*.05*dt;need=want*25;f=need?Math.min(1,S.comp/need):0;S.comp-=need*f;S.en+=want*f*m;S.runEn+=want*f*m;
+  }
+  /* heat */
+  if(overT>0){overT-=dt;if(overT<=0){overT=0;heat=40;}}
+  else heat=Math.max(0,heat-(10+6*S.lv.cool)*dt);
+  if(ev&&ev.type==="magma"&&overT<=0){heat+=22*dt;if(heat>=100){heat=100;overT=3;sfx.over();shake=14;ev.ok=false;}}
+  /* combo */
+  if(comboT>0){comboT-=dt;if(comboT<=0){combo=1;$("combo").style.opacity=0;}}
+  if(richT>0)richT-=dt;
+  vatPulse=Math.max(0,vatPulse-dt*1.8);drillKick=Math.max(0,drillKick-dt*6);
+  for(let i=cracks.length-1;i>=0;i--){cracks[i].life-=dt*1.2;if(cracks[i].life<=0)cracks.splice(i,1);}
+  /* events */
+  if(ev){ev.t-=dt;
+    if(ev.type==="cave"){$("evS").textContent=`Sync strikes ${ev.n}/${ev.need} · ${Math.ceil(ev.t)}s`;$("evBar").style.width=(ev.n/ev.need*100)+"%";if(ev.t<=0)endEvent(false);}
+    else{$("evS").textContent=`Refiner: keep venting! ${Math.ceil(ev.t)}s`;$("evBar").style.width=(ev.t/ev.max*100)+"%";if(!ev.ok)endEvent(false);else if(ev.t<=0)endEvent(true);}
+    if(Math.random()<dt*3){const r=rect(1);burst(r.x+Math.random()*r.w,r.y,3,"#8a7a6a",2,true);}}
+  else if(S.runOre>200){evNext-=dt;if(evNext<=0)startEvent();}
+  const si=strataIx();if(si>S.bestStrata){S.bestStrata=si;sfx.fanfare();float(W/2,H*.35,"NEW STRATUM: "+strata(si).n.toUpperCase(),"#ffe28a",20);shake=12;}
+  /* music */
+  const it=intensity();setLayer("bass",it>.6||dr>5?.9:0);setLayer("drums",combo>1.2||ev?.9:0);setLayer("lead",heat>60||(ev&&ev.type==="magma")?.7:0);
+  /* draw */
+  cx.clearRect(0,0,W,H);
+  const sh=shake>.3?shake:0;shake*=Math.pow(.02,dt);
+  const ox=(Math.random()-.5)*sh,oy=(Math.random()-.5)*sh;$("app").style.transform=sh?`translate(${ox}px,${oy}px)`:"";
+  cx.save();cx.translate(ox,oy);drawDriller(rect(1));drawRefiner(rect(2));cx.restore();
+  drawFx(dt);
+  $("heatBar").style.width=heat+"%";
+  $("vatBar").style.width=Math.min(100,combo>1?(comboT/2.2*100):0)+"%";
+  uiT-=dt;if(uiT<=0){uiT=.15;refreshUI();}
+  saveT+=dt;if(saveT>5){saveT=0;save();}
+  requestAnimationFrame(tick);
+}
+/* ---------- boot ---------- */
+load();
+/* offline progress: drones and machines, up to 2 hours at half speed */
+(function(){const away=Math.min(7200,(Date.now()-S.t)/1000);if(away>30&&(S.lv.drone||S.lv.smelt)){
+  const g=droneRate()*away*.5;S.ore+=g;S.runOre+=g;
+  setTimeout(()=>float(W/2,H*.35,"WHILE YOU WERE AWAY: +"+fmt(g)+" ore","#ffb03a",17),400);}})();
+$("mSound").textContent="Sound: "+(S.sound?"On":"Off");
+buildUps();refreshUI(true);
+if(!S.seenHelp){S.seenHelp=true;openHelp();}
+addEventListener("visibilitychange",()=>{if(document.hidden)save();});
+addEventListener("pagehide",save);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
