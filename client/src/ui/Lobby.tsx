@@ -3,6 +3,7 @@ import { fmt, type Role } from '@starforge/shared';
 import { joinParty, loadSave, openParty, startLocal, usesServer } from '../net/session';
 import { useGame } from '../state/store';
 import { friendsName } from './friends';
+import { Changelog } from './Changelog';
 
 const ROLES: { id: Role; icon: string; name: string; text: string }[] = [
   {
@@ -157,6 +158,7 @@ export function Lobby() {
 
         {netError && <p className="err">{netError}</p>}
         <p className="small dim">Signed in on the main menu? Your friends list appears here once you host, so you can invite them straight in.</p>
+        <Changelog />
       </div>
     </div>
   );
