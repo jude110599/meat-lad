@@ -1,5 +1,5 @@
 import { joinParty } from '../net/session';
-import { useGame } from '../state/store';
+import { WIDE_MIN_PX, useGame } from '../state/store';
 
 interface FriendsApi {
   attach(opts: {
@@ -35,6 +35,8 @@ export function attachFriends(): void {
       joinParty(code);
       return true;
     },
+    // On phones the open sheet needs the whole bottom of the screen.
+    visible: () => innerWidth >= WIDE_MIN_PX || !useGame.getState().sheet,
   });
 }
 

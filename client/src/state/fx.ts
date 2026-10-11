@@ -1,5 +1,4 @@
 import type { Vector3 } from 'three';
-import type { MachineId, ResourceId } from '@starforge/shared';
 
 /**
  * Fire-and-forget visual events. Kept outside React state so a burst of
@@ -14,17 +13,13 @@ export type FxEvent =
   | { kind: 'shake'; strength: number }
   /** Glowing scorch mark left on the rock where a strike landed. */
   | { kind: 'scorch'; at: Vector3; normal: Vector3; hot: boolean }
-  /** A refinery machine was pressed by a player (or the station should pulse). */
-  | { kind: 'press'; machine: MachineId; made: number; output: ResourceId; playerId: string; sync: boolean }
-  /** A quake node was locked by a stabilize press. */
-  | { kind: 'nodeLock'; nodeId: number }
-  /** The flare shield was topped up. */
-  | { kind: 'shieldHit'; shield: number }
-  /** Event started or ended: a big ring of light across the scene. */
+  /** A big ring of light across the scene (a Forge Tree node unlocked, a surge began). */
   | { kind: 'shockwave'; color: string }
-  /** Overclock fired: brief full-scene tint in the buff colour. */
-  | { kind: 'overclock'; color: string }
-  /** Quantum Leap: warp-speed transition. */
+  /** Brief full-scene tint. */
+  | { kind: 'flash'; color: string }
+  /** Someone caught the comet: it bursts where it is. */
+  | { kind: 'cometCaught'; id: number; color: string }
+  /** My Quantum Leap: warp-speed transition. */
   | { kind: 'leap' };
 
 type Listener = (e: FxEvent) => void;

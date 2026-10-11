@@ -1,8 +1,9 @@
 /**
- * The five-tier resource chain. Each tier is produced by refining the tier
- * below it, so the chain doubles as the game's progression spine.
+ * Every player keeps their own wallet. Ore is mined, alloy is refined from a
+ * share of the ore you mine once you own a Smelter, and Star Cores come from
+ * a Quantum Leap: each one boosts all your income until you spend it.
  */
-export const RESOURCES = ['ore', 'alloy', 'plasma', 'darkMatter', 'cosmicEnergy'] as const;
+export const RESOURCES = ['ore', 'alloy', 'cores'] as const;
 export type ResourceId = (typeof RESOURCES)[number];
 
 export type Wallet = Record<ResourceId, number>;
@@ -10,22 +11,16 @@ export type Wallet = Record<ResourceId, number>;
 export interface ResourceDef {
   id: ResourceId;
   name: string;
-  /** Hex colour used for HUD pills, particles and seam glow. */
+  /** Hex colour used for HUD pills, particles and node progress. */
   color: string;
-  /** Input tier consumed by the refinery recipe that produces this tier (null for raw ore). */
-  input: ResourceId | null;
-  /** Units of `input` consumed per unit produced. */
-  ratio: number;
 }
 
 export const RESOURCE_DEFS: Record<ResourceId, ResourceDef> = {
-  ore: { id: 'ore', name: 'Raw Ore', color: '#ffb03a', input: null, ratio: 0 },
-  alloy: { id: 'alloy', name: 'Refined Alloy', color: '#cfd6e6', input: 'ore', ratio: 10 },
-  plasma: { id: 'plasma', name: 'Exotic Plasma', color: '#4de8ff', input: 'alloy', ratio: 25 },
-  darkMatter: { id: 'darkMatter', name: 'Dark Matter Compound', color: '#b07cff', input: 'plasma', ratio: 50 },
-  cosmicEnergy: { id: 'cosmicEnergy', name: 'Cosmic Energy', color: '#ffe28a', input: 'darkMatter', ratio: 100 },
+  ore: { id: 'ore', name: 'Ore', color: '#ffb03a' },
+  alloy: { id: 'alloy', name: 'Alloy', color: '#7fe3ff' },
+  cores: { id: 'cores', name: 'Star Cores', color: '#ffe28a' },
 };
 
 export function emptyWallet(): Wallet {
-  return { ore: 0, alloy: 0, plasma: 0, darkMatter: 0, cosmicEnergy: 0 };
+  return { ore: 0, alloy: 0, cores: 0 };
 }

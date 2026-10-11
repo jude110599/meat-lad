@@ -1,23 +1,5 @@
-import { MACHINES, type MachineId } from './economy.js';
 import { MAX_PLAYERS_PER_ROOM, PROTOCOL_VERSION, SNAPSHOT_HZ, type ClientMsg, type Fx, type Hello, type ServerMsg } from './protocol.js';
-import {
-  addPlayer,
-  applyPress,
-  applyStrike,
-  buySkill,
-  buyUpgrade,
-  castVote,
-  onlinePlayers,
-  overclock,
-  proposeLeap,
-  setRole,
-  shieldPress,
-  stabilize,
-  tickRoom,
-  toggleMachine,
-  type Rand,
-  type RoomState,
-} from './sim.js';
+import { addPlayer, applyStrike, buyUpgrade, catchComet, dropPlayer, fundNode, leap, onlinePlayers, tickRoom, type Rand, type RoomState } from './sim.js';
 
 /** Deliver a message to one player id, or '*' for everyone in the room. */
 export type Send = (to: string, msg: ServerMsg) => void;
@@ -35,8 +17,9 @@ function randomId(n = 12): string {
  * with `handle`, call `tick` on a timer, and deliver whatever it sends.
  */
 export class RoomHost {
-  private readonly tokens = new Map<string, string>();
   private pending: Fx[] = [];
+  /** Tab id each online player joined from. */
+  private readonly tabs = new Map<string, string>();
   private lastTick = 0;
   private lastSnap = 0;
 
@@ -51,105 +34,77 @@ export class RoomHost {
   /** Admit a player. Returns their id, or an error for the transport to report. */
   join(hello: Hello, now = Date.now()): { playerId: string; welcome: ServerMsg } | { error: 'protocol-mismatch' | 'room-full' } {
     if (!hello || hello.protocol !== PROTOCOL_VERSION) return { error: 'protocol-mismatch' };
-    let id = hello.resume ? this.tokens.get(hello.resume) : undefined;
-    let resume = hello.resume ?? '';
-    if (!id || !this.state.players[id]) {
-      if (onlinePlayers(this.state).length >= MAX_PLAYERS_PER_ROOM) return { error: 'room-full' };
-      id = randomId();
-      resume = randomId(24);
-      this.tokens.set(resume, id);
+    let key = String(hello.key ?? '').slice(0, 40) || randomId(16);
+    const tab = String(hello.tab ?? '').slice(0, 12);
+    const find = () => Object.values(this.state.players).find((p) => p.key === key);
+    let back = find();
+    // The same browser in a second tab (a reconnecting tab keeps its player).
+    if (back?.online && tab && this.tabs.get(back.id) !== tab) {
+      key = `${key.slice(0, 27)}~${tab}`;
+      back = find();
     }
-    const role = hello.role === 'refiner' ? 'refiner' : 'miner';
-    const p = addPlayer(this.state, id, String(hello.name ?? '').slice(0, 16), role);
-    p.lastActAt = now;
-    this.emit({ k: 'joined', playerId: id, name: p.name });
-    return { playerId: id, welcome: { t: 'welcome', playerId: id, resume, code: this.code, state: this.state } };
+    if (!back?.online && onlinePlayers(this.state).length >= MAX_PLAYERS_PER_ROOM) return { error: 'room-full' };
+    const { player, offline } = addPlayer(this.state, back?.id ?? randomId(), key, String(hello.name ?? ''), now);
+    if (tab) this.tabs.set(player.id, tab);
+    this.emit({ k: 'joined', playerId: player.id, name: player.name });
+    if (offline) this.emit({ k: 'offline', playerId: player.id, ...offline });
+    return { playerId: player.id, welcome: { t: 'welcome', playerId: player.id, code: this.code, state: this.state } };
   }
 
-  /** Register the host's own player without a handshake. */
-  joinLocal(id: string, name: string, role: 'miner' | 'refiner'): void {
-    addPlayer(this.state, id, name, role);
-  }
-
-  leave(playerId: string): void {
+  leave(playerId: string, now = Date.now()): void {
     const p = this.state.players[playerId];
     if (!p || !p.online) return;
-    p.online = false;
+    dropPlayer(this.state, playerId, now);
     this.emit({ k: 'left', playerId, name: p.name });
-    if (this.state.vote) {
-      this.state.vote.yes = this.state.vote.yes.filter((x) => x !== playerId);
-      this.state.vote.no = this.state.vote.no.filter((x) => x !== playerId);
-    }
+    this.flush();
   }
 
   handle(playerId: string, msg: ClientMsg, now = Date.now()): void {
     const s = this.state;
-    if (!msg || typeof msg !== 'object' || !s.players[playerId]) return;
+    if (!msg || typeof msg !== 'object' || !s.players[playerId]?.online) return;
     switch (msg.t) {
       case 'strike': {
         const seq = Number(msg.seq) || 0;
-        const out = applyStrike(s, playerId, { seamId: num(msg.seamId), nodeId: num(msg.nodeId) }, now, this.rand());
+        const out = applyStrike(s, playerId, num(msg.seamId), now, this.rand());
         if (typeof out === 'string') this.emit({ k: 'reject', playerId, seq, reason: out });
         else this.emit({ k: 'strike', seq, ...out });
         break;
       }
-      case 'press': {
-        const seq = Number(msg.seq) || 0;
-        if (!MACHINES.includes(msg.machine)) return;
-        const out = applyPress(s, playerId, msg.machine as MachineId, now);
-        if (typeof out === 'string') this.emit({ k: 'reject', playerId, seq, reason: out });
-        else this.emit({ k: 'press', seq, ...out });
-        break;
-      }
       case 'buy': {
-        const want = Math.min(100, Math.max(1, Math.floor(Number(msg.count) || 1)));
-        let n = 0;
-        while (n < want && buyUpgrade(s, msg.id)) n++;
-        if (n) {
-          this.emit({ k: 'buy', playerId, id: msg.id, level: s.levels[msg.id] });
+        const want = Math.min(1000, Math.max(1, Math.floor(Number(msg.count) || 1)));
+        const n = buyUpgrade(s, playerId, msg.id, want);
+        if (typeof n === 'number') {
+          this.emit({ k: 'buy', playerId, id: msg.id, level: s.players[playerId].levels[msg.id], count: n });
+          this.snapNow(now);
+        } else this.emit({ k: 'reject', playerId, seq: 0, reason: n });
+        break;
+      }
+      case 'fund': {
+        const out = fundNode(s, playerId, msg.node, msg.res, Number(msg.amount));
+        if (typeof out === 'string') this.emit({ k: 'reject', playerId, seq: 0, reason: out });
+        else {
+          this.emit({ k: 'fund', ...out });
           this.snapNow(now);
         }
         break;
       }
-      case 'skill':
-        if (buySkill(s, msg.id)) {
-          this.emit({ k: 'skill', playerId, id: msg.id });
+      case 'leap': {
+        const out = leap(s, playerId, now);
+        if (typeof out === 'string') this.emit({ k: 'reject', playerId, seq: 0, reason: out });
+        else {
+          this.emit({ k: 'leap', ...out });
           this.snapNow(now);
         }
         break;
-      case 'toggle':
-        if (toggleMachine(s, msg.machine, msg.on)) this.snapNow(now);
-        break;
-      case 'role':
-        if (setRole(s, playerId, msg.role)) this.snapNow(now);
-        break;
-      case 'overclock': {
-        const r = overclock(s, playerId, msg.id, now);
-        if (r === true) {
-          this.emit({ k: 'overclock', playerId, id: msg.id });
-          this.snapNow(now);
-        } else this.emit({ k: 'reject', playerId, seq: 0, reason: r });
-        break;
       }
-      case 'stabilize': {
-        const r = stabilize(s, playerId, now);
-        if (typeof r !== 'string') this.emit({ k: 'stabilize', ...r });
-        break;
-      }
-      case 'shield': {
-        const r = shieldPress(s, playerId, now);
-        if (typeof r === 'number') this.emit({ k: 'shield', playerId, shield: r });
-        break;
-      }
-      case 'leap':
-        if (proposeLeap(s, playerId, now)) {
-          this.emit({ k: 'vote', playerId });
+      case 'comet': {
+        const out = catchComet(s, playerId, Number(msg.id), now);
+        if (typeof out !== 'string') {
+          this.emit({ k: 'comet', ...out });
           this.snapNow(now);
         }
         break;
-      case 'vote':
-        if (castVote(s, playerId, !!msg.yes)) this.snapNow(now);
-        break;
+      }
       case 'emote':
         this.emit({ k: 'emote', playerId, id: String(msg.id).slice(0, 12) });
         break;

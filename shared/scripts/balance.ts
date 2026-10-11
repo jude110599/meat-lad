@@ -1,64 +1,147 @@
 /**
- * Headless pacing check (`npm run balance`): one solo player who strikes
- * seams 4 times a second while keeping the drill out of overheat, presses
- * the smelter twice a second, and buys upgrades greedily. Prints when each
- * resource tier first appears and when the first Quantum Leap unlocks, to
- * compare against DESIGN.md §11.4.
+ * Headless pacing check (`npm run balance`): one solo player who taps 5 times
+ * a second (half of them on glowing seams), buys the personal upgrade that
+ * pays itself back fastest, and saves up for a Forge Tree node whenever one
+ * costs less than SAVE_FOR seconds of income. Prints when each node unlocks
+ * and when Quantum Leaps happen, to compare against DESIGN.md §7.
  */
 import {
-  LEAP_THRESHOLD,
-  MACHINES,
-  MACHINE_DEFS,
-  RESOURCES,
+  NODES,
+  NODE_IDS,
   UPGRADES,
   UPGRADE_IDS,
   addPlayer,
-  applyPress,
   applyStrike,
   buyUpgrade,
   canLeap,
+  critChance,
+  critMult,
   createRoomState,
+  fmt,
+  fundNode,
+  has,
+  leap,
+  leapCores,
+  nodeFundable,
+  nodeRemaining,
+  passiveOrePerSec,
   rng,
+  seamMult,
+  tapValue,
   tickRoom,
   upgradeCost,
+  upgradeUnlocked,
+  type NodeId,
+  type PlayerState,
+  type ResourceId,
+  type RoomState,
   type UpgradeId,
 } from '../src/index.js';
 
+const TAPS = Number(process.env.TAPS ?? 5);
+const SEAM_SHARE = 0.5;
+const SAVE_FOR = Number(process.env.SAVE_FOR ?? 360);
+const HOURS = Number(process.env.HOURS ?? 6);
+const LEAPS = Number(process.env.LEAPS ?? 3);
+
 const r = rng(42);
-const s = createRoomState(7, 0);
-addPlayer(s, 'p', 'Bot', 'miner');
-const first: Record<string, number> = {};
-const order: UpgradeId[] = ['drone', 'drillBit', 'smelter', 'rig', 'infuser', 'coolant', 'compressor', 'condenser', 'seismic', 'focusLens', 'press', 'reactor'];
-const fmt = (ms?: number) => (ms === undefined ? 'never' : `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`);
-const HOURS = Number(process.argv[2] ?? 3);
 let now = 0;
-const step = 250;
-for (let ms = 0; ms < HOURS * 3600_000; ms += step) {
-  now = ms;
-  const p = s.players.p;
-  // 4 strikes/s, aimed at a seam, backing off near overheat.
-  if (ms % 250 === 0 && p.heat < 88 && now >= p.lockedUntil) applyStrike(s, 'p', { seamId: s.seams[0]?.id ?? null }, now, r());
-  // 2 presses/s on the highest machine that has input.
-  if (ms % 500 === 0) {
-    const m = [...MACHINES].reverse().find((id) => s.levels[id] > 0 && s.wallet[MACHINE_DEFS[id].input] >= MACHINE_DEFS[id].ratio * 4);
-    if (m) applyPress(s, 'p', m, now);
-  }
-  tickRoom(s, step / 1000, now, r);
-  if (s.event) s.event = null;
-  if (ms % 1000 === 0) {
-    for (const id of order) {
-      const def = UPGRADES[id];
-      if (def.maxLevel !== undefined && s.levels[id] >= def.maxLevel) continue;
-      // Keep half the ore for the refinery once it exists.
-      const budget = def.currency === 'ore' && s.levels.smelter > 3 ? 0.5 : 1;
-      if (upgradeCost(id, s.levels[id]) <= s.wallet[def.currency] * budget && buyUpgrade(s, id) && s.levels[id] === 1) first['buy:' + id] = ms;
+const s = createRoomState(7, now);
+const p = addPlayer(s, 'p', 'bot', 'Bot', now).player;
+const log = (t: string) => console.log(`${clock(now)}  ${t}`);
+function clock(ms: number): string {
+  const m = Math.floor(ms / 60000);
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}h${String(m % 60).padStart(2, '0')}`;
+}
+
+/** Ore per second this player makes, taps included. */
+function income(st: RoomState, pl: PlayerState): number {
+  const tap = tapValue(st, pl) * (1 + critChance(pl) * (critMult(st) - 1)) * (1 - SEAM_SHARE + SEAM_SHARE * seamMult(st, pl) * 1.5);
+  return TAPS * tap + passiveOrePerSec(st, pl);
+}
+
+/** Income gained per unit spent, by trying the purchase on a copy. */
+function valueOf(id: UpgradeId): number {
+  const def = UPGRADES[id];
+  if (def.maxLevel !== undefined && p.levels[id] >= def.maxLevel) return 0;
+  if (!upgradeUnlocked(s, id)) return 0;
+  const cost = upgradeCost(id, p.levels[id]);
+  if (id === 'smelter') return (income(s, p) * 0.004) / cost; // alloy matters once alloy prices show up
+  const base = income(s, p);
+  p.levels[id]++;
+  const after = income(s, p);
+  p.levels[id]--;
+  return (after - base) / cost;
+}
+
+function target(): NodeId | null {
+  const inc = income(s, p);
+  let best: NodeId | null = null;
+  let bestCost = Infinity;
+  for (const id of NODE_IDS) {
+    if (!nodeFundable(s, id) || id === 'mastery') continue;
+    const rem = nodeRemaining(s, id);
+    const cost = (rem.ore ?? 0) + (rem.alloy ?? 0) * 200 + (rem.cores ?? 0) * 1e15;
+    if ((rem.cores ?? 0) > p.wallet.cores) continue;
+    if (id !== 'leap' && (rem.ore ?? 0) > inc * SAVE_FOR && (rem.cores ?? 0) === 0) continue;
+    if (cost < bestCost) {
+      best = id;
+      bestCost = cost;
     }
   }
-  for (const k of RESOURCES) if (!first[k] && s.wallet[k] >= 1) first[k] = ms;
-  if (!first.leap && canLeap(s)) first.leap = ms;
-  if (ms % 600000 === 0 && process.argv[3]) console.log(fmt(ms), Object.fromEntries(RESOURCES.map((k) => [k, Math.round(s.wallet[k])])), `drone ${s.levels.drone} bit ${s.levels.drillBit} sm ${s.levels.smelter} inf ${s.levels.infuser} cmp ${s.levels.compressor} cnd ${s.levels.condenser} rig ${s.levels.rig} seis ${s.levels.seismic}`);
+  return best;
 }
-for (const k of Object.keys(first).sort((a, b) => first[a] - first[b])) console.log(k.padEnd(16), fmt(first[k]));
-console.log('levels', JSON.stringify(s.levels));
-console.log('wallet', Object.fromEntries(RESOURCES.map((k) => [k, Math.round(s.wallet[k])])), 'run CE', s.run.cosmicEnergy.toFixed(2), `(leap at ${LEAP_THRESHOLD})`);
-void UPGRADE_IDS;
+
+let leaps = 0;
+const end = HOURS * 3600_000;
+let lastReport = 0;
+let tapAcc = 0;
+while (now < end && leaps < LEAPS) {
+  now += 1000;
+  tickRoom(s, 1, now, r);
+  tapAcc += TAPS;
+  for (; tapAcc >= 1; tapAcc--) {
+    const seam = r() < SEAM_SHARE ? s.seams[0]?.id ?? null : null;
+    p.lastStrikeAt = 0;
+    applyStrike(s, 'p', seam, now, r());
+  }
+  const goal = target();
+  if (goal) {
+    for (const res of ['cores', 'alloy', 'ore'] as ResourceId[]) {
+      const out = fundNode(s, 'p', goal, res, 1e300);
+      if (typeof out !== 'string' && out.done) log(`unlocked ${NODES[goal].name.padEnd(18)} ore/s ${fmt(income(s, p))}`);
+    }
+  }
+  // Spend what's left (all of it when not saving, only small change when saving).
+  for (let i = 0; i < 200; i++) {
+    let best: UpgradeId | null = null;
+    let bv = 0;
+    for (const id of UPGRADE_IDS) {
+      const def = UPGRADES[id];
+      const cost = upgradeCost(id, p.levels[id]);
+      if (p.wallet[def.currency] < cost) continue;
+      if (goal && def.currency !== 'cores') {
+        const rem = nodeRemaining(s, goal)[def.currency] ?? 0;
+        if (rem > 0 && cost > rem * 0.02) continue;
+      }
+      const v = valueOf(id) * (def.currency === 'alloy' ? 200 : 1);
+      if (v > bv) {
+        bv = v;
+        best = id;
+      }
+    }
+    if (!best) break;
+    buyUpgrade(s, 'p', best, 1);
+  }
+  if (canLeap(s, p) && leapCores(p) >= 4 + leaps * 6) {
+    log(`LEAP ${leaps + 1}: +${leapCores(p)} cores (mined ${fmt(p.run.ore)} this run)`);
+    leap(s, 'p', now);
+    leaps++;
+  }
+  if (now - lastReport >= 15 * 60_000) {
+    lastReport = now;
+    const lv = UPGRADE_IDS.filter((id) => p.levels[id]).map((id) => `${id} ${p.levels[id]}`).join(', ');
+    log(`ore/s ${fmt(income(s, p))}  alloy ${fmt(p.wallet.alloy)}  cores ${p.wallet.cores}  [${lv}]`);
+  }
+}
+console.log('tree:', NODE_IDS.filter((id) => has(s, id)).join(', '));

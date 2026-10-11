@@ -1,55 +1,52 @@
 import { randomUnit, rng, type Vec3 } from './asteroid.js';
 import {
-  COMBO_HOLD_MS,
+  BASE_CRIT,
+  BREAK_MULT,
+  COMET_GAP_MAX_MS,
+  COMET_GAP_MIN_MS,
+  COMET_MS,
+  COMET_SECONDS,
+  COMET_TAPS,
+  CORE_BONUS,
+  CORE_BONUS_STARSEED,
   CRIT_MULT,
-  DEPLETE_MULT,
-  HEAT_MAX,
-  LEAP_THRESHOLD,
-  MACHINES,
-  MACHINE_DEFS,
-  OVERCLOCKS,
-  OVERHEAT_LOCK_MS,
-  POWER_PER_PRESS,
-  RIG_STRIKES_PER_SEC,
-  RIG_YIELD,
+  CRIT_MULT_OPTICS,
+  DRONE_RATE,
+  HARVESTER_RATE,
+  NODES,
+  OFFLINE_CAP_NIGHT_S,
+  OFFLINE_CAP_S,
+  OFFLINE_EFF,
+  OFFLINE_EFF_NIGHT,
+  RIG_RATE,
+  RIG_SHARE,
   SEAM_MULT,
-  SKILLS,
-  SYNC_STEP,
-  SYNC_WINDOW_MS,
+  SEAM_MULT_DEEP,
+  SMELT_PER_LEVEL,
+  SURGE_CAP_MS,
+  SURGE_MS,
   UPGRADES,
-  critChance,
-  droneOrePerSec,
+  coresFor,
   emptyLevels,
-  emptySkills,
-  heatPerStrike,
-  heatVent,
-  hotThreshold,
-  machineRate,
-  maxCombo,
-  powerMax,
-  powerRegen,
-  pressYield,
-  quantumMult,
-  quantumPointsFor,
-  strikeBase,
+  milestoneMult,
+  nodeCost,
   upgradeCost,
-  type MachineId,
-  type OverclockId,
-  type SkillId,
-  type SkillLevels,
+  type NodeId,
   type UpgradeId,
   type UpgradeLevels,
 } from './economy.js';
 import { RESOURCES, emptyWallet, type ResourceId, type Wallet } from './resources.js';
 
 /**
- * The authoritative simulation. Pure functions over plain JSON data: the
- * dedicated server and a hosting player's browser both run them, so there
- * is exactly one implementation of every rule. Randomness is always passed
+ * The authoritative simulation. Pure functions over plain JSON data: a
+ * hosting player's browser and the optional dedicated server both run them,
+ * so there is exactly one implementation of every rule. Randomness is passed
  * in, so the host owns every roll.
+ *
+ * Everyone plays the same game: tap the asteroid, buy your own upgrades, and
+ * pour ore, alloy and Star Cores into the Forge Tree the whole crew shares.
  */
 
-export type Role = 'miner' | 'refiner';
 export type Rand = () => number;
 
 export interface Seam {
@@ -61,124 +58,254 @@ export interface Seam {
 
 export interface PlayerState {
   id: string;
+  /** Stable per browser, so a player gets their own progress back when they return. */
+  key: string;
   name: string;
-  role: Role;
   /** Hue (0-360) for this player's ship, laser and name tag. */
   hue: number;
-  heat: number;
-  lockedUntil: number;
-  lastStrikeAt: number;
-  lastPressAt: number;
-  lastActAt: number;
   online: boolean;
-  /** Ore this player has mined this run, for the team panel. */
-  mined: number;
-}
-
-export type BuffId = 'resonance' | 'solar' | 'focusField' | 'hyperdrive' | 'droneSurge' | 'dronesDown';
-
-export interface QuakeNode {
-  id: number;
-  dir: Vec3;
-  /** Epoch ms until which a stabilize press locks this node. */
-  primedUntil: number;
-  locked: boolean;
-}
-
-export type CoopEvent =
-  | { kind: 'quake'; startedAt: number; endsAt: number; nodes: QuakeNode[] }
-  | { kind: 'flare'; startedAt: number; endsAt: number; shield: number; sunDir: Vec3 };
-
-export interface LeapVote {
-  by: string;
-  until: number;
-  yes: string[];
-  no: string[];
-}
-
-export interface RoomState {
-  v: 2;
-  seed: number;
-  tick: number;
-  now: number;
   wallet: Wallet;
-  /** Smoothed net income per second, for the HUD. */
-  rates: Wallet;
   levels: UpgradeLevels;
-  machinesOn: Record<MachineId, boolean>;
-  seams: Seam[];
-  nextSeamId: number;
-  players: Record<string, PlayerState>;
-  power: number;
-  combo: number;
-  comboUntil: number;
+  /** Mined since this player's last Quantum Leap. */
+  run: { ore: number; alloy: number; startedAt: number };
+  /** Smoothed income per second, for the HUD. */
+  rates: { ore: number; alloy: number };
+  stats: { ore: number; taps: number; leaps: number; cores: number; funded: number };
   lastStrikeAt: number;
-  lastPressAt: number;
-  buffs: Partial<Record<BuffId, number>>;
-  event: CoopEvent | null;
-  nextEventAt: number;
-  eventsWon: number;
-  eventsLost: number;
-  vote: LeapVote | null;
-  quantumPoints: number;
-  skills: SkillLevels;
-  leaps: number;
-  /** Produced this run; `made` drives upgrade unlocks. */
-  run: { ore: number; cosmicEnergy: number; startedAt: number; made: Wallet };
-  lifetime: { ore: number; strikes: number; cosmicEnergy: number };
+  /** Last time this player was online, for offline earnings. */
+  seenAt: number;
   rigAcc: number;
 }
 
-export const SEAM_COUNT = 5;
+export interface NodeState {
+  level: number;
+  /** Paid so far toward the next level. */
+  funded: Partial<Wallet>;
+  /** Share of the node's price each player paid, 0..1, for the credits. */
+  by: Record<string, number>;
+}
+
+/** A comet streaking past. Clients choose where to draw it; catching it pays the whole crew. */
+export interface Comet {
+  id: number;
+  at: number;
+  until: number;
+  seed: number;
+}
+
+export interface RoomState {
+  v: 3;
+  seed: number;
+  tick: number;
+  now: number;
+  createdAt: number;
+  players: Record<string, PlayerState>;
+  tree: Partial<Record<NodeId, NodeState>>;
+  seams: Seam[];
+  nextSeamId: number;
+  surgeUntil: number;
+  comet: Comet | null;
+  nextCometAt: number;
+  nextCometId: number;
+}
+
 export const SEAM_HP = 8;
 export const MIN_STRIKE_INTERVAL_MS = 50;
-export const MIN_PRESS_INTERVAL_MS = 80;
-export const MIN_SHIELD_INTERVAL_MS = 120;
-export const VOTE_MS = 15000;
-export const QUAKE_MS = 25000;
-export const QUAKE_PRIME_MS = 2500;
-export const FLARE_MS = 22000;
-export const FLARE_DRAIN = 7;
-export const FLARE_SHIELD_PER_PRESS = 8;
+/** Saved crewmates beyond this many are forgotten, longest-absent first. */
+export const MAX_SAVED_PLAYERS = 16;
 
 const HUES = [32, 190, 280, 120, 340, 60];
 
 export function createRoomState(seed: number, now = Date.now()): RoomState {
   const s: RoomState = {
-    v: 2,
+    v: 3,
     seed,
     tick: 0,
     now,
-    wallet: emptyWallet(),
-    rates: emptyWallet(),
-    levels: emptyLevels(),
-    machinesOn: { smelter: true, infuser: true, compressor: true, condenser: true },
+    createdAt: now,
+    players: {},
+    tree: {},
     seams: [],
     nextSeamId: 1,
-    players: {},
-    power: 30,
-    combo: 1,
-    comboUntil: 0,
-    lastStrikeAt: 0,
-    lastPressAt: 0,
-    buffs: {},
-    event: null,
-    nextEventAt: 0,
-    eventsWon: 0,
-    eventsLost: 0,
-    vote: null,
-    quantumPoints: 0,
-    skills: emptySkills(),
-    leaps: 0,
-    run: { ore: 0, cosmicEnergy: 0, startedAt: now, made: emptyWallet() },
-    lifetime: { ore: 0, strikes: 0, cosmicEnergy: 0 },
-    rigAcc: 0,
+    surgeUntil: 0,
+    comet: null,
+    nextCometAt: now + 45_000,
+    nextCometId: 1,
   };
   refillSeams(s);
   return s;
 }
 
-export const seamTarget = (s: RoomState): number => 5 + s.skills.seamSense;
+/* ---------------- tree queries ---------------- */
+
+export const nodeLevel = (s: RoomState, id: NodeId): number => s.tree[id]?.level ?? 0;
+export const has = (s: RoomState, id: NodeId): boolean => nodeLevel(s, id) > 0;
+
+/** Every prerequisite is unlocked. */
+export const nodeOpen = (s: RoomState, id: NodeId): boolean => NODES[id].needs.every((n) => has(s, n));
+
+/** Open and not already bought (repeatable nodes never finish). */
+export const nodeFundable = (s: RoomState, id: NodeId): boolean => nodeOpen(s, id) && (!!NODES[id].repeat || !has(s, id));
+
+export const upgradeUnlocked = (s: RoomState, id: UpgradeId): boolean => {
+  const n = UPGRADES[id].needs;
+  return !n || has(s, n);
+};
+
+/* ---------------- formulas ---------------- */
+
+export const onlinePlayers = (s: RoomState): PlayerState[] => Object.values(s.players).filter((p) => p.online);
+const onlineCount = (s: RoomState): number => Math.max(1, onlinePlayers(s).length);
+
+/** Crew Link: +25%, and +25% more for each crewmate past the second. */
+export function crewMult(s: RoomState, online = onlineCount(s)): number {
+  return has(s, 'teamlink') ? 1 + 0.25 * Math.max(1, online - 1) : 1;
+}
+
+export function coreMult(s: RoomState, p: PlayerState): number {
+  return 1 + (has(s, 'starseed') ? CORE_BONUS_STARSEED : CORE_BONUS) * p.wallet.cores;
+}
+
+export const surgeOn = (s: RoomState, now = s.now): boolean => s.surgeUntil > now;
+
+/** Multiplier on every bit of ore a player earns. */
+export function allMult(s: RoomState, p: PlayerState, online = onlineCount(s), surge = surgeOn(s)): number {
+  return (
+    (has(s, 'core') ? 1.5 : 1) *
+    crewMult(s, online) *
+    coreMult(s, p) *
+    (has(s, 'singularity') ? 3 : 1) *
+    Math.pow(1.5, nodeLevel(s, 'mastery')) *
+    (surge ? 2 : 1)
+  );
+}
+
+/** Ore for one plain tap (before crit and seam bonuses). */
+export function tapValue(s: RoomState, p: PlayerState, online?: number, surge?: boolean): number {
+  const d = p.levels.drill;
+  return (1 + d) * milestoneMult(d) * (has(s, 'overdrive') ? 4 : 1) * (has(s, 'hyperdrill') ? 10 : 1) * allMult(s, p, online, surge);
+}
+
+export const critChance = (p: PlayerState): number => BASE_CRIT + 0.01 * p.levels.lens;
+export const critMult = (s: RoomState): number => (has(s, 'optics') ? CRIT_MULT_OPTICS : CRIT_MULT);
+const baseSeamMult = (s: RoomState): number => (has(s, 'deepscan') ? SEAM_MULT_DEEP : SEAM_MULT);
+export const seamMult = (s: RoomState, p: PlayerState): number => baseSeamMult(s) * (1 + 0.25 * p.levels.scanner);
+export const seamTarget = (s: RoomState): number => (has(s, 'deepscan') ? 7 : 5);
+
+const fleetMult = (s: RoomState, p: PlayerState): number => (1 + 0.25 * p.levels.plating) * (has(s, 'dyson') ? 10 : 1);
+
+export function droneRate(s: RoomState, p: PlayerState, online?: number, surge?: boolean): number {
+  const n = p.levels.drone;
+  return n * DRONE_RATE * milestoneMult(n) * (has(s, 'swarm') ? 2 : 1) * fleetMult(s, p) * allMult(s, p, online, surge);
+}
+
+export function harvesterRate(s: RoomState, p: PlayerState, online?: number, surge?: boolean): number {
+  const n = p.levels.harvester;
+  return n * HARVESTER_RATE * milestoneMult(n) * fleetMult(s, p) * allMult(s, p, online, surge);
+}
+
+/** Expected ore per second from Auto-Rigs (ignoring crits). */
+export function rigRate(s: RoomState, p: PlayerState, online?: number, surge?: boolean): number {
+  return p.levels.rig * RIG_RATE * RIG_SHARE * tapValue(s, p, online, surge) * baseSeamMult(s);
+}
+
+export function passiveOrePerSec(s: RoomState, p: PlayerState, online?: number, surge?: boolean): number {
+  return droneRate(s, p, online, surge) + harvesterRate(s, p, online, surge) + rigRate(s, p, online, surge);
+}
+
+/** Share of mined ore a player's Smelters also turn into alloy. */
+export const smeltShare = (s: RoomState, p: PlayerState): number => p.levels.smelter * SMELT_PER_LEVEL * (has(s, 'hotsmelt') ? 2 : 1);
+
+export const leapCores = (p: PlayerState): number => coresFor(p.run.ore);
+export const canLeap = (s: RoomState, p: PlayerState): boolean => has(s, 'leap') && leapCores(p) > 0;
+
+/* ---------------- players ---------------- */
+
+function freshPlayer(id: string, key: string, name: string, hue: number, now: number): PlayerState {
+  return {
+    id,
+    key,
+    name,
+    hue,
+    online: true,
+    wallet: emptyWallet(),
+    levels: emptyLevels(),
+    run: { ore: 0, alloy: 0, startedAt: now },
+    rates: { ore: 0, alloy: 0 },
+    stats: { ore: 0, taps: 0, leaps: 0, cores: 0, funded: 0 },
+    lastStrikeAt: 0,
+    seenAt: now,
+    rigAcc: 0,
+  };
+}
+
+export interface OfflineGain {
+  seconds: number;
+  gained: Wallet;
+}
+
+/** Bring a player in: a returning key gets their progress back plus offline earnings. */
+export function addPlayer(
+  s: RoomState,
+  id: string,
+  key: string,
+  name: string,
+  now: number,
+): { player: PlayerState; offline: OfflineGain | null } {
+  const clean = (name || 'Prospector').slice(0, 16);
+  const back = Object.values(s.players).find((p) => p.key === key);
+  if (back) {
+    const offline = back.online ? null : applyOffline(s, back, now - back.seenAt);
+    back.online = true;
+    back.name = clean;
+    back.seenAt = now;
+    return { player: back, offline: offline && offline.seconds >= 60 ? offline : null };
+  }
+  const used = new Set(onlinePlayers(s).map((p) => p.hue));
+  const hue = HUES.find((h) => !used.has(h)) ?? Math.floor(Math.random() * 360);
+  const p = freshPlayer(id, key, clean, hue, now);
+  s.players[id] = p;
+  // Forget the longest-absent crewmates once the roster is full.
+  const saved = Object.values(s.players);
+  if (saved.length > MAX_SAVED_PLAYERS) {
+    const gone = saved.filter((x) => !x.online).sort((a, b) => a.seenAt - b.seenAt);
+    for (const x of gone.slice(0, saved.length - MAX_SAVED_PLAYERS)) delete s.players[x.id];
+  }
+  return { player: p, offline: null };
+}
+
+export function dropPlayer(s: RoomState, id: string, now: number): void {
+  const p = s.players[id];
+  if (!p) return;
+  p.online = false;
+  p.seenAt = now;
+}
+
+/** Offline earnings: drones, harvesters and rigs at the offline rate, capped. */
+export function applyOffline(s: RoomState, p: PlayerState, awayMs: number): OfflineGain {
+  const night = has(s, 'nightshift');
+  const seconds = Math.min(Math.max(0, awayMs / 1000), night ? OFFLINE_CAP_NIGHT_S : OFFLINE_CAP_S);
+  const ore = passiveOrePerSec(s, p, 1, false) * seconds * (night ? OFFLINE_EFF_NIGHT : OFFLINE_EFF);
+  const before = { ...p.wallet };
+  earn(s, p, ore);
+  const gained = emptyWallet();
+  for (const r of RESOURCES) gained[r] = p.wallet[r] - before[r];
+  return { seconds, gained };
+}
+
+function earn(s: RoomState, p: PlayerState, ore: number): void {
+  if (!(ore > 0)) return;
+  p.wallet.ore += ore;
+  p.run.ore += ore;
+  p.stats.ore += ore;
+  const alloy = ore * smeltShare(s, p);
+  if (alloy > 0) {
+    p.wallet.alloy += alloy;
+    p.run.alloy += alloy;
+  }
+}
+
+/* ---------------- seams ---------------- */
 
 function spawnSeam(s: RoomState): Seam {
   const r = rng((s.seed ^ (s.nextSeamId * 2654435761)) >>> 0);
@@ -187,493 +314,220 @@ function spawnSeam(s: RoomState): Seam {
   return seam;
 }
 function refillSeams(s: RoomState): void {
-  for (const seam of s.seams) seam.hp = seam.maxHp;
   while (s.seams.length < seamTarget(s)) spawnSeam(s);
 }
 
-export function addPlayer(s: RoomState, id: string, name: string, role: Role): PlayerState {
-  const existing = s.players[id];
-  if (existing) {
-    existing.online = true;
-    existing.name = name || existing.name;
-    return existing;
-  }
-  const used = new Set(Object.values(s.players).map((p) => p.hue));
-  const hue = HUES.find((h) => !used.has(h)) ?? Math.floor(Math.random() * 360);
-  const p: PlayerState = {
-    id,
-    name: (name || 'Prospector').slice(0, 16),
-    role,
-    hue,
-    heat: 0,
-    lockedUntil: 0,
-    lastStrikeAt: 0,
-    lastPressAt: 0,
-    lastActAt: 0,
-    online: true,
-    mined: 0,
-  };
-  s.players[id] = p;
-  return p;
+/** Damage a seam; returns the replacement when it breaks. */
+function hitSeam(s: RoomState, seam: Seam, dmg: number, now: number): Seam | null {
+  seam.hp -= dmg;
+  if (seam.hp > 0) return null;
+  s.seams = s.seams.filter((x) => x !== seam);
+  if (has(s, 'resonance')) s.surgeUntil = Math.min(Math.max(s.surgeUntil, now) + SURGE_MS, now + SURGE_CAP_MS);
+  return spawnSeam(s);
 }
 
-export const onlinePlayers = (s: RoomState): PlayerState[] => Object.values(s.players).filter((p) => p.online);
+/* ---------------- actions ---------------- */
 
-export const buffOn = (s: RoomState, b: BuffId): boolean => (s.buffs[b] ?? 0) > s.now;
-export const globalMult = (s: RoomState): number => quantumMult(s.quantumPoints);
-export const oreMult = (s: RoomState): number => (buffOn(s, 'resonance') ? 3 : 1);
-export const refineMult = (s: RoomState): number => (buffOn(s, 'solar') ? 2 : 1);
-
-function earnOre(s: RoomState, amount: number, p?: PlayerState): void {
-  s.wallet.ore += amount;
-  s.run.ore += amount;
-  s.run.made.ore += amount;
-  s.lifetime.ore += amount;
-  if (p) p.mined += amount;
-}
-
-/* ---------------- sync combo ---------------- */
-
-function touchCombo(s: RoomState, kind: 'strike' | 'press', now: number): boolean {
-  if (kind === 'strike') s.lastStrikeAt = now;
-  else s.lastPressAt = now;
-  const other = kind === 'strike' ? s.lastPressAt : s.lastStrikeAt;
-  if (now - other <= SYNC_WINDOW_MS) {
-    s.combo = Math.min(maxCombo(s.skills), s.combo + SYNC_STEP);
-    s.comboUntil = now + COMBO_HOLD_MS;
-    // A pair only counts once.
-    if (kind === 'strike') s.lastPressAt = 0;
-    else s.lastStrikeAt = 0;
-    return true;
-  }
-  return false;
-}
-
-/* ---------------- strikes ---------------- */
-
-export type Reject = 'unknown-player' | 'rate-limited' | 'overheated' | 'no-power' | 'maxed' | 'too-poor' | 'no-event' | 'locked';
+export type Reject = 'unknown-player' | 'rate-limited' | 'locked' | 'maxed' | 'too-poor' | 'gone' | 'not-ready';
 
 export interface StrikeOutcome {
   playerId: string;
   amount: number;
   crit: boolean;
-  hot: boolean;
-  sync: boolean;
   seamId: number | null;
-  seamDepleted: boolean;
+  broke: boolean;
   newSeam: Seam | null;
-  nodeId: number | null;
-  heat: number;
-  overheated: boolean;
+  surge: boolean;
 }
 
-export function applyStrike(
-  s: RoomState,
-  playerId: string,
-  target: { seamId?: number | null; nodeId?: number | null },
-  now: number,
-  roll: number,
-): StrikeOutcome | Reject {
+export function applyStrike(s: RoomState, playerId: string, seamId: number | null, now: number, roll: number): StrikeOutcome | Reject {
   const p = s.players[playerId];
   if (!p) return 'unknown-player';
-  if (now < p.lockedUntil) return 'overheated';
   if (now - p.lastStrikeAt < MIN_STRIKE_INTERVAL_MS) return 'rate-limited';
   p.lastStrikeAt = now;
-  p.lastActAt = now;
-  s.lifetime.strikes++;
-
-  const crit = roll < critChance(s.levels, buffOn(s, 'focusField'));
-  const hot = p.heat >= hotThreshold(s.skills);
-  const seam = target.seamId == null ? undefined : s.seams.find((x) => x.id === target.seamId);
-  const sync = touchCombo(s, 'strike', now);
-
-  let amount = strikeBase(s.levels, s.skills, globalMult(s)) * oreMult(s) * s.combo;
-  if (crit) amount *= CRIT_MULT;
-  if (hot) amount *= 2;
-  if (seam) amount *= SEAM_MULT;
-  if (buffOn(s, 'hyperdrive')) amount *= 2;
-
-  let seamDepleted = false;
+  p.stats.taps++;
+  const crit = roll < critChance(p);
+  const seam = seamId == null ? undefined : s.seams.find((x) => x.id === seamId);
+  const wasSurge = surgeOn(s, now);
+  let amount = tapValue(s, p, undefined, wasSurge);
+  if (crit) amount *= critMult(s);
   let newSeam: Seam | null = null;
   if (seam) {
-    seam.hp -= crit ? 2 : 1;
-    if (seam.hp <= 0) {
-      seamDepleted = true;
-      amount *= DEPLETE_MULT;
-      s.seams = s.seams.filter((x) => x !== seam);
-      newSeam = spawnSeam(s);
-    }
+    amount *= seamMult(s, p);
+    newSeam = hitSeam(s, seam, crit ? 2 : 1, now);
+    if (newSeam) amount *= BREAK_MULT;
   }
-
-  // Resonance nodes during a Seismic Shockwave: a strike primes the node.
-  let nodeId: number | null = null;
-  if (target.nodeId != null && s.event?.kind === 'quake') {
-    const node = s.event.nodes.find((n) => n.id === target.nodeId);
-    if (node && !node.locked) {
-      node.primedUntil = now + QUAKE_PRIME_MS;
-      nodeId = node.id;
-    }
-  }
-
-  earnOre(s, amount, p);
-
-  const flare = s.event?.kind === 'flare';
-  p.heat += heatPerStrike(s.levels) * (flare ? 2 : 1);
-  let overheated = false;
-  if (p.heat >= HEAT_MAX) {
-    p.heat = HEAT_MAX;
-    p.lockedUntil = now + OVERHEAT_LOCK_MS;
-    overheated = true;
-  }
-
-  return { playerId, amount, crit, hot, sync, seamId: seam ? seam.id : null, seamDepleted, newSeam, nodeId, heat: p.heat, overheated };
+  earn(s, p, amount);
+  return { playerId, amount, crit, seamId: seam ? seam.id : null, broke: !!newSeam, newSeam, surge: !wasSurge && surgeOn(s, now) };
 }
 
-/* ---------------- refinery presses ---------------- */
-
-export interface PressOutcome {
-  playerId: string;
-  machine: MachineId;
-  made: number;
-  output: ResourceId;
-  sync: boolean;
-  power: number;
-}
-
-export function applyPress(s: RoomState, playerId: string, machine: MachineId, now: number): PressOutcome | Reject {
+/** Buy up to `count` levels; returns how many were bought. */
+export function buyUpgrade(s: RoomState, playerId: string, id: UpgradeId, count = 1): number | Reject {
   const p = s.players[playerId];
   if (!p) return 'unknown-player';
-  if (!MACHINES.includes(machine)) return 'maxed';
-  if (now - p.lastPressAt < MIN_PRESS_INTERVAL_MS) return 'rate-limited';
-  p.lastPressAt = now;
-  p.lastActAt = now;
-  if (s.levels[machine] < 1) return 'locked';
-  const def = MACHINE_DEFS[machine];
-  const sync = touchCombo(s, 'press', now);
-  const want = pressYield(machine, s.levels, s.skills, globalMult(s)) * s.combo * refineMult(s);
-  const made = Math.min(want, s.wallet[def.input] / def.ratio);
-  if (made > 0) {
-    s.wallet[def.input] -= made * def.ratio;
-    gain(s, def.output, made);
-  }
-  s.power = Math.min(powerMax(s.levels), s.power + POWER_PER_PRESS * (1 + 0.25 * s.skills.gridSurplus));
-  return { playerId, machine, made, output: def.output, sync, power: s.power };
-}
-
-function gain(s: RoomState, r: ResourceId, n: number): void {
-  s.wallet[r] += n;
-  s.run.made[r] += n;
-  if (r === 'cosmicEnergy') {
-    s.run.cosmicEnergy += n;
-    s.lifetime.cosmicEnergy += n;
-  }
-  if (r === 'ore') {
-    s.run.ore += n;
-    s.lifetime.ore += n;
-  }
-}
-
-/* ---------------- shop, skills, routing, overclocks ---------------- */
-
-export function buyUpgrade(s: RoomState, id: UpgradeId): boolean {
-  if (!Object.hasOwn(UPGRADES, id)) return false; // ids arrive from the network
+  if (!Object.hasOwn(UPGRADES, id)) return 'locked'; // ids arrive from the network
+  if (!upgradeUnlocked(s, id)) return 'locked';
   const def = UPGRADES[id];
-  const lv = s.levels[id];
-  if (def.maxLevel !== undefined && lv >= def.maxLevel) return false;
-  if (!isUnlocked(s, id)) return false;
-  const cost = upgradeCost(id, lv);
-  if (s.wallet[def.currency] < cost) return false;
-  s.wallet[def.currency] -= cost;
-  s.levels[id] = lv + 1;
-  return true;
-}
-
-/** Owned upgrades stay visible; the rest wait for their production milestone. */
-export function isUnlocked(s: RoomState, id: UpgradeId): boolean {
-  const u = UPGRADES[id].unlock;
-  return !u || s.levels[id] > 0 || s.run.made[u.res] >= u.amount;
-}
-
-export function buySkill(s: RoomState, id: SkillId): boolean {
-  if (!Object.hasOwn(SKILLS, id)) return false;
-  const def = SKILLS[id];
-  if (s.skills[id] >= def.max || s.quantumPoints < def.cost) return false;
-  s.quantumPoints -= def.cost;
-  s.skills[id]++;
-  if (id === 'seamSense') refillSeams(s);
-  return true;
-}
-
-export function toggleMachine(s: RoomState, m: MachineId, on: boolean): boolean {
-  if (!MACHINES.includes(m)) return false;
-  s.machinesOn[m] = !!on;
-  return true;
-}
-
-export function setRole(s: RoomState, playerId: string, role: Role): boolean {
-  const p = s.players[playerId];
-  if (!p || (role !== 'miner' && role !== 'refiner')) return false;
-  p.role = role;
-  return true;
-}
-
-export function overclock(s: RoomState, playerId: string, id: OverclockId, now: number): Reject | true {
-  if (!Object.hasOwn(OVERCLOCKS, id)) return 'maxed';
-  if (!s.players[playerId]) return 'unknown-player';
-  const def = OVERCLOCKS[id];
-  if (s.power < def.cost) return 'no-power';
-  s.power -= def.cost;
-  if (id === 'thermalDump') {
-    for (const p of Object.values(s.players)) {
-      p.heat = 0;
-      p.lockedUntil = 0;
-    }
-  } else {
-    s.buffs[id] = Math.max(s.buffs[id] ?? 0, now) + def.ms;
+  let n = 0;
+  while (n < count) {
+    const lv = p.levels[id];
+    if (def.maxLevel !== undefined && lv >= def.maxLevel) break;
+    const cost = upgradeCost(id, lv);
+    if (p.wallet[def.currency] < cost) break;
+    p.wallet[def.currency] -= cost;
+    p.levels[id] = lv + 1;
+    n++;
   }
-  return true;
+  if (n) return n;
+  return def.maxLevel !== undefined && p.levels[id] >= def.maxLevel ? 'maxed' : 'too-poor';
 }
 
-/* ---------------- co-op events ---------------- */
-
-export const eventRewardMult = (s: RoomState): number => 1 + 0.5 * s.skills.eventHorizon;
-
-/** Events only start once the team has a refinery going, then every 3.5 to 6 minutes. */
-function scheduleNextEvent(s: RoomState, now: number, rand: Rand): void {
-  s.nextEventAt = now + 210000 + rand() * 150000;
-}
-
-export function startEvent(s: RoomState, kind: 'quake' | 'flare', now: number, rand: Rand): CoopEvent {
-  if (kind === 'quake') {
-    const nodes: QuakeNode[] = [];
-    for (let i = 0; i < 3; i++) nodes.push({ id: i + 1, dir: randomUnit(rand), primedUntil: 0, locked: false });
-    s.event = { kind, startedAt: now, endsAt: now + QUAKE_MS, nodes };
-  } else {
-    s.event = { kind, startedAt: now, endsAt: now + FLARE_MS, shield: 60, sunDir: randomUnit(rand) };
-  }
-  return s.event;
-}
-
-export interface StabilizeOutcome {
+export interface FundOutcome {
   playerId: string;
-  locked: number[];
+  node: NodeId;
+  res: ResourceId;
+  amount: number;
+  /** The node just unlocked (or gained a level). */
+  done: boolean;
+  level: number;
 }
-/** Seismic Shockwave: lock every resonance node that a strike has just primed. */
-export function stabilize(s: RoomState, playerId: string, now: number): StabilizeOutcome | Reject {
+
+/** What's still owed on a node's next level, per resource. */
+export function nodeRemaining(s: RoomState, id: NodeId): Partial<Wallet> {
+  const cost = nodeCost(id, nodeLevel(s, id));
+  const funded = s.tree[id]?.funded ?? {};
+  const out: Partial<Wallet> = {};
+  for (const [r, v] of Object.entries(cost) as [ResourceId, number][]) out[r] = Math.max(0, v - (funded[r] ?? 0));
+  return out;
+}
+
+/** Put some of your own `res` into a Forge Tree node. */
+export function fundNode(s: RoomState, playerId: string, id: NodeId, res: ResourceId, want: number): FundOutcome | Reject {
   const p = s.players[playerId];
   if (!p) return 'unknown-player';
-  if (s.event?.kind !== 'quake') return 'no-event';
-  if (now - p.lastPressAt < MIN_PRESS_INTERVAL_MS) return 'rate-limited';
-  p.lastPressAt = now;
-  const locked: number[] = [];
-  for (const n of s.event.nodes) {
-    if (!n.locked && n.primedUntil > now) {
-      n.locked = true;
-      locked.push(n.id);
-    }
+  if (!Object.hasOwn(NODES, id) || !RESOURCES.includes(res)) return 'locked';
+  if (!nodeFundable(s, id)) return has(s, id) ? 'maxed' : 'locked';
+  const level = nodeLevel(s, id);
+  const cost = nodeCost(id, level)[res];
+  if (!cost) return 'locked';
+  const st = (s.tree[id] ??= { level: 0, funded: {}, by: {} });
+  const owed = Math.max(0, cost - (st.funded[res] ?? 0));
+  const amount = Math.min(Number.isFinite(want) ? Math.max(0, want) : 0, owed, p.wallet[res]);
+  if (!(amount > 0)) return owed > 0 ? 'too-poor' : 'maxed';
+  p.wallet[res] -= amount;
+  st.funded[res] = (st.funded[res] ?? 0) + amount;
+  const parts = Object.keys(nodeCost(id, level)).length;
+  const share = amount / cost / parts;
+  st.by[playerId] = (st.by[playerId] ?? 0) + share;
+  p.stats.funded += share;
+  const done = Object.values(nodeRemaining(s, id)).every((v) => (v ?? 0) <= 1e-9);
+  if (done) {
+    st.level++;
+    st.funded = {};
+    if (NODES[id].repeat) st.by = {};
+    if (id === 'deepscan') refillSeams(s);
   }
-  return { playerId, locked };
+  return { playerId, node: id, res, amount, done, level: st.level };
 }
 
-/** Solar Flare: every press tops up the team shield. */
-export function shieldPress(s: RoomState, playerId: string, now: number): number | Reject {
+export interface LeapOutcome {
+  playerId: string;
+  cores: number;
+}
+
+/** Restart your own run (ore, alloy, upgrades) for Star Cores. The tree stays. */
+export function leap(s: RoomState, playerId: string, now: number): LeapOutcome | Reject {
   const p = s.players[playerId];
   if (!p) return 'unknown-player';
-  if (s.event?.kind !== 'flare') return 'no-event';
-  if (now - p.lastPressAt < MIN_SHIELD_INTERVAL_MS) return 'rate-limited';
-  p.lastPressAt = now;
-  s.event.shield = Math.min(100, s.event.shield + FLARE_SHIELD_PER_PRESS);
-  return s.event.shield;
-}
-
-export interface EventEnd {
-  kind: 'quake' | 'flare';
-  success: boolean;
-  /** Human-readable reward or penalty, for the banner. */
-  note: string;
-}
-
-function endEvent(s: RoomState, success: boolean, now: number, rand: Rand): EventEnd {
-  const ev = s.event!;
-  s.event = null;
-  scheduleNextEvent(s, now, rand);
-  const mult = eventRewardMult(s);
-  if (success) s.eventsWon++;
-  else s.eventsLost++;
-  if (ev.kind === 'quake') {
-    if (success) {
-      refillSeams(s);
-      s.buffs.resonance = now + 30000 * mult;
-      return { kind: 'quake', success, note: `Resonance: ore ×3 for ${Math.round(30 * mult)}s and every seam refilled` };
-    }
-    const lost = Math.floor(s.wallet.ore * 0.1);
-    s.wallet.ore -= lost;
-    for (const p of Object.values(s.players)) {
-      p.heat = HEAT_MAX;
-      p.lockedUntil = now + 3000;
-    }
-    return { kind: 'quake', success, note: `The quake shook loose ${Math.round(lost)} ore and jammed every drill` };
+  if (!has(s, 'leap')) return 'locked';
+  const cores = leapCores(p);
+  if (cores <= 0) return 'not-ready';
+  p.wallet = { ore: 0, alloy: 0, cores: p.wallet.cores + cores };
+  p.levels = emptyLevels();
+  if (has(s, 'memory')) {
+    p.levels.drill = 10;
+    p.levels.drone = 10;
   }
-  if (success) {
-    const plasma = Math.max(3, s.rates.plasma * 30) * mult;
-    gain(s, 'plasma', plasma);
-    s.buffs.solar = now + 30000 * mult;
-    return { kind: 'flare', success, note: `Solar charge: +${Math.round(plasma)} plasma and the refinery runs ×2 for ${Math.round(30 * mult)}s` };
+  p.run = { ore: 0, alloy: 0, startedAt: now };
+  p.rates = { ore: 0, alloy: 0 };
+  p.rigAcc = 0;
+  p.stats.leaps++;
+  p.stats.cores += cores;
+  return { playerId, cores };
+}
+
+export interface CometOutcome {
+  playerId: string;
+  id: number;
+  /** Ore each online crewmate received. */
+  rewards: Record<string, number>;
+}
+
+export function cometReward(s: RoomState, p: PlayerState): number {
+  return Math.max(COMET_SECONDS * passiveOrePerSec(s, p), COMET_TAPS * tapValue(s, p));
+}
+
+export function catchComet(s: RoomState, playerId: string, id: number, now: number): CometOutcome | Reject {
+  const p = s.players[playerId];
+  if (!p) return 'unknown-player';
+  const c = s.comet;
+  if (!c || c.id !== id || now > c.until + 500) return 'gone';
+  s.comet = null;
+  const rewards: Record<string, number> = {};
+  for (const q of onlinePlayers(s)) {
+    const r = cometReward(s, q) * (q.id === playerId ? 2 : 1);
+    earn(s, q, r);
+    rewards[q.id] = r;
   }
-  s.buffs.dronesDown = now + 20000;
-  return { kind: 'flare', success, note: 'The flare fried the drones for 20s' };
-}
-
-/* ---------------- prestige ---------------- */
-
-export const canLeap = (s: RoomState): boolean => s.run.cosmicEnergy >= LEAP_THRESHOLD;
-
-export function proposeLeap(s: RoomState, playerId: string, now: number): boolean {
-  if (!canLeap(s) || s.vote || !s.players[playerId]) return false;
-  s.vote = { by: playerId, until: now + VOTE_MS, yes: [playerId], no: [] };
-  return true;
-}
-export function castVote(s: RoomState, playerId: string, yes: boolean): boolean {
-  if (!s.vote || !s.players[playerId]) return false;
-  s.vote.yes = s.vote.yes.filter((x) => x !== playerId);
-  s.vote.no = s.vote.no.filter((x) => x !== playerId);
-  (yes ? s.vote.yes : s.vote.no).push(playerId);
-  return true;
-}
-
-export interface LeapDone {
-  qp: number;
-  participants: number;
-}
-
-/** Reset the run, keep Quantum Points, skills and lifetime stats. */
-export function performLeap(s: RoomState, now: number): LeapDone {
-  const participants = Math.max(1, onlinePlayers(s).length);
-  const qp = quantumPointsFor(s.run.cosmicEnergy, participants);
-  s.quantumPoints += qp;
-  s.leaps++;
-  s.vote = null;
-  s.event = null;
-  s.nextEventAt = 0;
-  s.buffs = {};
-  s.wallet = emptyWallet();
-  s.rates = emptyWallet();
-  s.levels = emptyLevels();
-  s.power = 30;
-  s.combo = 1;
-  s.run = { ore: 0, cosmicEnergy: 0, startedAt: now, made: emptyWallet() };
-  s.seed = (s.seed * 1103515245 + 12345) >>> 0 || 1;
-  s.seams = [];
-  refillSeams(s);
-  s.wallet.ore = 500 * s.skills.headStart;
-  s.wallet.alloy = 50 * s.skills.headStart;
-  for (const p of Object.values(s.players)) {
-    p.heat = 0;
-    p.lockedUntil = 0;
-    p.mined = 0;
-  }
-  return { qp, participants };
+  return { playerId, id, rewards };
 }
 
 /* ---------------- the tick ---------------- */
 
-export type TickNote =
-  | { k: 'eventStart'; event: CoopEvent }
-  | { k: 'eventEnd'; end: EventEnd }
-  | { k: 'leap'; done: LeapDone }
-  | { k: 'voteFailed' };
+export type TickNote = { k: 'comet'; comet: Comet } | { k: 'cometGone'; id: number } | { k: 'surgeEnd' };
 
-/** Advance passive systems by `dt` seconds. Returns notable things that happened. */
+/** Advance passive income by `dt` seconds. Returns notable things that happened. */
 export function tickRoom(s: RoomState, dt: number, now: number, rand: Rand = Math.random): TickNote[] {
   const notes: TickNote[] = [];
   s.tick++;
+  const wasSurge = surgeOn(s, s.now);
   s.now = now;
-  const before = { ...s.wallet };
-  const g = globalMult(s);
+  const online = onlinePlayers(s);
 
-  // Drones and rigs.
-  if (!buffOn(s, 'dronesDown')) {
-    earnOre(s, droneOrePerSec(s.levels, g) * oreMult(s) * (buffOn(s, 'droneSurge') ? 3 : 1) * dt);
-  }
-  if (s.levels.rig > 0 && s.seams.length) {
-    s.rigAcc += s.levels.rig * RIG_STRIKES_PER_SEC * dt;
-    const hits = Math.floor(s.rigAcc);
-    s.rigAcc -= hits;
-    const per = strikeBase(s.levels, s.skills, g) * RIG_YIELD * SEAM_MULT * oreMult(s);
-    for (let i = 0; i < hits; i++) {
-      const seam = s.seams[i % s.seams.length];
-      let amount = per;
-      seam.hp -= 0.25;
-      if (seam.hp <= 0) {
-        amount *= DEPLETE_MULT;
-        s.seams = s.seams.filter((x) => x !== seam);
-        spawnSeam(s);
+  for (const p of online) {
+    const before = { ore: p.wallet.ore, alloy: p.wallet.alloy };
+    earn(s, p, (droneRate(s, p) + harvesterRate(s, p)) * dt);
+    // Auto-Rigs tap the seams for real, so they wear them down and can break them.
+    if (p.levels.rig > 0 && s.seams.length) {
+      p.rigAcc += p.levels.rig * RIG_RATE * dt;
+      const hits = Math.min(40, Math.floor(p.rigAcc));
+      p.rigAcc -= hits;
+      for (let i = 0; i < hits && s.seams.length; i++) {
+        const seam = s.seams[Math.floor(rand() * s.seams.length)];
+        let amount = tapValue(s, p) * RIG_SHARE * baseSeamMult(s);
+        if (hitSeam(s, seam, 0.25, now)) amount *= BREAK_MULT;
+        earn(s, p, amount);
       }
-      earnOre(s, amount);
+    }
+    p.seenAt = now;
+    if (dt > 0) {
+      const a = Math.min(1, dt * 1.5);
+      p.rates.ore += ((p.wallet.ore - before.ore) / dt - p.rates.ore) * a;
+      p.rates.alloy += ((p.wallet.alloy - before.alloy) / dt - p.rates.alloy) * a;
     }
   }
 
-  // Refinery: process top tier first so a unit isn't refined twice in one tick.
-  for (let i = MACHINES.length - 1; i >= 0; i--) {
-    const m = MACHINES[i];
-    if (!s.machinesOn[m] || s.levels[m] === 0) continue;
-    const def = MACHINE_DEFS[m];
-    const want = machineRate(m, s.levels, s.skills, g) * refineMult(s) * dt;
-    const made = Math.min(want, s.wallet[def.input] / def.ratio);
-    if (made <= 0) continue;
-    s.wallet[def.input] -= made * def.ratio;
-    gain(s, def.output, made);
-  }
+  if (wasSurge && !surgeOn(s, now)) notes.push({ k: 'surgeEnd' });
 
-  // Heat venting, power, combo decay.
-  const vent = heatVent(s.levels) * dt;
-  for (const p of Object.values(s.players)) {
-    if (now >= p.lockedUntil) p.heat = Math.max(0, p.heat - vent);
+  // Comets.
+  if (s.comet && now > s.comet.until + 500) {
+    notes.push({ k: 'cometGone', id: s.comet.id });
+    s.comet = null;
   }
-  s.power = Math.min(powerMax(s.levels), s.power + powerRegen(s.levels, s.skills) * dt);
-  if (now > s.comboUntil && s.combo > 1) s.combo = Math.max(1, s.combo - 0.5 * dt);
-
-  // Events.
-  const ev = s.event;
-  if (ev) {
-    if (ev.kind === 'quake') {
-      if (ev.nodes.every((n) => n.locked)) notes.push({ k: 'eventEnd', end: endEvent(s, true, now, rand) });
-      else if (now >= ev.endsAt) notes.push({ k: 'eventEnd', end: endEvent(s, false, now, rand) });
-    } else {
-      ev.shield = Math.max(0, ev.shield - FLARE_DRAIN * dt);
-      if (ev.shield <= 0) notes.push({ k: 'eventEnd', end: endEvent(s, false, now, rand) });
-      else if (now >= ev.endsAt) notes.push({ k: 'eventEnd', end: endEvent(s, true, now, rand) });
-    }
-  } else if (s.levels.smelter > 0 && !s.vote) {
-    if (!s.nextEventAt) scheduleNextEvent(s, now, rand);
-    else if (now >= s.nextEventAt && onlinePlayers(s).length > 0) {
-      notes.push({ k: 'eventStart', event: startEvent(s, rand() < 0.5 ? 'quake' : 'flare', now, rand) });
-    }
-  }
-
-  // Leap vote: passes when everyone online said yes, or on a majority at the deadline.
-  if (s.vote) {
-    const online = onlinePlayers(s).map((p) => p.id);
-    const yes = s.vote.yes.filter((id) => online.includes(id)).length;
-    const no = s.vote.no.filter((id) => online.includes(id)).length;
-    if (yes >= online.length || (now >= s.vote.until && yes > no)) notes.push({ k: 'leap', done: performLeap(s, now) });
-    else if (now >= s.vote.until || no > online.length / 2) {
-      s.vote = null;
-      notes.push({ k: 'voteFailed' });
-    }
-  }
-
-  // Smoothed income per second for the HUD.
-  if (dt > 0) {
-    const a = Math.min(1, dt * 2);
-    for (const r of RESOURCES) s.rates[r] += ((s.wallet[r] - before[r]) / dt - s.rates[r]) * a;
+  if (!s.comet && online.length && now >= s.nextCometAt) {
+    s.comet = { id: s.nextCometId++, at: now, until: now + COMET_MS, seed: Math.floor(rand() * 2 ** 31) };
+    s.nextCometAt = now + COMET_GAP_MIN_MS + rand() * (COMET_GAP_MAX_MS - COMET_GAP_MIN_MS);
+    notes.push({ k: 'comet', comet: s.comet });
   }
   return notes;
-}
-
-/** Passive income per second (drones and rigs), for offline gains and the HUD. */
-export function passiveOrePerSec(s: RoomState): number {
-  const g = globalMult(s);
-  const rig = s.levels.rig * RIG_STRIKES_PER_SEC * strikeBase(s.levels, s.skills, g) * RIG_YIELD * SEAM_MULT;
-  return droneOrePerSec(s.levels, g) + rig;
 }
