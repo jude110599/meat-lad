@@ -222,6 +222,13 @@ A snapshot is ~4 KB with four players online; at 10 Hz to three guests that is ~
 | `friends` | array of friend emails (the same array Beetdown and Meat Lad already use) |
 | `presence` | `{ts, game, name, party}` heartbeat every 30 s; a friend is online if seen < 75 s ago |
 | `partyInbox` | invites `{id, from, fromName, game, code, ts}`, valid for 10 minutes |
+| `friendRequests` | incoming `{id, type, from, uid, name, ts}`; `type` is `req` (a request) or `ok`/`no` (the answer to one this player sent) |
+| `sentRequests` | own outgoing requests `{id, to, uid, name, ts, req}` |
+| `username` | current username (mirrors `usernames/{name}`) |
+| `avatar` | profile picture, a ~128 px JPEG data URL under 30 KB |
+
+* **Friend requests:** **Add friend** writes a `req` into the other player's `friendRequests` and records it in the sender's `sentRequests`. Accepting adds the sender to your own `friends` and writes an `ok` with the same id back; the sender's page adds you only if that id matches one of its `sentRequests`, so nobody can add themselves to a list. Other players may only write `partyInbox` and `friendRequests`.
+* **Profile card (main menu):** picture upload (cropped and re-encoded client-side), change username (3-20 of `a-z 0-9 _`; creates the new `usernames` doc, then deletes the old one), per-game stats from `accounts.games`, `quackpot/{uid}` and Starforge's local save, and 24 achievement badges computed from them.
 
 * **Main menu:** `MLFriends.menu()` shows a side panel with **Add friend** (by username or email), each friend's status ("playing Starforge", "in a Starforge party" with a **Join** button, "online · on the menu", "offline · seen 5m ago") and incoming invites.
 * **In a game:** `MLFriends.attach({game, party, join, dock})`. While the player has a party open, a mini list shows friends with online dots and **Invite** buttons. An invite pops up for the friend wherever they are on the site; **Join** either calls the game's `join(code)` (same game) or navigates to `<game>/?join=CODE`.
