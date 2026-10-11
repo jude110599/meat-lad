@@ -20,6 +20,7 @@ import { closeParty, leaveParty, openParty, resetSave, usesServer } from '../net
 import { hueColor } from '../state/refs';
 import { hostNow, selectMe, useGame, type Tab } from '../state/store';
 import { MiningTab, PowerTab, QuantumTab, RES_SHORT, RefineryTab } from './panels';
+import { Changelog } from './Changelog';
 
 /** Re-render at a steady rate, for counters and timers between 10 Hz snapshots. */
 function useTicker(ms: number): void {
@@ -441,6 +442,7 @@ function Menu() {
               <b>Leap</b> after 10 cosmic energy for Quantum Points and permanent skills.
             </p>
           </details>
+          <Changelog />
           {(mode === 'solo' || mode === 'host') && (
             <button className="ghost danger" onClick={() => (confirm ? resetSave() : setConfirm(true))}>
               {confirm ? 'Really wipe everything?' : 'Reset progress'}
