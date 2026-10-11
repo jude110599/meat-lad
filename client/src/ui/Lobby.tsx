@@ -4,6 +4,7 @@ import { joinParty, loadSave, openParty, startLocal, usesServer } from '../net/s
 import { useGame } from '../state/store';
 import { friendsName } from './friends';
 import { Changelog } from './Changelog';
+import { Icon } from './common';
 
 function store(key: string, v?: string): string | null {
   try {
@@ -47,8 +48,13 @@ export function Lobby() {
       <div className="lobby-sky" />
       <div className="lobby-card">
         <a className="back" href="../">
-          ← All games
+          <Icon name="back" /> All games
         </a>
+        <div className="emblem" aria-hidden>
+          <s />
+          <b />
+          <i />
+        </div>
         <h1 className="logo">
           STAR<span>FORGE</span>
         </h1>
@@ -79,7 +85,9 @@ export function Lobby() {
                   startLocal(false);
                 }}
               >
-                ▶ {save ? 'Continue expedition' : 'Play solo'}
+                <span className="lbl">
+                  <Icon name="play" /> {save ? 'Continue expedition' : 'Play solo'}
+                </span>
                 {save && (
                   <small>
                     {save.mine ? `${fmt(save.mine.wallet.ore)} ore · ` : ''}
@@ -95,7 +103,9 @@ export function Lobby() {
                   openParty();
                 }}
               >
-                👥 Host a party
+                <span className="lbl">
+                  <Icon name="crew" /> Host a party
+                </span>
                 <small>{usesServer ? 'on the game server' : 'friends join with a code'}</small>
               </button>
             </div>

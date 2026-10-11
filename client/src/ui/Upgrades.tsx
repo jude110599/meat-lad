@@ -27,7 +27,7 @@ import {
 } from '@starforge/shared';
 import { act } from '../net/actions';
 import { useGame, type BuyMode } from '../state/store';
-import { Amount, ConfirmButton, liveWallet, useMe, useTicker } from './common';
+import { Amount, ConfirmButton, Icon, liveWallet, resStyle, useMe, useRise, useTicker } from './common';
 
 /** What an upgrade is doing for you right now. */
 function effect(s: RoomState, p: PlayerState, id: UpgradeId): string {
@@ -70,22 +70,39 @@ function UpgradeRow({ s, p, id, mode, budget }: { s: RoomState; p: PlayerState; 
   const maxed = def.maxLevel !== undefined && lv >= def.maxLevel;
   const { n, cost } = plan(id, lv, budget, mode);
   const ok = !maxed && budget >= cost;
+  // Replays the purchase flash each time this level goes up.
+  const bought = useRise(lv);
   return (
-    <div className={'up' + (ok ? ' ok' : '')}>
-      <i className="ico">{def.icon}</i>
+    <div className={'up' + (ok ? ' ok' : '') + (maxed ? ' maxed' : '')} style={resStyle(def.currency)}>
+      <i className={'ico' + (bought.n ? ' pop' : '')} key={'i' + bought.n}>
+        {def.icon}
+      </i>
       <div className="txt">
         <b>
-          {def.name} <em>{maxed ? 'MAX' : `Lv ${lv}`}</em>
+          {def.name}{' '}
+          <em className={bought.n ? 'pop' : ''} key={'l' + bought.n}>
+            {maxed ? 'MAX' : `Lv ${lv}`}
+          </em>
         </b>
         <span>{lv === 0 ? def.desc : effect(s, p, id)}</span>
       </div>
       {maxed ? (
-        <div className="buy done">✓</div>
+        <div className="buy done" role="img" aria-label="Maxed">
+          <Icon name="check" />
+        </div>
       ) : (
         <button className="buy" disabled={!ok} onClick={() => act.buy(id, mode === 'max' ? 1000 : n)}>
           {n > 1 && <small>+{n}</small>}
           <Amount r={def.currency} v={cost} />
         </button>
+      )}
+      {bought.n > 0 && (
+        <>
+          <span className="flash" key={'f' + bought.n} aria-hidden />
+          <s className="plus" key={'p' + bought.n} aria-hidden>
+            +{bought.by}
+          </s>
+        </>
       )}
     </div>
   );
@@ -118,6 +135,8 @@ function LeapCard({ s, p }: { s: RoomState; p: PlayerState }) {
   );
 }
 
+const MODES: BuyMode[] = [1, 10, 'max'];
+
 export function UpgradesTab() {
   useTicker(250);
   const s = useGame((st) => st.s);
@@ -133,12 +152,13 @@ export function UpgradesTab() {
   return (
     <div className="tab-upgrades">
       <div className="tabhead">
-        <div className="seg" role="group" aria-label="Buy amount">
-          {([1, 10, 'max'] as BuyMode[]).map((m) => (
-            <button key={m} className={mode === m ? 'on' : ''} onClick={() => set({ buyMode: m })}>
+        <div className="seg" role="group" aria-label="Buy amount" style={{ ['--i' as string]: MODES.indexOf(mode) }}>
+          {MODES.map((m) => (
+            <button key={m} className={mode === m ? 'on' : ''} aria-pressed={mode === m} onClick={() => set({ buyMode: m })}>
               {m === 'max' ? 'Max' : `×${m}`}
             </button>
           ))}
+          <span className="thumb" aria-hidden />
         </div>
         <span className="hint">Your own rig. Only you can buy these.</span>
       </div>
@@ -151,7 +171,9 @@ export function UpgradesTab() {
             const need = UPGRADES[id].needs!;
             return (
               <button key={id} className="lockrow" onClick={() => set({ tab: 'tree', node: need, sheet: true })}>
-                <i>🔒</i>
+                <i>
+                  <Icon name="lock" />
+                </i>
                 <span>
                   <b>{UPGRADES[id].name}</b> unlocks with <u>{NODES[need].name}</u> in the Forge Tree
                 </span>

@@ -16,7 +16,7 @@ import {
 } from '@starforge/shared';
 import { hueColor } from '../state/refs';
 import { hostNow, useGame, type Tab } from '../state/store';
-import { Amount, RES_LABEL, fmtDuration, liveWallet, resStyle, useMe, useTicker } from './common';
+import { Amount, Icon, RES_LABEL, Tick, fmtDuration, liveWallet, resStyle, useMe, useTicker, type IconName } from './common';
 import { CrewTab } from './Crew';
 import { TreeTab, canFinish } from './Tree';
 import { UpgradesTab } from './Upgrades';
@@ -33,35 +33,55 @@ function TopBar({ s, p }: { s: RoomState; p: PlayerState }) {
   const now = hostNow();
   const online = onlinePlayers(s);
   const showAlloy = has(s, 'smelting') || p.wallet.alloy > 0;
+  const surge = surgeOn(s, now);
+  const reconnecting = net === 'reconnecting';
   return (
     <header className="topbar">
       <div className="ore" style={resStyle('ore')}>
         <i />
         <div>
-          <b>{fmt(w.ore)}</b>
-          <span>ore{p.rates.ore > 0.05 && <em> +{fmt(p.rates.ore)}/s</em>}</span>
+          <Tick raw={p.wallet.ore} live={w.ore} rate={p.rates.ore} />
+          <span>
+            ore{p.rates.ore > 0.05 && <em> +{fmt(p.rates.ore)}/s</em>}
+          </span>
         </div>
       </div>
-      {showAlloy && (
-        <div className="minor" style={resStyle('alloy')}>
-          <i />
-          <b>{fmt(w.alloy)}</b>
-          <span>alloy</span>
-        </div>
-      )}
-      {p.wallet.cores > 0 && (
-        <div className="minor" style={resStyle('cores')}>
-          <i />
-          <b>{fmt(p.wallet.cores)}</b>
-          <span>cores</span>
+      {(showAlloy || p.wallet.cores > 0) && (
+        <div className="minors">
+          {showAlloy && (
+            <div className="minor" style={resStyle('alloy')}>
+              <i />
+              <Tick raw={p.wallet.alloy} live={w.alloy} rate={p.rates.alloy} />
+              <span>alloy</span>
+            </div>
+          )}
+          {p.wallet.cores > 0 && (
+            <div className="minor" style={resStyle('cores')}>
+              <i />
+              <Tick raw={p.wallet.cores} live={p.wallet.cores} />
+              <span>cores</span>
+            </div>
+          )}
         </div>
       )}
       <div className="spacer" />
-      {surgeOn(s, now) && <span className="surge">⚡ ×2 · {Math.ceil((s.surgeUntil - now) / 1000)}s</span>}
-      {net === 'reconnecting' && <span className="netwarn">Reconnecting…</span>}
+      {(surge || reconnecting) && (
+        <div className="flags">
+          {surge && (
+            <span className="surge">
+              <Icon name="bolt" /> ×2 · {Math.ceil((s.surgeUntil - now) / 1000)}s
+            </span>
+          )}
+          {reconnecting && (
+            <span className="netwarn">
+              <Icon name="signal" /> Reconnecting…
+            </span>
+          )}
+        </div>
+      )}
       <button className="crewpill" onClick={() => openTab('crew')} aria-label="Crew and party">
         {online.map((q) => (
-          <i key={q.id} style={{ background: hueColor(q.hue, 62) }} />
+          <i key={q.id} style={{ ['--h' as string]: hueColor(q.hue, 62) }} />
         ))}
         <span>{mode === 'solo' ? 'Solo' : `${online.length}/4`}</span>
       </button>
@@ -80,10 +100,10 @@ function badges(s: RoomState, p: PlayerState, w: Wallet): Record<Tab, number> {
   return { upgrades: up ? 1 : 0, tree: tree ? 1 : 0, crew: 0 };
 }
 
-const TABS: { id: Tab; icon: string; label: string }[] = [
-  { id: 'upgrades', icon: '⛏️', label: 'Upgrades' },
-  { id: 'tree', icon: '✦', label: 'Forge Tree' },
-  { id: 'crew', icon: '👥', label: 'Crew' },
+const TABS: { id: Tab; icon: IconName; label: string }[] = [
+  { id: 'upgrades', icon: 'pick', label: 'Upgrades' },
+  { id: 'tree', icon: 'tree', label: 'Forge Tree' },
+  { id: 'crew', icon: 'crew', label: 'Crew' },
 ];
 
 function Dock({ s, p }: { s: RoomState; p: PlayerState }) {
@@ -94,6 +114,7 @@ function Dock({ s, p }: { s: RoomState; p: PlayerState }) {
   const snapAt = useGame((st) => st.snapAt);
   const { openTab, set } = useGame.getState();
   const b = badges(s, p, liveWallet(p, snapAt));
+  const at = Math.max(0, TABS.findIndex((t) => t.id === tab));
   return (
     <aside className={'dock' + (sheet ? ' open' : '')}>
       <div className="body">
@@ -101,23 +122,30 @@ function Dock({ s, p }: { s: RoomState; p: PlayerState }) {
           <i />
         </button>
         <div className="scroll">
-          {tab === 'upgrades' && <UpgradesTab />}
-          {tab === 'tree' && <TreeTab />}
-          {tab === 'crew' && <CrewTab />}
+          {/* Keyed so each tab (and each tree page) slides in fresh. */}
+          <div className="pane" key={tab === 'tree' && node ? 'node:' + node : tab}>
+            {tab === 'upgrades' && <UpgradesTab />}
+            {tab === 'tree' && <TreeTab />}
+            {tab === 'crew' && <CrewTab />}
+          </div>
         </div>
       </div>
-      <nav className="tabs">
+      <nav className="tabs" style={{ ['--i' as string]: at }}>
         {TABS.map((t) => (
           <button
             key={t.id}
             className={tab === t.id ? 'on' : ''}
+            aria-current={tab === t.id ? 'page' : undefined}
             onClick={() => (t.id === 'tree' && tab === 'tree' && node ? set({ node: null, sheet: true }) : openTab(t.id))}
           >
-            <i>{t.icon}</i>
+            <i>
+              <Icon name={t.icon} />
+            </i>
             <span>{t.label}</span>
             {b[t.id] > 0 && <em className="dot" />}
           </button>
         ))}
+        <span className="tab-ind" aria-hidden />
       </nav>
     </aside>
   );
@@ -131,7 +159,8 @@ function Toasts() {
     <div className="toasts">
       {toasts.map((t) => (
         <div key={t.id} className={'toast ' + t.tone}>
-          {t.text}
+          <i />
+          <span>{t.text}</span>
         </div>
       ))}
     </div>
@@ -146,7 +175,12 @@ function Hint({ s, p }: { s: RoomState; p: PlayerState }) {
   else if (p.levels.drill + p.levels.drone === 0 && p.wallet.ore >= UPGRADES.drill.baseCost) text = 'Open Upgrades and buy a Drill Laser';
   else if (!has(s, 'core') && p.wallet.ore >= (NODES.core.cost.ore ?? 0) && p.levels.drone > 0) text = 'Open the Forge Tree: the Forge Core is ready to fund';
   if (!text || sheet) return null;
-  return <div className="hint-float">{text}</div>;
+  return (
+    <div className="hint-float">
+      <i />
+      {text}
+    </div>
+  );
 }
 
 function OfflineCard() {
@@ -179,6 +213,8 @@ function LeapFlash() {
   if (!leap || Date.now() - leap.at > 2600) return null;
   return (
     <div className="leapflash" key={leap.at}>
+      <i className="lf-ring" />
+      <i className="lf-ring two" />
       <b>QUANTUM LEAP</b>
       <span>+{leap.cores} Star Core{leap.cores === 1 ? '' : 's'}</span>
     </div>
