@@ -266,6 +266,8 @@ body.touch #touch{display:block}
   .stat .ic{font-size:13px}
   #weapName{font-size:10.5px}
   .hudBR{bottom:auto;top:104px;right:10px;flex-direction:column}
+  #toasts{right:66px;left:112px;align-items:flex-end}
+  .toast{max-width:100%;font-size:11.5px}
   .ability{width:46px;height:46px}
   .ability .ic{font-size:16px}
   #comboN{font-size:23px}
@@ -1136,7 +1138,9 @@ const CHANGELOG=[
    "Rebuilt dogs with jointed legs, floppy ears, a wagging tail and a panting tongue",
    "Rebuilt the hunter: plaid jacket, vest, pack and bedroll, ear-flap cap, and a walk cycle with breathing and blinking",
    "New textures across the world: grass, bark, wood planks and rippling water, plus waving meadow grass, lily pads, flowers, bushes, pines, drifting clouds and far hills",
-   "Fresh menus and HUD: the main menu now sits over a live view of the lake, with rounder cards, new buttons and a new font"]},
+   "Rebuilt all 11 guns: wooden stocks, sights and scopes, and proper silly front ends - a taped spud tube, a striped popcorn drum, a rubber-duck sight, a spinning six-barrel toaster and more",
+   "Fresh menus and HUD: the main menu now sits over a live view of the lake, with rounder cards, new buttons and a new font",
+   "On phones, pop-up messages no longer cover the ability buttons"]},
  {date:"2026-08-27T21:23:29-04:00",title:"Look at what you're buying",notes:[
    "Click any gun, dog, or cooler in the shop to spin it in a live 3D preview instead of just a flat icon",
    "Added simple models for the 3 new guns so they don't all look like the starter Spud Launcher"]},
@@ -3641,100 +3645,196 @@ function animateDog(m,legT,moving,carrying,dt){
 /* Every weapon gets a stock reaching back toward the shoulder and a sight
    up top, on top of whatever comedic barrel it fires - without this they
    read as toys hovering next to the player instead of something aimed. */
-function gunTrim(add,housing,accent){
-  add(box(.15,.24,.42,housing,0,-.20,.36));
-  add(box(.19,.28,.09,0x14100c,0,-.20,.58));
-  add(box(.045,.11,.16,accent,0,.22,-.42));
-  add(box(.03,.05,.03,accent,0,.265,-.49));
+/* ---- weapons: each gun is a wooden stock and receiver (shared) plus its
+   own silly front end. The barrel points down -z from the hand; the grip,
+   trigger guard and fore-grip come from the hunter's socket. ---- */
+const GUN_MET=()=>mat(0x5a6169,{metalness:.7,roughness:.32});
+const GUN_DARK=()=>mat(0x24272c,{metalness:.55,roughness:.45});
+const GUN_BRASS=()=>mat(0xd9a640,{metalness:.8,roughness:.28});
+const GUN_CHROME=()=>mat(0xd6dde4,{metalness:.9,roughness:.16});
+function gunPart(g,geo,m,sx,sy,sz,x,y,z,rx,ry,rz){
+  const o=new THREE.Mesh(geo,m); o.scale.set(sx,sy,sz); o.position.set(x,y,z);
+  if(rx)o.rotation.x=rx; if(ry)o.rotation.y=ry; if(rz)o.rotation.z=rz;
+  o.castShadow=true; g.add(o); return o;
+}
+/* a tube along z: radius r, from z0 to z1 */
+function gunTube(g,m,r,z0,z1,y,x){
+  return gunPart(g,G.cyl,m,r,Math.abs(z1-z0),r,x||0,y||0,(z0+z1)/2,Math.PI/2);
+}
+function gunRing(g,m,r,t,z,y){
+  return gunPart(g,GH.torus,m,r,r,r*t/.18,0,y||0,z);
+}
+/* open end of a barrel: a lip and a dark bore */
+function gunBore(g,r,z,y,lipM,x){
+  gunRing(g,lipM||GUN_DARK(),r,.05,z,y).position.x=x||0;
+  gunPart(g,G.cyl,mat(0x0c0b0a),r*.8,.02,r*.8,x||0,y||0,z-.005,Math.PI/2);
+}
+const GUN_GEO={bagel:new THREE.TorusGeometry(1,.42,10,22),uBend:new THREE.TorusGeometry(.13,.06,8,16,Math.PI)};
+function gunFrame(g,body,accent,o){
+  o=o||{};
+  const wood=texMat(o.wood||0x8a5530,"wood",{roughness:.6});
+  /* receiver: a rounded body */
+  gunPart(g,GH.capsule,body,.27,.36,.30,0,0,-.18,Math.PI/2);
+  gunPart(g,G.box,GUN_DARK(),.06,.08,.34,.13,.02,-.18);
+  for(const sd of[-1,1]) gunPart(g,G.sphere,GUN_BRASS(),.025,.025,.025,sd*.14,.06,-.30);
+  /* wooden stock, tapering to a rubber butt pad */
+  gunPart(g,G.box,wood,.15,.20,.36,0,-.07,.20,-.12);
+  gunPart(g,G.box,wood,.17,.30,.22,0,-.16,.44,-.05);
+  gunPart(g,G.box,mat(0x15110d,{roughness:.9}),.19,.34,.06,0,-.17,.58,-.05);
+  gunPart(g,G.box,wood,.13,.06,.24,0,.06,.38);
+  /* sights */
+  if(o.scope){
+    gunTube(g,GUN_DARK(),.065,-.42,.02,.24);
+    for(const z of[-.36,-.04]) gunPart(g,G.box,GUN_DARK(),.04,.10,.04,0,.17,z);
+    gunPart(g,G.cyl,mat(accent,{emissive:accent,emissiveIntensity:.6}),.05,.01,.05,0,.24,-.425,Math.PI/2);
+  } else {
+    gunPart(g,G.box,GUN_DARK(),.05,.07,.05,0,.17,-.02);
+    gunPart(g,G.box,mat(accent),.03,.07,.03,0,.17,-.46);
+  }
+  /* an accent stripe so every gun reads at a glance */
+  gunPart(g,G.box,mat(accent,{roughness:.5}),.275,.035,.16,0,-.02,-.30);
 }
 function makeGunModel(id){
   const g=new THREE.Group();
-  const add=m=>{m.castShadow=true;g.add(m);return m;};
   if(id==="pop"){
-    const drum=cyl(.30,.7,0xf0d24a,0,0,-1.05); drum.rotation.x=Math.PI/2; add(drum);
-    add(box(.22,.22,.9,0xd94a4a,0,0,-.32));
-    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
-    gunTrim(add,0x3a2f26,0x8a3a3a);
-    for(let i=0;i<5;i++) add(ball(.07,0xfff2d0,rnd(-.2,.2),rnd(-.2,.2),-1.5));
-  } else if(id==="rubber"){
-    add(box(.20,.22,1.15,0x2f6fb8,0,0,-.34));
-    const t1=cyl(.13,1.05,0xd94a6a,0,.05,-1.15); t1.rotation.x=Math.PI/2; add(t1);
-    const t2=cyl(.13,1.05,0xd94a6a,0,-.13,-1.10); t2.rotation.x=Math.PI/2; add(t2);
-    add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
-    add(cyl(.22,.16,0x1f4f8a,0,.22,-.30));
-    gunTrim(add,0x3a2f26,0x2f6fb8);
-  } else if(id==="bagel"){
-    add(box(.22,.24,1.0,0x7a5a3a,0,0,-.30));
-    const ring=new THREE.Mesh(new THREE.TorusGeometry(.34,.13,8,18),mat(0xd9a45a));
-    ring.position.set(0,0,-1.25); add(ring);
-    const ring2=new THREE.Mesh(new THREE.TorusGeometry(.24,.09,8,16),mat(0xf0c27a));
-    ring2.position.set(0,0,-1.55); add(ring2);
-    add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
-    gunTrim(add,0x3a2f26,0xd9a45a);
-  } else if(id==="trom"){
-    add(box(.18,.18,.8,0xd9a417,0,0,-.25));
-    const bell=cone(.42,.7,0xf0c53c,0,0,-1.35); bell.rotation.x=-Math.PI/2; add(bell);
-    const s1=cyl(.08,1.1,0xf0c53c,.16,0,-.9); s1.rotation.x=Math.PI/2; add(s1);
-    const s2=cyl(.08,1.1,0xf0c53c,-.16,0,-.9); s2.rotation.x=Math.PI/2; add(s2);
-    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
-    gunTrim(add,0x3a2f26,0xf0c53c);
-  } else if(id==="toast"){
-    add(box(.44,.40,.92,0xb8c2cc,0,0,-.28));
-    for(let i=-1;i<=1;i++){
-      const br=cyl(.075,1.05,0x6a747e,i*.16,0,-1.05); br.rotation.x=Math.PI/2; add(br);
-    }
-    add(box(.5,.10,.34,0x8a949e,0,.24,-.30));
-    add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
-    add(box(.22,.26,.05,0xd9a45a,0,.34,-.36));
-    gunTrim(add,0x3a2f26,0x8a949e);
-  } else if(id==="noodle"){
-    add(box(.30,.30,.9,0xe8e0c8,0,0,-.28));
-    const bowl=new THREE.Mesh(G.sphere,mat(0xd94a4a)); bowl.scale.set(.40,.26,.40);
-    bowl.position.set(0,.06,-1.15); add(bowl);
-    for(let i=0;i<5;i++){
-      const n=cyl(.035,.5,0xf5e6a8,rnd(-.2,.2),.16,-1.2+rnd(-.1,.1));
-      n.rotation.x=rnd(-.5,.5); n.rotation.z=rnd(-.5,.5); add(n);
-    }
-    add(box(.16,.38,.20,0x3a2f26,0,-.26,.06));
-    add(box(.05,.05,.7,0x8a5a2a,.22,.24,-1.0));
-    gunTrim(add,0x3a2f26,0xd94a4a);
-  } else if(id==="cosmic"){
-    add(box(.26,.26,.85,0x2a1a4a,0,0,-.26));
-    add(ball(.26,0xc16cff,0,0,-1.0,{emissive:0xc16cff,emissiveIntensity:1.4}));
-    const r1=new THREE.Mesh(new THREE.TorusGeometry(.40,.045,8,20),
-      mat(0x6cf0ff,{emissive:0x6cf0ff,emissiveIntensity:1.2}));
-    r1.position.set(0,0,-1.0); r1.rotation.y=.5; add(r1);
-    const r2=new THREE.Mesh(new THREE.TorusGeometry(.52,.035,8,20),
-      mat(0xff6cc4,{emissive:0xff6cc4,emissiveIntensity:1.0}));
-    r2.position.set(0,0,-1.0); r2.rotation.x=.7; add(r2);
-    add(box(.16,.38,.20,0x2a1a4a,0,-.26,.06));
-    gunTrim(add,0x2a1a4a,0x6cf0ff);
-    g.userData.spin=[r1,r2];
+    /* a striped popcorn drum, overflowing */
+    gunFrame(g,mat(0xd94a4a,{roughness:.5}),0xf0d24a);
+    gunTube(g,GUN_MET(),.11,-.36,-.78);
+    gunPart(g,G.cyl,mat(0xfaf6ee,{roughness:.6}),.30,.62,.30,0,.02,-1.08,Math.PI/2);
+    for(let i=0;i<8;i++){ const a=i/8*Math.PI*2;
+      gunPart(g,G.box,mat(0xd93a3a,{roughness:.6}),.07,.04,.63,Math.cos(a)*.285,.02+Math.sin(a)*.285,-1.08,0,0,a+Math.PI/2); }
+    gunRing(g,GUN_BRASS(),.30,.035,-.78,.02); gunRing(g,GUN_BRASS(),.30,.035,-1.39,.02);
+    gunBore(g,.22,-1.40,.02,GUN_BRASS());
+    for(let i=0;i<9;i++) gunPart(g,G.sphere,mat(0xfff2d0,{roughness:.9}),.07,.06,.07,rnd(-.16,.16),.02+rnd(-.14,.14),-1.44-rnd(0,.08));
+    for(let i=0;i<5;i++) gunPart(g,G.sphere,mat(0xffe08a),.05,.05,.05,rnd(-.18,.18),.33+rnd(0,.05),-1.08+rnd(-.2,.2));
   } else if(id==="ketchup"){
-    add(box(.20,.20,.85,0xb83a2a,0,0,-.28));
-    const bottle=cyl(.16,.6,0xd94a3a,0,.08,-1.05); bottle.rotation.x=Math.PI/2; add(bottle);
-    add(cyl(.10,.16,0x3a2f26,0,.08,-1.4));
-    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
-    gunTrim(add,0x3a2f26,0xd94a3a);
+    /* a squeeze bottle on a pressure line */
+    gunFrame(g,mat(0x3a3f46,{metalness:.4,roughness:.5}),0xd94a3a);
+    gunTube(g,GUN_MET(),.08,-.36,-.70);
+    gunPart(g,GH.capsule,mat(0xd9302a,{roughness:.25}),.34,.42,.34,0,.03,-1.03,Math.PI/2);
+    gunPart(g,G.cyl,mat(0xf0e6c8,{roughness:.5}),.175,.26,.175,0,.03,-1.0,Math.PI/2);
+    gunPart(g,G.cyl,mat(0xf2f2f2,{roughness:.4}),.12,.14,.12,0,.03,-1.40,Math.PI/2);
+    gunPart(g,G.cone,mat(0xf2f2f2,{roughness:.4}),.09,.2,.09,0,.03,-1.55,-Math.PI/2);
+    gunPart(g,G.sphere,mat(0xc8201a,{roughness:.2}),.04,.04,.05,0,.03,-1.66);
+    /* pressure gauge */
+    gunPart(g,G.cyl,GUN_BRASS(),.09,.05,.09,.17,.10,-.62,0,0,Math.PI/2);
+    gunPart(g,G.cyl,mat(0xffffff),.075,.01,.075,.20,.10,-.62,0,0,Math.PI/2);
+    gunPart(g,G.box,mat(0xd9302a),.005,.01,.06,.205,.12,-.62);
+  } else if(id==="rubber"){
+    /* twin pink tubes with a rubber duck for a sight */
+    gunFrame(g,mat(0x2f6fb8,{roughness:.45}),0xffd23c);
+    for(const y of[.07,-.10]){
+      gunTube(g,mat(0xe8607e,{roughness:.55}),.10,-.36,-1.62,y);
+      for(const z of[-.7,-1.1,-1.5]) gunRing(g,mat(0x1f4f8a),.11,.03,z,y);
+      gunBore(g,.10,-1.63,y);
+    }
+    gunPart(g,G.box,mat(0x1f4f8a),.06,.30,.10,0,-.01,-1.0);
+    const d=new THREE.Group(); d.position.set(0,.30,-.62); g.add(d);
+    gunPart(d,G.sphere,mat(0xffd23c,{roughness:.3}),.12,.10,.15,0,0,0);
+    gunPart(d,G.sphere,mat(0xffd23c,{roughness:.3}),.08,.08,.08,0,.10,-.08);
+    gunPart(d,G.cone,mat(0xff8a2a),.04,.08,.04,0,.09,-.17,-Math.PI/2);
+    for(const sd of[-1,1]) gunPart(d,G.sphere,mat(0x111111),.015,.015,.015,sd*.05,.13,-.13);
   } else if(id==="waffle"){
-    add(box(.30,.30,.72,0xc98a3a,0,0,-.24));
-    const plate=new THREE.Mesh(G.box,mat(0x6a4a28)); plate.scale.set(.5,.08,.5);
-    plate.position.set(0,.04,-1.05); add(plate);
-    for(let i=-1;i<=1;i++){ add(box(.04,.12,.5,0xf0d29a,i*.14,.1,-1.05)); add(box(.5,.12,.04,0xf0d29a,0,.1,-1.05+i*.14)); }
-    add(box(.16,.36,.20,0x3a2f26,0,-.26,.06));
-    gunTrim(add,0x3a2f26,0xc98a3a);
+    /* a hinged waffle iron, mid-press */
+    gunFrame(g,GUN_DARK(),0xf0b04a);
+    gunTube(g,GUN_MET(),.09,-.36,-.68);
+    const plate=mat(0x2a2c30,{metalness:.6,roughness:.4});
+    gunPart(g,G.cyl,plate,.36,.08,.36,0,-.08,-1.05);
+    gunPart(g,G.cyl,plate,.36,.08,.36,0,.16,-1.05,-.35);
+    gunPart(g,G.cyl,mat(0xe8a84a,{roughness:.7}),.33,.07,.33,0,.04,-1.05);
+    for(let i=-2;i<=2;i++){
+      gunPart(g,G.box,mat(0xc9822a),.02,.075,.6-.12*Math.abs(i),i*.11,.045,-1.05);
+      gunPart(g,G.box,mat(0xc9822a),.6-.12*Math.abs(i),.075,.02,0,.045,-1.05+i*.11);
+    }
+    gunPart(g,G.box,mat(0x2a2c30),.08,.08,.16,0,.04,-.66);
+    gunPart(g,G.cyl,mat(0xd94a3a,{emissive:0xd94a3a,emissiveIntensity:.8}),.03,.02,.03,.2,.04,-.62,0,0,Math.PI/2);
+    gunPart(g,G.sphere,mat(0xf5d27a),.05,.03,.05,.08,.12,-1.0);
+  } else if(id==="bagel"){
+    /* stacked everything-bagels down a wooden barrel */
+    gunFrame(g,texMat(0x6a4426,"wood",{roughness:.6}),0xd9a45a,{scope:true});
+    gunTube(g,texMat(0x7a5232,"wood"),.10,-.36,-1.70);
+    gunBore(g,.10,-1.71,0,GUN_BRASS());
+    const seeds=[0xf5ead2,0x2a2420,0xe8d9a8];
+    for(const [r,z] of[[.30,-.95],[.25,-1.30],[.20,-1.60]]){
+      gunPart(g,GUN_GEO.bagel,mat(0xc9863e,{roughness:.55}),r*.72,r*.72,r*.72,0,0,z);
+      for(let i=0;i<10;i++){ const a=rnd(0,6.283);
+        gunPart(g,G.sphere,mat(seeds[i%3]),.018,.018,.018,Math.cos(a)*r,Math.sin(a)*r,z-r*.25); }
+    }
+  } else if(id==="trom"){
+    /* brass slide and bell; the slide is the barrel */
+    gunFrame(g,GUN_BRASS(),0x6a2a8a,{scope:true});
+    const b=GUN_BRASS();
+    gunTube(g,b,.06,-.36,-1.25,.06,.13); gunTube(g,b,.06,-.36,-1.25,.06,-.13);
+    gunPart(g,GUN_GEO.uBend,b,1,1,1,0,.06,-1.25,-Math.PI/2);
+    gunTube(g,b,.075,-.36,-1.25,-.12);
+    gunPart(g,G.cone,b,.20,.5,.20,0,-.12,-1.40,Math.PI/2);
+    gunPart(g,G.cone,b,.42,.22,.42,0,-.12,-1.66,Math.PI/2);
+    gunBore(g,.40,-1.75,-.12,b);
+    gunPart(g,G.box,mat(0x15110d),.05,.03,.4,0,.17,-.85);
   } else if(id==="kazoo"){
-    add(box(.18,.18,.7,0xc16cff,0,0,-.24));
-    const bell=cone(.30,.5,0xf0e8a0,0,0,-1.1); bell.rotation.x=-Math.PI/2; add(bell);
-    add(ball(.09,0xff6cc4,0,.16,-.55));
-    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
-    gunTrim(add,0x3a2f26,0xc16cff);
-  } else { /* spud launcher, the starter */
-    add(box(.20,.20,1.0,0x6a4a28,0,0,-.30));
-    const tube=cyl(.19,.9,0xb08654,0,0,-1.05); tube.rotation.x=Math.PI/2; add(tube);
-    add(box(.16,.36,.20,0x3a2f26,0,-.24,.06));
-    add(ball(.16,0xd9a94a,0,0,-1.52));
-    gunTrim(add,0x3a2f26,0xb08654);
+    /* a giant kazoo with a buzzing membrane */
+    gunFrame(g,mat(0x8a3ad9,{roughness:.35}),0xff6cc4,{scope:true});
+    gunPart(g,G.cone,mat(0xc16cff,{roughness:.3}),.22,.9,.22,0,0,-.85,Math.PI/2);
+    gunPart(g,G.cyl,mat(0xc16cff,{roughness:.3}),.22,.12,.22,0,0,-1.32,Math.PI/2);
+    gunPart(g,G.cone,mat(0xf0e8a0,{roughness:.4}),.32,.4,.32,0,0,-1.55,Math.PI/2);
+    gunBore(g,.16,-1.75,0,mat(0xf0e8a0));
+    gunPart(g,G.cyl,mat(0xff6cc4,{roughness:.2,transparent:true,opacity:.85}),.10,.06,.10,0,.2,-.95);
+    gunRing(g,mat(0xffd23c,{metalness:.6,roughness:.3}),.11,.03,-.95,.22).rotation.x=Math.PI/2;
+  } else if(id==="toast"){
+    /* a chrome toaster on a spinning six-barrel rotor */
+    gunFrame(g,GUN_CHROME(),0xff8a2a,{scope:true});
+    const ch=GUN_CHROME();
+    gunPart(g,G.box,ch,.50,.40,.46,0,.02,-.56);
+    for(const sd of[-1,1]){
+      gunPart(g,G.box,mat(0x111111),.07,.02,.34,sd*.11,.225,-.56);
+      gunPart(g,G.box,mat(0xd9a45a,{roughness:.8}),.05,.16,.28,sd*.11,.28,-.56);
+      gunPart(g,G.box,mat(0x8a5a2a,{roughness:.8}),.052,.03,.282,sd*.11,.36,-.56);
+    }
+    gunPart(g,G.box,mat(0x111111),.04,.06,.08,.27,.0,-.48);
+    const rotor=new THREE.Group(); rotor.position.set(0,.0,-.79); g.add(rotor);
+    for(let i=0;i<6;i++){ const a=i/6*Math.PI*2;
+      gunTube(rotor,GUN_MET(),.055,0,-.86,Math.sin(a)*.14,Math.cos(a)*.14);
+      gunBore(rotor,.055,-.87,Math.sin(a)*.14,null,Math.cos(a)*.14); }
+    for(const z of[-.12,-.72]) gunPart(rotor,G.cyl,GUN_DARK(),.22,.05,.22,0,0,z,Math.PI/2);
+    g.userData.spin=[rotor,new THREE.Object3D()];
+  } else if(id==="noodle"){
+    /* a lab rig feeding glowing broth into a ramen bowl */
+    gunFrame(g,mat(0xf2ede0,{roughness:.4}),0x4ad9c8,{scope:true});
+    gunTube(g,GUN_MET(),.10,-.36,-.78);
+    gunPart(g,G.cyl,mat(0x4ad9c8,{emissive:0x4ad9c8,emissiveIntensity:1.1,transparent:true,opacity:.8}),.12,.3,.12,0,0,-.58,Math.PI/2);
+    const bowl=gunPart(g,G.sphere,mat(0xd94a4a,{roughness:.3}),.36,.26,.36,0,.0,-1.12);
+    gunPart(g,G.cyl,mat(0xf5c06a,{emissive:0xf5a02a,emissiveIntensity:.35}),.32,.02,.32,0,.13,-1.12);
+    gunRing(g,mat(0xf2ede0),.34,.02,-1.12,.13).rotation.x=Math.PI/2;
+    for(let i=0;i<7;i++){
+      const n=gunPart(g,G.cyl,mat(0xf5e6a8),.022,.5,.022,rnd(-.18,.18),.24,-1.12+rnd(-.12,.12));
+      n.rotation.x=rnd(-.6,.6); n.rotation.z=rnd(-.6,.6); }
+    for(const sd of[-1,1]) gunPart(g,G.cyl,mat(0x8a5a2a),.018,.8,.018,sd*.06,.30,-1.0,1.1,0,sd*.1);
+    gunPart(g,G.box,mat(0xffffff),.05,.06,.01,.2,.08,-1.0);
+    gunBore(g,.12,-1.46,0,mat(0xf2ede0));
+    gunTube(g,GUN_MET(),.11,-1.38,-1.46);
+  } else if(id==="cosmic"){
+    /* a pocket star in two gyroscope rings, with fins */
+    gunFrame(g,mat(0x2a1a4a,{metalness:.4,roughness:.3}),0x6cf0ff,{scope:true,wood:0x3a2a5a});
+    gunTube(g,mat(0x3a2a6a,{metalness:.6,roughness:.3}),.09,-.36,-.70);
+    gunPart(g,G.sphere,mat(0xe8c8ff,{emissive:0xc16cff,emissiveIntensity:1.8}),.22,.22,.22,0,0,-1.0);
+    gunPart(g,G.sphere,mat(0xc16cff,{emissive:0xc16cff,emissiveIntensity:.8,transparent:true,opacity:.35}),.30,.30,.30,0,0,-1.0);
+    const r1=gunPart(g,GH.torus,mat(0x6cf0ff,{emissive:0x6cf0ff,emissiveIntensity:1.2}),.40,.40,.25,0,0,-1.0,0,.5);
+    const r2=gunPart(g,GH.torus,mat(0xff6cc4,{emissive:0xff6cc4,emissiveIntensity:1.0}),.52,.52,.2,0,0,-1.0,.7);
+    for(let i=0;i<3;i++){ const a=i/3*Math.PI*2+.5;
+      gunPart(g,G.box,mat(0x3a2a6a,{metalness:.6,roughness:.3}),.03,.22,.3,Math.cos(a)*.13,Math.sin(a)*.13,-.55,0,0,a+Math.PI/2); }
+    gunTube(g,mat(0x3a2a6a,{metalness:.6,roughness:.3}),.06,-1.3,-1.45);
+    gunBore(g,.07,-1.46,0,mat(0x6cf0ff,{emissive:0x6cf0ff,emissiveIntensity:1}));
+    g.userData.spin=[r1,r2];
+  } else {
+    /* spud launcher, the starter: a taped cardboard tube with a hand pump */
+    gunFrame(g,texMat(0x8a5a32,"wood",{roughness:.6}),0xd9a94a);
+    gunTube(g,mat(0xb08654,{roughness:.9}),.19,-.40,-1.50);
+    for(const z of[-.62,-.98,-1.30]) gunTube(g,mat(0x9aa0a6,{roughness:.5,metalness:.2}),.20,z+.05,z-.05);
+    gunBore(g,.19,-1.51,0,mat(0x8a6a40));
+    gunPart(g,G.sphere,mat(0xc9a35a,{roughness:.9}),.15,.13,.13,.02,0,-1.48,.3,0,.4);
+    gunTube(g,GUN_MET(),.05,-.5,-1.05,.26);
+    gunPart(g,G.cyl,mat(0x3a2f26),.07,.12,.07,0,.26,-1.08,Math.PI/2);
+    for(const z of[-.6,-.95]) gunPart(g,G.box,GUN_MET(),.04,.08,.04,0,.2,z);
   }
   return g;
 }
