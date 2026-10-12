@@ -175,7 +175,7 @@ function Toasts() {
 function Hint({ s, p }: { s: RoomState; p: PlayerState }) {
   const sheet = useGame((st) => st.sheet);
   let text = '';
-  if (p.stats.taps < 6) text = 'Tap the asteroid to mine ore';
+  if (p.stats.taps < 6) text = 'Tap the planet to mine ore';
   else if (p.levels.drill + p.levels.drone === 0 && p.wallet.ore >= UPGRADES.drill.baseCost) text = 'Open Upgrades and buy a Drill Laser';
   else if (!has(s, 'core') && p.wallet.ore >= (NODES.core.cost.ore ?? 0) && p.levels.drone > 0) text = 'Open the Forge Tree: the Forge Core is ready to fund';
   if (!text || sheet) return null;

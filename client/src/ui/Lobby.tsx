@@ -66,7 +66,7 @@ function SlotCard({ n, verb, onGo, onChange }: { n: Slot; verb: 'play' | 'host';
         ) : (
           <>
             <b>Empty slot</b>
-            <span>A fresh asteroid and an empty Forge Tree.</span>
+            <span>A fresh planet and an empty Forge Tree.</span>
           </>
         )}
       </div>
@@ -305,7 +305,7 @@ export function Lobby() {
             <h1 className="logo">
               STAR<span>FORGE</span>
             </h1>
-            <p className="tag">Co-op incremental mining. Tap the asteroid, build up your rig, and pool resources with friends to grow a shared Forge Tree.</p>
+            <p className="tag">Co-op incremental mining. Tap the planet, build up your rig, and pool resources with friends to grow a shared Forge Tree.</p>
           </>
         ) : (
           <div className="logo mini" aria-hidden>

@@ -37,7 +37,7 @@ export function HowTo({ open = false }: { open?: boolean }) {
       <summary>How to play</summary>
       <ul>
         <li>
-          <b>Tap the asteroid</b> to mine ore. Glowing seams pay extra, and cracking one pays ×5.
+          <b>Tap the planet</b> to mine ore. Glowing seams pay extra, and cracking one pays ×5.
         </li>
         <li>
           <b>Upgrades</b> are yours: a stronger drill, drones that mine on their own, and more as the tree grows.
