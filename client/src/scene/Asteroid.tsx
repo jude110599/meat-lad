@@ -170,6 +170,7 @@ rkIce = max(rkIce, rkSnow);
 float rkTex = 0.82 + 0.36 * (rkN3 * 0.45 + rkN2 * 0.3 + rkN4 * 0.25);
 vec3 rkCol;
 float rkSea = (1.0 - rkLand) * (1.0 - rkIce);
+float rkPwL = length(fwidth(rkP)) * 3.4;
 #ifdef PLANET_MOLTEN
   vec3 basalt = mix(srgb(vec3(0.16, 0.13, 0.12)), srgb(vec3(0.27, 0.22, 0.19)), smoothstep(0.3, 0.7, rkMoist));
   vec3 ash = srgb(vec3(0.42, 0.39, 0.37));
@@ -178,9 +179,14 @@ float rkSea = (1.0 - rkLand) * (1.0 - rkIce);
   ground = mix(ground, ash, smoothstep(0.25, 0.7, rkRidge + max(rkElev, 0.0) * 0.3));
   ground *= rkTex;
   ground = mix(srgb(vec3(0.08, 0.06, 0.06)), ground, smoothstep(0.0, 0.05, rkElev));
-  // Lava seas: dark cooling crust plates drifting on the melt.
-  float rkCrust = smoothstep(0.42, 0.62, rkNoise(rkP * 3.4 + vec3(uTime * 0.015, 0.0, uTime * 0.01)) * 0.7 + rkN3 * 0.3);
-  vec3 seaCol = mix(srgb(vec3(0.3, 0.07, 0.03)), srgb(vec3(0.12, 0.08, 0.07)), rkCrust);
+  // Lava seas: dark cooling crust plates drifting on the melt, split by
+  // glowing rifts, with open melt along the shores and in a few pools.
+  float rkLv = rkNoise(rkP * 3.4 + vec3(uTime * 0.015, 0.0, uTime * 0.01) + (rkN3 - 0.5) * 0.25);
+  float rkRift = 1.0 - smoothstep(0.0, 0.016 + rkPwL * 0.3, abs(rkLv - 0.5));
+  float rkShore = 1.0 - smoothstep(0.0, 0.045, -rkElev);
+  float rkPool = smoothstep(0.74, 0.8, rkN2 * 0.7 + rkN1 * 0.3);
+  float rkCrust = 1.0 - max(max(rkRift, rkShore * 0.85), rkPool);
+  vec3 seaCol = mix(srgb(vec3(0.3, 0.07, 0.03)), srgb(vec3(0.1, 0.075, 0.07)) * (0.8 + 0.4 * rkN2), rkCrust);
   rkCol = mix(seaCol, ground, rkLand);
   rkCol = mix(rkCol, srgb(vec3(0.78, 0.76, 0.72)) * (0.9 + 0.1 * rkN2), rkIce);
 #else
@@ -243,7 +249,7 @@ rockRough = mix(rockRough, 0.75, rkSea);
 // Day and night, from the geometric normal and the sun (both in view space).
 vec3 rkGN = rkSafeNorm(vNormal, vec3(0.0, 0.0, 1.0));
 float rkSunDot = dot(rkGN, uSunView);
-float rkNight = smoothstep(0.06, -0.24, rkSunDot);
+float rkNight = 1.0 - smoothstep(-0.24, 0.06, rkSunDot);
 `;
 
 /** Bump from the procedural height, using screen-space derivatives (scale-invariant form). Land only. */
@@ -277,11 +283,11 @@ const PLANET_EMISSIVE = /* glsl */ `
   vec3 em = vec3(0.0);
 #ifdef PLANET_MOLTEN
   // The melt glows on both sides; the crust plates hide most of it.
-  float melt = rkSea * (1.0 - rkCrust * 0.88);
-  vec3 lava = mix(vec3(0.85, 0.12, 0.02), vec3(1.0, 0.42, 0.08), smoothstep(0.3, 0.9, rkN2));
-  em += lava * melt * (0.55 + 0.25 * pulse) * (0.75 + 0.6 * rkNight);
+  float melt = rkSea * (1.0 - rkCrust * 0.94);
+  vec3 lava = mix(vec3(0.85, 0.12, 0.02), vec3(1.0, 0.42, 0.08), smoothstep(0.3, 0.9, rkN2) * (0.4 + 0.6 * rkRift));
+  em += lava * melt * (0.5 + 0.25 * pulse) * (0.7 + 0.6 * rkNight);
   // Molten fissures across the land, glowing at night.
-  float fis = 1.0 - smoothstep(0.0, 0.035 + rkPw * 0.25, abs(rkNoise(rkP * 3.1 + 1.3) - 0.5));
+  float fis = 1.0 - smoothstep(0.0, 0.014 + rkPw * 0.25, abs(rkNoise(rkP * 3.1 + 1.3) - 0.5));
   em += vec3(1.0, 0.32, 0.05) * fis * rkLand * (1.0 - rkIce) * (0.05 + 0.75 * rkNight) * (0.7 + 0.3 * pulse);
   vec3 atmo = vec3(1.0, 0.52, 0.22);
   vec3 dusk = vec3(0.9, 0.2, 0.05);
