@@ -60,7 +60,8 @@ var GAMES={
   meatlad:{name:"Meat Lad",page:"meatlad.html",col:"#e8324a"},
   beetdown:{name:"Beetdown",page:"beetdown.html",col:"#7bd94a"},
   pantry:{name:"Alien Attack",page:"pantry.html",col:"#4fc3ff"},
-  starforge:{name:"Starforge",page:"starforge/",col:"#ffb03a"}
+  starforge:{name:"Starforge",page:"starforge/",col:"#ffb03a"},
+  quackpot:{name:"Quackpot",page:"quackpot.html",col:"#ffd84a"}
 };
 
 /* Site root, from where this script was loaded (js/friends.js -> ../). */
@@ -433,6 +434,8 @@ function publicState(){
     }),
     asks:joinAsks().map(function(r){ return {id:r.id,name:r.name||shortName(r.from),ts:r.ts}; }),
     pending:pendingJoin?{name:pendingJoin.name,entry:pendingJoin.entry,ts:pendingJoin.ts}:null,
+    requests:status==="in"?incoming().map(function(r){ return {id:r.id,name:r.name||shortName(r.from)}; }):[],
+    sent:status==="in"?sent.map(function(r){ return {id:r.id,name:r.name||shortName(r.to)}; }):[],
     party:p?p.code:null
   };
 }
@@ -808,7 +811,7 @@ function renderMenu(){
           '<button class="mlf-x" data-a="rcan" data-id="'+esc(r.id)+'">Cancel</button></div>';
       });
     }
-    html+='<div class="mlf-note" style="margin-top:10px">Signed in as <b>'+esc(me.name)+'</b>. Friends follow you into Meat Lad, Beetdown, Alien Attack and Starforge.</div>';
+    html+='<div class="mlf-note" style="margin-top:10px">Signed in as <b>'+esc(me.name)+'</b>. Friends follow you into Meat Lad, Beetdown, Alien Attack, Starforge and Quackpot.</div>';
   }
   html+='</div>';
   return html;
@@ -977,6 +980,17 @@ window.MLFriends={
   requestJoin:requestJoin,
   cancelJoin:function(){ cancelJoin(false); },
   answerJoin:answerJoin,
+  /* Friend requests from inside a game (Quackpot's Multiplayer menu):
+     addFriend resolves to a message, "ok:..." on success. */
+  addFriend:function(raw){ return addFriend(raw); },
+  acceptRequest:function(id){
+    var r=reqs.filter(function(x){ return x.id===id&&x.type==="req"; })[0];
+    return r&&me?acceptRequest(r):Promise.resolve();
+  },
+  declineRequest:function(id){
+    var r=reqs.filter(function(x){ return x.id===id&&x.type==="req"; })[0];
+    if(r&&me)declineRequest(r);
+  },
   games:GAMES
 };
 })();
