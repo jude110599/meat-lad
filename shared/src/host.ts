@@ -1,5 +1,6 @@
 import { MAX_PLAYERS_PER_ROOM, PROTOCOL_VERSION, SNAPSHOT_HZ, type ClientMsg, type Fx, type Hello, type ServerMsg } from './protocol.js';
-import { addPlayer, applyStrike, buyUpgrade, catchComet, dropPlayer, fundNode, leap, onlinePlayers, tickRoom, type Rand, type RoomState } from './sim.js';
+import { CAM_HZ, cleanCam, type CamQ } from './protocol.js';
+import { addPlayer, applyStrike, buyUpgrade, catchComet, dropPlayer, fundNode, leap, onlinePlayers, setPrefs, tickRoom, type Rand, type RoomState } from './sim.js';
 
 /** Deliver a message to one player id, or '*' for everyone in the room. */
 export type Send = (to: string, msg: ServerMsg) => void;
@@ -22,6 +23,10 @@ export class RoomHost {
   private readonly tabs = new Map<string, string>();
   private lastTick = 0;
   private lastSnap = 0;
+  /** Latest camera of each online player (see CamMsg), relayed at CAM_HZ. */
+  private readonly cams = new Map<string, CamQ>();
+  private camsDirty = false;
+  private lastCams = 0;
 
   constructor(
     readonly state: RoomState,
@@ -97,6 +102,12 @@ export class RoomHost {
         }
         break;
       }
+      case 'prefs': {
+        const out = setPrefs(s, playerId, msg.prefs, now);
+        if (typeof out === 'string') this.emit({ k: 'reject', playerId, seq: 0, reason: out });
+        else this.snapNow(now);
+        break;
+      }
       case 'comet': {
         const out = catchComet(s, playerId, Number(msg.id), now);
         if (typeof out !== 'string') {
@@ -104,6 +115,14 @@ export class RoomHost {
           this.snapNow(now);
         }
         break;
+      }
+      case 'cam': {
+        const c = cleanCam(msg.c);
+        if (c) {
+          this.cams.set(playerId, c);
+          this.camsDirty = true;
+        }
+        return;
       }
       case 'emote':
         this.emit({ k: 'emote', playerId, id: String(msg.id).slice(0, 12) });
@@ -120,7 +139,28 @@ export class RoomHost {
     this.lastTick = now;
     for (const note of tickRoom(this.state, dt, now, this.rand)) this.emit({ k: 'note', note });
     if (now - this.lastSnap >= 1000 / SNAPSHOT_HZ) this.snapNow(now);
+    this.relayCams(now);
     this.flush();
+  }
+
+  /**
+   * Relay the crew's cameras: at CAM_HZ when one moved, every 2 s anyway (so a
+   * late joiner gets them), and only while two or more players are online.
+   */
+  private relayCams(now: number): void {
+    const since = now - this.lastCams;
+    if (since < 1000 / CAM_HZ || (!this.camsDirty && since < 2000)) return;
+    this.lastCams = now;
+    this.camsDirty = false;
+    const cams: Record<string, CamQ> = {};
+    let n = 0;
+    for (const [id, c] of this.cams) {
+      if (this.state.players[id]?.online) {
+        cams[id] = c;
+        n++;
+      } else this.cams.delete(id);
+    }
+    if (n > 0 && onlinePlayers(this.state).length >= 2) this.send('*', { t: 'cams', cams });
   }
 
   private snapNow(now = Date.now()): void {

@@ -1,6 +1,20 @@
 /** Starforge's own update history, newest first. Shown in the lobby and the Crew tab. */
 export const CHANGELOG: { v: string; when: string; items: string[] }[] = [
   {
+    v: '0.5.0',
+    when: 'Oct 12, 2026, 12:00 AM ET',
+    items: [
+      'You now mine a real-looking planet: oceans or lava seas, continents, mountains, ice caps, drifting clouds, an atmosphere glow and city lights on the night side. Taps still crack it open and seams still glow.',
+      'Crewmates’ ships now fly where those players actually are looking from, so you can see where they are. Off-screen ships get an arrow at the edge.',
+      'Rebalanced: drones are cheaper and much stronger, the Forge Tree is far cheaper to finish, and something new is affordable every minute or two. Producers get bonuses at 10, 25, 50 and 100 owned.',
+      'New upgrades: Combo Coil, Crit Chain, Night Beacon, Foreman (auto-buy), Refinery and Crew Uplink.',
+      '10 new Forge Tree nodes, including Crew Charter, Drone Overclock, Guild Hall, Motherlode, Comet Lure, Deep Refit, Quantum Echo, Core Lens and Hive Mind.',
+      'Multiplayer pays off more: crew roles (Prospector, Engineer, Refiner), timed crew contracts that pay everyone, permanent renown, and bigger crew bonuses.',
+      'New title screen: Singleplayer with 3 save slots, Multiplayer with Host or Join, and a Main menu button back to the game select. Join with a code or ask a friend to let you in.',
+      'A new Menu tab with your stats, How to play, What’s new and Back to main menu. The friends list moved into the Crew tab.',
+    ],
+  },
+  {
     v: '0.4.0',
     when: 'Oct 11, 2026, 3:15 PM ET',
     items: [

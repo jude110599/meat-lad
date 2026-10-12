@@ -1,6 +1,6 @@
 # Starforge: Technical Design Specification
 
-**Status:** v0.3, co-op redesign: one shared Forge Tree, no roles. **Owner:** Lead Game Developer / Systems Architect.
+**Status:** v0.4, co-op incremental pass: one shared Forge Tree of 30 nodes, optional crew roles and crew contracts. **Owner:** Lead Game Developer / Systems Architect.
 **Scope:** a 3D multiplayer incremental mining game in which a crew of up to four taps one asteroid, buys personal upgrades and pays together into a shared Forge Tree, with host-authoritative networking that runs on static hosting, comets and surges that pay the whole crew, and a personal prestige layer.
 
 This document is the source of truth for system design, network protocol and balance. Where a number appears in both this file and `shared/src/economy.ts` / `shared/src/sim.ts`, the code wins and this file should be corrected.
@@ -33,7 +33,7 @@ This document is the source of truth for system design, network protocol and bal
 
 ## 1. Product summary
 
-Up to four players share one **world**: a rotating asteroid with glowing seams. Everyone plays the same game. You tap the rock (seams pay more and break for a bonus), buy your own upgrades from your own wallet, and put ore, alloy and Star Cores into the **Forge Tree**, 20 nodes the whole crew pays for together. A node unlocks for everyone once it is fully paid, and its upgrades and multipliers stay for good. Every couple of minutes a **comet** streaks past and pays the whole crew when someone taps it. Late in the tree each player can take a **Quantum Leap** on their own, restarting their run for Star Cores. Crewmates who join a host's world keep their progress there and get it back, plus offline earnings, when they return. The HUD is built for phones first: a slim top bar and three tabs in a bottom sheet.
+Up to four players share one **world**: a rotating asteroid with glowing seams. Everyone plays the same game. You tap the rock (seams pay more and break for a bonus), buy your own upgrades from your own wallet, and put ore, alloy and Star Cores into the **Forge Tree**, 30 nodes the whole crew pays for together. A node unlocks for everyone once it is fully paid, and its upgrades and multipliers stay for good. Every couple of minutes a **comet** streaks past and pays the whole crew when someone taps it. Late in the tree each player can take a **Quantum Leap** on their own, restarting their run for Star Cores. Once the crew charters itself, each player can take an optional **role** (Prospector, Engineer or Refiner) that doubles one part of their game and lifts that part for everyone else online, and the crew is offered timed **contracts** that pay everyone and build permanent renown. Crewmates who join a host's world keep their progress there and get it back, plus offline earnings, when they return. The HUD is built for phones first: a slim top bar and four tabs in a bottom sheet.
 
 Design pillars:
 
@@ -41,7 +41,7 @@ Design pillars:
 |---|---|
 | **Tactile 3D taps** | Every tap lands on a real point of a real mesh, with a laser, sparks, a scorch mark, a number and a camera kick within one frame. Feedback never waits on the network. |
 | **Visible automation** | Passive income is never just a number: drones and harvesters orbit and dive, rigs drill on seams. |
-| **One game, shared goals** | No roles. Everyone taps, upgrades and leaps with their own wallet; the crew builds one tree, comets pay everyone, and Crew Link and Resonance pay more when more people play at once. A solo player can do everything. |
+| **One game, shared goals** | Roles are optional. Everyone taps, upgrades and leaps with their own wallet; the crew builds one tree, comets and contracts pay everyone, and Crew Link, roles, Uplinks and Resonance pay more when more people play at once. Crewmates can all do the same thing or split the work. A solo player can do everything. |
 | **Spend with intent** | Tree nodes cost real saving, and every contribution is ore that did not go into your own upgrades. The node page says how long the rest would take, so players talk before they spend. |
 | **Numbers go up** | Geometric costs, 25-level doublings, tree multipliers and a repeatable personal prestige. |
 | **One rules implementation** | Every outcome is computed by pure functions in `/shared`, run by whoever hosts the room: a player's browser or the optional server. |
@@ -98,7 +98,7 @@ Starforge also plugs into the **site-wide friends list** (`js/friends.js`, §7),
   src/net/actions.ts       every player intent (strike, buy, fund, leap, comet, emote)
   src/state/               Zustand store, FX bus, shared world-space refs
   src/scene/               3D scene: sky, asteroid, seams, rigs, drones, ships, comet, effects
-  src/ui/                  lobby, HUD (top bar; Upgrades, Forge Tree and Crew tabs), friends hook-up
+  src/ui/                  lobby (save slots, host/join), HUD (top bar; Upgrades, Forge Tree, Crew and Menu tabs), friends list
 /starforge/                committed production build served by GitHub Pages
 /js/friends.js             site-wide friends list and party invites (§7)
 ```
@@ -152,7 +152,7 @@ The build is committed, so GitHub Pages serves it at `<site>/starforge/` with no
 | Simulation | 20 Hz | `tickRoom`: drones, harvesters and rigs of online players, smoothed rates, surge end, comet spawn and expiry. Background tabs are throttled by the browser, so the host catches up in 1 s steps (up to 5 min) when its timer fires late. |
 | Snapshot | 10 Hz + immediately after purchases, funding, leaps and comet catches | full `RoomState` (~4 KB JSON with four players) |
 | Fx | after every intent and tick | batched `Fx[]`: strikes, buys, funding, comets, joins, notes… |
-| Save | every 10 s, on tab hide and on page hide | `localStorage['starforge_save_v3']` |
+| Save | every 10 s, on tab hide and on page hide | `localStorage['starforge_save_v3_slot<n>']` (the slot being played) |
 
 ### 5.3 Client replica and prediction
 
@@ -196,16 +196,16 @@ guest                                         host
 * **Second tab:** if the key's player is already online from a different tab, `RoomHost.join` uses `key[0..27] + '~' + tab` instead, so the second tab plays as its own crewmate (and is saved under that key). A reconnecting tab sends the same tab id and reclaims its player.
 * **Room full:** at most 4 players online (`MAX_PLAYERS_PER_ROOM`). A player who is still online (a reconnect) is always readmitted; anyone else is refused while four are online. The world remembers up to 16 crewmates (`MAX_SAVED_PLAYERS`) and forgets the longest-absent beyond that.
 * **Reconnect:** guests retry three times with backoff (1, 2, 3 s); the same key and tab reclaim the same player.
-* **Host leaves:** a deliberate close sends `error: host-left`; a dropped host is detected by the channel closing. Guests return to the lobby with the reason and can continue solo.
+* **Host leaves:** a deliberate close sends `error: host-left`; a dropped host is detected by the channel closing. Guests return to the lobby with the reason.
 * **Errors:** `protocol-mismatch`, `room-full`, `room-not-found` (server only), `host-left`.
 
 ### 6.3 Messages
 
-Client → host (`ClientMsg`): `hello {protocol, name, key, tab?}`, `strike {seq, seamId|null}`, `buy {id, count?}` (1 to 1000 levels, as far as the wallet goes), `fund {node, res, amount}`, `leap`, `comet {id}`, `emote {id}`, and `ping {id}` (declared; `RoomHost` ignores it).
+Client → host (`ClientMsg`): `hello {protocol, name, key, tab?}`, `strike {seq, seamId|null}`, `buy {id, count?}` (1 to 1000 levels, as far as the wallet goes), `fund {node, res, amount}`, `leap`, `comet {id}`, `emote {id}`, `prefs {prefs: {role?, auto?, refine?}}` (role, Foreman auto-buy and Refinery switches; a role change within 2 minutes is rejected with `cooldown`), and `ping {id}` (declared; `RoomHost` ignores it).
 
 Host → client (`ServerMsg`): `welcome {playerId, code, state}`, `snap {state}`, `fx {fx: Fx[]}`, `error {error}`.
 
-`Fx` kinds: `strike`, `buy`, `fund`, `leap`, `comet`, `offline`, `reject`, `joined`, `left`, `emote`, and `note` wrapping tick notes (`comet`, `cometGone`, `surgeEnd`).
+`Fx` kinds: `strike`, `buy`, `fund`, `leap`, `comet`, `offline`, `reject`, `joined`, `left`, `emote`, and `note` wrapping tick notes (`comet`, `cometGone`, `surgeEnd`, `contract`, `contractDone`, `contractFailed`).
 
 ### 6.4 Bandwidth
 
@@ -224,15 +224,17 @@ A snapshot is ~4 KB with four players online; at 10 Hz to three guests that is ~
 | `partyInbox` | invites `{id, from, fromName, game, code, ts}`, valid for 10 minutes |
 | `friendRequests` | incoming `{id, type, from, uid, name, ts}`; `type` is `req` (a request) or `ok`/`no` (the answer to one this player sent) |
 | `sentRequests` | own outgoing requests `{id, to, uid, name, ts, req}` |
+| `joinRequests` | asks to join a party `{id, type, game, from, uid, name, ts, code?}`; `type` is `req` (someone asks to join this player's party) or `ok`/`no` (the answer to one this player sent; `ok` carries the party code), valid for 2 minutes |
 | `username` | current username (mirrors `usernames/{name}`) |
 | `avatar` | profile picture, a ~128 px JPEG data URL under 30 KB |
 
-* **Friend requests:** **Add friend** writes a `req` into the other player's `friendRequests` and records it in the sender's `sentRequests`. Accepting adds the sender to your own `friends` and writes an `ok` with the same id back; the sender's page adds you only if that id matches one of its `sentRequests`, so nobody can add themselves to a list. Other players may only write `partyInbox` and `friendRequests`.
+* **Friend requests:** **Add friend** writes a `req` into the other player's `friendRequests` and records it in the sender's `sentRequests`. Accepting adds the sender to your own `friends` and writes an `ok` with the same id back; the sender's page adds you only if that id matches one of its `sentRequests`, so nobody can add themselves to a list.
+* **Join requests:** a player in Starforge's lobby can ask a friend whose presence shows a Starforge party to let them in: a `req` goes into the friend's `joinRequests`. The friend's page that has that party open shows **Accept / Decline**; Accept writes an `ok` with the party code into the requester's `joinRequests` (the account id comes from the host's own friends list, not from the request), and the requester's page joins only if the id matches the request it sent. Other players may only write `partyInbox`, `friendRequests` and `joinRequests` (all three must be in the Firestore rules' `hasOnly` list).
 * **Profile card (main menu):** picture upload (cropped and re-encoded client-side), change username (3-20 of `a-z 0-9 _`; creates the new `usernames` doc, then deletes the old one), per-game stats from `accounts.games`, `quackpot/{uid}` and Starforge's local save, and 24 achievement badges computed from them.
 
 * **Main menu:** `MLFriends.menu()` shows a side panel with **Add friend** (by username or email), each friend's status ("playing Starforge", "in a Starforge party" with a **Join** button, "online · on the menu", "offline · seen 5m ago") and incoming invites.
 * **In a game:** `MLFriends.attach({game, party, join, dock})`. While the player has a party open, a mini list shows friends with online dots and **Invite** buttons. An invite pops up for the friend wherever they are on the site; **Join** either calls the game's `join(code)` (same game) or navigates to `<game>/?join=CODE`.
-* **Starforge** reports its party code while hosting or joined, docks the mini list bottom-left (hidden on phones while the bottom sheet is open), and handles `?join=CODE` by joining as a guest. The lobby pre-fills the player name from the site username.
+* **Starforge** reports its party code while hosting or joined and handles `?join=CODE` by joining as a guest. It turns the floating mini list off (`dock: "none"`) and draws the list itself from `MLFriends.state()` / `onChange()`: in the Crew tab with **Invite** buttons (inviting while solo opens a party first), and on the lobby's Join page with **Request to join** for friends in a Starforge party. The lobby pre-fills the player name from the site username.
 
 ---
 
@@ -260,10 +262,12 @@ The camera keeps the rock centred in the visible area: below the top bar, left o
 ### 8.3 HUD
 
 * **Top bar** (every screen): ore and ore/s; alloy once Smelting is unlocked or you hold some; Star Cores once you hold any; a surge chip (⚡ ×2 and seconds left); "Reconnecting…" when the link drops; and a crew pill (a dot per online crewmate, "Solo" or "n/4") that opens the Crew tab.
-* **Tabs:** Upgrades, Forge Tree, Crew. On phones they sit in a bottom tab bar and open a bottom sheet over 52% of the screen (tap the tab again to close it). At ≥ 900 px the same content is a 380 px side panel on the right. A dot on a tab means something is affordable: an upgrade, or a node you could finish by yourself.
+* **Tabs:** Upgrades, Forge Tree, Crew, Menu. On phones they sit in a bottom tab bar and open a bottom sheet over 52% of the screen (tap the tab again to close it). At ≥ 900 px the same content is a 380 px side panel on the right. A dot on a tab means something is affordable: an upgrade, or a node you could finish by yourself.
 * **Upgrades tab:** ×1 / ×10 / Max buy modes and one row per unlocked upgrade, showing what it does for you right now. Upgrades whose node can be funded appear as locked rows that link to the node; the rest stay hidden. Once the Quantum Leap node is unlocked, a leap card shows this run's ore, the next core and a two-tap leap button.
 * **Forge Tree tab:** see §10.
-* **Crew tab:** party code, copy invite link and close party (host); leave and play solo (guest); open a party or join by code (solo). Then the online crew with each one's ore/s and cores, a note on absent crewmates, emotes (in a party), your stats, how to play, the changelog, and **Reset my world** (two taps; solo or host only).
+* **Crew tab:** party code, copy invite link and close party (host); the party code (guest); open a party or join by code (solo). Then the online crew with each one's ore/s and cores, a note on absent crewmates, emotes (in a party), and the site friends list with **Invite** buttons.
+* **Menu tab:** **Back to main menu** (the site's game select), **Starforge title screen** (saves; leaves or closes any party), the save slot in use, your stats, how to play, the changelog, and **Reset this world** (two taps; solo or host only).
+* **Lobby (title screen):** a **Main menu** button back to the game select, the player name, **Singleplayer** (three save slots, each showing your ore and cores, Forge Tree progress, crew size and when it was last played, with Continue / Start new and a two-tap delete) and **Multiplayer** (**Host** picks the slot to open to friends; **Join** takes a code or a request to a friend), plus how to play and the changelog.
 * **Overlays:** toasts, one hint at a time for new players (tap, buy a Drill Laser, fund the Forge Core), the "welcome back" offline card and the leap flash.
 
 ### 8.4 Destructible terrain (later)
@@ -274,24 +278,28 @@ A chunked signed-distance voxel field with surface-nets meshing in a worker, hos
 
 ## 9. Core mining gameplay
 
-Every player does the same three things: tap the asteroid, buy their own upgrades (§12.2) and fund the Forge Tree (§10). Ore goes to the wallet of whoever earned it; nothing is pooled except what players choose to put into nodes.
+Every player can do everything: tap the asteroid, buy their own upgrades (§12.2) and fund the Forge Tree (§10). Ore goes to the wallet of whoever earned it; nothing is pooled except what players choose to put into nodes, and contracts pay every crewmate online (§12.5). Optional crew roles (§12.4) let a crew split the work without locking anyone out of anything.
 
 | Action | Rule |
 |---|---|
-| Tap | `tapValue = (1 + drill) × 2^floor(drill/25) × (×4 Overdrive) × (×10 Hyperdrill) × allMult` |
-| All income | `allMult = (×1.5 Forge Core) × crewMult × (1 + 0.1 × cores, or 0.2 with Starseed) × (×3 Singularity) × 1.5^mastery × (×2 surge)`, applied to taps, drones, harvesters, rigs and comets |
-| Crew Link | `crewMult = 1 + 0.25 × max(1, online − 1)`: ×1.25 solo or in a pair, ×1.5 with three, ×1.75 with four |
-| Seam | ×3 (×6 with Deep Scan) × `(1 + 0.25 × scanner)`; the seam loses 1 HP (2 on a crit). Seams have 8 HP; five are on the rock (seven with Deep Scan). |
-| Break a seam | ×5 on the final hit (`BREAK_MULT`); a new seam spawns elsewhere; with Resonance the crew surges (§11.2) |
-| Crit | `5% + 1% × lens` (Focus Lens max 35, so up to 40%), ×5 (×10 with Fine Optics) |
+| Tap | `tapValue = (1 + drill) × milestoneMult(drill) × (×4 Overdrive) × (×10 Hyperdrill) × prospector × allMult`; a real tap is then × `comboMult` |
+| Milestones | Drill Laser, Mining Drone and Harvester ×2 at levels 10, 25, 50 and 100, then every 50 (`milestoneMult`; the Upgrades tab shows `nextMilestone`) |
+| All income | `allMult = (×1.5 Forge Core) × crewMult × uplinkMult × coreMult × renownMult × (×3 Singularity) × 1.25^refit × 1.5^mastery × (×2 surge)`, applied to taps, drones, harvesters, rigs, comets and contract pay |
+| Crew | `crewMult = 1 + 0.05 × mates` before Crew Link, `1.2 + 0.2 × mates` with it (`0.35` per mate with Hive Mind); `mates` = crewmates online with you. Solo ×1.2, a full crew ×1.8 (×2.25). |
+| Streak | a tap within 1.5 s of your last one adds to your streak, otherwise it restarts at 1. `comboMult = 1 + 0.1 × combo × min(streak, 30) / 30` (Combo Coil max 10, so ×2 at a full streak). Rigs don't build streaks. |
+| Seam | ×3 (×6 with Deep Scan) × `(1 + 0.25 × scanner)`; the seam loses 1 HP (2 on a crit, +1 for a Prospector). Seams have 8 HP; five are on the rock (seven with Deep Scan). |
+| Break a seam | ×5 on the final hit (×10 with Motherlode, `breakMult`); a new seam spawns elsewhere; with Resonance the crew surges (§11.2) |
+| Crit | `5% + 1% × lens` (Focus Lens max 35, so up to 40%), ×5 (×10 with Fine Optics). Chain Reactor: a crit that follows `n` crits in a row (up to 5) pays another `1 + 0.1 × chain × n`. |
 | Rate limit | 20 taps/s per player |
 
 **Automation** runs only while its owner is online (§14 covers time away):
 
-* **Mining Drones:** 0.5 ore/s each, ×2 per 25 levels, ×2 with Swarm Logic.
-* **Harvesters:** 40 ore/s each, ×2 per 25 levels. Drones and harvesters both get `(1 + 0.25 × plating)` and ×10 with Dyson Swarm.
-* **Auto-Rigs:** each level taps a random seam once a second for a quarter of a seam tap (base seam bonus, no Scanner bonus, never a crit) and 0.25 HP, so rigs wear seams down, earn the break bonus and can trigger surges.
-* **Smelters:** each level also turns 0.25% of all ore you earn (taps, automation, comets, offline) into alloy without using the ore up; ×2 with Hot Smelting. At the 40-level cap that is 10% (20%).
+* **Mining Drones:** 5 ore/s each × milestones, ×3 with Swarm Logic.
+* **Harvesters:** 250 ore/s each × milestones. Drones and harvesters both get `(1 + 0.25 × plating)`, ×3 with Drone Overclock, ×10 with Dyson Swarm, and the Engineer role (§12.4).
+* **Auto-Rigs:** each level (max 15) taps a random seam once a second for a quarter of a seam tap (base seam bonus, no Scanner bonus, never a crit) and 0.25 HP, so rigs wear seams down, earn the break bonus, count toward seam contracts and can trigger surges.
+* **Smelters:** each level also turns 0.25% of all ore you earn (taps, automation, comets, contracts, offline) into alloy without using the ore up; ×2 with Hot Smelting and ×2 for a Refiner. At the 40-level cap that is 10% (20%, 40%).
+* **Refinery:** each level (max 10) diverts 5% of your passive ore (drones, harvesters, rigs, offline) into alloy at 1 alloy per 4 ore, with the same ×2s as Smelters. Diverted ore still counts toward your leap. It has an on/off switch (`prefs.refine`).
+* **Foreman:** auto-buys your upgrades every tick while you are online, cheapest eligible level first, but only a level that costs at most 10% / 20% / 35% of what you hold (Foreman 1 / 2 / 3), at most 25 levels a tick. Level 1 buys Drills, Drones and Harvesters; level 2 adds Lens, Rigs, Combo, Chain and Smelters; level 3 buys everything else. It has an on/off switch (`prefs.auto`) and never touches the Forge Tree, so saving for a node still works.
 
 ---
 
@@ -299,35 +307,46 @@ Every player does the same three things: tap the asteroid, buy their own upgrade
 
 One tree per world, shared by everyone in it. It is the crew's long-term goal and the only place resources are pooled.
 
-* **Funding:** `fund {node, res, amount}` moves up to `amount` of the player's own `res` into a node, clamped to what is still owed and what they hold. Anyone can fund any node whose prerequisites are all unlocked; a mixed price (ore + alloy, cores + ore) needs every part paid.
+* **Funding:** `fund {node, res, amount}` moves up to `amount` of the player's own `res` into a node, clamped to what is still owed and what they hold. Anyone can fund any node whose prerequisites are all unlocked; a mixed price (ore + alloy, cores + ore) needs every part paid. A Refiner's ore and alloy count ×1.25: the node receives 1.25 for every 1 that leaves the wallet, and **Finish it** only takes what the rest is worth after the bonus.
 * **Unlock:** when every part is paid the node unlocks for everyone in the world, for good. Quantum Leaps keep it, and the save stores both unlocked nodes and partial funding.
 * **Credits:** each contribution is recorded per player as a share of the node's whole price (`by[playerId]`) and added to their lifetime `stats.funded`, shown as "Funded by" on the node page.
-* **Repeatable:** Forge Mastery levels up instead of finishing; each level costs ×10 the last, and its credits start over.
+* **Repeatable:** Deep Refit (×8 per level) and Forge Mastery (×10 per level) level up instead of finishing, and their credits start over.
+* **Layout:** ten rows, at most four nodes a row at x = −1.5, −0.5, 0.5, 1.5 (rows of three use −1, 0, 1), so labels never overlap on a 356 px panel; a test checks it. Columns run by theme: alloy on the left, then drones and automation, crew, and taps and seams on the right.
 
 | Tier | Node | Cost | Needs | Effect |
 |---|---|---|---|---|
-| 0 | Forge Core | 3,000 ore | | everyone mines ×1.5 |
-| 1 | Auto-Rigs | 60K ore | Forge Core | unlocks Auto-Rig |
-| 1 | Swarm Logic | 120K ore | Forge Core | drones ×2 |
-| 1 | Fine Optics | 250K ore | Forge Core | crits ×10 instead of ×5 |
-| 2 | Smelting | 2.5M ore | Auto-Rigs | unlocks Smelter |
-| 2 | Crew Link | 6M ore | Swarm Logic | `crewMult` (§9) |
-| 2 | Deep Scan | 15M ore | Fine Optics | seams ×6 instead of ×3, seven seams, unlocks Seam Scanner |
-| 3 | Hot Smelting | 120M ore + 300K alloy | Smelting | Smelters ×2 |
-| 3 | Alloy Plating | 60M ore + 150K alloy | Smelting | unlocks Alloy Plating |
-| 3 | Harvester Fleet | 120M ore + 400K alloy | Smelting, Crew Link | unlocks Harvester |
-| 3 | Overdrive | 400M ore + 1M alloy | Deep Scan | taps and rigs ×4 |
-| 4 | Night Shift | 4B ore + 15M alloy | Harvester Fleet | 75% offline earnings for up to 12 h (§14) |
-| 4 | Quantum Leap | 2B ore + 8M alloy | Harvester Fleet, Hot Smelting | each player may leap (§13) |
-| 4 | Resonance | 6B ore + 25M alloy | Overdrive, Alloy Plating | broken seams surge the crew (§11.2) |
-| 5 | Stellar Memory | 4 cores | Quantum Leap | runs start at Drill 10 and Drone 10 |
-| 5 | Starseed | 12 cores | Quantum Leap | +20% per held core instead of +10% |
-| 5 | Hyperdrill | 25 cores | Quantum Leap | taps and rigs ×10 |
-| 5 | Dyson Swarm | 40 cores | Quantum Leap | drones and harvesters ×10 |
-| 6 | Singularity Forge | 100 cores + 50T ore | Starseed, Hyperdrill, Dyson Swarm | all income ×3 |
-| 7 | Forge Mastery | 60 cores + 500T ore, ×10 per level | Singularity Forge | all income ×1.5 per level, repeatable |
+| 0 | Forge Core | 5.00K ore |  | Everyone mines ×1.5 ore, and crew contracts start. |
+| 1 | Auto-Rigs | 300.0K ore | Forge Core | Unlocks Auto-Rigs: they tap seams for you. |
+| 1 | Swarm Logic | 500.0K ore | Forge Core | Everyone’s drones produce ×3. |
+| 1 | Crew Charter | 800.0K ore | Forge Core | Unlocks crew roles: Prospector, Engineer or Refiner. Each doubles one part of your game and boosts your crewmates’. |
+| 1 | Fine Optics | 1.20M ore | Forge Core | Critical taps pay ×10 instead of ×5, and Chain Reactors unlock. |
+| 2 | Smelting | 15.00M ore | Auto-Rigs | Unlocks Smelters and the Refinery, which make alloy. |
+| 2 | Foreman Protocol | 25.00M ore | Auto-Rigs, Swarm Logic | Unlocks the Foreman, who auto-buys your upgrades. |
+| 2 | Crew Link | 40.00M ore | Swarm Logic, Crew Charter | All income +20%, plus +20% for each crewmate online with you. Unlocks Crew Uplink. |
+| 2 | Deep Scan | 60.00M ore | Fine Optics | Seams pay ×6 instead of ×3, two more seams appear, and Seam Scanners unlock. |
+| 3 | Hot Smelting | 450.0M ore + 60.00M alloy | Smelting | Smelters and Refineries make twice as much alloy. |
+| 3 | Drone Overclock | 700.0M ore + 90.00M alloy | Foreman Protocol, Smelting | Everyone’s drones and harvesters mine ×3. |
+| 3 | Guild Hall | 900.0M ore + 120.0M alloy | Crew Link | Contracts pay twice as much, and each point of renown is worth +2% instead of +1%. |
+| 3 | Motherlode | 1.20B ore + 150.0M alloy | Deep Scan | Breaking a seam pays ×10 instead of ×5. |
+| 4 | Alloy Plating | 4.00B ore + 600.0M alloy | Hot Smelting | Unlocks Alloy Plating for drones and harvesters. |
+| 4 | Harvester Fleet | 6.00B ore + 900.0M alloy | Drone Overclock | Unlocks Harvesters: big ships that mine 250 ore/s each. |
+| 4 | Comet Lure | 8.00B ore + 1.20B alloy | Guild Hall | Comets come twice as often and pay twice as much. |
+| 4 | Overdrive | 12.00B ore + 1.80B alloy | Motherlode | Taps and Auto-Rigs mine ×4. |
+| 5 | Night Shift | 150.0B ore + 25.00B alloy | Alloy Plating | Earn 75% instead of 25% while away, for up to 12 hours. |
+| 5 | Quantum Leap | 100.0B ore + 15.00B alloy | Harvester Fleet, Hot Smelting | Lets each of you leap: restart your own run for Star Cores. |
+| 5 | Deep Refit | 250.0B ore + 40.00B alloy, ×8 per level | Harvester Fleet, Comet Lure | All income ×1.25 per level. Each level costs ×8. |
+| 5 | Resonance | 400.0B ore + 60.00B alloy | Overdrive, Comet Lure | Breaking a seam gives the whole crew ×2 ore for 15 s. |
+| 6 | Stellar Memory | 3 cores | Quantum Leap | Start every run with 25 Drill and 25 Drone levels. |
+| 6 | Starseed | 8 cores | Quantum Leap | Each Star Core you hold gives +20% instead of +10%. |
+| 6 | Hyperdrill | 15 cores | Quantum Leap | Taps and Auto-Rigs mine ×10. |
+| 6 | Dyson Swarm | 25 cores | Quantum Leap | Drones and Harvesters mine ×10. |
+| 7 | Quantum Echo | 40 cores | Stellar Memory, Starseed | Leaps keep every upgrade that has a max level (Lens, Rigs, Smelters, Foreman…). |
+| 7 | Core Lens | 60 cores | Starseed, Hyperdrill | Leaps pay ×1.5 Star Cores. |
+| 7 | Hive Mind | 80 cores | Hyperdrill, Dyson Swarm | Crew Link pays +35% per crewmate instead of +20%, and role boosts to crewmates double. |
+| 8 | Singularity Forge | 150 cores + 50.00Qa ore | Quantum Echo, Core Lens, Hive Mind | All income ×3. |
+| 9 | Forge Mastery | 100 cores + 500.0Qa ore, ×10 per level | Singularity Forge | All income ×1.5 per level. Each level costs ×10. |
 
-**In the HUD:** the Forge Tree tab draws the nodes by tier with lines to their prerequisites (lit once a prerequisite is unlocked) and a progress ring on each; locked nodes show a padlock and nodes you could finish alone glow. Tapping a node opens its page: what it does, the upgrade it unlocks, its prerequisites or what it leads to, and for each resource of its price a progress bar with **10% of mine**, **50% of mine** and **All I can** (**Finish it** when your wallet covers the rest), the last needing a second tap. Under the buttons the page says how long the remainder would take at your passive income (for cores, that spent cores stop boosting you), and the contributor credits.
+**In the HUD:** the Forge Tree tab draws the nodes by tier with lines to their prerequisites (lit once a prerequisite is unlocked) and a progress ring on each; locked nodes show a padlock and nodes you could finish alone glow. Tapping a node opens its page: what it does, the upgrade it unlocks, its prerequisites or what it leads to, and for each resource of its price a progress bar with **10% of mine**, **50% of mine** and **All I can** (**Finish it** when your wallet covers the rest), the last needing a second tap. Under the buttons the page says how long the remainder would take at your passive income (for cores, that spent cores stop boosting you; for a Refiner, that their contribution counts ×1.25), and the contributor credits.
 
 ---
 
@@ -340,6 +359,7 @@ v0.2's quakes and flares are gone. Comets reward paying attention; surges reward
 * **Spawn:** the first comet comes 45 s after a world starts or loads, then one every 100 to 200 s (uniform, from the previous spawn), only while someone is online. It can be caught for 12 s, plus 0.5 s of grace for latency. The host sends only `{id, at, until, seed}`; each client flies it from the seed inside its own visible area.
 * **Catch:** tapping it sends `comet {id}`; the first catch the host receives wins and later ones are ignored.
 * **Reward:** every online crewmate gets `max(40 s × their passive ore/s, 60 × their tap value)` of ore, and the catcher gets double. It counts as mined ore (run total, smelting).
+* **Comet Lure** (tier 4 node): comets come twice as often (50 to 100 s apart) and pay double.
 
 ### 11.2 Resonance surges
 
@@ -357,73 +377,132 @@ Every wallet is personal.
 
 | Resource | Earned by | Spent on | Colour |
 |---|---|---|---|
-| Ore | taps, drones, harvesters, rigs, comets | most upgrades; every tier 0 to 4 node, Singularity and Mastery | `#ffb03a` |
-| Alloy | Smelters, from a share of the ore you earn | Seam Scanner, Harvester, Alloy Plating; tier 3 and 4 nodes | `#7fe3ff` |
-| Star Cores | Quantum Leap | tier 5 to 7 nodes; each one held is +10% income | `#ffe28a` |
+| Ore | taps, drones, harvesters, rigs, comets, contracts | most upgrades; every tier 0 to 5 node, Singularity and Mastery | `#ffb03a` |
+| Alloy | Smelters (a share of all the ore you earn) and the Refinery (converts passive ore) | Seam Scanner, Harvester, Alloy Plating; tier 3 to 5 nodes | `#7fe3ff` |
+| Star Cores | Quantum Leap | tier 6 to 9 nodes; each one held is +10% income (+20% with Starseed) | `#ffe28a` |
+
+Two layers sit on top of the wallets: **renown** belongs to the world and grows with every finished contract (§12.5), and **Star Cores** belong to each player (§13). Neither is lost on a leap.
 
 ### 12.2 Upgrades
 
-`cost(n) = ceil(base × growth^n)`. The HUD buys ×1, ×10 or Max; the host buys up to 1,000 levels per intent, one at a time, as far as the wallet goes.
+`cost(n) = ceil(base × growth^n)`. The HUD buys ×1, ×10 or Max; the host buys up to 1,000 levels per intent, one at a time, as far as the wallet goes. The Foreman column is the lowest Foreman level that auto-buys it (§9).
 
-| Upgrade | Effect per level | Currency | Base | Growth | Max | Needs node |
-|---|---|---|---|---|---|---|
-| Drill Laser | +1 ore per tap | ore | 12 | 1.18 | | |
-| Mining Drone | +0.5 ore/s | ore | 15 | 1.17 | | |
-| Focus Lens | +1% crit | ore | 120 | 1.45 | 35 | |
-| Auto-Rig | 1 seam tap/s at 25% | ore | 5,000 | 1.4 | 10 | Auto-Rigs |
-| Smelter | 0.25% of ore also becomes alloy | ore | 30,000 | 1.3 | 40 | Smelting |
-| Seam Scanner | seams +25% | alloy | 2,000 | 2 | 10 | Deep Scan |
-| Harvester | +40 ore/s | alloy | 20,000 | 1.22 | | Harvester Fleet |
-| Alloy Plating | drones and harvesters +25% | alloy | 10,000 | 1.9 | 15 | Alloy Plating |
+| Upgrade | Per level | Currency | Base | Growth | Max | Needs node | Foreman |
+|---|---|---|---|---|---|---|---|
+| Drill Laser | +1 ore per tap. ×2 at levels 10, 25, 50 and 100, then every 50. | ore | 20 | 1.2 |  |  | 1 |
+| Mining Drone | +5 ore/s. ×2 at levels 10, 25, 50 and 100, then every 50. | ore | 25 | 1.14 |  |  | 1 |
+| Focus Lens | +1% chance for a critical tap. | ore | 150 | 1.42 | 35 |  | 2 |
+| Combo Coil | Keep tapping to build a streak: a full 30-tap streak pays +10% per level. | ore | 2.00K | 1.7 | 10 | Forge Core | 2 |
+| Night Beacon | While you’re away: +1 hour of earnings and +2.5% offline rate. | ore | 2.50K | 2.6 | 12 |  | 3 |
+| Auto-Rig | Taps a glowing seam for you once a second. | ore | 2.00K | 1.32 | 15 | Auto-Rigs | 2 |
+| Chain Reactor | Crits in a row pay +10% more per level for each crit before them (up to 5). | ore | 15.00K | 1.75 | 10 | Fine Optics | 2 |
+| Foreman | Auto-buys your upgrades while you play. Each level buys more kinds and spends more. | ore | 40.00K | 15 | 3 | Foreman Protocol | 3 |
+| Smelter | Refines 0.25% of all the ore you mine into alloy. | ore | 12.00K | 1.24 | 40 | Smelting | 2 |
+| Refinery | Turns 5% of your passive ore into alloy (1 alloy per 4 ore). You can switch it off. | ore | 60.00K | 1.7 | 10 | Smelting | 3 |
+| Crew Uplink | +3% to all your income for each crewmate online with you. | ore | 100.0K | 1.9 | 10 | Crew Link | 3 |
+| Seam Scanner | Glowing seams pay +25% more. | alloy | 600 | 1.9 | 10 | Deep Scan | 3 |
+| Harvester | +250 ore/s. ×2 at levels 10, 25, 50 and 100, then every 50. | alloy | 1.50K | 1.15 |  | Harvester Fleet | 1 |
+| Alloy Plating | Drones and Harvesters +25%. | alloy | 3.00K | 1.7 | 20 | Alloy Plating | 3 |
 
-Drill Laser, Mining Drone and Harvester double every 25 levels (`milestoneMult`), giving the classic sawtooth.
+* **Producers** (Drill, Drone, Harvester) are uncapped and double at levels 10, 25, 50 and 100, then every 50; everything else has a max level, so Quantum Echo can keep it across leaps.
+* **Why drones got cheaper:** at v0.3 a drone was 0.5 ore/s for 15 ore at ×1.17 per level, so a player tapping three times a second earned ten times more from each Drill level and drones never paid back. Now a drone is 5 ore/s for 25 at ×1.14 (the first one pays for itself in 5 s), drills grow faster (×1.2), Swarm Logic triples drones and Drone Overclock triples them again. For the bot tapping once a second, passive income is 64–79% of its income in the first half hour, dips to about 30% while Deep Scan's seams dominate, and is 85% or more from two hours on (v0.3: 5–48%). At three taps a second taps still lead, as they should.
+* **Upgrades with switches** (Foreman, Refinery) and roles go through one intent, `prefs {role?, auto?, refine?}` (§12.4).
 
 ### 12.3 Pacing
 
-`npm run balance` (`npx tsx shared/scripts/balance.ts`) simulates one solo player who taps 5 times a second (half on seams), buys the upgrade that pays back fastest, saves for the cheapest open node whenever it costs under 6 minutes of income (it always saves for the Quantum Leap node), funds core-priced nodes as soon as it holds the cores, and leaps once a leap is worth at least 4 cores and 40% of all the cores it has earned so far. Measured with `LEAPS=60 HOURS=24` (h:mm):
+`npm run balance` (`npx tsx shared/scripts/balance.ts`) simulates a crew of `CREW` bots (default 1) in one world. Each bot taps `TAPS` times a second (half on seams, spread out so its streak holds), catches 70% of comets, buys the upgrade that pays for itself fastest in each currency, and saves for the cheapest open node once no upgrade pays back within a minute and the node takes less than six minutes of the crew's income (or less than the best upgrade's payback). A crew takes Prospector, Engineer, Refiner, Engineer; a solo bot takes whichever role pays it most. It leaps once a leap is worth at least 3 cores and 40% of all the cores it has earned. The bot never buys the Foreman or Night Beacons. It also prints how many purchases bot 0 made in hour 1 and the longest wait between purchases (levels or nodes).
 
-| Milestone | Bot time | Bot income after |
+**Before and after** (h:mm, solo, `LEAPS=60 HOURS=24`; "before" is the v0.3 rules played by the same bot):
+
+| Milestone | v0.3, 1 tap/s | v0.4, 1 tap/s | v0.3, 3 taps/s | v0.4, 3 taps/s |
+|---|---|---|---|---|
+| Forge Core | 0:00 | 0:00 | 0:00 | 0:00 |
+| Tier 1 complete | 0:14 | 0:08 | 0:05 | 0:04 |
+| Smelting | 0:25 | 0:12 | 0:10 | 0:07 |
+| Crew Link | 0:36 | 0:22 | 0:18 | 0:12 |
+| Deep Scan | 0:57 | 0:30 | 0:29 | 0:16 |
+| New tier 3 complete (Motherlode last) | | 1:22 | | 0:32 |
+| Harvester Fleet | 2:03 | 1:54 | 0:58 | 0:51 |
+| Overdrive | 7:19 | 1:59 | 3:41 | 0:59 |
+| Quantum Leap node, **leap 1** | 6:42 | 2:15 | 3:23 | 1:21 |
+| Night Shift | 8:32 | 2:42 | 4:13 | 1:47 |
+| Starseed | 9:12 | 3:06 | 4:32 | 1:57 |
+| Resonance | 9:26 | 3:38 | 4:41 | 2:25 |
+| Hyperdrill | 12:20 | 4:01 | 6:03 | 2:45 |
+| Dyson Swarm | 13:05 | 4:59 | 6:23 | 3:09 |
+| Quantum Echo, Core Lens, Hive Mind | | 5:43, 7:02, 7:17 | | 3:57, 5:08, 5:24 |
+| **Singularity Forge** | not in 24 h | 12:48 | 11:54 | 9:33 |
+| Longest wait between purchases, hour 1 | 18 min | 12 min | 9 min | 9 min |
+| Longest wait, first 3 h | 18 min | 21 min | 18 min | 17 min |
+| Contracts finished in 24 h (= renown) | | 389 | | 468 |
+
+At v0.3 the tree hit two walls for anyone tapping slowly: Deep Scan an hour in, and the Quantum Leap node, which took over four hours of flat income at ~75K ore/s (at 5 taps/s the leap node came at 1:33 and the Singularity at 7:25; v0.4 gives 0:58 and 7:55). Now each early node is a few minutes of saving, the tier 3 and 4 nodes ten to twenty, and the Quantum Leap node about a quarter of an hour after Overdrive, with Harvesters, Overdrive and the Comet Lure lifting income tenfold on the way. The core-priced nodes come one or two per few leaps, Quantum Echo, Core Lens and Hive Mind after about ten leaps, and the Singularity Forge after a long day; Deep Refit (×8 per level) and Forge Mastery (×10) remain as open-ended sinks. The longest waits left are single big saves: 21 minutes at 1 tap/s for Alloy Plating (from 1:23), and 17 minutes at 3 taps/s for the Quantum Leap node (from 0:59).
+
+**Crews** (1 tap/s each, `CREW=2` and `CREW=4`): flat node prices plus pooled funding, crew bonuses and roles make a crew much faster.
+
+| Milestone | Solo | Crew of 2 | Crew of 4 |
+|---|---|---|---|
+| Crew Link | 0:22 | 0:14 | 0:08 |
+| Tier 3 complete | 1:22 | 0:36 | 0:15 |
+| Quantum Leap node | 2:15 | 1:04 | 0:24 |
+| Dyson Swarm | 4:59 | 2:03 | 0:42 |
+| Singularity Forge | 12:48 | 5:29 | 1:37 |
+
+Real crews coordinate less than bots, but the gap is deliberate: playing together is the fastest way through the tree (§19 asks whether a full crew is now too fast).
+
+### 12.4 Crew play: roles and crew bonuses
+
+Playing together pays in four stacking ways, all of which count only crewmates who are **online**, and all of which are off for offline earnings (offline counts as solo):
+
+* **Crew bonus** (`crewMult`, §9): +5% income per crewmate before Crew Link; with it ×1.2 solo and +20% per crewmate (+35% with Hive Mind).
+* **Crew Uplink** (personal upgrade, needs Crew Link): +3% income per level per crewmate online, max 10 (×1.9 in a crew of four).
+* **Roles** (`ROLES`, Crew Charter node): optional. Set with `prefs {role}`; the first pick is free, then a change waits 2 minutes (`cooldown` reject). A role is ×2 for its owner on one part of the game, and every other online crewmate gets +15% on that part (+30% with Hive Mind) for each crewmate who has that role, so a crew of mixed roles beats four of the same.
+
+| Role | For you | For each crewmate |
 |---|---|---|
-| Forge Core | 0:02 | 24 ore/s |
-| Auto-Rigs | 0:06 | 273 ore/s |
-| Swarm Logic | 0:11 | 401 ore/s |
-| Fine Optics | 0:13 | 1.96K ore/s |
-| Smelting | 0:18 | 13.8K ore/s |
-| Crew Link | 0:23 | 21.1K ore/s |
-| Deep Scan | 0:44 | 129K ore/s |
-| Alloy Plating | 0:46 | 378K ore/s |
-| Hot Smelting | 0:49 | 381K ore/s |
-| Harvester Fleet | 0:52 | 381K ore/s |
-| Quantum Leap node, **leap 1** (+4 cores, 2.37B ore this run), Stellar Memory | 1:48 | |
-| Leaps 2 and 3 (+4 each) | 2:40, 3:16 | |
-| Overdrive, leap 4 (+5), Starseed | 3:46–3:49 | 4.2M ore/s |
-| Night Shift, leaps 5–6, Resonance | 4:19–4:58 | 22M ore/s |
-| Hyperdrill, leaps 7–9, Dyson Swarm | 5:18–5:33 | |
-| Leaps 10–15 (+39 to +208 cores) | 5:58–12:43 | |
-| **Singularity Forge** | 14:03 | 440B ore/s |
+| ⛏️ Prospector | taps and Auto-Rigs ×2; your taps chip an extra 1 HP off seams, so you break more seams (more break bonuses, more Resonance surges, faster seam contracts) | taps +15% |
+| 🛰️ Engineer | drones and harvesters ×2; offline earnings ×1.25 | drones and harvesters +15% |
+| 🔥 Refiner | Smelter and Refinery alloy ×2; ore and alloy you put into the Forge Tree count ×1.25 | alloy +15% |
 
-Each early node is a few minutes of saving, the tier 2 and 3 nodes up to about twenty, and the Quantum Leap node about an hour, during which the bot's income stays flat near 0.4M ore/s because it is saving instead of upgrading. The core-priced tier 5 nodes take a few leaps each, and the Singularity Forge (100 cores and 50T ore) takes most of a day of active play. Forge Mastery is left as an open-ended sink. Leaps 7–9 come only minutes apart right after Hyperdrill lands; past that, runs stretch to an hour or more because leap cores grow with the cube root of a run's ore (§13).
+* **Contracts** (§12.5) pay every crewmate online, and their goals grow by only +60% per extra crewmate, so a crew finishes them faster.
 
-The bot taps faster than people and spends cores on nodes the moment it can, so humans land later; but tree prices do not scale with crew size, so a crew pooling into the tree will unlock it well ahead of the solo bot.
+So one player can tap seams as a Prospector while another runs the fleet as an Engineer and a third refines alloy and banks it into the tree as a Refiner; or everyone can do the same thing; or a solo player takes whichever role suits them.
+
+### 12.5 Crew contracts and renown
+
+Once the Forge Core is unlocked, the world always has a contract on offer while someone is online: the first one 60 s after the core (or after a load), each one open for 8 minutes, and the next 90 s after one ends. `startContract` picks a kind with the host's roll and sizes it for the crew online and the contracts finished so far: goals × `(1 + 0.6 × (online − 1)) × (1 + 0.04 × min(done, 50))`.
+
+| Kind | Goal (solo, first) | Counts |
+|---|---|---|
+| 💎 seams | 12 | seams broken by anyone's taps or Auto-Rigs |
+| ✴️ crits | 30 | critical taps |
+| ⛏️ ore | 200 s of income | ore mined live (not offline earnings or contract pay) |
+| 🌳 fund | 90 s of income | ore put into the Forge Tree (offered only while an open node takes ore) |
+| ☄️ comets | 2 | comets caught |
+| 👊 streak | 40 taps, +2 per contract (max 100) | anyone's best tap streak |
+
+"Income" is `contractIncome = passive ore/s + 2 × tapValue`, averaged over the crew online. Progress per player is kept in `contract.by` for the credits. When the goal is met, the next tick pays every online crewmate `120 s × their contractIncome` (×2 with Guild Hall), adds a point of **renown** to the world, and sends a `contractDone` note; a contract that runs out sends `contractFailed` and costs nothing. A new contract sends a `contract` note. The Upgrades tab shows the running contract, its progress, time left and pay.
+
+**Renown** is the world's own incremental layer: every point is +1% income for everyone who plays in that world (+2% with Guild Hall), and it is saved with the world and kept through every leap. The bot finishes about 17 contracts an hour, so a long session builds a steady multiplier that a crew shares.
 
 ---
 
 ## 13. Prestige: the Quantum Leap
 
-* **Unlock:** the crew funds the Quantum Leap node (tier 4). After that, each player leaps on their own whenever their run is big enough; there is no vote and crewmates are unaffected.
-* **Reward:** `cores = floor(3 × cbrt(runOre / 1B))`, paid only once `runOre` ≥ 1B (`LEAP_MIN_ORE`), so the first leap is worth at least 3. `oreForCores(n)` is the inverse the HUD uses for "next core at". Cube-root scaling means ten times the ore pays a bit over twice the cores, which keeps late leaps from snowballing.
-* **Passive:** every Star Core you hold is +10% to all your income (+20% with Starseed). Cores are also the currency of tier 5 to 7 nodes, so funding one lowers your own multiplier; the node page says so.
-* **Resets** your ore, alloy, upgrade levels and run total (Stellar Memory starts you at Drill 10 and Drone 10). **Keeps** your cores, lifetime stats and the whole Forge Tree.
+* **Unlock:** the crew funds the Quantum Leap node (tier 5). After that, each player leaps on their own whenever their run is big enough; there is no vote and crewmates are unaffected.
+* **Reward:** `cores = floor(3 × lens × cbrt(runOre / 100B))`, paid only once `runOre` ≥ 100B (`LEAP_MIN_ORE`), so the first leap is worth at least 3; `lens` is 1.5 with Core Lens. `oreForCores(n, lens)` is the inverse the HUD uses for "next core at". Cube-root scaling means ten times the ore pays a bit over twice the cores, which keeps late leaps from snowballing.
+* **Passive:** every Star Core you hold is +10% to all your income (+20% with Starseed). Cores are also the currency of tier 6 to 9 nodes, so funding one lowers your own multiplier; the node page says so.
+* **Resets** your ore, alloy, upgrade levels and run total. Stellar Memory starts you at Drill 25 and Drone 25 (past their first two milestones); Quantum Echo keeps every upgrade with a max level (Lens, Combo, Beacon, Rigs, Chain, Foreman, Smelters, Refinery, Uplink, Scanner, Plating). **Keeps** your cores, lifetime stats, your role, the whole Forge Tree and the world's renown.
 * The leap button needs a second tap, and a leap plays the warp.
 
 ---
 
 ## 14. Persistence and offline progress
 
-* **Where:** the solo player's or host's browser saves its world to `localStorage` (`starforge_save_v3`): the seed, seams, the Forge Tree (levels, partial funding, credits) and every crewmate who has played in it, keyed by their browser key (wallet, levels, run, stats, last seen). Comets and surges are not saved, and everyone is saved as offline. A guest's progress in a party lives in the host's world; their own solo world is untouched.
+* **Where:** the solo player's or host's browser saves its world to one of three `localStorage` save slots (`starforge_save_v3_slot1` to `_slot3`; the last one picked is remembered in `starforge_slot`). The pre-slot single save, `starforge_save_v3`, moves into slot 1 the first time the new lobby loads (only if slot 1 is empty, and the old key is removed only once the copy reads back). A slot holds the seed, seams, the Forge Tree (levels, partial funding, credits) and every crewmate who has played in it, keyed by their browser key (wallet, levels, run, stats, last seen). Comets and surges are not saved, and everyone is saved as offline. A guest's progress in a party lives in the host's world; their own solo world is untouched.
 * **Returning crewmates:** when a key the world knows joins again, that player gets their id, wallet, upgrades and credits back plus offline earnings since they were last seen. The host is the first returning key when its save loads.
-* **Migrations:** `fromSave` accepts only `v: 3`, rebuilds a state from `createRoomState` defaults and overlays the save, filling any player field added later. v0.2 saves (`starforge_save_v2`) are not carried over.
-* **Offline gains:** `applyOffline` pays drones, harvesters and rigs at their passive rate (as if solo, no surge) for `min(away, 8 h)` at 25%; Night Shift raises that to 75% for up to 12 h. Smelters take their alloy share as usual. A "welcome back" card shows the gains when the player was away at least a minute.
+* **Migrations:** `fromSave` accepts only `v: 3`, rebuilds a state from `createRoomState` defaults and overlays the save. Each player is built from `freshPlayer` first, so fields added later (role, auto-buy and Refinery switches, contract stats, new upgrade levels) get their defaults; streaks and chains start at zero. The running contract is never saved (the next one is offered a minute after load), while `renown` and `contractsDone` are kept. `settleTree` then drops unknown nodes, clamps funding to the current prices and unlocks any node that is already fully paid under them. v0.4 needed no version bump: v0.3 saves load as they are. v0.2 saves (`starforge_save_v2`) are not carried over.
+* **Offline gains:** `applyOffline` pays drones, harvesters and rigs at their passive rate (as if solo, no surge) for `min(away, 8 h)` at 25%; Night Shift raises that to 75% for up to 12 h. Each Night Beacon adds 1 h and 2.5 points, an Engineer gets ×1.25 on top, and the rate never passes 100%. Refineries take their share of offline ore as they do online. Smelters take their alloy share as usual. A "welcome back" card shows the gains when the player was away at least a minute.
 * **Dedicated server:** `ProgressStore` (`MemoryStore` today) saves rooms every 30 s and on close, using the same save format, and can reload a room by code. Redis and MongoDB adapters slot in behind that interface.
 
 ---
@@ -452,9 +531,9 @@ The bot taps faster than people and spends cores on nodes the moment it can, so 
 
 ## 17. Testing and tooling
 
-* `npm test`: node:test over taps, rate limits, seams and break bonuses, crits, personal upgrades (own wallet, bulk buys, locks, max levels, cost curves), the Forge Tree (several funders, prerequisites, refusals, mixed prices, repeatable nodes, reachability, Crew Link, Deep Scan, Resonance), Quantum Leap and its core curve, returning crewmates and offline caps, comets, saves, `RoomHost` (capacity, returning keys, second tabs, keys never sent to the crew, intents to state and effects), number formatting and the asteroid.
+* `npm test`: node:test over taps, rate limits, seams and break bonuses, crits, personal upgrades (own wallet, bulk buys, locks, max levels, cost curves), the Forge Tree (several funders, prerequisites, refusals, mixed prices, repeatable nodes, reachability, Crew Link, Deep Scan, Resonance), Quantum Leap and its core curve, v0.4's rules (producer milestones and drone payback, tap streaks and crit chains, Refinery, Night Beacon, Uplink, Foreman auto-buy, roles and auras, contracts and renown, the new nodes and the tree layout, migrating a v0.3 save, the `prefs` intent), returning crewmates and offline caps, comets, saves, `RoomHost` (capacity, returning keys, second tabs, keys never sent to the crew, intents to state and effects), number formatting and the asteroid.
 * `npm run typecheck`: strict TypeScript for all packages.
-* `npm run balance`: pacing bot (§12.3).
+* `npm run balance`: pacing bot (§12.3); `CREW=2` or `CREW=4` runs a crew with mixed roles.
 * **End to end (development):** a Playwright script runs a local PeerServer and a faked Firebase, has one player host from the lobby and a friend join through the main menu's friends list, with screenshots on desktop and phone. Its v0.2 checks (refiner presses, flare, quake, leap vote) need replacing with v0.3 ones: buying, funding a node from two wallets, a comet, a leap, and leaving and rejoining with progress restored.
 
 ---
@@ -466,7 +545,7 @@ The bot taps faster than people and spends cores on nodes the moment it can, so 
 | M0 scaffold | workspaces, rules, R3F scene, offline play | done |
 | M1 co-op | host-authoritative PeerJS multiplayer on the live site, saves and offline gains, friends list and invites (v0.2; its roles, refinery, events and votes were replaced in M2) | done |
 | M2 redesign | shared Forge Tree, personal upgrades and leaps, comets and surges, per-browser progress in a host's world, phone-first HUD | **this version** |
-| M3 depth | rig loadouts, more Forge Tree nodes, comet variants, achievements | next |
+| M3 depth | 30-node tree, milestones, streaks and chains, roles, contracts and renown, auto-buy, Refinery (v0.4); rig loadouts, comet variants, achievements | in progress |
 | M4 scale | dedicated hosting with Redis/Mongo, public lobbies, cloud saves on the site account, `Decimal` numbers, voxel terrain | |
 
 ---
@@ -475,5 +554,6 @@ The bot taps faster than people and spends cores on nodes the moment it can, so 
 
 1. **Cloud saves:** mirror the world to the site account (`games.starforge`) so progress follows the player across devices? Today a guest's progress exists only in the host's browser.
 2. **Host migration:** when a host leaves, should the most active guest inherit the room (state is already on every client) instead of everyone returning to the lobby?
-3. **Crew size:** node prices are flat and tuned on a solo bot, so a full crew funds the tree several times faster. Should prices scale with the crew, or is a faster tree the reward for playing together?
-4. **Late-game pacing:** the bot still takes three quick leaps right after Hyperdrill lands (§12.3). Worth watching with real players before touching prices again.
+3. **Crew size:** node prices are still flat. With Crew Link, roles and Uplinks, a crew of two reaches the Quantum Leap node in about 1:04 and the Singularity Forge in 5:29 (solo: 2:15 and 12:48 at 1 tap/s), and a crew of four in 0:24 and 1:37. Should late node prices scale with the number of crewmates who funded them, or is a much faster tree the reward for playing together?
+4. **Late-game pacing:** the core-priced nodes now come every leap or two until Dyson, then Echo, Core Lens and Hive Mind after about ten leaps and the Singularity Forge after a long session (§12.3). Deep Refit and Forge Mastery are the open-ended sinks; whether they are enough for week-long play needs real players.
+5. **Protocol version:** v0.4 added the `prefs` intent without bumping `PROTOCOL_VERSION` (still 3), because a test elsewhere hardcodes `protocol: 3`. An older client simply never sends `prefs`, but bumping to 4 once that test uses the constant would keep mixed versions out of one room.

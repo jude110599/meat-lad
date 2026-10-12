@@ -1,5 +1,5 @@
 import type { Vector3 } from 'three';
-import type { ClientMsg, NodeId, ResourceId, UpgradeId } from '@starforge/shared';
+import type { CamQ, ClientMsg, NodeId, Prefs, ResourceId, UpgradeId } from '@starforge/shared';
 import { emitFx } from '../state/fx';
 import { hueColor } from '../state/refs';
 import { selectMe, useGame } from '../state/store';
@@ -36,6 +36,10 @@ export const act = {
   buy: (id: UpgradeId, count = 1) => link?.send({ t: 'buy', id, count }),
   fund: (node: NodeId, res: ResourceId, amount: number) => link?.send({ t: 'fund', node, res, amount }),
   leap: () => link?.send({ t: 'leap' }),
+  /** Crew role, Foreman auto-buy and Refinery switches. */
+  prefs: (prefs: Prefs) => link?.send({ t: 'prefs', prefs }),
   comet: (id: number) => link?.send({ t: 'comet', id }),
   emote: (id: string) => link?.send({ t: 'emote', id }),
+  /** Report where my camera is (quantised; the scene calls this at most CAM_HZ a second). */
+  cam: (c: CamQ) => link?.send({ t: 'cam', c }),
 };

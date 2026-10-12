@@ -89,7 +89,24 @@ export function Tick({ raw, live, rate = 0 }: { raw: number; live: number; rate?
   );
 }
 
-export type IconName = 'pick' | 'tree' | 'crew' | 'lock' | 'check' | 'back' | 'play' | 'bolt' | 'signal';
+export type IconName =
+  | 'pick'
+  | 'tree'
+  | 'crew'
+  | 'lock'
+  | 'check'
+  | 'back'
+  | 'play'
+  | 'bolt'
+  | 'signal'
+  | 'menu'
+  | 'home'
+  | 'save'
+  | 'trash'
+  | 'plus'
+  | 'host'
+  | 'join'
+  | 'solo';
 
 const ICONS: Record<IconName, React.ReactNode> = {
   pick: (
@@ -130,6 +147,56 @@ const ICONS: Record<IconName, React.ReactNode> = {
       <path d="M4.5 9.5a11 11 0 0 1 15 0" />
       <path d="M7.5 12.8a6.5 6.5 0 0 1 9 0" />
       <circle cx="12" cy="16.8" r="1.6" fill="currentColor" stroke="none" />
+    </>
+  ),
+  menu: (
+    <>
+      <path d="M4.5 7h15" />
+      <path d="M4.5 12h15" opacity=".7" />
+      <path d="M4.5 17h9" opacity=".5" />
+    </>
+  ),
+  home: (
+    <>
+      <path d="M4 11.2 12 4.5l8 6.7" />
+      <path d="M6.5 9.6V19.5h11V9.6" />
+      <path d="M10.2 19.5v-5h3.6v5" opacity=".65" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M5 4.5h11l3 3v12H5z" />
+      <path d="M8 4.5v4.5h7V4.5" opacity=".65" />
+      <rect x="8" y="13" width="8" height="6.5" rx="1" opacity=".65" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4.5 7h15" />
+      <path d="M9.5 7V4.8h5V7" />
+      <path d="M6.5 7l1 12.5h9l1-12.5" />
+      <path d="M10.2 10.5v5.5M13.8 10.5v5.5" opacity=".6" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  host: (
+    <>
+      <circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none" />
+      <path d="M7.4 7.4a6.5 6.5 0 0 0 0 9.2M16.6 7.4a6.5 6.5 0 0 1 0 9.2" />
+      <path d="M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8" opacity=".55" />
+    </>
+  ),
+  join: (
+    <>
+      <path d="M14 4.5h4.5v15H14" opacity=".6" />
+      <path d="M3.5 12h11" />
+      <path d="m10.5 8 4 4-4 4" />
+    </>
+  ),
+  solo: (
+    <>
+      <circle cx="12" cy="8.2" r="3.4" />
+      <path d="M5.5 20c0-3.8 2.9-6.4 6.5-6.4s6.5 2.6 6.5 6.4" />
     </>
   ),
 };

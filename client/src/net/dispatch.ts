@@ -1,7 +1,8 @@
-import { NODES, RESOURCE_DEFS, fmt, randomUnit, type Fx, type RoomState, type ServerMsg, type TickNote } from '@starforge/shared';
+import { CONTRACTS, NODES, RESOURCE_DEFS, contractLabel, fmt, randomUnit, type Fx, type RoomState, type ServerMsg, type TickNote } from '@starforge/shared';
 import { emitFx } from '../state/fx';
 import { hueColor, rockPoint } from '../state/refs';
 import { useGame, type Tone } from '../state/store';
+import { setCrewCams } from '../scene/crewCams';
 import { predicted } from './actions';
 
 const REJECT_TEXT: Record<string, string> = {
@@ -10,6 +11,7 @@ const REJECT_TEXT: Record<string, string> = {
   maxed: 'Already maxed out',
   gone: 'The comet got away',
   'not-ready': 'Mine more this run before leaping',
+  cooldown: 'You can change role again shortly',
 };
 
 /** Throttle repeated toasts of the same kind so spam clicks don't flood the screen. */
@@ -39,6 +41,9 @@ export function onServerMsg(msg: ServerMsg): void {
     }
     case 'fx':
       for (const f of msg.fx) handleFx(f);
+      break;
+    case 'cams':
+      setCrewCams(msg.cams, st.me);
       break;
     case 'error':
       st.set({ netError: msg.error });
@@ -156,4 +161,9 @@ function handleFx(f: Fx): void {
 
 function handleNote(n: TickNote): void {
   if (n.k === 'comet') toastOnce('comet', '☄️ A comet! Tap it before it flies off', 'event', 5000);
+  else if (n.k === 'contract') toastOnce('contract', `${CONTRACTS[n.contract.kind].icon} New crew contract: ${contractLabel(n.contract, fmt)}`, 'event', 5000);
+  else if (n.k === 'contractDone') {
+    const st = useGame.getState();
+    toastOnce('contractDone', `Contract complete! +${fmt(n.rewards[st.me] ?? 0)} ore and +1 renown (${n.renown})`, 'good', 3000);
+  } else if (n.k === 'contractFailed') toastOnce('contractFailed', 'The crew contract ran out of time', 'info', 3000);
 }
