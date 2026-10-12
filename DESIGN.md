@@ -215,7 +215,7 @@ A snapshot is ~4 KB with four players online; at 10 Hz to three guests that is ~
 
 ## 7. Social layer: friends and party invites
 
-`js/friends.js` is one script shared by the main menu and every multiplayer game (Meat Lad, Beetdown, Alien Attack, Starforge). It uses the Firebase account the site already has, and stores everything on the player's existing `accounts/{uid}` document so it works under the existing Firestore rules:
+`js/friends.js` is one script shared by the main menu and every multiplayer game (Meat Lad, Beetdown, Alien Attack, Starforge, Quackpot). It uses the Firebase account the site already has, and stores everything on the player's existing `accounts/{uid}` document so it works under the existing Firestore rules:
 
 | Field | Contents |
 |---|---|
@@ -235,6 +235,7 @@ A snapshot is ~4 KB with four players online; at 10 Hz to three guests that is ~
 * **Main menu:** `MLFriends.menu()` shows a side panel with **Add friend** (by username or email), each friend's status ("playing Starforge", "in a Starforge party" with a **Join** button, "online · on the menu", "offline · seen 5m ago") and incoming invites.
 * **In a game:** `MLFriends.attach({game, party, join, dock})`. While the player has a party open, a mini list shows friends with online dots and **Invite** buttons. An invite pops up for the friend wherever they are on the site; **Join** either calls the game's `join(code)` (same game) or navigates to `<game>/?join=CODE`.
 * **Starforge** reports its party code while hosting or joined and handles `?join=CODE` by joining as a guest. It turns the floating mini list off (`dock: "none"`) and draws the list itself from `MLFriends.state()` / `onChange()`: in the Crew tab with **Invite** buttons (inviting while solo opens a party first), and on the lobby's Join page with **Request to join** for friends in a Starforge party. The lobby pre-fills the player name from the site username.
+* **Quackpot** works the same way (`game: "quackpot"`, `dock: "none"`, `?join=CODE`). Its title screen has a **Multiplayer** page that holds the party controls and the friends list together: **Invite** for online friends, **Join** for friends in a Quackpot party, and **Add friend** / **Accept** / **Decline** through `MLFriends.addFriend()`, `acceptRequest()` and `declineRequest()`, which also return `requests` and `sent` in `state()`. Parties are PeerJS, host-authoritative, up to 4 (peer id `quackpot-v1-CODE`): the host runs the ducks and sends 10 Hz snapshots, guests send poses, shots and hits, and a downed duck goes to whoever downed it.
 
 ---
 
