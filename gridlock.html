@@ -15,6 +15,10 @@
 html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--paper);color:var(--ink);
   font-family:var(--font);-webkit-user-select:none;user-select:none;position:fixed;width:100%}
 #cv{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block;cursor:crosshair}
+/* Ultra graphics: a warm afternoon grade and a soft vignette, done by the browser so they cost the game nothing */
+#cv.ultra{filter:saturate(1.13) contrast(1.04) sepia(.07)}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:1;display:none;background:radial-gradient(ellipse 80% 75% at 50% 45%,rgba(45,35,25,0) 55%,rgba(45,35,25,.22) 100%)}
+#vig.on{display:block}
 button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
 
 #top{position:fixed;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;
@@ -112,6 +116,11 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 .big small{display:block;font-size:11.5px;font-weight:600;opacity:.65;margin-top:1px}
 .big.two{height:58px}
 .small{font-size:12.5px;color:var(--soft);margin-top:12px;line-height:1.45}
+.gfx{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;text-align:left;font-size:14px;font-weight:800}
+.gfx small{display:block;font-size:11.5px;font-weight:600;color:var(--soft);margin-top:1px;line-height:1.3}
+.gfx .seg{display:flex;flex:none;background:#ecebe5;border-radius:12px;padding:3px;gap:2px}
+.gfx .seg button{font-size:13.5px;font-weight:700;padding:8px 13px;border-radius:9px;color:var(--soft)}
+.gfx .seg button.on{background:#24262b;color:#fff}
 .ups{display:grid;gap:10px;margin-top:14px}
 .up{display:flex;align-items:center;gap:14px;text-align:left;border:1.5px solid var(--hair);border-radius:16px;padding:12px 14px;background:#fff;
   transition:border-color .15s,transform .12s}
@@ -128,6 +137,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 </head>
 <body>
 <canvas id="cv"></canvas>
+<div id="vig"></div>
 
 <div id="top">
   <a class="pill iconbtn" href="index.html" title="Back to main menu" aria-label="Back to main menu">
@@ -212,6 +222,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="legend"><span><i style="background:#3d7fe0"></i>Shop</span><span><i style="background:#8a60d0"></i>Office</span><span><i style="background:#ee8a35"></i>Factory</span><span><i style="background:#7fbcf0"></i>Mall</span><span><i style="background:#6fbf4f"></i>Homes</span></div>
     <button class="big two" id="playBtn">Play<small>A building that stays full too long ends the game</small></button>
     <button class="big alt two" id="relaxBtn">Relaxed<small>Just build, no game over</small></button>
+    <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
   </div>
@@ -223,6 +234,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big" id="resumeBtn">Resume</button>
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
+    <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
   </div>
 </div>
 
@@ -259,7 +271,7 @@ const cv=$("cv"); let ctx=cv.getContext("2d");
 const MW=2000, MH=1400;          // map size in world units (metres)
 const LW=7, KERB=2.5;            // lane width, kerb
 const halfW=l=>l*LW+KERB;        // half road width for 1 or 2 lanes each way
-const SPEED={1:52,2:70,3:84};
+const SPEED={1:52,2:80,3:100};
 const RAMP=40, POLL=100, NOISE=40; // overpass run-up length, factory smoke radius, how far past a highway's edge it's too noisy to live
 const LNAME={1:"2-lane street",2:"4-lane avenue",3:"6-lane highway"};
 const ACC=55, BRK=170;
@@ -436,7 +448,8 @@ function genMap(){
     sand:[contourPath(Sf,biome.sandT),contourPath(Sf,biome.sandT+.05)],
     grass:[contourPath(Gf,biome.grassT),contourPath(Gf,biome.grassT+.05)],
     beach:contourPath(Wf,.2), water:contourPath(Wf,WATER), water2:contourPath(Wf,.6), water3:contourPath(Wf,1.05),
-    hills:[HILL-.035,HILL,HILL+.05,HILL+.1,HILL+.16].map(v=>contourPath(Hf,v))
+    hills:[HILL-.035,HILL,HILL+.05,HILL+.1,HILL+.16].map(v=>contourPath(Hf,v)),
+    F:{W:Wf,H:Hf,G:Gf}
   };
   // woods on the grass and round the foot of the hills, a few trees everywhere else
   trees=[];
@@ -594,12 +607,27 @@ function houseAccess(b){
 }
 
 // ---------- snapping & building roads ----------
-function snapR(){ return Math.max(13,(isTouch?30:20)/cam.z); }
+function snapR(){ return Math.max(14,(isTouch?34:24)/cam.z); }
+// how close a road end has to come to a node to join it: a junction pulls from as far as its own paving reaches,
+// so a road ending beside one goes into it instead of making a second junction right next to it
+function joinR(n,R,lanes){
+  const deg=n.segs.length;
+  if(n.type==="round") return Math.max(R,n.trim+6);
+  if(deg>=3) return Math.max(R,(n.mh||halfW(1))+halfW(lanes||laneSel)+6);
+  return deg===1?R*1.25:R;
+}
+// a point on a road, or the node at its end when that's close enough to join instead
+function onSeg(s,t,R,lanes){
+  const A=nodes.get(s.a),B=nodes.get(s.b), L=s.len;
+  if(t*L<Math.max(R*1.2,joinR(A,R,lanes))) return {kind:"node",node:A,x:A.x,y:A.y};
+  if((1-t)*L<Math.max(R*1.2,joinR(B,R,lanes))) return {kind:"node",node:B,x:B.x,y:B.y};
+  return {kind:"seg",seg:s,t,x:A.x+(B.x-A.x)*t,y:A.y+(B.y-A.y)*t};
+}
 function anchorOf(b,lanes){ const o=7+halfW(lanes); return {x:b.door.x+b.fx*o,y:b.door.y+b.fy*o}; }
 function snapAt(wx,wy,ex){
   const R=snapR();
-  let bn=null, bd=R;
-  for(const n of nodes.values()){ if(n.gd>0) continue; const d=Math.hypot(n.x-wx,n.y-wy); if(d<bd){ if(ex&&ex.kind==="node"&&ex.node===n)continue; bd=d; bn=n; } }
+  let bn=null, bd=1;
+  for(const n of nodes.values()){ if(n.gd>0||(ex&&ex.kind==="node"&&ex.node===n)) continue; const d=Math.hypot(n.x-wx,n.y-wy)/joinR(n,R); if(d<bd){ bd=d; bn=n; } }
   if(bn) return {kind:"node",node:bn,x:bn.x,y:bn.y};
   let bs=null, bsd=1e9;
   for(const s of segs.values()){
@@ -608,12 +636,8 @@ function snapAt(wx,wy,ex){
     const A=nodes.get(s.a),B=nodes.get(s.b), p=projSeg(wx,wy,A.x,A.y,B.x,B.y);
     if(p.d<R*.8+halfW(s.lanes)&&p.d<bsd){ bsd=p.d; bs={kind:"seg",seg:s,t:p.t,x:p.x,y:p.y}; }
   }
-  if(bs){
-    const A=nodes.get(bs.seg.a),B=nodes.get(bs.seg.b), L=bs.seg.len;
-    if(bs.t*L<R*1.2) return {kind:"node",node:A,x:A.x,y:A.y};
-    if((1-bs.t)*L<R*1.2) return {kind:"node",node:B,x:B.x,y:B.y};
-    return bs;
-  }
+  if(bs){ const o=onSeg(bs.seg,bs.t,R); if(o.kind==="seg") return bs;
+    if(!(ex&&ex.kind==="node"&&ex.node===o.node)) return o; }
   for(const b of blds){
     if(b.type==="house"&&b.acc) continue;
     if(ex&&ex.kind==="bld"&&ex.b===b) continue;
@@ -639,13 +663,21 @@ function linkWithCrossings(P,Q,lanes,st){
     if(s.a===P.id||s.b===P.id||s.a===Q.id||s.b===Q.id) continue;
     const h=segInter(P,Q,nodes.get(s.a),nodes.get(s.b)); if(h) hits.push({t:h.t,u:h.u,s});
   }
+  // a road drawn right through an existing junction joins it (the crossing maths can miss a road's exact end)
+  if(!st.over){ const L=D(P,Q)||1; for(const n of nodes.values()){ if(n===P||n===Q||n.gd>0) continue; const pr=projSeg(n.x,n.y,P.x,P.y,Q.x,Q.y);
+    if(pr.d<1.5&&pr.t*L>4&&(1-pr.t)*L>4) hits.push({t:pr.t,n}); } }
   hits.sort((a,b)=>a.t-b.t);
   let cur=P;
   for(const h of hits){
-    if(!segs.has(h.s.id)) continue;
-    const L=h.s.len; let m;
-    const mg=Math.min(18,L*.3);   // crossing right by a junction: go through that junction instead of making a second one
-    if(h.u*L<mg) m=nodes.get(h.s.a); else if((1-h.u)*L<mg) m=nodes.get(h.s.b); else m=splitSeg(h.s,h.u);
+    let m;
+    if(h.n){ if(!nodes.has(h.n.id)) continue; m=h.n; }
+    else {
+      if(!segs.has(h.s.id)) continue;
+      const L=h.s.len, A=nodes.get(h.s.a), B=nodes.get(h.s.b);
+      // crossing right by a junction: go through that junction instead of making a second one
+      const mg=n=>Math.min(n.segs.length>=3?Math.max(18,n.trim||0):18,L*(n.segs.length>=3?.42:.3));
+      if(h.u*L<mg(A)) m=A; else if((1-h.u)*L<mg(B)) m=B; else m=splitSeg(h.s,h.u);
+    }
     if(m===cur||D(m,cur)<4||m===Q) continue;
     addPiece(cur,m,lanes,st); cur=m;
   }
@@ -694,6 +726,41 @@ function addStub(pts,P,atStart,hw){
   }
   return pts;
 }
+// a loose road end that stops just short of a road carries on to join it, and one that pokes just past a road
+// is cut back to it. line runs towards the loose end; returns the new end and how many points of the line to keep
+function reachEnd(line,lanes,avoid){
+  const n=line.length, e=line[n-1], R=snapR(), hw=halfW(lanes), ok=s=>!s.over&&!avoid(s);
+  let acc=0;
+  for(let i=n-1;i>0&&acc<60;i--){ const a=line[i-1], b=line[i], L=D(a,b); let best=null;
+    for(const s of segs.values()){ if(!ok(s)) continue; const h=segInter(a,b,nodes.get(s.a),nodes.get(s.b)); if(!h) continue;
+      if(acc+(1-h.t)*L<hw+halfW(s.lanes)+10&&(!best||h.t>best.h.t)) best={h,s}; }
+    if(best) return {keep:i,P:onSeg(best.s,best.h.u,R,lanes)};
+    acc+=L; }
+  let k=n-2; while(k>0&&D(line[k],e)<16) k--;
+  const from=line[Math.max(0,k)], L0=D(from,e); if(L0<6) return null;
+  const ux=(e.x-from.x)/L0, uy=(e.y-from.y)/L0, reach=Math.max(26,R*1.4);
+  let best=null;
+  for(const s of segs.values()){ if(!ok(s)) continue; const r=reach+halfW(s.lanes), h=segInter(e,{x:e.x+ux*r,y:e.y+uy*r},nodes.get(s.a),nodes.get(s.b));
+    if(h&&(!best||h.t*r<best.d)) best={d:h.t*r,s,u:h.u}; }
+  // or another road's dead end straight ahead
+  for(const nd of nodes.values()){ if(nd.segs.length!==1||nd.gd>0||!ok(segs.get(nd.segs[0]))) continue; const vx=nd.x-e.x, vy=nd.y-e.y, al=vx*ux+vy*uy;
+    if(al>0&&al<reach+hw&&Math.abs(vx*uy-vy*ux)<R&&(!best||al<best.d)) best={d:al,node:nd}; }
+  if(!best) return null;
+  return {keep:n,P:best.node?{kind:"node",node:best.node,x:best.node.x,y:best.node.y}:onSeg(best.s,best.u,R,lanes)};
+}
+// the junction a straight road would cross so close beside that the two would run into each other,
+// and how far to slide the road so it goes through that junction instead
+function junctionMagnet(S,E,lanes){
+  const av=s=>touches(S)(s)||touches(E)(s);
+  let best=null;
+  for(const s of segs.values()){ if(s.over||av(s)) continue; const A=nodes.get(s.a), B=nodes.get(s.b), h=segInter(S,E,A,B); if(!h) continue;
+    for(const [n,d] of [[A,h.u*s.len],[B,(1-h.u)*s.len]]){ if((n.segs.length<3&&n.type==="plain")||n.gd>0) continue;
+      if(d>2&&d<(n.trim||14)+halfW(lanes)+2&&(!best||d<best.d)) best={d,n,x:n.x-h.x,y:n.y-h.y}; } }
+  return best;
+}
+// roads that touch the given end, so the other end doesn't snap back onto them
+const touches=P=>s=>P.kind==="seg"?s===P.seg:P.kind==="node"?(s.a===P.node.id||s.b===P.node.id):false;
+const sameSpot=(P,Q)=>Q.kind==="node"&&(P.kind==="node"&&P.node===Q.node||P.kind==="seg"&&(Q.node.id===P.seg.a||Q.node.id===P.seg.b));
 function makePlan(S,raw,wEnd,lanes,forceStraight,over){
   let E=snapAt(wEnd.x,wEnd.y,S);
   if(E.kind==="node"&&S.kind==="seg"&&(E.node.id===S.seg.a||E.node.id===S.seg.b)) E={kind:"free",x:wEnd.x,y:wEnd.y};
@@ -714,13 +781,31 @@ function makePlan(S,raw,wEnd,lanes,forceStraight,over){
       let base=null;
       if(S.kind==="seg") base=Math.atan2(S.seg.uy,S.seg.ux);
       else if(S.kind==="node"&&S.node.segs.length){ const d0=dirFrom(segs.get(S.node.segs[0]),S.node.id); base=Math.atan2(d0.y,d0.x); }
-      if(base!==null) for(let k=0;k<4;k++) cands.push(base+k*Math.PI/2);
-      let bestA=null, bd=.12;
-      for(const c of cands){ let d=Math.abs(((a-c)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI); if(d<bd){bd=d;bestA=c;} }
+      // square to the road it starts from first, and from a little further off than the 15 degree steps
+      const sq=[]; if(base!==null) for(let k=0;k<4;k++) sq.push(base+k*Math.PI/2);
+      const off=c=>Math.abs(((a-c)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI);
+      let bestA=null, bd=.18;
+      for(const c of sq){ const d=off(c); if(d<bd){bd=d;bestA=c;} }
+      if(bestA===null){ bd=.12; for(const c of cands){ const d=off(c); if(d<bd){bd=d;bestA=c;} } }
       if(bestA!==null){ E={kind:"free",x:S.x+Math.cos(bestA)*L,y:S.y+Math.sin(bestA)*L}; guide=bestA; }
+    }
+    if(!over){
+      if(E.kind==="free"){ const r=reachEnd([S,E],lanes,touches(S)); if(r&&!sameSpot(S,r.P)) E=r.P; }
+      if(S.kind==="free"){ const r=reachEnd([E,S],lanes,touches(E)); if(r&&!sameSpot(E,r.P)) S=r.P; }
+      // a road ending square-ish on another road meets it exactly square
+      if(E.kind==="seg"&&S.kind!=="bld"){ const l=D(S,E)||1; if(Math.abs(((E.x-S.x)*E.seg.ux+(E.y-S.y)*E.seg.uy)/l)<.17){
+        const A=nodes.get(E.seg.a), t=((S.x-A.x)*E.seg.ux+(S.y-A.y)*E.seg.uy)/E.seg.len;
+        if(t>0&&t<1){ const q=onSeg(E.seg,t,snapR(),lanes); if(q.kind==="seg") E=q; } } }
+      // crossing a road right beside one of its junctions: slide over and go through the junction instead
+      const mag=junctionMagnet(S,E,lanes);
+      if(mag){ if(S.kind==="free"&&E.kind==="free"){ S={kind:"free",x:S.x+mag.x,y:S.y+mag.y}; E={kind:"free",x:E.x+mag.x,y:E.y+mag.y}; }
+        else if(E.kind==="free"||S.kind==="free"){ const F=E.kind==="free"?S:E, M=E.kind==="free"?E:S, l=D(F,M), dn=Math.hypot(mag.n.x-F.x,mag.n.y-F.y);
+          if(dn>8&&dn<l-8){ const q={kind:"free",x:F.x+(mag.n.x-F.x)/dn*l,y:F.y+(mag.n.y-F.y)/dn*l}; if(E.kind==="free") E=q; else S=q; } } }
     }
     pts=[{x:S.x,y:S.y},{x:E.x,y:E.y}];
   } else {
+    if(!over&&E.kind==="free"){ const line=raw.slice(0,-1).concat([{x:E.x,y:E.y}]), r=reachEnd(line,lanes,touches(S)); if(r&&!sameSpot(S,r.P)){ E=r.P; raw=line.slice(0,r.keep).concat([{x:E.x,y:E.y}]); } }
+    if(!over&&S.kind==="free"){ const line=[{x:S.x,y:S.y}].concat(raw.slice(1)).reverse(), r=reachEnd(line,lanes,touches(E)); if(r&&!sameSpot(E,r.P)){ S=r.P; raw=line.slice(0,r.keep).concat([{x:S.x,y:S.y}]).reverse(); } }
     // ignore the wiggle where the stroke starts or ends on a building or road, so the snapped ends join cleanly
     const zone=Math.max(10,snapR()*.9), inB=(q,P)=>P.kind==="bld"&&Math.hypot(q.x-P.b.x,q.y-P.b.y)<Math.hypot(P.x-P.b.x,P.y-P.b.y)+4;
     const mid=raw.slice(1,-1).filter(q=>D(q,S)>zone&&D(q,E)>zone&&!inB(q,S)&&!inB(q,E));
@@ -768,7 +853,7 @@ function validatePlan(pl){
     const hwN=halfW(pl.lanes), P0=pl.pts[0], P1=pl.pts[pl.pts.length-1];
     outer: for(let i=1;i<pl.pts.length;i++){ const a=pl.pts[i-1], c=pl.pts[i], L=D(a,c); if(L<1) continue; const ux=(c.x-a.x)/L, uy=(c.y-a.y)/L, k=Math.max(1,Math.ceil(L/5));
       for(const sg of segs.values()){ if(Math.abs(ux*sg.ux+uy*sg.uy)<.87) continue;
-        const A=nodes.get(sg.a), B=nodes.get(sg.b), lim=hwN+halfW(sg.lanes)-1, J=hwN+halfW(sg.lanes)+10;
+        const A=nodes.get(sg.a), B=nodes.get(sg.b), lim=hwN+halfW(sg.lanes)+5, J=hwN+halfW(sg.lanes)+10;
         for(let j=0;j<=k;j++){ const x=a.x+(c.x-a.x)*j/k, y=a.y+(c.y-a.y)*j/k;
           if(Math.hypot(x-P0.x,y-P0.y)<J||Math.hypot(x-P1.x,y-P1.y)<J) continue;
           if(projSeg(x,y,A.x,A.y,B.x,B.y).d<lim){ pl.ok=false; pl.reason="Roads can't run on top of each other. Join or cross them at more of an angle."; pl.hitS=sg; break outer; } } } }
@@ -1185,7 +1270,7 @@ function dispatch(){
   }
   const O=outside;
   if(O&&O.acc){
-    const truck=()=>O.cars.find(q=>q.state==="home"&&q.cool<=0);
+    const truck=()=>O.cars.find(q=>q.truck&&q.state==="home"&&q.cool<=0);
     shops=needGoods();
     // imports only top up what the town's own factories can't
     const spare=ds.reduce((n,f)=>n+(f.type==="factory"?Math.floor(f.stock):0),0);
@@ -1196,6 +1281,12 @@ function dispatch(){
     if(fs.length){ const c=truck();
       if(c){ const pl=planRoute({seg:O.acc.seg,t:O.acc.t},fs.map(f=>({b:f,kind:"raw",bonus:3*freePins(f,"raw")})),null);
         if(pl){ c.purpose={d:pl.b,kind:"raw"}; pl.b.claimed.raw++; startDrive(c,O,pl); O.used=true; } else c.cool=2; } }
+    // visitors from out of town drive in along the highway to shop, more of them as the town grows
+    O.visT=(O.visT||0)-.3;
+    if(O.visT<=0){ O.visT=Math.max(2.5,8-level*.5);
+      const ss=ds.filter(d=>(d.type==="shop"||d.type==="mall")&&freePins(d,"cust")>0), c=O.cars.find(q=>!q.truck&&q.state==="home"&&q.cool<=0);
+      if(ss.length&&c){ const pl=planRoute({seg:O.acc.seg,t:O.acc.t},ss.map(d=>({b:d,kind:"cust",bonus:3*freePins(d,"cust")})),null);
+        if(pl){ c.purpose={d:pl.b,kind:"cust"}; pl.b.claimed.cust++; startDrive(c,O,pl); } } }
   }
 }
 function arrive(c){
@@ -1444,6 +1535,8 @@ function makeOutside(){
     for(const tr of trees) if(tr.alive&&projSeg(tr.x,tr.y,A.x,A.y,B.x,B.y).d<halfW(2)+12) tr.alive=false;
     outside={type:"out",node:A.id,x:e.x-f.x*30,y:e.y-f.y*30,fx:f.x,fy:f.y,ex:e.x,ey:e.y,door:{x:e.x-f.x*60,y:e.y-f.y*60},cars:[],acc:null,r:0,w:0,d:0};
     for(let i=0;i<6;i++){ const c=newCar(outside,true); outside.cars.push(c); cars.push(c); }
+    for(let i=0;i<3;i++){ const c=newCar(outside,false); outside.cars.push(c); cars.push(c); }
+    outside.visT=6;
     return;
   }
 }
@@ -1504,7 +1597,8 @@ function levelUp(){
   const left=trayCount();
   level++; lvTrips=0; paused=true; res.road+=500;
   const add=levelBatch(level);
-  if(outside) while(outside.cars.length<Math.min(16,5+level)){ const c=newCar(outside,true); outside.cars.push(c); cars.push(c); }
+  if(outside){ const top=(tr,n)=>{ while(outside.cars.filter(c=>c.truck===tr).length<n){ const c=newCar(outside,tr); outside.cars.push(c); cars.push(c); } };
+    top(true,Math.min(16,5+level)); top(false,Math.min(12,2+level)); }
   $("weekTitle").textContent="Level "+level;
   $("weekSub").textContent="The town is growing. You got 500 m more road and "+trayText(add)+" to place with Build"+(left?", on top of the "+left+" you still had":"")+". Pick one more thing for the town.";
   const pool=UPGRADES.slice(), picks=[pool.shift()];
@@ -1869,10 +1963,29 @@ function laneGlyph(S,H,x,y,ax,ay,set){
   if(hL){ mv(S,-1.8,0); qd(S,.7,0,.7,-1.7); tri([.7,-4.6],[-1.2,-1.7],[2.6,-1.7]); }
   if(hR){ mv(S,-1.8,0); qd(S,.7,0,.7,1.7); tri([.7,4.6],[-1.2,1.7],[2.6,1.7]); }
 }
+// the paved area of a junction: each road's end, joined round to the next road by a kerb that curves in,
+// so a T-junction has a flat far side and a wide road meeting a narrow one tapers instead of bulging
+function junctionPath(n,P){
+  const arms=n.segs.map(id=>{ const s=segs.get(id), d=dirFrom(s,n.id), t=trimAt(s,n.id); return {d,t,hw:halfW(s.lanes),a:Math.atan2(d.y,d.x),q:{x:n.x+d.x*t,y:n.y+d.y*t}}; }).sort((p,q)=>p.a-q.a);
+  const m=arms.length;
+  for(let i=0;i<m;i++){
+    const A=arms[i], B=arms[(i+1)%m], la={x:-A.d.y,y:A.d.x}, lb={x:-B.d.y,y:B.d.x};
+    const p1={x:A.q.x+la.x*A.hw,y:A.q.y+la.y*A.hw}, p2={x:B.q.x-lb.x*B.hw,y:B.q.y-lb.y*B.hw};
+    if(!i) P.moveTo(A.q.x-la.x*A.hw,A.q.y-la.y*A.hw);
+    P.lineTo(p1.x,p1.y);
+    // the corner where the two kerbs would meet if they carried straight on
+    const den=A.d.x*B.d.y-A.d.y*B.d.x, wx=p2.x-p1.x, wy=p2.y-p1.y;
+    let curved=false;
+    if(Math.abs(den)>.05){ const sa=(wx*B.d.y-wy*B.d.x)/den, sb=(wx*A.d.y-wy*A.d.x)/den;
+      if(sa<=0&&sb<=0&&sa>-(A.t+2*A.hw+10)&&sb>-(B.t+2*B.hw+10)){ P.quadraticCurveTo(p1.x+A.d.x*sa,p1.y+A.d.y*sa,p2.x,p2.y); curved=true; } }
+    if(!curved) P.lineTo(p2.x,p2.y);
+  }
+  P.closePath();
+}
 const roadLayer=()=>({body:{1:new Path2D(),2:new Path2D(),3:new Path2D()},yel:new Path2D(),dbl:new Path2D(),white:new Path2D(),shadow:{1:new Path2D(),2:new Path2D(),3:new Path2D()},ends:[],any:false});
 function buildRoadCache(){
   const G=roadLayer(), U=roadLayer(), stops=new Path2D(), arrows=new Path2D(), heads0=new Path2D(), slipS=new Path2D(), slipH=new Path2D(), drives=new Path2D(), rails={1:new Path2D(),2:new Path2D(),3:new Path2D()};
-  const disks=[], rings=[], heads=[];
+  const junc=new Path2D(), rings=[], heads=[];
   // centre line for a 2-lane street; double yellow and dashed lane lines on wider roads
   const marks=(Ly,lanes,f)=>{ if(lanes===1) f(Ly.yel,0); else { f(Ly.dbl,0); for(let k=1;k<lanes;k++){ f(Ly.white,k*LW); f(Ly.white,-k*LW); } } };
   for(const s of segs.values()){
@@ -1894,14 +2007,15 @@ function buildRoadCache(){
   for(const n of nodes.values()){
     const deg=n.segs.length;
     if(deg===1){ const s=segs.get(n.segs[0]); if(s.over) U.ends.push({x:n.x,y:n.y,r:halfW(s.lanes)}); }
-    if(deg===2&&n.type==="plain"){
+    if(deg===2&&n.type==="plain"&&segs.get(n.segs[0]).lanes!==segs.get(n.segs[1]).lanes&&!segs.get(n.segs[0]).over&&!segs.get(n.segs[1]).over) junctionPath(n,junc);
+    else if(deg===2&&n.type==="plain"){
       const s1=segs.get(n.segs[0]), s2=segs.get(n.segs[1]), d1=dirFrom(s1,n.id), d2=dirFrom(s2,n.id), t1=trimAt(s1,n.id), t2=trimAt(s2,n.id);
       const q1={x:n.x+d1.x*t1,y:n.y+d1.y*t1}, q2={x:n.x+d2.x*t2,y:n.y+d2.y*t2}, Ly=s1.over&&s2.over?U:G;
       for(const L of new Set([s1.lanes,s2.lanes])){ Ly.body[L].moveTo(q1.x,q1.y); Ly.body[L].quadraticCurveTo(n.x,n.y,q2.x,q2.y); }
       if(s1.lanes===s2.lanes) marks(Ly,s1.lanes,(P,o)=>{ if(o) offsetQuad(P,q1,n,q2,o,10); else { P.moveTo(q1.x,q1.y); P.quadraticCurveTo(n.x,n.y,q2.x,q2.y); } });
     } else if(deg>=3){
       if(n.type==="round") rings.push({x:n.x,y:n.y,R:ringR(n),outer:n.trim});
-      else disks.push({x:n.x,y:n.y,r:n.trim+.5});
+      else junctionPath(n,junc);
       if(n.type!=="round") for(const id of n.segs){
         const s=segs.get(id), d=dirFrom(s,n.id), tr=trimAt(s,n.id), q={x:n.x+d.x*tr,y:n.y+d.y*tr};
         const ax=-d.x, ay=-d.y, rx=-ay, ry=ax;     // arriving direction and its right side
@@ -1919,7 +2033,7 @@ function buildRoadCache(){
   if(outside){ const n=nodes.get(outside.node); if(n&&n.segs.length){ const s=segs.get(n.segs[0]), f={x:outside.fx,y:outside.fy}, e={x:n.x-f.x*420,y:n.y-f.y*420};
     G.body[s.lanes].moveTo(n.x,n.y); G.body[s.lanes].lineTo(e.x,e.y);
     marks(G,s.lanes,(P,o)=>{ P.moveTo(n.x-f.y*o,n.y+f.x*o); P.lineTo(e.x-f.y*o,e.y+f.x*o); }); } }
-  roadCache={G,U,stops,arrows,heads0,slipS,slipH,rails,drives,disks,rings,heads};
+  roadCache={G,U,stops,arrows,heads0,slipS,slipH,rails,drives,junc,rings,heads,dec:ultra?roadDecals():null};
 }
 
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
@@ -1929,15 +2043,117 @@ let view={x0:0,y0:0,x1:0,y1:0};
 const inView=(x,y,m)=>x>view.x0-m&&x<view.x1+m&&y>view.y0-m&&y<view.y1+m;
 function worldT(){ ctx.setTransform(dpr*cam.z,0,0,dpr*cam.z,dpr*(vw/2-cam.x*cam.z),dpr*(vh/2-cam.y*cam.z)); }
 
+// ---------- graphics: Normal is the flat cartoon look; Ultra adds soft shadows, reflections and wear on top ----------
+let ultra=false;
+try{ ultra=localStorage.getItem("gridlockGfx")==="ultra"; }catch(e){}
+function setGfx(g){ ultra=g==="ultra"; try{ localStorage.setItem("gridlockGfx",ultra?"ultra":"normal"); }catch(e){} tkey=""; if(roadCache) buildRoadCache(); gfxButtons(); }
+function gfxButtons(){ cv.classList.toggle("ultra",ultra); $("vig").classList.toggle("on",ultra);
+  document.querySelectorAll("[data-gfx]").forEach(b=>{ const on=b.dataset.gfx===(ultra?"ultra":"normal"); b.classList.toggle("on",on); b.setAttribute("aria-pressed",on); }); }
+// a fixed scatter of numbers for Ultra's decorations, so they stay put and never touch the game's own dice
+function hash(i,k){ let x=(Math.imul(i|0,374761393)+Math.imul(k|0,668265263))|0; x=Math.imul(x^(x>>>13),1274126177); x^=x>>>16; return (x>>>0)/4294967296; }
+const fieldAt=(F,x,y)=>F[clamp(Math.round((y-TY0)/TG),0,TNY-1)*TNX+clamp(Math.round((x-TX0)/TG),0,TNX-1)];
+// grass tufts and flowers on the grass, pebbles on the bare ground, glints on the water: made once per map
+function decor(){
+  const T=terrain; if(T.decor) return T.decor;
+  const F=T.F, gt=biome.grassT, tuft=new Path2D(), tuft2=new Path2D(), fl=[new Path2D(),new Path2D(),new Path2D(),new Path2D()], peb=new Path2D(), pebL=new Path2D(), glints=[];
+  for(let i=0;i<9000;i++){
+    const x=TX0+hash(i,1)*(MW+600), y=TY0+hash(i,2)*(MH+600), w=fieldAt(F.W,x,y), r=hash(i,3);
+    if(w>WATER+.12){ if(r<.06) glints.push({x,y,r:1.4+hash(i,4)*1.6,p:hash(i,5)*40}); continue; }
+    if(w>.2||fieldAt(F.H,x,y)>HILL-.05) continue;
+    const g=fieldAt(F.G,x,y);
+    if(g>gt){ const lush=g>gt+.05;
+      if(lush&&r<.13){ const P=fl[i%4]; for(let k=0;k<3;k++){ const a=hash(i,6+k)*6.28, d=1+hash(i,9+k)*1.8, fx=x+Math.cos(a)*d, fy=y+Math.sin(a)*d; P.moveTo(fx+.8,fy); P.arc(fx,fy,.8,0,7); } }
+      else if(r<.7){ const P=lush?tuft2:tuft, z=1.6+hash(i,12)*1.5; P.moveTo(x-z*.7,y-z*.9); P.lineTo(x,y); P.lineTo(x+z*.12,y-z*1.3); P.moveTo(x,y); P.lineTo(x+z*.75,y-z*.85); } }
+    else if(r<.2){ const z=.7+hash(i,13)*1.1; peb.moveTo(x+z,y); peb.ellipse(x,y,z,z*.72,hash(i,14)*3,0,7); pebL.moveTo(x-z*.2+z*.38,y-z*.22); pebL.arc(x-z*.2,y-z*.22,z*.38,0,7); }
+  }
+  return T.decor={tuft,tuft2,fl,peb,pebL,glints,tc:shade(biome.grass[0],-38),tc2:shade(biome.grass[1],-44)};
+}
+function drawDecor(){
+  const d=decor();
+  ctx.lineCap="round"; ctx.lineJoin="round"; ctx.lineWidth=.55;
+  ctx.strokeStyle=d.tc; ctx.globalAlpha=.55; ctx.stroke(d.tuft); ctx.strokeStyle=d.tc2; ctx.stroke(d.tuft2); ctx.globalAlpha=1;
+  ctx.fillStyle="rgba(120,110,90,.28)"; ctx.fill(d.peb); ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fill(d.pebL);
+  ["#ffffff","#f6d74a","#f29bb8","#b79cf0"].forEach((c,i)=>{ ctx.fillStyle=c; ctx.fill(d.fl[i]); });
+  ctx.lineCap="butt";
+}
+// speckled tarmac
+let tarPat=null;
+function tarmac(){
+  if(tarPat) return tarPat;
+  const c=document.createElement("canvas"); c.width=c.height=128; const g=c.getContext("2d");
+  for(let i=0;i<900;i++){ const x=hash(i,21)*128, y=hash(i,22)*128, r=.5+hash(i,23)*1.1;
+    g.fillStyle=hash(i,24)<.7?"rgba(95,90,78,.055)":"rgba(255,255,255,.4)"; g.beginPath(); g.arc(x,y,r,0,7); g.fill(); }
+  tarPat=ctx.createPattern(c,"repeat"); if(tarPat.setTransform) tarPat.setTransform(new DOMMatrix().scale(.25));
+  return tarPat;
+}
+// Ultra's road wear: zebra crossings at junctions, manholes, patched and cracked tarmac, and tyre marks
+function roadDecals(){
+  const zeb=new Path2D(), patch=new Path2D(), crack=new Path2D(), tyre=new Path2D(), hole=new Path2D(), holeL=new Path2D();
+  for(const s of segs.values()){
+    if(s.over) continue;
+    const A=nodes.get(s.a), hw=halfW(s.lanes), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb, id=s.id*31;
+    if(run<24) continue;
+    const at=(d,o)=>({x:A.x+s.ux*(s.ta+d)+nx*o,y:A.y+s.uy*(s.ta+d)+ny*o});
+    for(let d=20+hash(id,1)*30,k=0;d<run-14;d+=55+hash(id,k+2)*60,k++){
+      const lane=Math.floor(hash(id,k+40)*s.lanes*2)-s.lanes, p=at(d,(lane+.5)*LW);
+      hole.moveTo(p.x+2,p.y); hole.arc(p.x,p.y,2,0,7);
+      for(const o of [-.9,0,.9]){ holeL.moveTo(p.x+o*s.ux-1.4*nx,p.y+o*s.uy-1.4*ny); holeL.lineTo(p.x+o*s.ux+1.4*nx,p.y+o*s.uy+1.4*ny); } }
+    for(let d=12+hash(id,3)*40,k=0;d<run-16;d+=40+hash(id,k+60)*70,k++){
+      const r=hash(id,k+80);
+      if(r<.45){ const w=6+hash(id,k+90)*10, h=3+hash(id,k+100)*(hw-3), o=(hash(id,k+110)-.5)*(2*hw-h-3), c=[at(d-w/2,o-h/2),at(d+w/2,o-h/2),at(d+w/2,o+h/2),at(d-w/2,o+h/2)];
+        patch.moveTo(c[0].x,c[0].y); for(let q=1;q<4;q++) patch.lineTo(c[q].x,c[q].y); patch.closePath(); }
+      else if(r<.8){ let o=(hash(id,k+120)-.5)*(2*hw-4), dd=d, p=at(dd,o); crack.moveTo(p.x,p.y);
+        for(let q=0;q<4;q++){ dd+=2+hash(id,k*7+q+130)*3; o+=(hash(id,k*7+q+140)-.5)*3; p=at(dd,o); crack.lineTo(p.x,p.y); } } }
+  }
+  for(const n of nodes.values()){
+    if(n.segs.length<3||n.type==="round") continue;
+    const arms=n.segs.map(id=>{ const s=segs.get(id); return {s,d:dirFrom(s,n.id),t:trimAt(s,n.id)}; }).sort((a,b)=>Math.atan2(a.d.y,a.d.x)-Math.atan2(b.d.y,b.d.x));
+    for(const a of arms){ const s=a.s, hw=halfW(s.lanes); if(s.over||s.len-s.ta-s.tb<24) continue;
+      const lx=-a.d.y, ly=a.d.x;
+      for(let o=-hw+2.4;o<=hw-2.3;o+=2.7){ const x=n.x+a.d.x*(a.t+1.2)+lx*o, y=n.y+a.d.y*(a.t+1.2)+ly*o; zeb.moveTo(x,y); zeb.lineTo(x+a.d.x*4.6,y+a.d.y*4.6); } }
+    // where cars have swept round the corners
+    for(let i=0;i<arms.length;i++){ if(hash(n.id,i)<.35) continue; const A1=arms[i], A2=arms[(i+1)%arms.length];
+      const p=(a,o)=>({x:n.x+a.d.x*a.t-a.d.y*o,y:n.y+a.d.y*a.t+a.d.x*o});
+      for(const o of [LW*.5-1.3,LW*.5+1.3]){ const p1=p(A1,-o), p2=p(A2,o); tyre.moveTo(p1.x,p1.y); tyre.quadraticCurveTo(n.x,n.y,p2.x,p2.y); } }
+  }
+  return {zeb,patch,crack,tyre,hole,holeL};
+}
+// a band of reflected sky sliding slowly over a pane of glass (on the building's own plan)
+function sheen(x,y,w,h,seed,ox,ow){
+  if(!ultra) return;
+  if(ox===undefined){ ox=x; ow=w; }
+  const ph=((performance.now()/1000*.11+seed*.37)%1.7)-.35, bx=ox+ph*(ow+h), bw=Math.max(2,ow*.16);
+  ctx.save(); ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
+  ctx.fillStyle="rgba(255,255,255,.45)"; ctx.beginPath(); ctx.moveTo(bx,y); ctx.lineTo(bx+bw,y); ctx.lineTo(bx+bw-h,y+h); ctx.lineTo(bx-h,y+h); ctx.closePath(); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,.22)"; ctx.beginPath(); ctx.moveTo(bx+bw*1.6,y); ctx.lineTo(bx+bw*2,y); ctx.lineTo(bx+bw*2-h,y+h); ctx.lineTo(bx+bw*1.6-h,y+h); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+// oil stains where cars stand in a car park (on the building's own plan)
+function stains(b,pts){ if(!ultra) return; ctx.fillStyle="rgba(70,62,50,.1)"; ctx.beginPath();
+  pts.forEach((q,i)=>{ if(hash(b.id*7+i,3)<.72) return; const rx=1.6+hash(b.id,i+5)*1.4; ctx.moveTo(q.x+rx,q.y); ctx.ellipse(q.x,q.y,rx,rx*.7,hash(i,b.id)*3,0,7); }); ctx.fill(); }
+// cloud shadows drifting over the town
+function drawClouds(){
+  const now=performance.now()/1000, W=MW+1400, H=MH+1000;
+  for(let i=0;i<8;i++){
+    const cx=((hash(i,1)*W+now*7)%W)-700, cy=((hash(i,2)*H+now*2.5)%H)-500, R=110+hash(i,3)*120;
+    if(cx+R*1.8<view.x0||cx-R*1.8>view.x1||cy+R*1.3<view.y0||cy-R*1.3>view.y1) continue;
+    for(let k=0;k<5;k++){ const bx=cx+(hash(i,10+k)-.5)*R*1.6, by=cy+(hash(i,20+k)-.5)*R*.8, r=R*(.4+hash(i,30+k)*.4);
+      const g=ctx.createRadialGradient(bx,by,0,bx,by,r); g.addColorStop(0,"rgba(35,45,80,.07)"); g.addColorStop(.55,"rgba(35,45,80,.05)"); g.addColorStop(1,"rgba(35,45,80,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(bx,by,r,0,7); ctx.fill(); } }
+}
+function glow(x,y,r,rgb,a){ const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,"rgba("+rgb+","+a+")"); g.addColorStop(1,"rgba("+rgb+",0)"); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+
 function drawGround(){
   const T=terrain, B=biome, W=MW+600, H=MH+600;
   ctx.fillStyle=B.base; ctx.fillRect(TX0,TY0,W,H);
   ctx.fillStyle=B.sand[0]; ctx.fill(T.sand[0],"evenodd"); ctx.fillStyle=B.sand[1]; ctx.fill(T.sand[1],"evenodd");
   ctx.fillStyle=B.grass[0]; ctx.fill(T.grass[0],"evenodd"); ctx.fillStyle=B.grass[1]; ctx.fill(T.grass[1],"evenodd");
   ctx.fillStyle=B.beach; ctx.fill(T.beach,"evenodd");
+  if(ultra){ ctx.strokeStyle="rgba(130,105,60,.14)"; ctx.lineWidth=8; ctx.stroke(T.water); ctx.lineWidth=4; ctx.stroke(T.water); }
   ctx.fillStyle="#b5c9f3"; ctx.fill(T.water,"evenodd"); ctx.fillStyle="#a3bbef"; ctx.fill(T.water2,"evenodd"); ctx.fillStyle="#92adeb"; ctx.fill(T.water3,"evenodd");
   // hills in steps, each one lit on top and throwing a shadow down the slope
   T.hills.forEach((p,k)=>{
+    if(k&&ultra){ ctx.save(); ctx.translate(10,14); ctx.fillStyle="rgba(40,35,25,.06)"; ctx.fill(p,"evenodd"); ctx.translate(-3,-4); ctx.fill(p,"evenodd"); ctx.restore(); }
     if(k){ ctx.save(); ctx.translate(4,6); ctx.fillStyle="rgba(40,35,25,.2)"; ctx.fill(p,"evenodd"); ctx.restore();
       ctx.save(); ctx.translate(-1.2,-1.6); ctx.fillStyle=B.lite[k]; ctx.fill(p,"evenodd"); ctx.restore(); }
     ctx.fillStyle=B.hill[k]; ctx.fill(p,"evenodd"); });
@@ -1946,14 +2162,21 @@ function drawGround(){
   ctx.strokeStyle="rgba(70,66,56,.2)"; ctx.lineWidth=1.5; ctx.strokeRect(0,0,MW,MH);
 }
 function drawTrees(){
-  const sh=new Path2D(), c0=new Path2D(), c1=new Path2D(), c2=new Path2D(), hl=new Path2D();
+  const sh=new Path2D(), c0=new Path2D(), c1=new Path2D(), c2=new Path2D(), hl=new Path2D(), U=ultra, sh2=new Path2D(), rim=new Path2D(), mid=new Path2D(), sp=new Path2D();
   for(const tr of trees){ if(!tr.alive||!inView(tr.x,tr.y,14)) continue; const r=tr.r, sx=tr.x+SHX*4, sy=tr.y+SHY*4;
     sh.moveTo(sx+r,sy); sh.arc(sx,sy,r,0,7);
     const P=tr.s<.4?c0:tr.s<.75?c1:c2; P.moveTo(tr.x+r,tr.y); P.arc(tr.x,tr.y,r,0,7);
-    const hx=tr.x-r*.3, hy=tr.y-r*.32; hl.moveTo(hx+r*.55,hy); hl.arc(hx,hy,r*.55,0,7); }
-  ctx.fillStyle="rgba(30,50,20,.2)"; ctx.fill(sh);
+    const hx=tr.x-r*.3, hy=tr.y-r*.32; hl.moveTo(hx+r*.55,hy); hl.arc(hx,hy,r*.55,0,7);
+    if(U){ const r2=r*1.22, x2=tr.x+SHX*7.5, y2=tr.y+SHY*7.5; sh2.moveTo(x2+r2,y2); sh2.arc(x2,y2,r2,0,7);
+      rim.moveTo(tr.x+r+.8,tr.y+.5); rim.arc(tr.x,tr.y+.5,r+.8,0,7);
+      const mx=tr.x-r*.14, my=tr.y-r*.17; mid.moveTo(mx+r*.8,my); mid.arc(mx,my,r*.8,0,7);
+      const qx=tr.x-r*.42, qy=tr.y-r*.46; sp.moveTo(qx+r*.2,qy); sp.arc(qx,qy,r*.2,0,7); } }
+  if(U){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.fill(sh2); ctx.fillStyle="rgba(30,50,20,.17)"; ctx.fill(sh); ctx.fillStyle="rgba(38,72,28,.6)"; ctx.fill(rim); }
+  else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.fill(sh); }
   ctx.fillStyle="#5d9c41"; ctx.fill(c0); ctx.fillStyle="#4d8a37"; ctx.fill(c1); ctx.fillStyle="#6aa84a"; ctx.fill(c2);
+  if(U){ ctx.fillStyle="rgba(125,185,85,.32)"; ctx.fill(mid); }
   ctx.fillStyle="rgba(150,205,105,.55)"; ctx.fill(hl);
+  if(U){ ctx.fillStyle="rgba(232,255,195,.6)"; ctx.fill(sp); }
 }
 // the ground and trees only change when the camera zooms or something gets built, so keep a picture of them
 // with a margin round the screen; a small pan just slides the picture instead of drawing it again
@@ -1962,14 +2185,14 @@ function drawTerrain(){
   if(!tcv) tcv=document.createElement("canvas");
   const M=Math.round(Math.min(cv.width,cv.height)*.3), k=dpr*cam.z;
   if(tcv.width!==cv.width+2*M||tcv.height!==cv.height+2*M){ tcv.width=cv.width+2*M; tcv.height=cv.height+2*M; tkey=""; }
-  const key=cam.z+","+tver;
+  const key=cam.z+","+tver+","+ultra;
   let ox=Math.round((tcx-cam.x)*k), oy=Math.round((tcy-cam.y)*k);
   if(key!==tkey||Math.abs(ox)>M||Math.abs(oy)>M){ tkey=key; tcx=cam.x; tcy=cam.y; ox=oy=0;
     const main=ctx, v0=view, m=M/k; ctx=tcv.getContext("2d");
     view={x0:v0.x0-m,y0:v0.y0-m,x1:v0.x1+m,y1:v0.y1+m};
     ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle="#d9d7cf"; ctx.fillRect(0,0,tcv.width,tcv.height);
     ctx.setTransform(k,0,0,k,M+dpr*(vw/2-cam.x*cam.z),M+dpr*(vh/2-cam.y*cam.z));
-    drawGround(); drawTrees(); ctx=main; view=v0; }
+    drawGround(); if(ultra&&cam.z>.45) drawDecor(); drawTrees(); ctx=main; view=v0; }
   ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(tcv,ox-M,oy-M);
 }
 let wavePat=null;
@@ -1987,6 +2210,17 @@ function drawWater(){
     const ox=Math.cos(dir)*now*sp, oy=Math.sin(dir)*now*sp+Math.sin(now*.9+ph)*1.5;
     ctx.save(); ctx.globalAlpha=al*(.7+.3*Math.sin(now*1.1+ph)); ctx.translate(ox,oy); ctx.scale(sc,sc); ctx.fillStyle=wavePat;
     ctx.fillRect((view.x0-ox)/sc-4,(view.y0-oy)/sc-4,(view.x1-view.x0)/sc+8,(view.y1-view.y0)/sc+8); ctx.restore(); }
+  if(ultra){
+    // the sky reflected in the water, brighter towards the sun, and the sun glinting off the ripples
+    const g=ctx.createLinearGradient(view.x0,view.y0,view.x1,view.y1);
+    g.addColorStop(0,"rgba(255,255,255,.26)"); g.addColorStop(.45,"rgba(255,255,255,.06)"); g.addColorStop(1,"rgba(30,60,140,.12)");
+    ctx.fillStyle=g; ctx.fillRect(view.x0,view.y0,view.x1-view.x0,view.y1-view.y0);
+    ctx.fillStyle="#fff";
+    for(const q of decor().glints){ if(!inView(q.x,q.y,4)) continue; const a=Math.pow(Math.max(0,Math.sin(now*1.6+q.p)),8); if(a<.04) continue;
+      const r=q.r*(.6+a*.6); ctx.globalAlpha=a*.9; ctx.beginPath(); ctx.moveTo(q.x-r,q.y); ctx.lineTo(q.x,q.y-r*.28); ctx.lineTo(q.x+r,q.y); ctx.lineTo(q.x,q.y+r*.28); ctx.closePath();
+      ctx.moveTo(q.x,q.y-r*.7); ctx.lineTo(q.x+r*.2,q.y); ctx.lineTo(q.x,q.y+r*.7); ctx.lineTo(q.x-r*.2,q.y); ctx.closePath(); ctx.fill(); }
+    ctx.globalAlpha=1;
+  }
   ctx.restore();
   ctx.lineCap="round";
   ctx.strokeStyle="rgba(255,255,255,.6)"; ctx.lineWidth=1.5; ctx.setLineDash([6,9]); ctx.lineDashOffset=-now*4; ctx.stroke(T.water);
@@ -2008,27 +2242,42 @@ function drawRoads(){
   // bridges over water: the deck's shadow on the water, then its sides
   ctx.save(); ctx.translate(SHX*7,SHY*7); ctx.strokeStyle="rgba(30,50,100,.2)"; for(const l of [1,2,3]){ ctx.lineWidth=2*halfW(l)+7; ctx.stroke(rc.rails[l]); } ctx.restore();
   ctx.strokeStyle="#8b877d"; for(const l of [1,2,3]){ ctx.lineWidth=2*halfW(l)+7; ctx.stroke(rc.rails[l]); }
+  // Ultra: the kerbs stand a little proud of the ground and throw a thin shadow
+  if(ultra){ ctx.save(); ctx.translate(SHX*2,SHY*2); ctx.strokeStyle=ctx.fillStyle="rgba(40,42,25,.13)"; ctx.lineWidth=11; ctx.stroke(rc.drives); strokeBody(rc.G,6);
+    ctx.lineWidth=6; ctx.stroke(rc.junc); ctx.fill(rc.junc); for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+5,0,7); ctx.fill(); } ctx.restore(); }
   // kerbs
   ctx.strokeStyle=KC; ctx.lineWidth=9.5; ctx.stroke(rc.drives); strokeBody(rc.G,3);
-  ctx.fillStyle=KC; for(const d of rc.disks){ ctx.beginPath(); ctx.arc(d.x,d.y,d.r+1.5,0,7); ctx.fill(); }
+  ctx.lineWidth=3; ctx.stroke(rc.junc); ctx.fillStyle=KC;
   for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+3.5,0,7); ctx.fill(); }
   // asphalt
   ctx.strokeStyle=AS; ctx.lineWidth=7; ctx.stroke(rc.drives); strokeBody(rc.G,0);
-  ctx.fillStyle=AS; for(const d of rc.disks){ ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,7); ctx.fill(); }
+  ctx.fillStyle=AS; ctx.fill(rc.junc);
   for(const r of rc.rings){ ctx.fillStyle=AS; ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+2,0,7); ctx.fill();
     ctx.fillStyle=KC; ctx.beginPath(); ctx.arc(r.x,r.y,r.R-LW/2-.5,0,7); ctx.fill();
     ctx.fillStyle="#a6d17c"; ctx.beginPath(); ctx.arc(r.x,r.y,r.R-LW/2-2,0,7); ctx.fill();
     ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(r.x+1.5,r.y+2.5,3.6,0,7); ctx.arc(r.x+5.2,r.y+4.6,2.9,0,7); ctx.fill();
     ctx.fillStyle="#5d9c41"; ctx.beginPath(); ctx.arc(r.x-1,r.y-1,3.6,0,7); ctx.arc(r.x+3.5,r.y+2.4,2.9,0,7); ctx.fill();
     ctx.strokeStyle="rgba(190,187,178,.9)"; ctx.lineWidth=1; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+.5,0,7); ctx.stroke(); ctx.setLineDash([]); }
+  const dc=ultra&&rc.dec;
+  if(dc){
+    ctx.strokeStyle=ctx.fillStyle=tarmac(); strokeBody(rc.G,0); ctx.lineWidth=7; ctx.stroke(rc.drives); ctx.fill(rc.junc);
+    ctx.fillStyle="rgba(125,118,102,.07)"; ctx.fill(dc.patch); ctx.strokeStyle="rgba(125,118,102,.14)"; ctx.lineWidth=.5; ctx.stroke(dc.patch);
+    ctx.strokeStyle="rgba(115,108,95,.3)"; ctx.lineWidth=.4; ctx.stroke(dc.crack);
+    ctx.strokeStyle="rgba(60,60,60,.05)"; ctx.lineWidth=1.3; ctx.stroke(dc.tyre);
+  }
   drawMarks(rc.G);
+  if(dc){ ctx.lineCap="butt"; ctx.strokeStyle="#d6d3ca"; ctx.lineWidth=1.4; ctx.stroke(dc.zeb);
+    if(cam.z>.8){ ctx.fillStyle="#c9c5bb"; ctx.fill(dc.hole); ctx.strokeStyle="#a29e94"; ctx.lineWidth=.45; ctx.stroke(dc.hole); ctx.lineWidth=.3; ctx.stroke(dc.holeL); } }
   ctx.lineCap="round"; ctx.strokeStyle="#cfccc3"; ctx.lineWidth=1; ctx.stroke(rc.arrows); ctx.fillStyle="#cfccc3"; ctx.fill(rc.heads0);
   ctx.strokeStyle="#7cc35d"; ctx.stroke(rc.slipS); ctx.fillStyle="#7cc35d"; ctx.fill(rc.slipH); ctx.lineCap="butt";
   ctx.strokeStyle="#b2afa6"; ctx.lineWidth=1.6; ctx.stroke(rc.stops);
   const lamp=st=>st==="g"?"#3ccf5a":st==="a"?"#f1c232":"#f04a3a";
+  const halo=st=>st==="g"?"60,207,90":st==="a"?"241,194,50":"240,74,58";
   for(const h of rc.heads){ const st=lightState(h.n,h.g,"S");
+    if(ultra) glow(h.x,h.y,9,halo(st),.42);
     ctx.fillStyle="#2b2e33"; roundRect(h.x-3,h.y-3,6,6,1.6); ctx.fill();
     ctx.fillStyle=lamp(st); ctx.beginPath(); ctx.arc(h.x,h.y,2.1,0,7); ctx.fill();
+    if(ultra){ ctx.fillStyle="rgba(255,255,255,.7)"; ctx.beginPath(); ctx.arc(h.x-.7,h.y-.7,.6,0,7); ctx.fill(); }
     // protected left turns get their own arrow light
     if(h.n.light&&h.n.light.prot){ const x=h.x+h.dx*6.5, y=h.y+h.dy*6.5; ctx.fillStyle="#2b2e33"; roundRect(x-2.6,y-2.6,5.2,5.2,1.4); ctx.fill();
       ctx.fillStyle=lamp(lightState(h.n,h.g,"L")); ctx.beginPath(); ctx.arc(x,y,1.6,0,7); ctx.fill(); } }
@@ -2036,6 +2285,7 @@ function drawRoads(){
 function drawOverpasses(){
   const U=roadCache&&roadCache.U; if(!U||!U.any) return;
   ctx.lineCap="butt"; ctx.lineJoin="round";
+  if(ultra){ ctx.strokeStyle="rgba(25,28,20,.07)"; for(const l of [1,2,3]){ ctx.lineWidth=2*halfW(l)+12; ctx.stroke(U.shadow[l]); } }
   ctx.strokeStyle="rgba(25,28,20,.24)"; for(const l of [1,2,3]){ ctx.lineWidth=2*halfW(l)+2; ctx.stroke(U.shadow[l]); }
   const ends=(col,ex)=>{ ctx.fillStyle=col; ctx.beginPath(); for(const e of U.ends){ ctx.moveTo(e.x+e.r+ex,e.y); ctx.arc(e.x,e.y,e.r+ex,0,7); } ctx.fill(); };
   ctx.strokeStyle="#6f6c64"; strokeBody(U,4); ends("#6f6c64",2);
@@ -2046,20 +2296,33 @@ function drawOverpasses(){
 function drawCar(c){
   const L=c.len, W=c.wid, h=c.h||0, so=1.3+h*12;
   // shadow first, always down and to the right; cars up on an overpass throw theirs further
-  ctx.save(); ctx.translate(c.x+SHX*so,c.y+SHY*so); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.2)"; roundRect(-L/2,-W/2,L,W,2); ctx.fill(); ctx.restore();
+  if(ultra){ ctx.save(); ctx.translate(c.x+SHX*so*1.8,c.y+SHY*so*1.8); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.08)"; roundRect(-L/2-1.2,-W/2-1.2,L+2.4,W+2.4,3.2); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(c.x+SHX*so*.55,c.y+SHY*so*.55); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.22)"; roundRect(-L/2+.2,-W/2+.2,L-.4,W-.4,2); ctx.fill(); ctx.restore(); }
+  else { ctx.save(); ctx.translate(c.x+SHX*so,c.y+SHY*so); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.2)"; roundRect(-L/2,-W/2,L,W,2); ctx.fill(); ctx.restore(); }
   ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.ang); if(h>0) ctx.scale(1+h*.07,1+h*.07);
+  // which side of the car faces the sun (Ultra lights that side and shades the other)
+  const lit=ultra?((-LDX*Math.sin(c.ang)+LDY*Math.cos(c.ang))<0?-1:1):0;
   if(c.truck){
     ctx.fillStyle=c.col; roundRect(-L/2,-W/2,L*.72,W,1.2); ctx.fill();
     ctx.strokeStyle="rgba(0,0,0,.12)"; ctx.lineWidth=.6; ctx.beginPath(); ctx.moveTo(-L/2+L*.24,-W/2); ctx.lineTo(-L/2+L*.24,W/2); ctx.moveTo(-L/2+L*.48,-W/2); ctx.lineTo(-L/2+L*.48,W/2); ctx.stroke();
     ctx.fillStyle=c.cab; roundRect(L/2-L*.25,-W/2+.3,L*.25,W-.6,1.8); ctx.fill();
     ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(L/2-2.6,-W/2+1.2,1.6,W-2.4);
+    if(lit){ ctx.fillStyle="rgba(255,255,255,.4)"; ctx.fillRect(-L/2+.8,lit<0?-W/2+.4:W/2-1.3,L*.72-1.6,.9); ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(-L/2+.8,lit<0?W/2-1.3:-W/2+.4,L*.72-1.6,.9); }
   } else {
     ctx.fillStyle=c.col; roundRect(-L/2,-W/2,L,W,2.4); ctx.fill();
     ctx.fillStyle="rgba(0,0,0,.18)"; ctx.fillRect(-L*.28,-W/2+1,L*.42,W-2);
     ctx.fillStyle="rgba(255,255,255,.18)"; ctx.fillRect(-L*.26,-W/2+1.3,L*.38,1.2);
     ctx.fillStyle="rgba(190,225,255,.85)"; ctx.fillRect(L*.12,-W/2+1.1,L*.14,W-2.2);
     ctx.fillStyle="rgba(190,225,255,.55)"; ctx.fillRect(-L*.36,-W/2+1.3,L*.08,W-2.6);
+    if(lit){
+      ctx.fillStyle="rgba(255,255,255,.34)"; ctx.fillRect(-L/2+1.3,lit<0?-W/2+.35:W/2-1.25,L-2.6,.9);
+      ctx.fillStyle="rgba(0,0,0,.17)"; ctx.fillRect(-L/2+1.3,lit<0?W/2-1.25:-W/2+.35,L-2.6,.9);
+      // the sky glinting off the roof and a streak across the windscreen
+      ctx.fillStyle="rgba(255,255,255,.4)"; ctx.beginPath(); ctx.ellipse(-L*.08,lit*W*.1,L*.15,W*.14,0,0,7); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,.75)"; ctx.beginPath(); ctx.moveTo(L*.15,-W/2+1.1); ctx.lineTo(L*.2,-W/2+1.1); ctx.lineTo(L*.165,W/2-1.1); ctx.lineTo(L*.125,W/2-1.1); ctx.closePath(); ctx.fill();
+    }
   }
+  if(c.braking&&ultra){ ctx.globalAlpha=.9; glow(-L/2,-W/2+1.3,4.5,"255,60,40",.5); glow(-L/2,W/2-1.3,4.5,"255,60,40",.5); ctx.globalAlpha=1; }
   if(c.braking){ ctx.fillStyle="#ff3b2e"; ctx.fillRect(-L/2-.4,-W/2+.6,1.2,1.4); ctx.fillRect(-L/2-.4,W/2-2,1.2,1.4); }
   ctx.restore();
 }
@@ -2073,10 +2336,18 @@ function hull(P){
 }
 // a building's shadow: its footprint swept down-right by its height
 function bodyShadow(b,sc,h,rects){
+  if(!ultra){ shadowHull(b,sc,h,rects,"rgba(30,36,22,.25)",0); return; }
+  // Ultra: a soft penumbra, a darker core near the walls, and a dark line where the walls meet the ground
+  shadowHull(b,sc,h*1.3,rects,"rgba(30,36,22,.07)",1.4);
+  shadowHull(b,sc,h,rects,"rgba(30,36,22,.15)",0);
+  shadowHull(b,sc,h*.45,rects,"rgba(30,36,22,.09)",0);
+  shadowHull(b,sc,.6,rects,"rgba(22,26,16,.2)",1.3);
+}
+function shadowHull(b,sc,h,rects,col,g){
   const th=b.ang-Math.PI/2, c=Math.cos(th), s=Math.sin(th);
-  ctx.fillStyle="rgba(30,36,22,.25)"; ctx.beginPath();
+  ctx.fillStyle=col; ctx.beginPath();
   for(const r of rects){ const P=[];
-    for(const [lx,ly] of [[r[0],r[1]],[r[0]+r[2],r[1]],[r[0]+r[2],r[1]+r[3]],[r[0],r[1]+r[3]]]){ const X=b.x+(lx*c-ly*s)*sc, Y=b.y+(lx*s+ly*c)*sc; P.push({x:X,y:Y},{x:X+SHX*h*sc,y:Y+SHY*h*sc}); }
+    for(const [lx,ly] of [[r[0]-g,r[1]-g],[r[0]+r[2]+g,r[1]-g],[r[0]+r[2]+g,r[1]+r[3]+g],[r[0]-g,r[1]+r[3]+g]]){ const X=b.x+(lx*c-ly*s)*sc, Y=b.y+(lx*s+ly*c)*sc; P.push({x:X,y:Y},{x:X+SHX*h*sc,y:Y+SHY*h*sc}); }
     hull(P).forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); }
   ctx.fill();
 }
@@ -2118,12 +2389,17 @@ function flatRoof(w,d,col,x,y){
   ctx.fillStyle=shade(col,-50); ctx.fillRect(x0-.6,y0-.6,w+1.2,d+1.2);
   ctx.fillStyle="#e6e3dc"; ctx.fillRect(x0+1.1,y0+1.1,w-2.2,d-2.2);
   ctx.fillStyle="#3c4c70"; ctx.fillRect(x0+2.4,y0+2.4,w*.42,d*.36); ctx.fillRect(x0+2.4+w*.46,y0+2.4,w*.42,d*.36);
+  sheen(x0+2.4,y0+2.4,w*.42,d*.36,w+d,x0,w); sheen(x0+2.4+w*.46,y0+2.4,w*.42,d*.36,w+d,x0,w);
   ctx.strokeStyle="rgba(170,190,230,.5)"; ctx.lineWidth=.35; ctx.beginPath();
   for(let i=1;i<4;i++){ const xx=x0+2.4+i*w*.42/4; ctx.moveTo(xx,y0+2.4); ctx.lineTo(xx,y0+2.4+d*.36); ctx.moveTo(xx+w*.46,y0+2.4); ctx.lineTo(xx+w*.46,y0+2.4+d*.36); } ctx.stroke();
   ctx.fillStyle=col; ctx.fillRect(x0+1.1,y0+d-3.2,w-2.2,2.1);
 }
-function tree(x,y,r){ ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill();
-  ctx.fillStyle="#57973e"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,.55)"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill(); }
+function tree(x,y,r){
+  if(ultra){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.beginPath(); ctx.arc(x+SHX*6,y+SHY*6,r*1.2,0,7); ctx.fill(); ctx.fillStyle="rgba(30,50,20,.15)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill();
+    ctx.fillStyle="rgba(38,72,28,.6)"; ctx.beginPath(); ctx.arc(x,y+.4,r+.7,0,7); ctx.fill(); }
+  else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill(); }
+  ctx.fillStyle="#57973e"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,.55)"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill();
+  if(ultra){ ctx.fillStyle="rgba(232,255,195,.6)"; ctx.beginPath(); ctx.arc(x-r*.42,y-r*.46,r*.2,0,7); ctx.fill(); } }
 const growth=(b,dur)=>.6+.4*easeOut(Math.min(1,(t-b.born)/dur));
 function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") drawApts(b); else drawHouse(b); }
 function drawHouse(b){
@@ -2151,7 +2427,7 @@ function carPark(b,sc,x0,y0,w,h,rows,per,col){
   const bays=[], bw=(w-4)/per; ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=.7; ctx.beginPath();
   for(const ry of rows){ const yy=y0+ry; for(let i=0;i<=per;i++){ const x=x0+2+i*bw; ctx.moveTo(x,yy); ctx.lineTo(x,yy+11); } ctx.moveTo(x0+2,yy+(ry<h/2?0:11)); ctx.lineTo(x0+w-2,yy+(ry<h/2?0:11));
     for(let i=0;i<per;i++) bays.push({x:x0+2+(i+.5)*bw,y:yy+5.5}); }
-  ctx.stroke(); ctx.restore();
+  ctx.stroke(); stains(b,bays); ctx.restore();
   return bays;
 }
 // cars standing in bays, as many as there are bays for
@@ -2200,6 +2476,7 @@ function lot(b,sc,x0,y0,w,h,n,col){
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   ctx.fillStyle=col||"#d8d5cd"; roundRect(x0,y0,w,h,2.2); ctx.fill();
   if(n){ ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=.7; ctx.beginPath(); for(let i=0;i<=n;i++){ const x=x0+2+i*(w-4)/n; ctx.moveTo(x,y0+1.5); ctx.lineTo(x,y0+h-3.5); } ctx.stroke(); }
+  stains(b,n?Array.from({length:n},(q,i)=>({x:x0+2+(i+.5)*(w-4)/n,y:y0+h*.5})):[{x:x0+w*.2,y:y0+h*.5},{x:x0+w*.5,y:y0+h*.45},{x:x0+w*.8,y:y0+h*.55}]);
   ctx.restore();
 }
 function drawDest(b){
@@ -2216,7 +2493,7 @@ function drawDest(b){
     roofBlock(-w/2,-d/2,w,d/2-2,T.col,T.dark);
     if(b.v%2){ ctx.fillStyle=shade(T.col,-18); ctx.fillRect(-w/2+1,-d/2+1,26,d/2-4); ctx.fillRect(w/2-27,-d/2+1,26,d/2-4); }
     // glass roof over the middle
-    ctx.fillStyle="rgba(255,255,255,.55)"; for(let i=0;i<5;i++) ctx.fillRect(-24+i*10.5,-d/2+6,7,d/2-15);
+    ctx.fillStyle="rgba(255,255,255,.55)"; for(let i=0;i<5;i++){ ctx.fillRect(-24+i*10.5,-d/2+6,7,d/2-15); sheen(-24+i*10.5,-d/2+6,7,d/2-15,b.id,-27,54); }
     ctx.strokeStyle=T.light; ctx.lineWidth=.8; ctx.strokeRect(-27,-d/2+4,54,d/2-11);
     box(-w/2+6,-d/2+5,8,6,"#ecebe6","#b9b7b0",1.8); box(-w/2+6,-d/2+15,8,6,"#ecebe6","#b9b7b0",1.8); box(w/2-14,-d/2+5,8,6,"#ecebe6","#b9b7b0",1.8); box(w/2-14,-d/2+26,6,5,"#ecebe6","#b9b7b0",1.4);
     // the entrance
@@ -2236,6 +2513,7 @@ function drawDest(b){
       box(-w/2+6,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8); box(w/2-16,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8);
     } else {
       ctx.fillStyle=T.light; ctx.globalAlpha=.6; for(let i=0;i<(v===2?2:4);i++) ctx.fillRect(-w/2+5+i*12,-d/2+5,8,4.5); ctx.globalAlpha=1;
+      for(let i=0;i<(v===2?2:4);i++) sheen(-w/2+5+i*12,-d/2+5,8,4.5,b.id,-w/2,w);
       box(-w/2+7,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); box(-w/2+16,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); if(v===0) box(w/2-13,-d/2+12,7,5,"#ecebe6","#b9b7b0",1.8);
       ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=T.dark; ctx.fillRect(-7,by-2.6,14,2.6);
     }
@@ -2247,7 +2525,7 @@ function drawDest(b){
       bodyShadow(b,sc,8,[[-w/2,-d/2,w,by+d/2]]); bodyShadow(b,sc,30,[[-11,-d/2+3,22,20]]);
       ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
       ctx.fillStyle=T.dark; roundRect(-w/2,-d/2,w,by+d/2,1.5); ctx.fill(); ctx.fillStyle=shade(T.col,-10); ctx.fillRect(-w/2+2,-d/2+2,w-4,by+d/2-4);
-      roofBlock(-11,-d/2+3,22,20,T.col,T.dark);
+      roofBlock(-11,-d/2+3,22,20,T.col,T.dark); sheen(-10.2,-d/2+3.8,20.4,18.4,b.id);
       ctx.strokeStyle="rgba(220,205,255,.6)"; ctx.lineWidth=.45; ctx.beginPath(); for(let i=1;i<5;i++){ ctx.moveTo(-11+i*4.4,-d/2+4); ctx.lineTo(-11+i*4.4,-d/2+22); } ctx.stroke();
       ctx.strokeStyle="#fff"; ctx.globalAlpha=.8; ctx.lineWidth=.8; ctx.beginPath(); ctx.arc(0,-d/2+13,4,0,7); ctx.stroke(); ctx.globalAlpha=1;
       ctx.restore();
@@ -2466,6 +2744,7 @@ function draw(){
   drawOverpasses();
   for(const c of cars) if(c.state==="drive"&&c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawOutside();
+  if(ultra) drawClouds();
   for(const b of blds) if(!isHome(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
   drawHover();
   drawPlan();
@@ -2523,7 +2802,7 @@ window.__gridlock={
   del:id=>{ const b=blds.find(q=>q.id===id); return b?deleteBld(b):null; },
   map:()=>{ let w=0,h=0; for(const v of waterGrid) w+=v; for(const v of hillGrid) h+=v; return {water:w/waterGrid.length,hill:h/hillGrid.length,trees:trees.length}; },
   overInfo:()=>[...segs.values()].filter(s=>s.over).map(s=>({id:s.id,len:Math.round(s.len),ga:nodes.get(s.a).gd,gb:nodes.get(s.b).gd})),
-  outside:()=>outside&&{x:outside.ex,y:outside.ey,fx:outside.fx,fy:outside.fy,node:outside.node,acc:!!outside.acc,trucks:outside.cars.length,busy:outside.cars.filter(c=>c.state!=="home").length},
+  outside:()=>outside&&{x:outside.ex,y:outside.ey,fx:outside.fx,fy:outside.fy,node:outside.node,acc:!!outside.acc,trucks:outside.cars.filter(c=>c.truck).length,visitors:outside.cars.filter(c=>!c.truck).length,busy:outside.cars.filter(c=>c.state!=="home").length},
   grid:(p0,p1,p2,lanes)=>{ if(lanes) setLaneSel(lanes); grid=null; gridClick(p0); gridClick(p1); const before=segs.size; gridClick(p2); return {segs:segs.size-before,hint:$("hint").textContent}; },
   gridPlan:(p0,p1,p2,lanes)=>{ const g=gridPlan(gridSnap(p0),gridSecond(gridSnap(p0),p1),p2,lanes||1); return g&&{ok:g.ok,reason:g.reason,cost:Math.round(g.cost),nu:g.nu,nv:g.nv,edges:g.edges.length}; },
   addLane:(x,y)=>{ const sg=segUnder({x,y},4); if(!sg) return null; addLane(sg); return sg.lanes; },
@@ -2551,6 +2830,7 @@ window.__gridlock={
   setType:(id,type)=>setNodeType(nodes.get(id),type),
   widen:(x,y,l)=>{ const s=segUnder({x,y},4); if(s) setLanes(s,l); return !!s; },
   setRes:r=>{ Object.assign(res,r); updateUI(); },
+  gfx:g=>{ if(g) setGfx(g); return ultra?"ultra":"normal"; },
   step:sec=>{ for(let k=0;k<sec*50;k++) step(.02); },
   screenOf:(x,y)=>({x:(x-cam.x)*cam.z+vw/2,y:(y-cam.y)*cam.z+vh/2}),
   look:(x,y,z)=>{ cam.x=x; cam.y=y; if(z) cam.z=z; clampCam(); },
@@ -2569,6 +2849,8 @@ window.__gridlock={
   diag:()=>{ const o={home:0,drive:0,park:0,ghost:0,stopped:0}; for(const c of cars){ o[c.state]++; if(c.state==="drive"){ if(c.ghost>0)o.ghost++; if(c.v<1)o.stopped++; } } o.d=dests().map(d=>d.type[0]+(d.acc?"":"!")+":"+d.pins.cust+"/"+d.pins.work+"/"+d.pins.goods+"/"+d.pins.raw+" s"+d.stock+"r"+d.raw+" o"+Math.round(d.over)).join(" "); return o; }
 };
 
+document.querySelectorAll("[data-gfx]").forEach(b=>b.onclick=()=>setGfx(b.dataset.gfx));
+gfxButtons();
 resize();
 requestAnimationFrame(frame);
 })();
