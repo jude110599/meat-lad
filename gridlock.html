@@ -35,6 +35,13 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #weekBar i{display:block;height:100%;width:0;background:var(--accent)}
 .spacer{flex:1}
 #speedBtn.fast{background:#e6f0fd;border-color:#a9c8f2;color:var(--accent)}
+#pauseBtn .play{display:none}
+#pauseBtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#pauseBtn.on .bars{display:none}
+#pauseBtn.on .play{display:block}
+#frozenTag{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 58px);transform:translateX(-50%);z-index:5;display:none;pointer-events:none;
+  background:rgba(36,38,43,.88);color:#fff;font-size:12.5px;font-weight:700;padding:6px 13px;border-radius:999px;white-space:nowrap}
+#frozenTag.show{display:block}
 @media (max-width:480px){ #popPill{display:none} #weekBar{width:40px} .pill{padding:0 11px} }
 
 #dock{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 10px);
@@ -140,9 +147,9 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 <div id="vig"></div>
 
 <div id="top">
-  <a class="pill iconbtn" href="index.html" title="Back to main menu" aria-label="Back to main menu">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#24262b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </a>
+  <button class="pill iconbtn" id="menuOpen" title="Menu (Esc)" aria-label="Menu">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg>
+  </button>
   <div class="pill"><b id="scoreN">0</b><span>trips</span></div>
   <div class="pill" id="popPill"><b id="popN">0</b><span>homes</span></div>
   <div class="spacer"></div>
@@ -150,10 +157,12 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <button class="pill iconbtn" id="speedBtn" title="Speed (F)" aria-label="Speed">
     <svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 6l7 6-7 6zM12 6l7 6-7 6z" fill="currentColor"/></svg>
   </button>
-  <button class="pill iconbtn" id="pauseBtn" title="Pause (P)" aria-label="Pause">
-    <svg width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+  <button class="pill iconbtn" id="pauseBtn" title="Pause (P)" aria-label="Pause" aria-pressed="false">
+    <svg class="bars" width="18" height="18" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+    <svg class="play" width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>
   </button>
 </div>
+<div id="frozenTag">Paused &middot; you can keep building</div>
 
 <div id="roadBar">
   <div class="row" id="laneRow">
@@ -303,7 +312,7 @@ let isTouch=matchMedia("(pointer:coarse)").matches;
 try{ const dv=localStorage.getItem("deviceType"); if(dv==="pc")isTouch=false; else if(dv==="mobile")isTouch=true; }catch(e){}
 $("ctrlLine").textContent=isTouch
   ? "One finger draws. Tap a road to switch it to 2, 4 or 6 lanes. Two fingers move and zoom the map. With Build, drag a new building to where you want it, or turn on Line and drag along a road for a whole row. Drag a building that's already there to move it."
-  : "Left-drag draws (hold Shift for a dead-straight road), right-drag erases, wheel zooms, middle-drag or space-drag moves the map. Click a road to switch its lanes. With Build, click to put a building down, turn on Line and drag along a road for a whole row, or drag a building to move it. Keys: 1-5 tools, B build, T tune, G grid, L add lane, O overpass, Q road width, Esc cancels a grid, P pause, F speed.";
+  : "Left-drag draws (hold Shift for a dead-straight road), right-drag erases, wheel zooms, middle-drag or space-drag moves the map. Click a road to switch its lanes. With Build, click to put a building down, turn on Line and drag along a road for a whole row, or drag a building to move it. Keys: 1-5 tools, B build, T tune, G grid, L add lane, O overpass, Q road width, Esc menu (or cancels a grid), P pause and keep building, F speed.";
 let best=0; try{best=+localStorage.getItem("gridlockBest")||0;}catch(e){}
 function showBest(){ $("bestLine").textContent=best?("Best: "+best+" trips"):""; }
 showBest();
@@ -311,6 +320,7 @@ showBest();
 // ---------- state ----------
 let nodes=new Map(), segs=new Map(), nodeList=[], nid=1, sid=1;
 let blds=[], cars=[], trees=[], waterGrid=null, hillGrid=null, terrain=null, biome=null, tver=0, moving=null;
+let frozen=false, animT=0;     // frozen: the pause button has stopped the clock, but you can still build
 let res, score=0, t=0, level=1, lvTrips=0, levelPending=false, running=false, paused=false, speed=1, over=false, relaxed=false, viewing=false;
 let dispatchT=0, rr=0, effects=[], carsOn=new Map(), qOn=new Map(), laneSel=1, roadMode="draw", firstRoad=false, hintT=0, bid=1, segArr=[];
 let roadCache=null, tray={}, placeSel=null, ghost=null, buildHinted=false, outside=null, goodsHinted=false;
@@ -1121,7 +1131,7 @@ function sampleRoute(rt,s,out){
 // ---------- buildings ----------
 function makeBld(type,x,y,ang){
   const f={x:Math.cos(ang),y:Math.sin(ang)}, T=BT[type];
-  const b={id:bid++,type,x,y,ang,fx:f.x,fy:f.y,f0x:f.x,f0y:f.y,born:t,acc:null,cars:[],over:0,pop:0,w:T.w,d:T.d,r:T.r,v:Math.random()*4|0,flip:Math.random()<.5};
+  const b={id:bid++,type,x,y,ang,fx:f.x,fy:f.y,f0x:f.x,f0y:f.y,born:t,grow:animT,acc:null,cars:[],over:0,pop:0,w:T.w,d:T.d,r:T.r,v:Math.random()*4|0,flip:Math.random()<.5};
   if(type==="house"){ b.col=pick(ROOFS); b.big=b.v===2; b.tree=Math.random()<.55; }       // one house in four has a wing and a second car
   else if(type==="bighouse") b.col=pick(BIGHOUSE_COLS);
   else if(type==="apts") b.col=pick(APT_COLS);
@@ -1497,7 +1507,7 @@ function bldUnder(w,pad){
 }
 function moveBld(b,g){
   b.x=g.x; b.y=g.y; b.ang=g.ang; b.fx=b.f0x=Math.cos(g.ang); b.fy=b.f0y=Math.sin(g.ang);
-  b.door={x:b.x+b.fx*b.d/2,y:b.y+b.fy*b.d/2}; b.born=t-.15; b.roof=null;
+  b.door={x:b.x+b.fx*b.d/2,y:b.y+b.fy*b.d/2}; b.born=t-.15; b.grow=animT-.15; b.roof=null;
   for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r) tr.alive=false;
   b.acc=findAccess(b);
   for(const c of b.cars) if(c.state==="home"){ c.x=b.door.x; c.y=b.door.y; }
@@ -1555,7 +1565,7 @@ function newGame(isRelaxed){
   rebuildNet();
   cam.x=MW/2; cam.y=MH/2;
   cam.z=vw<640?vw/420:Math.min(vw/760,vh/520); clampCam();
-  running=true;
+  running=true; setFrozen(false);
   setTool("build");
   setHint(isTouch?"The map is empty. Drag your shop and houses onto the map, then draw roads to join them up.":"The map is empty. Click to put down your shop and houses, then draw roads to join them up.",0);
   updateUI();
@@ -1727,13 +1737,21 @@ $("tunePanel").onclick=e=>{
 
 $("playBtn").onclick=()=>{ $("ovStart").classList.remove("show"); newGame(false); lastTs=performance.now(); };
 $("relaxBtn").onclick=()=>{ $("ovStart").classList.remove("show"); newGame(true); lastTs=performance.now(); };
-$("pauseBtn").onclick=()=>{ if(viewing&&over){ viewing=false; $("ovOver").classList.add("show"); return; } if(!running) return; paused=true; $("ovPause").classList.add("show"); };
+function openMenu(){ if(viewing&&over){ viewing=false; $("ovOver").classList.add("show"); return; } if(!running) return; paused=true; $("ovPause").classList.add("show"); }
+// the pause button stops the clock where it is: cars and lights freeze, but you can still build, tune and move the map
+function setFrozen(f){
+  frozen=!!f&&running&&!over;
+  const b=$("pauseBtn"); b.classList.toggle("on",frozen); b.title=frozen?"Play (P)":"Pause (P)"; b.setAttribute("aria-label",frozen?"Play":"Pause"); b.setAttribute("aria-pressed",frozen);
+  $("frozenTag").classList.toggle("show",frozen); lastTs=performance.now();
+}
+$("menuOpen").onclick=openMenu;
+$("pauseBtn").onclick=()=>{ if(!running||over) return; setFrozen(!frozen); if(frozen) setHint("Paused. Traffic has stopped, but you can keep building. Press play to carry on.",3.5); else hideHint(); };
 $("resumeBtn").onclick=()=>{ paused=false; $("ovPause").classList.remove("show"); lastTs=performance.now(); };
 $("restartBtn").onclick=()=>{ $("ovPause").classList.remove("show"); $("ovStart").classList.add("show"); running=false; };
 $("menuBtn").onclick=$("menuBtn2").onclick=()=>{ location.href="index.html"; };
 $("againBtn").onclick=()=>{ $("ovOver").classList.remove("show"); $("ovStart").classList.add("show"); };
-$("viewBtn").onclick=()=>{ $("ovOver").classList.remove("show"); setHint("Your finished town. Tap pause to start a new one.",0); viewing=true; };
-$("speedBtn").onclick=()=>{ speed=speed===1?2.5:1; $("speedBtn").classList.toggle("fast",speed>1); };
+$("viewBtn").onclick=()=>{ $("ovOver").classList.remove("show"); setHint("Your finished town. Tap the menu button to start a new one.",0); viewing=true; };
+$("speedBtn").onclick=()=>{ if(frozen) setFrozen(false); speed=speed===1?2.5:1; $("speedBtn").classList.toggle("fast",speed>1); };
 
 // ---------- camera ----------
 const cam={x:MW/2,y:MH/2,z:1,focus:null}; let vw=0, vh=0, dpr=1;
@@ -1938,11 +1956,12 @@ window.addEventListener("keydown",e=>{
   if(e.key==="t"||e.key==="T"||e.key==="7") setTool("tune");
   if(e.key==="Escape"&&grid){ grid=null; setHint("Grid cancelled.",2); return; }
   if(e.key==="b"||e.key==="B"||e.key==="6") setTool("build");
-  if(e.key==="p"||e.key==="P"||e.key==="Escape"){ if($("ovPause").classList.contains("show")) $("resumeBtn").onclick(); else $("pauseBtn").onclick(); }
+  if(e.key==="p"||e.key==="P"){ if($("ovPause").classList.contains("show")) $("resumeBtn").onclick(); else $("pauseBtn").onclick(); }
+  if(e.key==="Escape"){ if($("ovPause").classList.contains("show")) $("resumeBtn").onclick(); else openMenu(); }
   if(e.key==="f"||e.key==="F") $("speedBtn").onclick();
 });
 window.addEventListener("keyup",e=>{ if(e.code==="Space") spaceDown=false; keys[e.code]=false; shiftDown=e.shiftKey; });
-document.addEventListener("visibilitychange",()=>{ if(document.hidden&&running&&!paused) $("pauseBtn").onclick(); });
+document.addEventListener("visibilitychange",()=>{ if(document.hidden&&running&&!paused) openMenu(); });
 
 // ---------- drawing ----------
 function offsetQuad(path,a,c,b,off,k){
@@ -2400,7 +2419,7 @@ function tree(x,y,r){
   else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill(); }
   ctx.fillStyle="#57973e"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,.55)"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill();
   if(ultra){ ctx.fillStyle="rgba(232,255,195,.6)"; ctx.beginPath(); ctx.arc(x-r*.42,y-r*.46,r*.2,0,7); ctx.fill(); } }
-const growth=(b,dur)=>.6+.4*easeOut(Math.min(1,(t-b.born)/dur));
+const growth=(b,dur)=>.6+.4*easeOut(Math.min(1,(animT-b.grow)/dur));
 function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") drawApts(b); else drawHouse(b); }
 function drawHouse(b){
   const sc=growth(b,.35), w=b.w, d=b.d, v=b.v;
@@ -2416,7 +2435,7 @@ function drawHouse(b){
   // a car parked in the drive
   const home=b.cars.find(c=>c.state==="home");
   if(home&&b.acc) parked(home,b.door.x+b.fx*4.5,b.door.y+b.fy*4.5,b.ang);
-  if(!b.acc&&t-b.born>1) needsRoad(b);
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
 }
 function needsRoad(b){ ctx.fillStyle="rgba(255,255,255,.85)"; ctx.beginPath(); ctx.arc(b.x,b.y-b.r-5,3,0,7); ctx.fill();
   ctx.fillStyle="#e2493a"; ctx.beginPath(); ctx.arc(b.x,b.y-b.r-5,1.8,0,7); ctx.fill(); }
@@ -2449,7 +2468,7 @@ function drawBigHouse(b){
   ctx.restore();
   if(LOD){ const p=toMap(b,(hx-s*9)*sc,-17*sc); tree(p.x,p.y,4.6*sc); }
   fillBays(b,sc,bays,b.cars.filter(c=>c.state==="home"));
-  if(!b.acc&&t-b.born>1) needsRoad(b);
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
 }
 function drawApts(b){
   const sc=growth(b,.5), s=b.flip?-1:1, v=b.v%3, col=b.col, edge=shade(col,-48), lite=shade(col,26), [lsx,lsy]=sunPlan(b);
@@ -2469,7 +2488,7 @@ function drawApts(b){
   else { rbox(-22,-21,8,6,lsx,lsy,2); rbox(9,-21,8,6,lsx,lsy,2); ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=.7; ctx.beginPath(); ctx.arc(-12,-10,3.2,0,7); ctx.stroke(); }
   ctx.restore();
   fillBays(b,sc,park,b.cars.filter(c=>c.state==="home"));
-  if(!b.acc&&t-b.born>1) needsRoad(b);
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
 }
 const parkedAt=new Map();
 function lot(b,sc,x0,y0,w,h,n,col){
@@ -2480,7 +2499,7 @@ function lot(b,sc,x0,y0,w,h,n,col){
   ctx.restore();
 }
 function drawDest(b){
-  const T=DEST[b.type], age=Math.min(1,(t-b.born)/.5), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
+  const T=DEST[b.type], age=Math.min(1,(animT-b.grow)/.5), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
   const th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b);
   const here=parkedAt.get(b)||[];
   const stalls=(x0,w2,n,ly)=>{ if(!LOD) return; for(let i=0;i<Math.min(n,here.length);i++){ const p=toMap(b,(x0+2+(i+.5)*(w2-4)/n)*sc,ly*sc); parked(here[i],p.x,p.y,b.ang+Math.PI); } };
@@ -2574,7 +2593,7 @@ function drawDest(b){
 }
 function drawPins(b){
   const kinds=KINDS.filter(k=>b.pins[k]>0);
-  if(!b.acc&&t-b.born>1){ ctx.font="600 7.5px "+FONT; ctx.textAlign="center"; const tw=ctx.measureText("needs a road").width+10; ctx.fillStyle="rgba(36,38,43,.82)"; roundRect(b.x-tw/2,b.y-b.r-24,tw,13,6.5); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillText("needs a road",b.x,b.y-b.r-15.2); }
+  if(!b.acc&&animT-b.grow>1){ ctx.font="600 7.5px "+FONT; ctx.textAlign="center"; const tw=ctx.measureText("needs a road").width+10; ctx.fillStyle="rgba(36,38,43,.82)"; roundRect(b.x-tw/2,b.y-b.r-24,tw,13,6.5); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillText("needs a road",b.x,b.y-b.r-15.2); }
   let row=0;
   for(const k of kinds){
     const cap=capOf(b,k), n=Math.min(b.pins[k],cap+3);
@@ -2778,12 +2797,14 @@ function step(dt){
 function frame(now){
   const dt=Math.min(.05,(now-lastTs)/1000); lastTs=now;
   if(running&&!paused){
-    const sdt=dt*speed, n=Math.ceil(sdt/.02); for(let i=0;i<n;i++) step(sdt/n);
+    animT+=dt;
+    if(!frozen){ const sdt=dt*speed, n=Math.ceil(sdt/.02); for(let i=0;i<n;i++) step(sdt/n); }
+    else for(const e of effects) e.t+=dt;      // puffs and rings from building still play out
     if(hintT>0){ hintT-=dt; if(hintT<=0) hideHint(); }
     if(score>0&&hintT===0&&!$("hint").classList.contains("hide")&&!viewing) hideHint();
     $("weekFill").style.width=Math.min(100,lvTrips/lvNeed()*100)+"%";
     tuneDots();
-  } else if(over&&res){ step(dt*.5); }
+  } else if(over&&res){ step(dt*.5); animT+=dt; }
   if(cam.focus){ cam.x+=(cam.focus.x-cam.x)*Math.min(1,dt*3); cam.y+=(cam.focus.y-cam.y)*Math.min(1,dt*3); clampCam(); }
   const kp=520*dt/cam.z; let moved=false;
   if(keys.ArrowLeft||keys.KeyA){cam.x-=kp;moved=true;} if(keys.ArrowRight||keys.KeyD){cam.x+=kp;moved=true;}
@@ -2831,6 +2852,7 @@ window.__gridlock={
   widen:(x,y,l)=>{ const s=segUnder({x,y},4); if(s) setLanes(s,l); return !!s; },
   setRes:r=>{ Object.assign(res,r); updateUI(); },
   gfx:g=>{ if(g) setGfx(g); return ultra?"ultra":"normal"; },
+  frozen:()=>frozen,
   step:sec=>{ for(let k=0;k<sec*50;k++) step(.02); },
   screenOf:(x,y)=>({x:(x-cam.x)*cam.z+vw/2,y:(y-cam.y)*cam.z+vh/2}),
   look:(x,y,z)=>{ cam.x=x; cam.y=y; if(z) cam.z=z; clampCam(); },
