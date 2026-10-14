@@ -232,16 +232,16 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="how">
       <div><b>1</b><span>The map starts empty. Place your first shop and houses with Build, then drag roads to join them up, or lay a whole grid in three taps.</span></div>
       <div><b>2</b><span>Every trip grows the town. Each level brings more homes, apartments, shops, malls, offices and factories to place. Drag to move them, or knock them down with Erase.</span></div>
-      <div><b>3</b><span>Shops and malls want customers and goods. Offices and factories want workers, and factories need raw materials trucked in on the highway at the map's edge. Nobody wants to live in factory smoke or beside a highway.</span></div>
+      <div><b>3</b><span>Shops and malls want customers and goods. Offices and factories want workers, and factories need raw materials trucked in on the highway at the map's edge. Assembly plants need parts from a warehouse. Nobody wants to live in factory smoke or beside a highway.</span></div>
       <div><b>4</b><span>Busy junctions jam. Add roundabouts, lights, lanes, one-way streets or overpasses, or run a highway with on and off ramps, and use Tune to set light timings, protected left turns and lane arrows.</span></div>
     </div>
-    <div class="legend"><span><i style="background:#3d7fe0"></i>Shop</span><span><i style="background:#8a60d0"></i>Office</span><span><i style="background:#ee8a35"></i>Factory</span><span><i style="background:#7fbcf0"></i>Mall</span><span><i style="background:#6fbf4f"></i>Homes</span></div>
+    <div class="legend"><span><i style="background:#3d7fe0"></i>Shop</span><span><i style="background:#8a60d0"></i>Office</span><span><i style="background:#ee8a35"></i>Factory</span><span><i style="background:#b98e57"></i>Warehouse</span><span><i style="background:#2fa596"></i>Assembly plant</span><span><i style="background:#7fbcf0"></i>Mall</span><span><i style="background:#6fbf4f"></i>Homes</span></div>
     <button class="big two" id="playBtn">Play<small>A building that stays full too long ends the game</small></button>
     <button class="big alt two" id="relaxBtn">Relaxed<small>Just build, no game over</small></button>
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 4.7</div>
+    <div class="small">Version 4.8</div>
   </div>
 </div>
 
@@ -252,7 +252,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
-    <div class="small">Version 4.7</div>
+    <div class="small">Version 4.8</div>
   </div>
 </div>
 
@@ -306,12 +306,18 @@ const BT={
   shop:    {w:54,d:46,r:35,col:"#3d7fe0",dark:"#2a5cb0",light:"#79a8f0",name:"shop",names:"shops",need:"cust",rate:1,cap:{cust:8,goods:6}},
   mall:    {w:112,d:88,r:71,col:"#7fbcf0",dark:"#4f93cf",light:"#d3e9fb",name:"mall",names:"malls",need:"cust",rate:1.4,cap:{cust:20,goods:10}},
   office:  {w:38,d:38,r:27,col:"#8a60d0",dark:"#6440a6",light:"#b394e6",name:"office",names:"offices",need:"work",rate:.8,cap:{work:8}},
-  factory: {w:60,d:48,r:38,col:"#ee8a35",dark:"#bf6418",light:"#f7b273",name:"factory",names:"factories",need:"work",rate:.8,cap:{work:8,raw:6}}
+  factory: {w:60,d:48,r:38,col:"#ee8a35",dark:"#bf6418",light:"#f7b273",name:"factory",names:"factories",need:"work",rate:.8,cap:{work:8,raw:6}},
+  // a warehouse stores goods: factories send what the shops don't need yet, and its trucks take parts to the
+  // assembly plants and goods to the shops
+  warehouse:{w:74,d:52,r:45,col:"#b98e57",dark:"#8a6634",light:"#dcbd8e",name:"warehouse",names:"warehouses",need:"work",rate:.45,cap:{work:6,goods:8}},
+  // an assembly plant is a clean factory: no smoke, but it builds things from parts that only a warehouse can supply
+  plant:   {w:64,d:50,r:40,col:"#2fa596",dark:"#1d786d",light:"#86d6cb",name:"assembly plant",names:"assembly plants",need:"work",rate:.75,cap:{work:8,parts:6}}
 };
-const DEST=BT, TYPES=["house","bighouse","apts","shop","mall","office","factory"], KINDS=["cust","work","goods","raw"];
+const DEST=BT, TYPES=["house","bighouse","apts","shop","mall","office","factory","warehouse","plant"], KINDS=["cust","work","goods","raw","parts"];
+const MAKERS=new Set(["factory","plant"]);
 const isHome=b=>!!BT[b.type].home;
 const capOf=(b,k)=>BT[b.type].cap[k]||0;
-const PINC={cust:"#3d7fe0",work:"#8a60d0",goods:"#a8743a",raw:"#5f6670"};
+const PINC={cust:"#3d7fe0",work:"#8a60d0",goods:"#a8743a",raw:"#5f6670",parts:"#1f8f83"};
 const BIGHOUSE_COLS=["#3c8a3e","#347c3b","#45914a","#2f7a48"], APT_COLS=["#2f6e3d","#2b6438","#376f42","#2d6a4a"];
 
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -333,8 +339,8 @@ let blds=[], cars=[], trees=[], waterGrid=null, hillGrid=null, terrain=null, bio
 let frozen=false, animT=0;     // frozen: the pause button has stopped the clock, but you can still build
 let res, score=0, t=0, level=1, lvTrips=0, levelPending=false, running=false, paused=false, speed=1, over=false, relaxed=false, viewing=false;
 let dispatchT=0, rr=0, effects=[], carsOn=new Map(), qOn=new Map(), laneSel=1, roadKind="two", laneSide="both", roadMode="draw", firstRoad=false, hintT=0, bid=1, segArr=[];
-let roadCache=null, tray={}, placeSel=null, ghost=null, buildHinted=false, outside=null, goodsHinted=false;
-let lineMode=false, lineGhosts=null, grid=null, gridCur=null, tuneNode=null, mallBatch=false, lastMall=-9;
+let roadCache=null, tray={}, placeSel=null, ghost=null, buildHinted=false, outside=null, goodsHinted=false, partsHinted=false;
+let lineMode=false, lineGhosts=null, grid=null, gridCur=null, tuneNode=null, mallBatch=false, lastMall=-9, plantGiven=false;
 const emptyTray=()=>{ const o={}; for(const k of TYPES) o[k]=0; return o; };
 
 // ---------- geometry ----------
@@ -1451,7 +1457,7 @@ function makeBld(type,x,y,ang){
   if(type==="house"){ b.col=pick(ROOFS); b.big=b.v===2; b.tree=Math.random()<.55; }       // one house in four has a wing and a second car
   else if(type==="bighouse") b.col=pick(BIGHOUSE_COLS);
   else if(type==="apts") b.col=pick(APT_COLS);
-  else { b.pins={cust:0,work:0,goods:0,raw:0}; b.claimed={cust:0,work:0,goods:0,raw:0}; b.dem={cust:0,work:0,goods:0,raw:0}; b.stock=0; b.raw=0; }
+  else { const z=()=>({cust:0,work:0,goods:0,raw:0,parts:0}); b.pins=z(); b.claimed=z(); b.dem=z(); b.stock=b.type==="warehouse"?3:0; b.raw=0; }
   b.door={x:x+f.x*b.d/2,y:y+f.y*b.d/2};
   return b;
 }
@@ -1477,7 +1483,7 @@ function addBld(b){
   for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r) tr.alive=false;
   const nCars=b.type==="house"?(b.big?2:1):b.type==="bighouse"?4:b.type==="apts"?10+(Math.random()*6|0):0;
   for(let i=0;i<nCars;i++){ const c=newCar(b,false); c.cool=rnd(.5,3+i*.6); b.cars.push(c); cars.push(c); }
-  if(b.type==="factory"){ for(let i=0;i<3;i++){ const c=newCar(b,true); b.cars.push(c); cars.push(c); } }
+  if(b.type==="factory"||b.type==="warehouse"||b.type==="plant"){ for(let i=0;i<(b.type==="plant"?2:3);i++){ const c=newCar(b,true); b.cars.push(c); cars.push(c); } }
   b.acc=findAccess(b); if(b.acc) buildRoadCache(); tver++;
   effects.push({k:"ring",x:b.x,y:b.y,c:BT[b.type].col,t:0,life:b.type==="house"?.6:1.3,r:b.r});
   return b;
@@ -1486,8 +1492,8 @@ const homes=()=>blds.filter(isHome);
 const dests=()=>blds.filter(b=>!isHome(b));
 // what kind of workplace or shop the town needs next
 function nextDestType(){
-  const n={shop:tray.shop+tray.mall,office:tray.office,factory:tray.factory};
-  for(const d of dests()) n[d.type==="mall"?"shop":d.type]++;
+  const n={shop:tray.shop+tray.mall,office:tray.office,factory:tray.factory+tray.plant};
+  for(const d of dests()){ const k=d.type==="mall"?"shop":d.type==="plant"?"factory":d.type; if(n[k]!==undefined) n[k]++; }
   if(!n.shop) return "shop"; if(!n.office) return "office"; if(!n.factory) return "factory";
   // malls are rare: the first turns up at level 5, and you never get a second while one is still waiting to be
   // placed, or more than one a level, or two levels running
@@ -1497,6 +1503,8 @@ function nextDestType(){
   if(n.shop>n.factory*1.5+1) k=Math.random()<.6?"factory":"office";
   else { const r=Math.random(); k=r<.42?"shop":r<.74?"office":"factory"; }
   if(k==="shop"&&mallOK&&Math.random()<.2){ k="mall"; mallBatch=true; lastMall=level; }
+  // from level 5 some of the new factories are assembly plants, which need a warehouse
+  if(k==="factory"&&level>=5&&Math.random()<.35) k="plant";
   return k;
 }
 
@@ -1598,24 +1606,44 @@ function dispatch(){
   }
   // goods for the shops and malls: from a factory that has made some, or brought in by truck from outside the map
   const needGoods=()=>ds.filter(d=>(d.type==="shop"||d.type==="mall")&&freePins(d,"goods")>0);
+  const needStock=()=>ds.filter(d=>d.type==="warehouse"&&freePins(d,"goods")>0);
   let shops=needGoods();
-  if(shops.length) for(const f of ds){
-    if(f.type!=="factory"||f.stock<1) continue;
+  for(const f of ds){
+    if(!MAKERS.has(f.type)||f.stock<1) continue;
     const c=f.cars.find(q=>q.state==="home"&&q.cool<=0); if(!c) continue;
-    shops=needGoods(); if(!shops.length) break;
-    const pl=planRoute({seg:f.acc.seg,t:f.acc.t},shops.map(s=>({b:s,kind:"goods",bonus:3*freePins(s,"goods")})),null);
+    shops=needGoods(); let tg=shops.map(s=>({b:s,kind:"goods",bonus:3*freePins(s,"goods")}));
+    // nothing for the shops right now: put a full load away in a warehouse instead
+    if(!tg.length&&f.stock>=2) tg=needStock().map(w=>({b:w,kind:"goods",bonus:freePins(w,"goods")}));
+    if(!tg.length) continue;
+    const pl=planRoute({seg:f.acc.seg,t:f.acc.t},tg,null);
     if(!pl){ c.cool=2; continue; }
     f.stock-=1; c.purpose={d:pl.b,kind:"goods"}; pl.b.claimed.goods++;
     startDrive(c,f,pl);
+  }
+  const spareMade=()=>ds.reduce((n,f)=>n+(MAKERS.has(f.type)?Math.floor(f.stock):0),0);
+  for(const w of ds){
+    if(w.type!=="warehouse"||w.stock<1) continue;
+    const c=w.cars.find(q=>q.state==="home"&&q.cool<=0); if(!c) continue;
+    let tg=ds.filter(q=>q.type==="plant"&&freePins(q,"parts")>0).map(q=>({b:q,kind:"parts",bonus:4+3*freePins(q,"parts")}));
+    shops=needGoods(); if(shops.reduce((n,q)=>n+freePins(q,"goods"),0)>spareMade()) tg=tg.concat(shops.map(q=>({b:q,kind:"goods",bonus:3*freePins(q,"goods")})));
+    if(!tg.length) continue;
+    const pl=planRoute({seg:w.acc.seg,t:w.acc.t},tg,null);
+    if(!pl){ c.cool=2; continue; }
+    w.stock-=1; c.purpose={d:pl.b,kind:pl.tg.kind}; pl.b.claimed[pl.tg.kind]++;
+    startDrive(c,w,pl);
   }
   const O=outside;
   if(O&&O.acc){
     const truck=()=>O.cars.find(q=>q.truck&&q.state==="home"&&q.cool<=0);
     shops=needGoods();
     // imports only top up what the town's own factories can't
-    const spare=ds.reduce((n,f)=>n+(f.type==="factory"?Math.floor(f.stock):0),0);
+    const spare=spareMade()+ds.reduce((n,w)=>n+(w.type==="warehouse"?Math.floor(w.stock):0),0);
     if(shops.length&&shops.reduce((n,s)=>n+freePins(s,"goods"),0)>spare){ const c=truck();
       if(c){ const pl=planRoute({seg:O.acc.seg,t:O.acc.t},shops.map(s=>({b:s,kind:"goods",bonus:3*freePins(s,"goods")})),null);
+        if(pl){ c.purpose={d:pl.b,kind:"goods"}; pl.b.claimed.goods++; startDrive(c,O,pl); O.used=true; } else c.cool=2; } }
+    // a warehouse the town's factories can't keep stocked gets its goods brought in from outside
+    const wh=needStock(); if(wh.length&&spareMade()<1){ const c=truck();
+      if(c){ const pl=planRoute({seg:O.acc.seg,t:O.acc.t},wh.map(w=>({b:w,kind:"goods",bonus:freePins(w,"goods")})),null);
         if(pl){ c.purpose={d:pl.b,kind:"goods"}; pl.b.claimed.goods++; startDrive(c,O,pl); O.used=true; } else c.cool=2; } }
     const fs=ds.filter(d=>d.type==="factory"&&freePins(d,"raw")>0);
     if(fs.length){ const c=truck();
@@ -1639,6 +1667,10 @@ function arrive(c){
     // a factory turns raw materials into goods as its workers turn up
     if(d.type==="factory"&&k==="work"){ if(!outside) d.stock=Math.min(5,d.stock+.75); else if(d.raw>=.5){ d.raw-=.5; d.stock=Math.min(5,d.stock+.75); } }
     if(d.type==="factory"&&k==="raw") d.raw=Math.min(6,d.raw+1.5);
+    // an assembly plant builds goods from parts as its workers turn up; a warehouse puts away what's brought in
+    if(d.type==="plant"&&k==="work"&&d.raw>=.5){ d.raw-=.5; d.stock=Math.min(5,d.stock+.75); }
+    if(d.type==="plant"&&k==="parts") d.raw=Math.min(6,d.raw+1.5);
+    if(d.type==="warehouse"&&k==="goods") d.stock=Math.min(12,d.stock+1);
     c.purpose=null; c.state="park"; c.park=c.truck?rnd(TPARK[0],TPARK[1]):rnd(PARK[0],PARK[1]); c.at=d; c.atDi=c.tDi; c.rt=null;
   } else { c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
 }
@@ -1791,7 +1823,7 @@ function updateDemand(dt){
   const warm=d=>Math.min(1,(t-d.born-GRACE)/RAMPUP);
   for(const d of ds) want+=per*BT[d.type].rate*warm(d);
   if(want>0) per*=Math.min(1,Math.max(cars,4)/TRIP/want);
-  const nF=ds.filter(d=>d.type==="factory").length;
+  const nF=ds.filter(d=>MAKERS.has(d.type)).length, nW=ds.filter(d=>d.type==="warehouse"&&d.acc).length;
   for(const d of ds){
     const T=BT[d.type], wm=warm(d);
     d.dem[T.need]+=dt*per*T.rate*wm;
@@ -1799,10 +1831,16 @@ function updateDemand(dt){
     if((d.type==="shop"||d.type==="mall")&&(nF>0||(outside&&level>=2))&&t-d.born>GRACE+40){ d.dem.goods+=dt*per*wm*.2*(d.type==="mall"?1.6:1);
       if(!goodsHinted&&!nF){ goodsHinted=true; setHint("Shops want goods now too. Trucks bring them in on the highway at the edge of the map, so join it up to your roads.",6); } }
     if(d.type==="factory"&&outside) d.dem.raw+=dt*per*wm*.22;
+    // parts only come from a warehouse, so a plant only asks once there's one joined up
+    if(d.type==="plant"&&nW) d.dem.parts+=dt*per*wm*.24;
+    if(d.type==="plant"&&!nW&&t-d.born>GRACE&&!partsHinted){ partsHinted=true; setHint("The assembly plant needs parts, and only a warehouse can supply them. Place a warehouse and join it up.",6); }
+    // a warehouse keeps asking for goods until it's well stocked
+    if(d.type==="warehouse"&&d.stock+d.pins.goods<10) d.dem.goods+=dt*per*wm*.3;
     let full=false;
     for(const k of KINDS){ const cap=capOf(d,k); if(!cap) continue;
       while(d.dem[k]>=1){ d.dem[k]-=1; if(d.pins[k]<cap+3){ d.pins[k]++; d.pop=1; } }
-      if(d.pins[k]>=cap) full=true; }
+      // an empty warehouse isn't in trouble: it just has room
+      if(d.pins[k]>=cap&&!(d.type==="warehouse"&&k==="goods")) full=true; }
     if(full) d.over+=dt; else d.over=Math.max(0,d.over-dt*.5);
     if(relaxed) d.over=Math.min(d.over,OVER_LIMIT*.9);
     else if(d.over>=OVER_LIMIT&&!over) gameOver(d);
@@ -1840,6 +1878,8 @@ const PLACE_HINT={shop:"The shop will start asking for customers after a little 
   mall:"Malls want lots of customers and goods. There are two ways into the car park, so run a good road along the front.",
   office:"The office will start asking for workers after a little while. Make sure a road reaches its front.",
   factory:"The factory wants workers, and raw materials trucked in on the highway at the edge of the map. Its trucks take goods to the shops.",
+  warehouse:"The warehouse stores goods. Factories bring what the shops don't need yet, and its trucks take parts to the assembly plants and goods to the shops.",
+  plant:"The assembly plant wants workers and parts. Parts only come from a warehouse, so join one up to it. It makes no smoke, so it can go near homes.",
   apts:"Apartment blocks are home to lots of people, so expect a lot of cars from here."};
 // put a building down where a ghost showed it, checking again in case something changed
 function placeGhost(g){
@@ -1933,7 +1973,7 @@ function newGame(isRelaxed){
   nodes=new Map(); segs=new Map(); nodeList=[]; segArr=[]; nid=1; sid=1; bid=1;
   blds=[]; cars=[]; effects=[];
   res={road:1500,round:1,light:1,bridge:2};
-  score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false;
+  score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; plantGiven=false; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false; partsHinted=false;
   // nothing is built yet: the first shop and houses are yours to place
   tray=emptyTray(); tray.shop=1; tray.house=6; placeSel="shop"; ghost=null; moving=null; buildHinted=true;
   grid=null; gridCur=null; lineGhosts=null; closeTune();
@@ -1952,7 +1992,7 @@ function gameOver(d){
   if(score>best){ best=score; try{localStorage.setItem("gridlockBest",best);}catch(e){} }
   $("ovTrips").textContent=score; $("ovWeeks").textContent=level; $("ovBest").textContent=best;
   const k=KINDS.find(q=>capOf(d,q)&&d.pins[q]>=capOf(d,q))||BT[d.type].need;
-  $("overWhy").textContent=(/^[aeiou]/.test(BT[d.type].name)?"An ":"A ")+BT[d.type].name+" waited too long for "+(k==="goods"?"its deliveries of goods":k==="raw"?"its raw materials":k==="cust"?"customers":"workers")+".";
+  $("overWhy").textContent=(/^[aeiou]/.test(BT[d.type].name)?"An ":"A ")+BT[d.type].name+" waited too long for "+(k==="goods"?"its deliveries of goods":k==="raw"?"its raw materials":k==="parts"?"parts from a warehouse":k==="cust"?"customers":"workers")+".";
   cam.focus={x:d.x,y:d.y};
   setTimeout(()=>$("ovOver").classList.add("show"),900);
   showBest();
@@ -1979,6 +2019,12 @@ function levelBatch(L){
   for(const k of TYPES) tray[k]+=add[k];
   mallBatch=false;
   for(let i=0;i<(L<=3?1:2);i++){ const k=nextDestType(); add[k]++; tray[k]++; }
+  // the first assembly plant turns up at level 5, and a plant always comes with a warehouse if the town has none
+  if(L>=5&&!plantGiven){ add.plant++; tray.plant++; }
+  if(add.plant) plantGiven=true;
+  const whs=dests().filter(d=>d.type==="warehouse").length+tray.warehouse, pls=dests().filter(d=>d.type==="plant").length+tray.plant;
+  if(pls&&whs<Math.ceil(pls/2)){ add.warehouse++; tray.warehouse++; }
+  else if(L>=4&&whs<1+Math.floor(L/6)&&Math.random()<.25){ add.warehouse++; tray.warehouse++; }
   return add;
 }
 function levelUp(){
@@ -2054,7 +2100,7 @@ document.querySelectorAll("#laneRow button[data-l]").forEach(b=>b.onclick=()=>{ 
   if(roadKind==="one"){ setHint(laneSel+" lane"+(laneSel>1?"s":"")+" going one way. Tap a road to make it one-way, tap again to turn it round.",3); return; }
   setHint(laneSel===3?"6-lane roads are fast and fit three times the cars. They cost three times the road, and nobody wants to live next to one.":laneSel===2?"4-lane avenues are faster and fit twice the cars. They cost twice the road. Tap a road to switch it.":"2-lane streets. Tap a wider road to narrow it and get road back.",3.5); });
 function flashTool(id){ const el=$(id).parentNode; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
-const SHORT={house:"House",bighouse:"Big house",apts:"Apartments",shop:"Shop",mall:"Mall",office:"Office",factory:"Factory"};
+const SHORT={house:"House",bighouse:"Big house",apts:"Apartments",shop:"Shop",mall:"Mall",office:"Office",factory:"Factory",warehouse:"Warehouse",plant:"Plant"};
 function updateUI(){
   if(!res) return;
   $("nRoad").textContent=Math.floor(res.road)+" m"; $("nRound").textContent=res.round; $("nLight").textContent=res.light; $("nBridge").textContent=res.bridge;
@@ -3016,6 +3062,55 @@ function drawDest(b){
       ctx.strokeStyle="#fff"; ctx.globalAlpha=.75; ctx.lineWidth=.8; ctx.beginPath(); ctx.arc(9,0,3.4,0,7); ctx.stroke(); ctx.globalAlpha=1;
       ctx.restore();
     }
+  } else if(b.type==="warehouse"){
+    // a long shed with loading docks and roll-up doors along the front, and the yard where its trucks wait
+    const by=8;
+    lot(b,sc,-w/2,by,w,d/2-by,0,"#d6d1c4");
+    const idle=b.cars.filter(c=>c.state==="home"), docks=[-w/2+12,-w/2+30,w/2-30,w/2-12];
+    if(LOD){ idle.forEach((c,i)=>{ if(i<docks.length){ const p=toMap(b,docks[i]*sc,(by+9)*sc); parked(c,p.x,p.y,th+Math.PI); } });
+      let i=0, j=idle.length; for(const c of here){ if(c.truck&&j<docks.length){ const p=toMap(b,docks[j]*sc,(by+9)*sc); parked(c,p.x,p.y,th+Math.PI); j++; } else if(!c.truck&&i<4){ const p=toMap(b,(-6+i*4.2)*sc,(by+13)*sc); parked(c,p.x,p.y,b.ang); i++; } } }
+    bodyShadow(b,sc,10,[[-w/2,-d/2,w,by+d/2]]);
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+    ctx.fillStyle=T.dark; roundRect(-w/2,-d/2,w,by+d/2,1.5); ctx.fill();
+    // a shallow pitched roof in ribbed metal, one slope in the sun
+    const hh=by+d/2-3, top=-d/2+1.5, lit=shade(T.col,sunOn(b,0,-1)*24), dim=shade(T.col,-14+sunOn(b,0,1)*24);
+    ctx.fillStyle=lit; ctx.fillRect(-w/2+1.5,top,w-3,hh/2); ctx.fillStyle=dim; ctx.fillRect(-w/2+1.5,top+hh/2,w-3,hh/2);
+    ctx.strokeStyle="rgba(255,255,255,.22)"; ctx.lineWidth=.5; ctx.beginPath(); for(let x=-w/2+4;x<w/2-2;x+=3){ ctx.moveTo(x,top+.5); ctx.lineTo(x,top+hh-.5); } ctx.stroke();
+    ctx.fillStyle=T.light; ctx.fillRect(-w/2+1.5,top+hh/2-.6,w-3,1.2);
+    // skylights
+    ctx.fillStyle="rgba(205,228,255,.7)"; for(let i=0;i<4;i++){ ctx.fillRect(-w/2+8+i*(w-16)/4+2,top+3,7,3); ctx.fillRect(-w/2+8+i*(w-16)/4+2,top+hh-6,7,3); }
+    ctx.restore();
+    // the dock doors and the canopy over them
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+    ctx.fillStyle="#6d6a62"; ctx.fillRect(-w/2+3,by-3.4,w-6,3.4);
+    for(const x of docks){ ctx.fillStyle="#e9e6dc"; ctx.fillRect(x-6,by-3,12,2.6); ctx.strokeStyle="rgba(90,85,75,.6)"; ctx.lineWidth=.35; ctx.beginPath(); for(let k=0;k<3;k++){ ctx.moveTo(x-6,by-2.4+k*.8); ctx.lineTo(x+6,by-2.4+k*.8); } ctx.stroke();
+      ctx.fillStyle="#f1c232"; ctx.fillRect(x-7,by,1.2,2); ctx.fillRect(x+5.8,by,1.2,2); }
+    // pallets and crates stacked out in the yard
+    for(const [cx,cy] of [[-3,by+4],[3.5,by+4.5]]){ ctx.fillStyle="#c79a5d"; ctx.fillRect(cx-2.6,cy-2,5.2,4); ctx.strokeStyle="#8a6634"; ctx.lineWidth=.4; ctx.strokeRect(cx-2.6,cy-2,5.2,4); }
+    ctx.restore();
+  } else if(b.type==="plant"){
+    // a clean modern plant: a big white shed with solar panels on the roof, a glass office at one end and no chimney
+    const by=9, s0=b.flip?-1:1;
+    lot(b,sc,-w/2,by,w,d/2-by,0,"#d3d3cc");
+    const idle=b.cars.filter(c=>c.state==="home");
+    if(LOD){ idle.forEach((c,i)=>{ const p=toMap(b,(s0*(w/2-12)-s0*i*18)*sc,(by+7)*sc); parked(c,p.x,p.y,th+Math.PI); });
+      const slots=[-s0*10,-s0*14.2,-s0*18.4,-s0*22.6,-s0*26.8]; let i=0, j=idle.length;
+      for(const c of here){ if(c.truck&&j<3){ const p=toMap(b,(s0*(w/2-12)-s0*j*18)*sc,(by+7)*sc); parked(c,p.x,p.y,th+Math.PI); j++; } else if(!c.truck&&i<slots.length){ const p=toMap(b,slots[i]*sc,(by+6)*sc); parked(c,p.x,p.y,b.ang+Math.PI); i++; } } }
+    const off=[s0>0?-w/2:w/2-18,-d/2+(by+d/2)-16,18,16];
+    bodyShadow(b,sc,9,[[-w/2,-d/2,w,by+d/2]]); bodyShadow(b,sc,14,[off]);
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+    ctx.fillStyle=T.dark; roundRect(-w/2,-d/2,w,by+d/2,1.5); ctx.fill();
+    ctx.fillStyle="#eef0ec"; ctx.fillRect(-w/2+1.5,-d/2+1.5,w-3,by+d/2-3);
+    // rows of solar panels
+    const px0=s0>0?-w/2+21:-w/2+4, pw=w-25;
+    for(let r=0;r<3;r++) for(let k=0;k<5;k++){ const x=px0+k*pw/5+.6, y=-d/2+4+r*8.6, ww=pw/5-1.2;
+      ctx.fillStyle="#2f4f7a"; ctx.fillRect(x,y,ww,6.4); ctx.strokeStyle="rgba(150,190,240,.55)"; ctx.lineWidth=.3; ctx.beginPath(); for(let q=1;q<4;q++){ ctx.moveTo(x+q*ww/4,y); ctx.lineTo(x+q*ww/4,y+6.4); } ctx.moveTo(x,y+3.2); ctx.lineTo(x+ww,y+3.2); ctx.stroke();
+      if(ultra) sheen(x,y,ww,6.4,b.id+r*7+k,-w/2,w); }
+    // the teal band of the company colours along the front, and the glass office
+    ctx.fillStyle=T.col; ctx.fillRect(-w/2+1.5,by-5,w-3,3.5);
+    roofBlock(off[0],off[1],off[2],off[3],T.col,T.dark); ctx.fillStyle="rgba(210,240,236,.75)"; ctx.fillRect(off[0]+3,off[1]+3,off[2]-6,off[3]-6); sheen(off[0]+3,off[1]+3,off[2]-6,off[3]-6,b.id);
+    box(s0>0?w/2-12:-w/2+4,-d/2+29,8,6,"#ecebe6","#b9b7b0",1.8);
+    ctx.restore();
   } else {
     const by=10, silos=b.v%2===1;
     lot(b,sc,-w/2,by,w,d/2-by,0,"#d3cfc4");
@@ -3062,7 +3157,8 @@ function drawPins(b){
       const m=Math.min(12,n-r0), w=m*7+4, x0=b.x-w/2, y=b.y-b.r-(b.acc?8:30)-row*10;
       ctx.fillStyle="rgba(255,255,255,.95)"; roundRect(x0,y-4.5,w,9,4.5); ctx.fill();
       for(let j=0;j<m;j++){ const i=r0+j, x=x0+5.5+j*7, bob=i===n-1?-b.pop*3:0; ctx.fillStyle=i>=cap?"#e2493a":PINC[k];
-        if(k==="goods"||k==="raw"){ ctx.fillRect(x-2.6,y-2.6+bob,5.2,5.2); ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=.7; ctx.beginPath();
+        if(k==="parts"){ ctx.beginPath(); ctx.moveTo(x,y-3.3+bob); ctx.lineTo(x+3.3,y+bob); ctx.lineTo(x,y+3.3+bob); ctx.lineTo(x-3.3,y+bob); ctx.closePath(); ctx.fill(); }
+        else if(k==="goods"||k==="raw"){ ctx.fillRect(x-2.6,y-2.6+bob,5.2,5.2); ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=.7; ctx.beginPath();
           if(k==="goods"){ ctx.moveTo(x-2.6,y+bob); ctx.lineTo(x+2.6,y+bob); } else { ctx.moveTo(x-2.6,y-2.6+bob); ctx.lineTo(x+2.6,y+2.6+bob); } ctx.stroke(); }
         else { ctx.beginPath(); ctx.arc(x,y+bob,2.7,0,7); ctx.fill(); } }
       row++;
@@ -3071,7 +3167,7 @@ function drawPins(b){
   if(b.over>0){ const f=b.over/OVER_LIMIT, pulse=.5+.5*Math.sin(t*(4+f*8)), R=b.r+9;
     ctx.lineWidth=4; ctx.strokeStyle="rgba(226,73,58,.16)"; ctx.beginPath(); ctx.arc(b.x,b.y,R,0,7); ctx.stroke();
     ctx.strokeStyle="rgba(226,73,58,"+(.6+.4*pulse)+")"; ctx.lineCap="round"; ctx.beginPath(); ctx.arc(b.x,b.y,R,-Math.PI/2,-Math.PI/2+f*Math.PI*2); ctx.stroke(); ctx.lineCap="butt"; }
-  if(b.type==="factory"&&b.stock>=1){ ctx.fillStyle=PINC.goods; for(let i=0;i<Math.floor(b.stock);i++) ctx.fillRect(b.x+b.w/2-4-i*6,b.y+b.r-6,4.5,4.5); }
+  if((MAKERS.has(b.type)||b.type==="warehouse")&&b.stock>=1){ ctx.fillStyle=PINC.goods; for(let i=0;i<Math.min(10,Math.floor(b.stock));i++) ctx.fillRect(b.x+b.w/2-4-i*6,b.y+b.r-6,4.5,4.5); }
 }
 const FONT=getComputedStyle(document.body).fontFamily;
 function drawPlan(){
@@ -3360,6 +3456,7 @@ window.__gridlock={
         const ko=o.rt.ctrls[o.ci]; r.blk.push({id:cars.indexOf(o),along:Math.round(along),v:+o.v.toFixed(1),nk:ko?{node:ko.node,in:ko.inSeg,out:ko.outSeg,d:Math.round(ko.s0-o.s)}:null}); }
       out.push(r); }
     return out; },
+  stocks:()=>blds.filter(b=>b.stock!==undefined).map(b=>({type:b.type,stock:+b.stock.toFixed(2),raw:+(b.raw||0).toFixed(2),pins:Object.assign({},b.pins)})),
   drv:()=>cars.filter(c=>c.state==="drive").map(c=>{ const sg=segs.get(c.rt.legs[c.leg].seg); return {x:+c.x.toFixed(1),y:+c.y.toFixed(1),a:+c.ang.toFixed(2),v:+c.v.toFixed(1),h:c.h,len:c.len,hwy:!!(sg&&sg.hwy),ow:!!(sg&&oneWay(sg)),g:c.ghost>0}; }),
   stopped:()=>cars.filter(c=>c.state==="drive"&&c.v<1).map(c=>{ const k=c.rt.ctrls[c.ci]; return {x:Math.round(c.x),y:Math.round(c.y),still:+c.still.toFixed(1),ci:c.ci,next:k?{kind:k.kind,node:k.node,d:Math.round(k.s0-c.s)}:null}; }),
   nodeInfo:id=>{ const n=nodes.get(id); return n&&{type:n.type,deg:n.segs.length,hold:n.hold.map(h=>({in:h.k.inSeg,out:h.k.outSeg,s:Math.round(h.c.s-h.k.s1),v:+h.c.v.toFixed(1),st:h.c.state})),wait:[...n.wait.values()].map(w=>({in:w.k.inSeg,out:w.k.outSeg,since:Math.round(t-w.since)}))}; },
