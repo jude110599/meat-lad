@@ -624,13 +624,21 @@ function joinR(n,R,lanes){
   const deg=n.segs.length;
   if(n.type==="round") return Math.max(R,n.trim+6);
   if(deg>=3) return Math.max(R,(n.mh||halfW(1))+halfW(lanes||laneSel)+6);
+  if(softJoint(n)) return 5;
   return deg===1?R*1.25:R;
+}
+// where one road just carries straight on from a piece drawn earlier: there's nothing to see there,
+// so it mustn't pull road ends onto it and bend them
+function softJoint(n){
+  if(n.type!=="plain"||n.segs.length!==2) return false;
+  const s1=segs.get(n.segs[0]), s2=segs.get(n.segs[1]); if(s1.lanes!==s2.lanes||s1.over!==s2.over) return false;
+  const d1=dirFrom(s1,n.id), d2=dirFrom(s2,n.id); return d1.x*d2.x+d1.y*d2.y<-.9994;
 }
 // a point on a road, or the node at its end when that's close enough to join instead
 function onSeg(s,t,R,lanes){
-  const A=nodes.get(s.a),B=nodes.get(s.b), L=s.len;
-  if(t*L<Math.max(R*1.2,joinR(A,R,lanes))) return {kind:"node",node:A,x:A.x,y:A.y};
-  if((1-t)*L<Math.max(R*1.2,joinR(B,R,lanes))) return {kind:"node",node:B,x:B.x,y:B.y};
+  const A=nodes.get(s.a),B=nodes.get(s.b), L=s.len, near=n=>softJoint(n)?5:Math.max(R*1.2,joinR(n,R,lanes));
+  if(t*L<near(A)) return {kind:"node",node:A,x:A.x,y:A.y};
+  if((1-t)*L<near(B)) return {kind:"node",node:B,x:B.x,y:B.y};
   return {kind:"seg",seg:s,t,x:A.x+(B.x-A.x)*t,y:A.y+(B.y-A.y)*t};
 }
 function anchorOf(b,lanes){ const o=7+halfW(lanes); return {x:b.door.x+b.fx*o,y:b.door.y+b.fy*o}; }
@@ -685,7 +693,7 @@ function linkWithCrossings(P,Q,lanes,st){
       if(!segs.has(h.s.id)) continue;
       const L=h.s.len, A=nodes.get(h.s.a), B=nodes.get(h.s.b);
       // crossing right by a junction: go through that junction instead of making a second one
-      const mg=n=>Math.min(n.segs.length>=3?Math.max(18,n.trim||0):18,L*(n.segs.length>=3?.42:.3));
+      const mg=n=>softJoint(n)?4:Math.min(n.segs.length>=3?Math.max(18,n.trim||0):18,L*(n.segs.length>=3?.42:.3));
       if(h.u*L<mg(A)) m=A; else if((1-h.u)*L<mg(B)) m=B; else m=splitSeg(h.s,h.u);
     }
     if(m===cur||D(m,cur)<4||m===Q) continue;
@@ -764,13 +772,50 @@ function junctionMagnet(S,E,lanes){
   const av=s=>touches(S)(s)||touches(E)(s);
   let best=null;
   for(const s of segs.values()){ if(s.over||av(s)) continue; const A=nodes.get(s.a), B=nodes.get(s.b), h=segInter(S,E,A,B); if(!h) continue;
-    for(const [n,d] of [[A,h.u*s.len],[B,(1-h.u)*s.len]]){ if((n.segs.length<3&&n.type==="plain")||n.gd>0) continue;
-      if(d>2&&d<(n.trim||14)+halfW(lanes)+2&&(!best||d<best.d)) best={d,n,x:n.x-h.x,y:n.y-h.y}; } }
+    for(const [n,d] of [[A,h.u*s.len],[B,(1-h.u)*s.len]]){ if(n.gd>0||softJoint(n)) continue;
+      // a junction pulls from as far as its paving reaches; a dead end or a bend from as far as the crossing would be moved onto it anyway
+      const r=n.segs.length>=3||n.type!=="plain"?(n.trim||14)+halfW(lanes)+2:Math.min(18,s.len*.3);
+      if(d>2&&d<r&&(!best||d<best.d)) best={d,n,x:n.x-h.x,y:n.y-h.y}; } }
   return best;
 }
 // roads that touch the given end, so the other end doesn't snap back onto them
 const touches=P=>s=>P.kind==="seg"?s===P.seg:P.kind==="node"?(s.a===P.node.id||s.b===P.node.id):false;
 const sameSpot=(P,Q)=>Q.kind==="node"&&(P.kind==="node"&&P.node===Q.node||P.kind==="seg"&&(Q.node.id===P.seg.a||Q.node.id===P.seg.b));
+// the directions a road end can lean on: along and square to each road that meets there
+function endDirs(P){
+  if(P.kind==="seg") return [Math.atan2(P.seg.uy,P.seg.ux)];
+  if(P.kind==="node") return P.node.segs.map(id=>{ const d=dirFrom(segs.get(id),P.node.id); return Math.atan2(d.y,d.x); });
+  return [];
+}
+const angOff=(a,c)=>Math.abs(((a-c)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI);
+// the directions a road heading at angle a (or any of a list of angles) can snap to, closest first: square to or
+// straight on from a road at either end, then the nearest 15 degree step
+function snapDirs(a,S,E){
+  const as=Array.isArray(a)?a:[a], off=c=>Math.min(...as.map(x=>angOff(x,c))), out=[];
+  for(const P of [S,E]) for(const b of endDirs(P)) for(let k=0;k<4;k++){ const c=b+k*Math.PI/2, d=off(c); if(d<.18) out.push({c,d,b}); }
+  out.sort((p,q)=>p.d-q.d);
+  for(let k=0;k<24;k++){ const c=k*Math.PI/12, d=off(c); if(d<.12) out.push({c,d,b:null}); }
+  return out;
+}
+// move a road end onto the line through Q at angle c: a loose end moves square to the line, an end on a road slides
+// along that road, and an end on a junction or a building can't move at all
+function placeOn(P,Q,c,lanes){
+  const ux=Math.cos(c), uy=Math.sin(c);
+  if(P.kind==="free"){ const t=(P.x-Q.x)*ux+(P.y-Q.y)*uy; return {kind:"free",x:Q.x+ux*t,y:Q.y+uy*t}; }
+  if(P.kind==="seg"){ const s=P.seg, A=nodes.get(s.a), den=s.ux*uy-s.uy*ux; if(Math.abs(den)<.25) return null;
+    const t=((Q.x-A.x)*uy-(Q.y-A.y)*ux)/den/s.len; if(t<=0||t>=1) return null;
+    const q=onSeg(s,t,snapR(),lanes); return q.kind==="seg"?q:null; }
+  return Math.abs((P.x-Q.x)*uy-(P.y-Q.y)*ux)<.5?P:null;
+}
+// line the two ends up on the first of the directions they can both sit on, moving the end that's freest to move
+function fitDir(S,E,dirs,lanes){
+  for(const o of dirs){
+    let s2=S, e2=placeOn(E,S,o.c,lanes);
+    if(!e2){ s2=placeOn(S,E,o.c,lanes); e2=E; }
+    if(s2&&e2&&(e2.x-s2.x)*Math.cos(o.c)+(e2.y-s2.y)*Math.sin(o.c)>12) return {S:s2,E:e2,o};
+  }
+  return null;
+}
 function makePlan(S,raw,wEnd,lanes,forceStraight,over){
   let E=snapAt(wEnd.x,wEnd.y,S);
   if(E.kind==="node"&&S.kind==="seg"&&(E.node.id===S.seg.a||E.node.id===S.seg.b)) E={kind:"free",x:wEnd.x,y:wEnd.y};
@@ -779,46 +824,44 @@ function makePlan(S,raw,wEnd,lanes,forceStraight,over){
     if(S.kind==="bld") S=bldEnd(S,away(S,raw)||E,lanes);
     if(E.kind==="bld") E=bldEnd(E,away(E,raw.slice().reverse())||S,lanes);
   }
-  const dx=E.x-S.x, dy=E.y-S.y, L=Math.hypot(dx,dy)||1;
-  let md=0; for(const p of raw){ md=Math.max(md,Math.abs((p.x-S.x)*dy-(p.y-S.y)*dx)/L); }
-  const straight=forceStraight||md<Math.max(7,Math.min(L*.06,14))||raw.length<4;
-  let pts, guide=null;
+  const L=D(S,E)||1;
+  // a straight road or a freehand one? Judge the stroke as drawn, on screen, so ends that jump onto a road
+  // or a junction don't make a straight stroke look wiggly
+  const r0=raw[0], cx=wEnd.x-r0.x, cy=wEnd.y-r0.y, cl=Math.hypot(cx,cy)||1;
+  let md=0; for(const p of raw){ md=Math.max(md,Math.abs((p.x-r0.x)*cy-(p.y-r0.y)*cx)/cl); }
+  const straight=forceStraight||raw.length<4||md*cam.z<clamp(cl*cam.z*.06,isTouch?11:8,isTouch?22:16);
+  // the way the road is meant to go: from where it starts to the pointer, or the way the pointer moved
+  // (pressing a little way off a junction and dragging square still means square from the junction)
+  const a0=[Math.atan2(wEnd.y-S.y,wEnd.x-S.x)]; if(cl>20) a0.push(Math.atan2(cy,cx));
+  let pts, guide=null, lean=null;
   if(straight){
-    if(E.kind==="free"){
-      // snap the angle to 15 degree steps, or square to the road we started from
-      const a=Math.atan2(dy,dx), cands=[];
-      for(let k=0;k<24;k++) cands.push(k*Math.PI/12);
-      let base=null;
-      if(S.kind==="seg") base=Math.atan2(S.seg.uy,S.seg.ux);
-      else if(S.kind==="node"&&S.node.segs.length){ const d0=dirFrom(segs.get(S.node.segs[0]),S.node.id); base=Math.atan2(d0.y,d0.x); }
-      // square to the road it starts from first, and from a little further off than the 15 degree steps
-      const sq=[]; if(base!==null) for(let k=0;k<4;k++) sq.push(base+k*Math.PI/2);
-      const off=c=>Math.abs(((a-c)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI);
-      let bestA=null, bd=.18;
-      for(const c of sq){ const d=off(c); if(d<bd){bd=d;bestA=c;} }
-      if(bestA===null){ bd=.12; for(const c of cands){ const d=off(c); if(d<bd){bd=d;bestA=c;} } }
-      if(bestA!==null){ E={kind:"free",x:S.x+Math.cos(bestA)*L,y:S.y+Math.sin(bestA)*L}; guide=bestA; }
-    }
+    // snap to square or straight on from a road at either end, or to 15 degree steps
+    const f=fitDir(S,E,snapDirs(a0,S,E),lanes); if(f){ S=f.S; E=f.E; lean=f.o; }
     if(!over){
-      if(E.kind==="free"){ const r=reachEnd([S,E],lanes,touches(S)); if(r&&!sameSpot(S,r.P)) E=r.P; }
-      if(S.kind==="free"){ const r=reachEnd([E,S],lanes,touches(E)); if(r&&!sameSpot(E,r.P)) S=r.P; }
-      // a road ending square-ish on another road meets it exactly square
-      if(E.kind==="seg"&&S.kind!=="bld"){ const l=D(S,E)||1; if(Math.abs(((E.x-S.x)*E.seg.ux+(E.y-S.y)*E.seg.uy)/l)<.17){
-        const A=nodes.get(E.seg.a), t=((S.x-A.x)*E.seg.ux+(S.y-A.y)*E.seg.uy)/E.seg.len;
-        if(t>0&&t<1){ const q=onSeg(E.seg,t,snapR(),lanes); if(q.kind==="seg") E=q; } } }
-      // crossing a road right beside one of its junctions: slide over and go through the junction instead
+      // a loose end that stops just short of a road carries on to it, or is cut back to one it pokes past
+      let moved=false;
+      if(E.kind==="free"){ const r=reachEnd([S,E],lanes,touches(S)); if(r&&!sameSpot(S,r.P)){ E=r.P; moved=true; } }
+      if(S.kind==="free"){ const r=reachEnd([E,S],lanes,touches(E)); if(r&&!sameSpot(E,r.P)){ S=r.P; moved=true; } }
+      // that end may have landed on a junction off the line, or on a road worth squaring up to: line up again
+      if(moved){ const f2=fitDir(S,E,snapDirs(a0,S,E),lanes); if(f2){ S=f2.S; E=f2.E; lean=f2.o; } }
+      // crossing a road right beside one of its junctions: go through that junction instead. Keep the angle by
+      // sliding the road over when its ends can move, else swing the loose end round to it
       const mag=junctionMagnet(S,E,lanes);
-      if(mag){ if(S.kind==="free"&&E.kind==="free"){ S={kind:"free",x:S.x+mag.x,y:S.y+mag.y}; E={kind:"free",x:E.x+mag.x,y:E.y+mag.y}; }
-        else if(E.kind==="free"||S.kind==="free"){ const F=E.kind==="free"?S:E, M=E.kind==="free"?E:S, l=D(F,M), dn=Math.hypot(mag.n.x-F.x,mag.n.y-F.y);
-          if(dn>8&&dn<l-8){ const q={kind:"free",x:F.x+(mag.n.x-F.x)/dn*l,y:F.y+(mag.n.y-F.y)/dn*l}; if(E.kind==="free") E=q; else S=q; } } }
+      if(mag){ const n=mag.n, c=Math.atan2(E.y-S.y,E.x-S.x);
+        let s2=placeOn(S,n,c,lanes), e2=placeOn(E,n,c,lanes);
+        if(!(s2&&e2)){ s2=S; e2=placeOn(E,S,Math.atan2(n.y-S.y,n.x-S.x),lanes);
+          if(!e2){ e2=E; s2=placeOn(S,E,Math.atan2(n.y-E.y,n.x-E.x),lanes); } }
+        if(s2&&e2){ const l=D(s2,e2), pr=projSeg(n.x,n.y,s2.x,s2.y,e2.x,e2.y);
+          if(pr.d<1&&pr.t*l>8&&(1-pr.t)*l>8){ if(Math.abs(angOff(Math.atan2(e2.y-s2.y,e2.x-s2.x),c))>1e-6) lean=null; S=s2; E=e2; } } }
     }
     pts=[{x:S.x,y:S.y},{x:E.x,y:E.y}];
+    if(lean) guide=Math.atan2(E.y-S.y,E.x-S.x);
   } else {
     if(!over&&E.kind==="free"){ const line=raw.slice(0,-1).concat([{x:E.x,y:E.y}]), r=reachEnd(line,lanes,touches(S)); if(r&&!sameSpot(S,r.P)){ E=r.P; raw=line.slice(0,r.keep).concat([{x:E.x,y:E.y}]); } }
     if(!over&&S.kind==="free"){ const line=[{x:S.x,y:S.y}].concat(raw.slice(1)).reverse(), r=reachEnd(line,lanes,touches(E)); if(r&&!sameSpot(E,r.P)){ S=r.P; raw=line.slice(0,r.keep).concat([{x:S.x,y:S.y}]).reverse(); } }
     // ignore the wiggle where the stroke starts or ends on a building or road, so the snapped ends join cleanly
-    const zone=Math.max(10,snapR()*.9), inB=(q,P)=>P.kind==="bld"&&Math.hypot(q.x-P.b.x,q.y-P.b.y)<Math.hypot(P.x-P.b.x,P.y-P.b.y)+4;
-    const mid=raw.slice(1,-1).filter(q=>D(q,S)>zone&&D(q,E)>zone&&!inB(q,S)&&!inB(q,E));
+    const zone=Math.max(10,snapR()*.9), zS=Math.max(zone,D(S,raw[0])*1.3), zE=Math.max(zone,D(E,wEnd)*1.3), inB=(q,P)=>P.kind==="bld"&&Math.hypot(q.x-P.b.x,q.y-P.b.y)<Math.hypot(P.x-P.b.x,P.y-P.b.y)+4;
+    const mid=raw.slice(1,-1).filter(q=>D(q,S)>zS&&D(q,E)>zE&&!inB(q,S)&&!inB(q,E));
     let p=[{x:S.x,y:S.y}].concat(mid.map(q=>({x:q.x,y:q.y}))); p.push({x:E.x,y:E.y});
     // keep only the real turns of the stroke: hand wobble becomes straight runs, and the bends get rounded off when drawn
     p=resample(p,5); p=rdp(p,Math.max(9,Math.min(20,L*.07)));
@@ -827,14 +870,25 @@ function makePlan(S,raw,wEnd,lanes,forceStraight,over){
     for(let changed=true;changed&&p.length>2;){ changed=false;
       for(let i=1;i<p.length-1;i++){ const tn=turn(p[i-1],p[i],p[i+1]);
         if(tn<.24||tn>2.45||D(p[i-1],p[i])<24||D(p[i],p[i+1])<24){ p.splice(i,1); changed=true; break; } } }
+    // the first and last legs snap square or straight to the roads they leave and join, like a straight road does
+    const n=p.length;
+    if(n>=3){
+      const legDir=(Q,R0,P)=>{ const d=snapDirs(Math.atan2(R0.y-Q.y,R0.x-Q.x),P,{kind:"free"}); return d.length?d[0].c:null; };
+      const c1=legDir(S,p[1],S), c2=legDir(E,p[n-2],E);
+      const meet=(c,d)=>{ const ux=Math.cos(c), uy=Math.sin(c), vx=Math.cos(d), vy=Math.sin(d), den=ux*vy-uy*vx; if(Math.abs(den)<.3) return null;
+        const k=((E.x-S.x)*vy-(E.y-S.y)*vx)/den; return {x:S.x+ux*k,y:S.y+uy*k}; };
+      if(n===3&&c1!==null&&c2!==null){ const m=meet(c1,c2); if(m&&D(m,p[1])<.35*Math.min(D(S,p[1]),D(p[1],E))) p[1]=m; }
+      else { if(c1!==null){ const q=placeOn({kind:"free",x:p[1].x,y:p[1].y},S,c1,lanes); if(D(q,p[1])<.35*D(S,p[1])) p[1]={x:q.x,y:q.y}; }
+        if(c2!==null){ const q=placeOn({kind:"free",x:p[n-2].x,y:p[n-2].y},E,c2,lanes); if(D(q,p[n-2])<.35*D(E,p[n-2])) p[n-2]={x:q.x,y:q.y}; } }
+    }
     pts=p;
   }
   const hw0=halfW(lanes);
   pts=addStub(pts,S,true,hw0); pts=addStub(pts,E,false,hw0);
   const plan={S,E,pts,lanes,guide,over:!!over};
-  // the angle it meets the road it starts from, like a protractor
-  if(S.kind==="seg"||(S.kind==="node"&&S.node.segs.length)){ const d0=S.kind==="seg"?{x:S.seg.ux,y:S.seg.uy}:dirFrom(segs.get(S.node.segs[0]),S.node.id), p1=pts[1], l=D(pts[0],p1)||1;
-    const c=Math.abs((d0.x*(p1.x-pts[0].x)+d0.y*(p1.y-pts[0].y))/l); plan.angle=Math.round(Math.acos(clamp(c,0,1))*180/Math.PI); }
+  // the angle it meets a road at, like a protractor: the road it snapped to, else the one it starts from
+  const base=lean&&lean.b!==null?lean.b:endDirs(S)[0]!==undefined?endDirs(S)[0]:endDirs(E)[0];
+  if(base!==undefined&&pts.length===2){ const c=Math.abs(Math.cos(Math.atan2(pts[1].y-pts[0].y,pts[1].x-pts[0].x)-base)); plan.angle=Math.round(Math.acos(clamp(c,0,1))*180/Math.PI); }
   validatePlan(plan);
   return plan;
 }
@@ -890,7 +944,7 @@ function noisyHome(pts){
 }
 const roadUsed=()=>{ let u=0; for(const s of segs.values()) u+=s.len*s.lanes; return u; };
 function commitPlan(pl,quiet){
-  const used0=roadUsed();
+  const used0=roadUsed(), sid0=sid, nid0=nid;
   const st={inWater:false,over:pl.over,first:true};
   let prev=resolveSnap(pl.S);
   for(let i=1;i<pl.pts.length;i++){
@@ -899,11 +953,25 @@ function commitPlan(pl,quiet){
     if(q!==prev) linkWithCrossings(prev,q,pl.lanes,st);
     prev=q;
   }
+  // a road that joined or crossed right beside an old joint leaves a stub of road there: make it one piece again
+  for(const n of [...nodes.values()]) if(n.id<nid0&&n.segs.length===2&&n.segs.some(id=>id>=sid0)) healJoint(n);
   // pay for what actually got built (a stretch that's already road costs nothing)
   const built=roadUsed()-used0; res.road-=Math.max(0,built); if(built>1) res.bridge-=pl.bridges;
   firstRoad=true;
   if(!quiet) afterEdit();
   return built;
+}
+function healJoint(n){
+  if(n.type!=="plain"||n.segs.length!==2) return;
+  const s1=segs.get(n.segs[0]), s2=segs.get(n.segs[1]);
+  if(s1.lanes!==s2.lanes||s1.water||s2.water||s1.over||s2.over||s1.fixed||s2.fixed||s1.bridgeHead||s2.bridgeHead) return;
+  const d1=dirFrom(s1,n.id), d2=dirFrom(s2,n.id); if(d1.x*d2.x+d1.y*d2.y>-.99996) return;
+  const A=nodes.get(segOther(s1,n.id)), B=nodes.get(segOther(s2,n.id)); if(A===B||segBetween(A,B)) return;
+  removeSeg(s1); removeSeg(s2); nodes.delete(n.id);
+  const s=addSeg(A,B,s1.lanes);
+  // lane arrows and slip lanes at either end carry over to the joined road
+  for(const [m,o] of [[A,s1],[B,s2]]){ if(m.lc[o.id]!==undefined){ m.lc[s.id]=m.lc[o.id]; delete m.lc[o.id]; } if(m.slip[o.id]){ m.slip[s.id]=true; delete m.slip[o.id]; }
+    if(m.light&&m.light.grp&&m.light.grp[o.id]!==undefined) m.light.grp[s.id]=m.light.grp[o.id]; }
 }
 function chainOf(seg){
   const out=new Set([seg.id]), stack=[seg.a,seg.b];
