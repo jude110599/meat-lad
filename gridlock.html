@@ -234,6 +234,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
+    <div class="small">Version 4.4</div>
   </div>
 </div>
 
@@ -244,6 +245,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
+    <div class="small">Version 4.4</div>
   </div>
 </div>
 
@@ -294,7 +296,7 @@ const BT={
   bighouse:{home:true,w:52,d:24,r:29,col:"#3c8a3e",name:"big house",names:"big houses"},
   apts:    {home:true,w:58,d:52,r:39,col:"#2f6e3d",name:"apartment block",names:"apartment blocks"},
   shop:    {w:54,d:46,r:35,col:"#3d7fe0",dark:"#2a5cb0",light:"#79a8f0",name:"shop",names:"shops",need:"cust",rate:1,cap:{cust:8,goods:6}},
-  mall:    {w:112,d:88,r:71,col:"#7fbcf0",dark:"#4f93cf",light:"#d3e9fb",name:"mall",names:"malls",need:"cust",rate:3,cap:{cust:20,goods:10}},
+  mall:    {w:112,d:88,r:71,col:"#7fbcf0",dark:"#4f93cf",light:"#d3e9fb",name:"mall",names:"malls",need:"cust",rate:2,cap:{cust:20,goods:10}},
   office:  {w:38,d:38,r:27,col:"#8a60d0",dark:"#6440a6",light:"#b394e6",name:"office",names:"offices",need:"work",rate:1,cap:{work:8}},
   factory: {w:60,d:48,r:38,col:"#ee8a35",dark:"#bf6418",light:"#f7b273",name:"factory",names:"factories",need:"work",rate:1,cap:{work:8,raw:6}}
 };
@@ -792,7 +794,7 @@ const angOff=(a,c)=>Math.abs(((a-c)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI);
 // straight on from a road at either end, then the nearest 15 degree step
 function snapDirs(a,S,E){
   const as=Array.isArray(a)?a:[a], off=c=>Math.min(...as.map(x=>angOff(x,c))), out=[];
-  for(const P of [S,E]) for(const b of endDirs(P)) for(let k=0;k<4;k++){ const c=b+k*Math.PI/2, d=off(c); if(d<.18) out.push({c,d,b}); }
+  for(const P of [S,E]) for(const b of endDirs(P)) for(let k=0;k<4;k++){ const c=b+k*Math.PI/2, d=off(c); if(d<.21) out.push({c,d,b}); }
   out.sort((p,q)=>p.d-q.d);
   for(let k=0;k<24;k++){ const c=k*Math.PI/12, d=off(c); if(d<.12) out.push({c,d,b:null}); }
   return out;
@@ -803,8 +805,9 @@ function placeOn(P,Q,c,lanes){
   const ux=Math.cos(c), uy=Math.sin(c);
   if(P.kind==="free"){ const t=(P.x-Q.x)*ux+(P.y-Q.y)*uy; return {kind:"free",x:Q.x+ux*t,y:Q.y+uy*t}; }
   if(P.kind==="seg"){ const s=P.seg, A=nodes.get(s.a), den=s.ux*uy-s.uy*ux; if(Math.abs(den)<.25) return null;
-    const t=((Q.x-A.x)*uy-(Q.y-A.y)*ux)/den/s.len; if(t<=0||t>=1) return null;
-    const q=onSeg(s,t,snapR(),lanes); return q.kind==="seg"?q:null; }
+    const t=((Q.x-A.x)*uy-(Q.y-A.y)*ux)/den/s.len; if(t<-.02||t>1.02) return null;
+    // too near the road's end means joining that end, which only works if it's on the line too
+    const q=onSeg(s,t,snapR(),lanes); return q.kind==="seg"||Math.abs((q.x-Q.x)*uy-(q.y-Q.y)*ux)<1.5?q:null; }
   return Math.abs((P.x-Q.x)*uy-(P.y-Q.y)*ux)<.5?P:null;
 }
 // line the two ends up on the first of the directions they can both sit on, moving the end that's freest to move
@@ -824,16 +827,50 @@ function makePlan(S,raw,wEnd,lanes,forceStraight,over){
     if(S.kind==="bld") S=bldEnd(S,away(S,raw)||E,lanes);
     if(E.kind==="bld") E=bldEnd(E,away(E,raw.slice().reverse())||S,lanes);
   }
-  const L=D(S,E)||1;
   // a straight road or a freehand one? Judge the stroke as drawn, on screen, so ends that jump onto a road
   // or a junction don't make a straight stroke look wiggly
   const r0=raw[0], cx=wEnd.x-r0.x, cy=wEnd.y-r0.y, cl=Math.hypot(cx,cy)||1;
   let md=0; for(const p of raw){ md=Math.max(md,Math.abs((p.x-r0.x)*cy-(p.y-r0.y)*cx)/cl); }
-  const straight=forceStraight||raw.length<4||md*cam.z<clamp(cl*cam.z*.06,isTouch?11:8,isTouch?22:16);
+  const sc=cam.z;
+  let straight=forceStraight||raw.length<4||md*sc<clamp(cl*sc*.13,isTouch?16:12,isTouch?28:20);
   // the way the road is meant to go: from where it starts to the pointer, or the way the pointer moved
   // (pressing a little way off a junction and dragging square still means square from the junction)
   const a0=[Math.atan2(wEnd.y-S.y,wEnd.x-S.x)]; if(cl>20) a0.push(Math.atan2(cy,cx));
   let pts, guide=null, lean=null;
+  if(!straight){
+    const S0=S, E0=E;
+    if(!over&&E.kind==="free"){ const line=raw.slice(0,-1).concat([{x:E.x,y:E.y}]), r=reachEnd(line,lanes,touches(S)); if(r&&!sameSpot(S,r.P)){ E=r.P; raw=line.slice(0,r.keep).concat([{x:E.x,y:E.y}]); } }
+    if(!over&&S.kind==="free"){ const line=[{x:S.x,y:S.y}].concat(raw.slice(1)).reverse(), r=reachEnd(line,lanes,touches(E)); if(r&&!sameSpot(E,r.P)){ S=r.P; raw=line.slice(0,r.keep).concat([{x:S.x,y:S.y}]).reverse(); } }
+    // stretch the stroke so its ends sit on the snapped ends, spreading the shift along it so a straight stroke stays straight
+    const cum=[0]; for(let i=1;i<raw.length;i++) cum.push(cum[i-1]+D(raw[i-1],raw[i]));
+    const tot=cum[cum.length-1]||1, q0=raw[0], q1=raw[raw.length-1];
+    const str=raw.map((q,i)=>{ const f=cum[i]/tot; return {x:q.x+(S.x-q0.x)*(1-f)+(E.x-q1.x)*f,y:q.y+(S.y-q0.y)*(1-f)+(E.y-q1.y)*f}; });
+    // ignore the wiggle where the stroke starts or ends on a building or road, so the snapped ends join cleanly
+    const zone=Math.max(10,snapR()*.9), inB=(q,P)=>P.kind==="bld"&&Math.hypot(q.x-P.b.x,q.y-P.b.y)<Math.hypot(P.x-P.b.x,P.y-P.b.y)+4;
+    const mid=str.slice(1,-1).filter(q=>D(q,S)>zone&&D(q,E)>zone&&!inB(q,S)&&!inB(q,E));
+    let p=[{x:S.x,y:S.y}].concat(mid); p.push({x:E.x,y:E.y});
+    // keep only the real turns of the stroke: hand wobble becomes straight runs, and the bends get rounded off when drawn
+    p=resample(p,5); p=rdp(p,clamp(cl*sc*.09,isTouch?14:10,isTouch?30:24)/sc);
+    p[0]={x:S.x,y:S.y}; p[p.length-1]={x:E.x,y:E.y};
+    const turn=(a,b,c)=>{ const u1=Math.atan2(b.y-a.y,b.x-a.x), u2=Math.atan2(c.y-b.y,c.x-b.x); let d=Math.abs(u2-u1)%(2*Math.PI); return d>Math.PI?2*Math.PI-d:d; };
+    for(let changed=true;changed&&p.length>2;){ changed=false;
+      for(let i=1;i<p.length-1;i++){ const tn=turn(p[i-1],p[i],p[i+1]);
+        if(tn<.24||tn>2.45||D(p[i-1],p[i])<24||D(p[i],p[i+1])<24){ p.splice(i,1); changed=true; break; } } }
+    // nothing left but a straight line: it's a straight road after all, snapped like one
+    if(p.length<3){ straight=true; S=S0; E=E0; }
+    else {
+      // the first and last legs snap square or straight to the roads they leave and join, like a straight road does
+      const n=p.length;
+      const legDir=(Q,R0,P)=>{ const d=snapDirs(Math.atan2(R0.y-Q.y,R0.x-Q.x),P,{kind:"free"}); return d.length?d[0].c:null; };
+      const c1=legDir(S,p[1],S), c2=legDir(E,p[n-2],E);
+      const meet=(c,d)=>{ const ux=Math.cos(c), uy=Math.sin(c), vx=Math.cos(d), vy=Math.sin(d), den=ux*vy-uy*vx; if(Math.abs(den)<.3) return null;
+        const k=((E.x-S.x)*vy-(E.y-S.y)*vx)/den; return {x:S.x+ux*k,y:S.y+uy*k}; };
+      if(n===3&&c1!==null&&c2!==null){ const m=meet(c1,c2); if(m&&D(m,p[1])<.35*Math.min(D(S,p[1]),D(p[1],E))) p[1]=m; }
+      else { if(c1!==null){ const q=placeOn({kind:"free",x:p[1].x,y:p[1].y},S,c1,lanes); if(D(q,p[1])<.35*D(S,p[1])) p[1]={x:q.x,y:q.y}; }
+        if(c2!==null){ const q=placeOn({kind:"free",x:p[n-2].x,y:p[n-2].y},E,c2,lanes); if(D(q,p[n-2])<.35*D(E,p[n-2])) p[n-2]={x:q.x,y:q.y}; } }
+      pts=p;
+    }
+  }
   if(straight){
     // snap to square or straight on from a road at either end, or to 15 degree steps
     const f=fitDir(S,E,snapDirs(a0,S,E),lanes); if(f){ S=f.S; E=f.E; lean=f.o; }
@@ -856,32 +893,6 @@ function makePlan(S,raw,wEnd,lanes,forceStraight,over){
     }
     pts=[{x:S.x,y:S.y},{x:E.x,y:E.y}];
     if(lean) guide=Math.atan2(E.y-S.y,E.x-S.x);
-  } else {
-    if(!over&&E.kind==="free"){ const line=raw.slice(0,-1).concat([{x:E.x,y:E.y}]), r=reachEnd(line,lanes,touches(S)); if(r&&!sameSpot(S,r.P)){ E=r.P; raw=line.slice(0,r.keep).concat([{x:E.x,y:E.y}]); } }
-    if(!over&&S.kind==="free"){ const line=[{x:S.x,y:S.y}].concat(raw.slice(1)).reverse(), r=reachEnd(line,lanes,touches(E)); if(r&&!sameSpot(E,r.P)){ S=r.P; raw=line.slice(0,r.keep).concat([{x:S.x,y:S.y}]).reverse(); } }
-    // ignore the wiggle where the stroke starts or ends on a building or road, so the snapped ends join cleanly
-    const zone=Math.max(10,snapR()*.9), zS=Math.max(zone,D(S,raw[0])*1.3), zE=Math.max(zone,D(E,wEnd)*1.3), inB=(q,P)=>P.kind==="bld"&&Math.hypot(q.x-P.b.x,q.y-P.b.y)<Math.hypot(P.x-P.b.x,P.y-P.b.y)+4;
-    const mid=raw.slice(1,-1).filter(q=>D(q,S)>zS&&D(q,E)>zE&&!inB(q,S)&&!inB(q,E));
-    let p=[{x:S.x,y:S.y}].concat(mid.map(q=>({x:q.x,y:q.y}))); p.push({x:E.x,y:E.y});
-    // keep only the real turns of the stroke: hand wobble becomes straight runs, and the bends get rounded off when drawn
-    p=resample(p,5); p=rdp(p,Math.max(9,Math.min(20,L*.07)));
-    p[0]={x:S.x,y:S.y}; p[p.length-1]={x:E.x,y:E.y};
-    const turn=(a,b,c)=>{ const u1=Math.atan2(b.y-a.y,b.x-a.x), u2=Math.atan2(c.y-b.y,c.x-b.x); let d=Math.abs(u2-u1)%(2*Math.PI); return d>Math.PI?2*Math.PI-d:d; };
-    for(let changed=true;changed&&p.length>2;){ changed=false;
-      for(let i=1;i<p.length-1;i++){ const tn=turn(p[i-1],p[i],p[i+1]);
-        if(tn<.24||tn>2.45||D(p[i-1],p[i])<24||D(p[i],p[i+1])<24){ p.splice(i,1); changed=true; break; } } }
-    // the first and last legs snap square or straight to the roads they leave and join, like a straight road does
-    const n=p.length;
-    if(n>=3){
-      const legDir=(Q,R0,P)=>{ const d=snapDirs(Math.atan2(R0.y-Q.y,R0.x-Q.x),P,{kind:"free"}); return d.length?d[0].c:null; };
-      const c1=legDir(S,p[1],S), c2=legDir(E,p[n-2],E);
-      const meet=(c,d)=>{ const ux=Math.cos(c), uy=Math.sin(c), vx=Math.cos(d), vy=Math.sin(d), den=ux*vy-uy*vx; if(Math.abs(den)<.3) return null;
-        const k=((E.x-S.x)*vy-(E.y-S.y)*vx)/den; return {x:S.x+ux*k,y:S.y+uy*k}; };
-      if(n===3&&c1!==null&&c2!==null){ const m=meet(c1,c2); if(m&&D(m,p[1])<.35*Math.min(D(S,p[1]),D(p[1],E))) p[1]=m; }
-      else { if(c1!==null){ const q=placeOn({kind:"free",x:p[1].x,y:p[1].y},S,c1,lanes); if(D(q,p[1])<.35*D(S,p[1])) p[1]={x:q.x,y:q.y}; }
-        if(c2!==null){ const q=placeOn({kind:"free",x:p[n-2].x,y:p[n-2].y},E,c2,lanes); if(D(q,p[n-2])<.35*D(E,p[n-2])) p[n-2]={x:q.x,y:q.y}; } }
-    }
-    pts=p;
   }
   const hw0=halfW(lanes);
   pts=addStub(pts,S,true,hw0); pts=addStub(pts,E,false,hw0);
@@ -1477,19 +1488,25 @@ function updateCars(dt){
 
 // ---------- demand ----------
 const lvNeed=()=>8+6*(level-1);
+const TRIP=20;                   // seconds a car takes over a trip, there and back, when the roads are clear
 function updateDemand(dt){
-  // every place asks for visitors at a steady rate that creeps up over time
-  const per=.11*(1+t/420);
+  // every place asks for visitors at a steady rate that creeps up slowly over time
   const ds=dests().filter(d=>t-d.born>8);
   if(!ds.length) return;
+  let per=.08*Math.min(2.5,1+t/600);
+  // but never for more customers and workers than the town's cars can bring: each car that can reach a road
+  // manages roughly one trip every TRIP seconds, so a town with lots of shops and few homes isn't swamped
+  let cars=0, want=0; for(const h of homes()) if(h.acc) cars+=h.cars.length;
+  for(const d of ds) want+=per*BT[d.type].rate;
+  if(want>0) per*=Math.min(1,Math.max(cars,4)/TRIP/want);
   const nF=ds.filter(d=>d.type==="factory").length;
   for(const d of ds){
     const T=BT[d.type];
     d.dem[T.need]+=dt*per*T.rate;
     // shops sell goods, which come from the town's factories or by truck from outside once the town is a bit bigger
-    if((d.type==="shop"||d.type==="mall")&&(nF>0||(outside&&level>=2))&&t-d.born>30){ d.dem.goods+=dt*per*.25*(d.type==="mall"?2:1);
+    if((d.type==="shop"||d.type==="mall")&&(nF>0||(outside&&level>=2))&&t-d.born>30){ d.dem.goods+=dt*per*.2*(d.type==="mall"?1.6:1);
       if(!goodsHinted&&!nF){ goodsHinted=true; setHint("Shops want goods now too. Trucks bring them in on the highway at the edge of the map, so join it up to your roads.",6); } }
-    if(d.type==="factory"&&outside) d.dem.raw+=dt*per*.3;
+    if(d.type==="factory"&&outside) d.dem.raw+=dt*per*.22;
     let full=false;
     for(const k of KINDS){ const cap=capOf(d,k); if(!cap) continue;
       while(d.dem[k]>=1){ d.dem[k]-=1; if(d.pins[k]<cap+3){ d.pins[k]++; d.pop=1; } }
