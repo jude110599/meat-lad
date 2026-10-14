@@ -19,6 +19,13 @@ html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;backgrou
 #cv.ultra{filter:saturate(1.13) contrast(1.04) sepia(.07)}
 #vig{position:fixed;inset:0;pointer-events:none;z-index:1;display:none;background:radial-gradient(ellipse 80% 75% at 50% 45%,rgba(45,35,25,0) 55%,rgba(45,35,25,.22) 100%)}
 #vig.on{display:block}
+#dusk{position:fixed;inset:0;pointer-events:none;z-index:1;display:none;mix-blend-mode:multiply}
+#glare{position:fixed;inset:0;pointer-events:none;z-index:1;display:none;mix-blend-mode:screen;background:radial-gradient(circle at 0 0,rgba(255,232,180,.32),rgba(255,232,180,.08) 38%,rgba(255,232,180,0) 70%)}
+/* Ultra's tilt-shift: the top and bottom of the view go soft, like a photo of a model town */
+.ts{position:fixed;left:0;right:0;pointer-events:none;z-index:1;display:none;-webkit-backdrop-filter:blur(1.8px);backdrop-filter:blur(1.8px)}
+.ts.on{display:block}
+#tsT{top:0;height:20vh;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent)}
+#tsB{bottom:0;height:22vh;-webkit-mask-image:linear-gradient(transparent,#000);mask-image:linear-gradient(transparent,#000)}
 button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
 
 #top{position:fixed;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;
@@ -151,7 +158,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 </head>
 <body>
 <canvas id="cv"></canvas>
-<div id="vig"></div>
+<div id="vig"></div><div id="dusk"></div><div id="glare"></div><div class="ts" id="tsT"></div><div class="ts" id="tsB"></div>
 
 <div id="top">
   <button class="pill iconbtn" id="menuOpen" title="Menu (Esc)" aria-label="Menu">
@@ -245,10 +252,10 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big two" id="playBtn">Play<small>A building that stays full too long ends the game</small></button>
     <button class="big alt two" id="relaxBtn">Relaxed<small>Just build, no game over</small></button>
     <button class="big alt two" id="cityBtn">City builder<small>Zone land and the town grows by itself. Roads cost money, and taxes pay for them</small></button>
-    <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
+    <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 4.9</div>
+    <div class="small">Version 5.0</div>
   </div>
 </div>
 
@@ -258,8 +265,8 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big" id="resumeBtn">Resume</button>
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
-    <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
-    <div class="small">Version 4.9</div>
+    <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
+    <div class="small">Version 5.0</div>
   </div>
 </div>
 
@@ -1985,7 +1992,7 @@ function newGame(isRelaxed,isCity){
   relaxed=!!isRelaxed; city=!!isCity; viewing=false; document.body.classList.toggle("city",city);
   genMap();
   nodes=new Map(); segs=new Map(); nodeList=[]; segArr=[]; nid=1; sid=1; bid=1;
-  blds=[]; cars=[]; effects=[];
+  blds=[]; cars=[]; effects=[]; fxReset();
   res={road:1500,round:1,light:1,bridge:2};
   score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; plantGiven=false; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false; partsHinted=false;
   // nothing is built yet: the first shop and houses are yours to place
@@ -2747,7 +2754,7 @@ function worldT(){ ctx.setTransform(dpr*cam.z,0,0,dpr*cam.z,dpr*(vw/2-cam.x*cam.
 let ultra=false;
 try{ ultra=localStorage.getItem("gridlockGfx")==="ultra"; }catch(e){}
 function setGfx(g){ ultra=g==="ultra"; try{ localStorage.setItem("gridlockGfx",ultra?"ultra":"normal"); }catch(e){} tkey=""; if(roadCache) buildRoadCache(); gfxButtons(); }
-function gfxButtons(){ cv.classList.toggle("ultra",ultra); $("vig").classList.toggle("on",ultra);
+function gfxButtons(){ skyKey=""; if(!ultra) skyTint(0,0); cv.classList.toggle("ultra",ultra); $("vig").classList.toggle("on",ultra); $("tsT").classList.toggle("on",ultra); $("tsB").classList.toggle("on",ultra);
   document.querySelectorAll("[data-gfx]").forEach(b=>{ const on=b.dataset.gfx===(ultra?"ultra":"normal"); b.classList.toggle("on",on); b.setAttribute("aria-pressed",on); }); }
 // a fixed scatter of numbers for Ultra's decorations, so they stay put and never touch the game's own dice
 function hash(i,k){ let x=(Math.imul(i|0,374761393)+Math.imul(k|0,668265263))|0; x=Math.imul(x^(x>>>13),1274126177); x^=x>>>16; return (x>>>0)/4294967296; }
@@ -2816,7 +2823,12 @@ function roadDecals(){
       const p=(a,o)=>({x:n.x+a.d.x*a.t-a.d.y*o,y:n.y+a.d.y*a.t+a.d.x*o});
       for(const o of [LW*.5-1.3,LW*.5+1.3]){ const p1=p(A1,-o), p2=p(A2,o); tyre.moveTo(p1.x,p1.y); tyre.quadraticCurveTo(n.x,n.y,p2.x,p2.y); } }
   }
-  return {zeb,patch,crack,tyre,hole,holeL};
+  // where the rain collects: shallow puddles along the edges of the road
+  const pud=new Path2D();
+  for(const s of segs.values()){ if(s.over||s.hwy) continue; const A=nodes.get(s.a), hw=segHW(s), run=s.len-s.ta-s.tb, id=s.id*53, ang=Math.atan2(s.uy,s.ux); if(run<30) continue;
+    for(let d=15+hash(id,1)*40,k=0;d<run-12;d+=45+hash(id,k+2)*80,k++){ const side=hash(id,k+3)<.5?-1:1, o=side*(hw-2.6-hash(id,k+4)*2), x=A.x+s.ux*(s.ta+d)-s.uy*o, y=A.y+s.uy*(s.ta+d)+s.ux*o, rx=3+hash(id,k+5)*5, ry=1.1+hash(id,k+6)*1.2;
+      pud.moveTo(x+rx*Math.cos(ang),y+rx*Math.sin(ang)); pud.ellipse(x,y,rx,ry,ang,0,7); } }
+  return {zeb,patch,crack,tyre,hole,holeL,pud};
 }
 // a band of reflected sky sliding slowly over a pane of glass (on the building's own plan)
 function sheen(x,y,w,h,seed,ox,ow){
@@ -2838,10 +2850,245 @@ function drawClouds(){
     const cx=((hash(i,1)*W+now*7)%W)-700, cy=((hash(i,2)*H+now*2.5)%H)-500, R=110+hash(i,3)*120;
     if(cx+R*1.8<view.x0||cx-R*1.8>view.x1||cy+R*1.3<view.y0||cy-R*1.3>view.y1) continue;
     for(let k=0;k<5;k++){ const bx=cx+(hash(i,10+k)-.5)*R*1.6, by=cy+(hash(i,20+k)-.5)*R*.8, r=R*(.4+hash(i,30+k)*.4);
-      const g=ctx.createRadialGradient(bx,by,0,bx,by,r); g.addColorStop(0,"rgba(35,45,80,.07)"); g.addColorStop(.55,"rgba(35,45,80,.05)"); g.addColorStop(1,"rgba(35,45,80,0)");
+      const g=ctx.createRadialGradient(bx,by,0,bx,by,r); g.addColorStop(0,"rgba(35,45,80,"+(.07*(1+rainK*1.5))+")"); g.addColorStop(.55,"rgba(35,45,80,"+(.05*(1+rainK*1.5))+")"); g.addColorStop(1,"rgba(35,45,80,0)");
       ctx.fillStyle=g; ctx.beginPath(); ctx.arc(bx,by,r,0,7); ctx.fill(); } }
 }
 function glow(x,y,r,rgb,a){ const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,"rgba("+rgb+","+a+")"); g.addColorStop(1,"rgba("+rgb+",0)"); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); }
+// ---------- Ultra: a living town ----------
+// Ultra brings the town to life. The sun goes down and the street lights, headlights, shop signs and windows come
+// on; showers roll through and leave the roads shining; smoke rises from the factories; birds fly over, boats sail
+// the lakes and people walk between the car parks and the shops. None of it touches the game itself, and it rolls
+// its own dice so the game's never change.
+const DAY=480;                                  // seconds of game time from one morning to the next
+let dayClock=DAY*.04, rainK=0, wetK=0, rainNext=170, rainLeft=0, fxSeed=1, fxLast=0;
+let smoke=[], birds=[], boats=null, lampList=[], lampKey=null, lcv=null, lctx=null;
+const frand=()=>hash(fxSeed++,977);
+const dayP=()=>(dayClock%DAY)/DAY;
+// how dark it is: day until 0.6 of the way round, dusk, night, then dawn
+function nightK(){ const p=dayP(); return p<.6?0:p<.7?sst(.6,.7,p):p<.92?1:1-sst(.92,1,p); }
+// the warm light around sunset and sunrise
+function duskK(){ const p=dayP(); return Math.max(0,1-Math.abs(p-.655)/.07,1-Math.abs(p-.955)/.05); }
+function fxStep(dt){
+  dayClock+=dt;
+  // now and then a shower comes over, and the roads stay wet for a while after it
+  if(rainLeft>0){ rainLeft-=dt; } else { rainNext-=dt; if(rainNext<=0){ rainLeft=40+frand()*50; rainNext=200+frand()*260; } }
+  rainK=clamp(rainK+(rainLeft>0?1:-1)*dt*.12,0,1);
+  wetK=rainK>.3?Math.min(1,wetK+dt*.07):Math.max(0,wetK-dt*.012);
+}
+function fxReset(){ dayClock=DAY*.04; rainK=wetK=0; rainLeft=0; rainNext=170; smoke=[]; birds=[]; boats=null; lampKey=null; }
+
+// soft round light, a coloured glow and a headlight beam, drawn once and stamped wherever they're needed
+const SPR={};
+function sprite(key,size,paint){ if(SPR[key]) return SPR[key]; const c=document.createElement("canvas"); c.width=c.height=size; paint(c.getContext("2d"),size); return SPR[key]=c; }
+const lightSpr=rgb=>sprite("l"+rgb,64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba("+rgb+",1)"); r.addColorStop(.3,"rgba("+rgb+",.7)"); r.addColorStop(.65,"rgba("+rgb+",.25)"); r.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
+const glowSpr=rgb=>sprite("g"+rgb,64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba("+rgb+",1)"); r.addColorStop(.18,"rgba("+rgb+",.55)"); r.addColorStop(.5,"rgba("+rgb+",.14)"); r.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
+const coneSpr=rgb=>sprite("c"+rgb,128,(g,s)=>{ for(let i=0;i<26;i++){ const u=i/25, x=3+u*(s-30), r=3+u*26, a=.2*(1-u*.85);
+  const q=g.createRadialGradient(x,s/2,0,x,s/2,r); q.addColorStop(0,"rgba("+rgb+","+a+")"); q.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=q; g.fillRect(x-r,s/2-r,2*r,2*r); } });
+const puffSpr=()=>sprite("puff",64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba(255,255,255,.9)"); r.addColorStop(.55,"rgba(255,255,255,.45)"); r.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
+
+// street lights along every road, on alternate sides, and down the middle of a highway
+function lamps(){
+  if(lampKey===roadCache) return lampList; lampKey=roadCache; lampList=[];
+  for(const s of segs.values()){
+    if(s.over) continue;
+    const A=nodes.get(s.a), hw=segHW(s), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb; if(run<22) continue;
+    const step=s.hwy?80:58, k=Math.max(1,Math.round(run/step));
+    for(let i=0;i<k;i++){ const d=s.ta+run*(i+.5)/k, side=s.hwy?0:((i+s.id)%2?1:-1), o=s.hwy?0:side*(hw+2.2);
+      lampList.push({x:A.x+s.ux*d+nx*o,y:A.y+s.uy*d+ny*o,ax:-nx*side,ay:-ny*side,hwy:!!s.hwy}); }
+  }
+  return lampList;
+}
+function drawLamps(){
+  if(cam.z<.6) return;
+  const sh=new Path2D(), pole=new Path2D(), head=new Path2D();
+  for(const l of lamps()){ if(!inView(l.x,l.y,14)) continue;
+    sh.moveTo(l.x,l.y); sh.lineTo(l.x+SHX*11,l.y+SHY*11);
+    if(l.hwy){ head.moveTo(l.x+2.4,l.y); head.arc(l.x,l.y,1.2,0,7); continue; }
+    pole.moveTo(l.x+.9,l.y); pole.arc(l.x,l.y,.9,0,7);
+    const hx=l.x+l.ax*3.4, hy=l.y+l.ay*3.4; head.moveTo(hx+1.3,hy); head.ellipse(hx,hy,1.3,1.3,0,0,7);
+    sh.moveTo(l.x+SHX*11,l.y+SHY*11); sh.lineTo(hx+SHX*11,hy+SHY*11); }
+  ctx.lineCap="round"; ctx.strokeStyle="rgba(30,36,22,.16)"; ctx.lineWidth=.9; ctx.stroke(sh);
+  ctx.fillStyle="#6c6f75"; ctx.fill(pole); ctx.fillStyle="#d9dbe0"; ctx.fill(head); ctx.strokeStyle="#7d8087"; ctx.lineWidth=.35; ctx.stroke(head); ctx.lineCap="butt";
+}
+
+// smoke from the factory chimneys: it rises (so its shadow falls further away) and drifts off on the wind
+function drawSmoke(dt){
+  for(const b of blds){ if(b.type!=="factory"||!b.chim||!inView(b.x,b.y,240)) continue;
+    b.smk=(b.smk||0)+dt; const per=b.chim.on?.22:.6;
+    while(b.smk>per){ b.smk-=per; if(smoke.length<700) smoke.push({x:b.chim.x,y:b.chim.y,h:0,age:0,life:5.5+frand()*3,r:2.6+frand()*1.6,vx:(frand()-.5)*3,vy:(frand()-.5)*3,on:b.chim.on}); } }
+  if(!smoke.length) return;
+  const P=puffSpr();
+  smoke=smoke.filter(q=>{ q.age+=dt; if(q.age>=q.life) return false; q.h+=dt*(7-q.age*.6); q.x+=(5+q.vx)*dt; q.y+=(-2.5+q.vy)*dt; q.r+=dt*(2.4+q.age*.3); return true; });
+  ctx.fillStyle="rgba(30,36,22,.07)"; ctx.beginPath();
+  for(const q of smoke){ const x=q.x+SHX*q.h, y=q.y+SHY*q.h; ctx.moveTo(x+q.r,y); ctx.arc(x,y,q.r,0,7); } ctx.fill();
+  for(const q of smoke){ const f=q.age/q.life; ctx.globalAlpha=(q.on?.7:.32)*Math.min(1,q.age*3)*(1-f)*(1-f*.3); const r=q.r*1.9; ctx.drawImage(P,q.x-r,q.y-q.h*.45-r,2*r,2*r); }
+  ctx.globalAlpha=1;
+}
+
+// people walking between their cars and the door
+const SHIRTS=["#e2493a","#3d7fe0","#f1c232","#4caf50","#9b59b6","#ff8a3d","#f4f4f2","#2b2e33","#1abc9c","#d6457f"], SKIN=["#f1c7a5","#d9a27c","#a8714d","#7a4f33","#f6d9c0"];
+function drawWalkers(){
+  if(cam.z<1.05||!LOD) return;
+  const now=performance.now()/1000, body=SHIRTS.map(()=>new Path2D()), heads=SKIN.map(()=>new Path2D()), sh=new Path2D();
+  for(const b of blds){ const k=b.type; if((k!=="shop"&&k!=="office"&&k!=="mall")||!inView(b.x,b.y,b.r)||animT-b.grow<1) continue;
+    const here=(parkedAt.get(b)||[]).length, n=Math.min(k==="mall"?12:6,here+(k==="mall"?2:1));
+    const by=k==="shop"?3:k==="office"?7:-1.5;
+    for(let i=0;i<n;i++){
+      const ph=(now*(.05+hash(b.id,i+40)*.03)+hash(b.id,i))%1; if(ph>.4&&ph<.6) continue;   // inside for a while
+      const u=ph<.4?ph/.4:1-(ph-.6)/.4;
+      const lx0=-b.w/2+5+hash(b.id,i+9)*(b.w-10), ly0=k==="mall"?6+hash(b.id,i+29)*(b.d/2-12):by+7.5+(k==="office"?-2:0);
+      const lx1=(hash(b.id,i+19)-.5)*(k==="mall"?20:6), ly1=by+1;
+      const p=toMap(b,lx0+(lx1-lx0)*u,ly0+(ly1-ly0)*u), bob=Math.sin(now*9+i)*.12;
+      sh.moveTo(p.x+SHX*2+1.5,p.y+SHY*2); sh.arc(p.x+SHX*2,p.y+SHY*2,1.5,0,7);
+      const bi=(b.id*3+i)%SHIRTS.length, hi=(b.id+i*7)%SKIN.length;
+      body[bi].moveTo(p.x+1.6,p.y); body[bi].ellipse(p.x,p.y,1.6,1.6,0,0,7);
+      heads[hi].moveTo(p.x+.85+bob,p.y-.15); heads[hi].arc(p.x+bob,p.y-.15,.85,0,7); }
+  }
+  ctx.fillStyle="rgba(20,24,16,.22)"; ctx.fill(sh);
+  body.forEach((P,i)=>{ ctx.fillStyle=SHIRTS[i]; ctx.fill(P); ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=.3; ctx.stroke(P); });
+  heads.forEach((P,i)=>{ ctx.fillStyle=SKIN[i]; ctx.fill(P); });
+}
+
+// boats on the lakes: they wander about, turn away from the shore and leave a wake
+const openWater=(x,y,r)=>isWater(x,y)&&isWater(x+r,y)&&isWater(x-r,y)&&isWater(x,y+r)&&isWater(x,y-r);
+const BOAT_COLS=["#ffffff","#f4f1e8","#e2493a","#3d7fe0","#2b2e33","#f1c232"];
+function drawBoats(dt){
+  if(!boats){ boats=[]; const want=Math.round(6*MAPK);
+    for(let i=0;i<5000&&boats.length<want;i++){ const x=hash(i,301)*MW, y=hash(i,302)*MH; if(!openWater(x,y,45)||boats.some(b=>Math.hypot(b.x-x,b.y-y)<220)) continue;
+      boats.push({x,y,a:hash(i,303)*6.28,v:5+hash(i,304)*5,sail:hash(i,305)<.5,col:BOAT_COLS[Math.floor(hash(i,306)*BOAT_COLS.length)],trail:[],tt:0,turn:0,s:hash(i,307)*9}); } }
+  const now=performance.now()/1000;
+  for(const b of boats){
+    const ax=b.x+Math.cos(b.a)*28, ay=b.y+Math.sin(b.a)*28;
+    if(!openWater(ax,ay,9)){ if(!b.turn) b.turn=frand()<.5?-1:1; b.a+=b.turn*dt*1.1; b.v=Math.max(2.5,b.v-dt*2); }
+    else { b.turn=0; b.a+=Math.sin(now*.13+b.s)*dt*.08; b.v=Math.min(b.sail?7:10,b.v+dt); }
+    if(isWater(b.x+Math.cos(b.a)*b.v*dt*3,b.y+Math.sin(b.a)*b.v*dt*3)){ b.x+=Math.cos(b.a)*b.v*dt; b.y+=Math.sin(b.a)*b.v*dt; }
+    b.tt+=dt; if(b.tt>.3){ b.tt=0; b.trail.unshift({x:b.x,y:b.y,a:b.a}); if(b.trail.length>14) b.trail.pop(); }
+    if(!inView(b.x,b.y,60)) continue;
+    // the wake spreads out behind
+    ctx.strokeStyle="rgba(255,255,255,.55)"; ctx.lineWidth=.7; ctx.lineCap="round";
+    b.trail.forEach((q,i)=>{ const o=1.6+i*.9, nx=-Math.sin(q.a), ny=Math.cos(q.a), bx=q.x-Math.cos(q.a)*5, by=q.y-Math.sin(q.a)*5; ctx.globalAlpha=.6*(1-i/14);
+      ctx.beginPath(); ctx.moveTo(bx+nx*o,by+ny*o); ctx.lineTo(bx+nx*o-Math.cos(q.a)*2,by+ny*o-Math.sin(q.a)*2); ctx.moveTo(bx-nx*o,by-ny*o); ctx.lineTo(bx-nx*o-Math.cos(q.a)*2,by-ny*o-Math.sin(q.a)*2); ctx.stroke(); });
+    ctx.globalAlpha=1; ctx.lineCap="butt";
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.a);
+    ctx.fillStyle="rgba(20,40,90,.22)"; ctx.beginPath(); ctx.ellipse(1.2,1.6,6,2.6,0,0,7); ctx.fill();
+    ctx.fillStyle=b.col; ctx.beginPath(); ctx.moveTo(6.5,0); ctx.quadraticCurveTo(3,2.6,-5,2.3); ctx.lineTo(-5,-2.3); ctx.quadraticCurveTo(3,-2.6,6.5,0); ctx.fill();
+    ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=.35; ctx.stroke();
+    if(b.sail){ ctx.fillStyle="rgba(20,40,90,.12)"; ctx.beginPath(); ctx.moveTo(1.5+SHX*5,SHY*5); ctx.lineTo(-4.5+SHX*5,.4+SHY*5); ctx.quadraticCurveTo(-1.5+SHX*5,3+SHY*5,1.5+SHX*5,SHY*5); ctx.fill();
+      ctx.fillStyle="#fbfbf8"; ctx.beginPath(); ctx.moveTo(1.5,0); ctx.lineTo(-4.5,.4); ctx.quadraticCurveTo(-1.5,3+Math.sin(now*2+b.s)*.3,1.5,0); ctx.fill(); ctx.fillStyle="#8a7a66"; ctx.fillRect(-4.6,-.25,6.2,.5); }
+    else { ctx.fillStyle=b.col==="#ffffff"||b.col==="#f4f1e8"?"#3d7fe0":"#f4f4f2"; roundRect(-2.8,-1.4,4,2.8,.8); ctx.fill(); ctx.fillStyle="rgba(190,225,255,.9)"; ctx.fillRect(.6,-1.1,.6,2.2); }
+    ctx.restore();
+  }
+}
+
+// flocks of birds crossing the map high up, their shadows sliding over the ground far below
+function newFlock(){
+  const side=Math.floor(frand()*4), along=frand();
+  const x=side===0?-300:side===1?MW+300:along*MW, y=side===2?-300:side===3?MH+300:along*MH;
+  const tx=MW*(.2+frand()*.6), ty=MH*(.2+frand()*.6);
+  return {x,y,a:Math.atan2(ty-y,tx-x),v:24+frand()*16,n:5+Math.floor(frand()*7),s:frand()*20,gull:frand()<.4};
+}
+function drawBirds(dt){
+  if(!birds.length) for(let i=0;i<4;i++){ const f=newFlock(); const k=frand()*1500; f.x+=Math.cos(f.a)*k; f.y+=Math.sin(f.a)*k; birds.push(f); }
+  const now=performance.now()/1000, sh=new Path2D(), dk=new Path2D(), wt=new Path2D();
+  for(let fi=0;fi<birds.length;fi++){ const f=birds[fi];
+    f.x+=Math.cos(f.a)*f.v*dt; f.y+=Math.sin(f.a)*f.v*dt; f.a+=Math.sin(now*.25+f.s)*dt*.05;
+    if(f.x<-500||f.y<-500||f.x>MW+500||f.y>MH+500){ birds[fi]=newFlock(); continue; }
+    if(!inView(f.x,f.y,160)) continue;
+    const c=Math.cos(f.a), s=Math.sin(f.a);
+    for(let k=0;k<f.n;k++){ const row=Math.ceil(k/2), side=k%2?1:-1, lx=-row*7+Math.sin(now*.8+k)*1.2, ly=side*row*6+Math.cos(now*.6+k*2)*1.2;
+      const x=f.x+lx*c-ly*s, y=f.y+lx*s+ly*c, fl=Math.sin(now*8+k*1.7+f.s), P=f.gull?wt:dk;
+      // seen from above: two long wings, swept back a little, that close up and open out as they flap
+      const sp=.8+.2*fl, pts=[[-.7,-3.7*sp],[.35,-2*sp],[0,-.55],[1,0],[0,.55],[.35,2*sp],[-.7,3.7*sp]].map(([a,b2])=>[x+a*c-b2*s,y+a*s+b2*c]);
+      P.moveTo(pts[0][0],pts[0][1]); for(let q=1;q<7;q++) P.lineTo(pts[q][0],pts[q][1]);
+      P.moveTo(x+.9*c,y+.9*s); P.lineTo(x-1.4*c,y-1.4*s);
+      const ox=SHX*42, oy=SHY*42; sh.moveTo(pts[0][0]+ox,pts[0][1]+oy); for(let q=1;q<7;q++) sh.lineTo(pts[q][0]+ox,pts[q][1]+oy); } }
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.strokeStyle="rgba(20,24,16,.1)"; ctx.lineWidth=.9; ctx.stroke(sh);
+  ctx.strokeStyle="#5a5e65"; ctx.lineWidth=.6; ctx.stroke(dk);
+  ctx.strokeStyle="#f7f7f4"; ctx.lineWidth=.85; ctx.stroke(wt); ctx.strokeStyle="rgba(60,64,70,.45)"; ctx.lineWidth=.25; ctx.stroke(wt);
+  ctx.lineCap="butt"; ctx.lineJoin="miter";
+}
+
+// the wet look after rain: the tarmac goes darker and the patched bits hold puddles that catch the sky
+function drawWet(rc){
+  if(wetK<.02) return;
+  ctx.strokeStyle=ctx.fillStyle="rgba(45,60,95,"+(.14*wetK)+")"; strokeBody(rc.G,0); ctx.lineWidth=7; ctx.stroke(rc.drives); ctx.fill(rc.junc);
+  if(rc.dec){ ctx.fillStyle="rgba(150,172,212,"+(.55*wetK)+")"; ctx.fill(rc.dec.pud); ctx.strokeStyle="rgba(255,255,255,"+(.5*wetK)+")"; ctx.lineWidth=.35; ctx.stroke(rc.dec.pud); }
+}
+function drawRain(){
+  if(rainK<.02) return;
+  const now=performance.now()/1000;
+  // rings where the drops land, bigger on the water
+  const m=Math.round(110*rainK), rings=[new Path2D(),new Path2D(),new Path2D()];
+  for(let i=0;i<m;i++){ const T=now*1.8+hash(i,61), cy=Math.floor(T), f=T-cy, x=view.x0+hash(i*97+cy,62)*(view.x1-view.x0), y=view.y0+hash(i*97+cy,63)*(view.y1-view.y0), r=.6+f*(isWater(x,y)?5:2.4);
+    const P=rings[Math.min(2,Math.floor(f*3))]; P.moveTo(x+r,y); P.ellipse(x,y,r,r*.8,0,0,7); }
+  ctx.lineWidth=.5; rings.forEach((P,i)=>{ ctx.strokeStyle="rgba(235,242,252,"+(.7-i*.22)+")"; ctx.stroke(P); });
+  // the rain itself, falling past the camera
+  ctx.save(); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const n=Math.round(420*rainK*Math.min(1.6,vw*vh/960000)), P=new Path2D(), Q=new Path2D();
+  for(let i=0;i<n;i++){ const sp=700+hash(i,51)*500, H=vh+80, y=((hash(i,52)*H+now*sp)%H)-40, x=((hash(i,53)*(vw+160)+y*.2)%(vw+160))-80, L=13+hash(i,54)*16, Z=i%3?P:Q; Z.moveTo(x,y); Z.lineTo(x-L*.2,y-L); }
+  ctx.lineCap="round"; ctx.strokeStyle="rgba(225,234,248,.42)"; ctx.lineWidth=1; ctx.stroke(P); ctx.strokeStyle="rgba(240,245,255,.6)"; ctx.lineWidth=1.4; ctx.stroke(Q); ctx.lineCap="butt";
+  ctx.restore();
+}
+
+// the warm light at sunset, the sun spilling in from the top left on a clear day and the grey of a shower:
+// overlays the browser blends in, so they cost the game nothing
+let skyKey="";
+function skyTint(nk,dusk){
+  const sun=(1-nk)*(1-rainK)*(ultra?1:0), m=(a,b,k)=>Math.round(a+(b-a)*k);
+  const col=[m(m(255,255,dusk),206,rainK),m(m(255,196,dusk),212,rainK),m(m(255,150,dusk),224,rainK)];
+  const key=ultra?col.join(",")+"|"+sun.toFixed(2):"off"; if(key===skyKey) return; skyKey=key;
+  const d=$("dusk"), gl=$("glare"); d.style.display=ultra&&(dusk>.01||rainK>.01)?"block":"none"; d.style.background="rgb("+col.join(",")+")";
+  gl.style.display=ultra&&sun>.03?"block":"none"; gl.style.opacity=sun.toFixed(2);
+}
+// night: a light map starts out a deep blue, every light adds its own colour to it, and the town is multiplied by it,
+// so a street light leaves an orange pool on the road and a shop's car park goes white
+function drawNight(){
+  const nk=nightK(), dusk=duskK(), dark=Math.min(1,nk*.88+rainK*.16), on=clamp((nk-.15)/.5,0,1)+rainK*.5;
+  skyTint(nk,dusk);
+  if(dark<.015&&on<.02) return;
+  const lights=[], glows=[], cones=[];
+  const Lt=(x,y,r,a,col)=>lights.push({x,y,r,a,col}), Gl=(x,y,r,a,col)=>glows.push({x,y,r,a,col});
+  for(const l of lamps()){ if(!inView(l.x,l.y,40)) continue; const hx=l.hwy?l.x:l.x+l.ax*3.4, hy=l.hwy?l.y:l.y+l.ay*3.4;
+    Lt(hx,hy,l.hwy?34:28,.95,"255,178,96"); Gl(hx,hy,7,.35,"255,190,110"); Gl(hx,hy,2.2,.95,"255,236,200"); }
+  for(const c of cars){ if(c.state!=="drive"||!inView(c.x,c.y,60)) continue;
+    const ca=Math.cos(c.ang), sa=Math.sin(c.ang), fx=c.x+ca*c.len/2, fy=c.y+sa*c.len/2, rx=c.x-ca*c.len/2, ry=c.y-sa*c.len/2;
+    cones.push({x:fx,y:fy,a:c.ang,L:c.truck?50:44});
+    Lt(rx,ry,7,c.braking?.9:.5,"255,40,25");
+    for(const o of [-1,1]){ const ox=-sa*o*(c.wid/2-1), oy=ca*o*(c.wid/2-1);
+      Gl(fx+ox,fy+oy,2.8,.9,"255,248,225"); Gl(rx+ox,ry+oy,c.braking?5:3,c.braking?.95:.6,"255,45,30"); } }
+  for(const b of blds){ if(!inView(b.x,b.y,b.r+40)) continue;
+    const lit=hash(b.id,Math.floor(dayClock/40))<.8;
+    if(isHome(b)){ if(lit){ Lt(b.x,b.y,b.r*1.6,b.type==="apts"?.8:.6,"255,184,110"); Gl(b.door.x,b.door.y,4,.8,"255,200,130");
+        if(b.type==="apts") for(let k=0;k<8;k++){ const p=toMap(b,(k%4-1.5)*b.w*.28,(k<4?-1:1)*b.d*.5); if(hash(b.id,k+5)<.7) Gl(p.x,p.y,3,.7,"255,205,130"); } }
+      else Lt(b.x,b.y,b.r*1.2,.25,"120,140,220"); continue; }
+    if(b.type==="shop"||b.type==="mall"){ const by=b.type==="shop"?3:-1.5, cp=toMap(b,0,(by+b.d/2)/2+1), fr=toMap(b,0,by);
+      Lt(cp.x,cp.y,b.type==="mall"?b.w*.75:b.d*.95,1,"225,236,255"); Lt(b.x,b.y,b.r*1.3,.55,"190,205,255"); Gl(fr.x,fr.y,b.type==="mall"?16:9,.7,"110,170,255"); continue; }
+    if(b.type==="office"){ Lt(b.x,b.y,b.r*1.6,.7,"215,205,255"); Gl(b.x,b.y,b.r*.7,.25,"200,190,255"); continue; }
+    // the yards are floodlit
+    for(const k of [-1,1]){ const p=toMap(b,k*b.w*.42,b.d*.42); Lt(p.x,p.y,34,.95,"255,168,84"); Gl(p.x,p.y,4,.8,"255,220,170"); } }
+  if(roadCache) for(const h of roadCache.heads){ if(!inView(h.x,h.y,20)) continue; const st=lightState(h.n,h.g,"S"), col=st==="g"?"60,220,100":st==="a"?"255,200,50":"255,70,55"; Lt(h.x,h.y,14,.8,col); Gl(h.x,h.y,6,.8,col); }
+  if(boats) for(const b of boats) if(inView(b.x,b.y,30)){ Lt(b.x,b.y,12,.6,"255,220,170"); Gl(b.x,b.y,2.2,.9,"255,230,180"); }
+  // the light map, on a small canvas: it's soft anyway, and it's much cheaper
+  const q=.5, W=Math.max(1,Math.ceil(vw*q)), Hh=Math.max(1,Math.ceil(vh*q)), m=(a,b2)=>Math.round(a+(b2-a)*dark);
+  if(!lcv){ lcv=document.createElement("canvas"); lctx=lcv.getContext("2d"); }
+  if(lcv.width!==W||lcv.height!==Hh){ lcv.width=W; lcv.height=Hh; }
+  const g=lctx; g.setTransform(1,0,0,1,0,0); g.globalCompositeOperation="source-over"; g.globalAlpha=1;
+  g.fillStyle="rgb("+m(255,30)+","+m(255,42)+","+m(255,92)+")"; g.fillRect(0,0,W,Hh);
+  g.globalCompositeOperation="lighter";
+  g.setTransform(q*cam.z,0,0,q*cam.z,q*(vw/2-cam.x*cam.z),q*(vh/2-cam.y*cam.z));
+  const k=Math.min(1,on)*dark;
+  for(const o of lights){ g.globalAlpha=Math.min(1,o.a*k); g.drawImage(lightSpr(o.col),o.x-o.r,o.y-o.r,2*o.r,2*o.r); }
+  const cs=coneSpr("255,240,210"); g.globalAlpha=Math.min(1,1.6*k);
+  for(const c of cones){ g.save(); g.translate(c.x,c.y); g.rotate(c.a); g.drawImage(cs,-2,-c.L/2,c.L,c.L); g.restore(); }
+  g.globalAlpha=1; g.globalCompositeOperation="source-over";
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.globalCompositeOperation="multiply"; ctx.drawImage(lcv,0,0,cv.width,cv.height); ctx.restore();
+  // then the lamps and lights themselves glow on top
+  if(on<.02) return;
+  ctx.globalCompositeOperation="lighter";
+  for(const o of glows){ ctx.globalAlpha=Math.min(1,o.a*on); ctx.drawImage(glowSpr(o.col),o.x-o.r,o.y-o.r,2*o.r,2*o.r); }
+  ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
+}
 
 function drawGround(){
   const T=terrain, B=biome, W=MW+600, H=MH+600;
@@ -2996,6 +3243,7 @@ function drawRoads(){
     ctx.strokeStyle="rgba(115,108,95,.3)"; ctx.lineWidth=.4; ctx.stroke(dc.crack);
     ctx.strokeStyle="rgba(60,60,60,.05)"; ctx.lineWidth=1.3; ctx.stroke(dc.tyre);
   }
+  if(ultra) drawWet(rc);
   drawMarks(rc.G);
   if(dc){ ctx.lineCap="butt"; ctx.strokeStyle="#d6d3ca"; ctx.lineWidth=1.4; ctx.stroke(dc.zeb);
     if(cam.z>.8){ ctx.fillStyle="#c9c5bb"; ctx.fill(dc.hole); ctx.strokeStyle="#a29e94"; ctx.lineWidth=.45; ctx.stroke(dc.hole); ctx.lineWidth=.3; ctx.stroke(dc.holeL); } }
@@ -3055,6 +3303,9 @@ function drawCar(c){
   }
   if(c.braking&&ultra){ ctx.globalAlpha=.9; glow(-L/2,-W/2+1.3,4.5,"255,60,40",.5); glow(-L/2,W/2-1.3,4.5,"255,60,40",.5); ctx.globalAlpha=1; }
   if(c.braking){ ctx.fillStyle="#ff3b2e"; ctx.fillRect(-L/2-.4,-W/2+.6,1.2,1.4); ctx.fillRect(-L/2-.4,W/2-2,1.2,1.4); }
+  // Ultra: the indicator blinks on the way up to a turn
+  if(ultra&&c.rt){ const k=c.rt.ctrls[c.ci]; if(k&&(k.turn==="L"||k.turn==="R")&&k.s0-c.s<42&&performance.now()%640<340){ const y=k.turn==="L"?-W/2+.3:W/2-1.5;
+    ctx.fillStyle="#ffad1f"; ctx.fillRect(L/2-1.3,y,1.4,1.2); ctx.fillRect(-L/2-.2,y,1.3,1.2); glow(L/2-.6,y+.6,3.2,"255,170,30",.55); glow(-L/2+.4,y+.6,3.2,"255,170,30",.55); } }
   ctx.restore();
 }
 // a car standing still somewhere: in a drive, a car park or a loading bay
@@ -3131,7 +3382,7 @@ function tree(x,y,r){
   else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill(); }
   ctx.fillStyle="#57973e"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,.55)"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill();
   if(ultra){ ctx.fillStyle="rgba(232,255,195,.6)"; ctx.beginPath(); ctx.arc(x-r*.42,y-r*.46,r*.2,0,7); ctx.fill(); } }
-const growth=(b,dur)=>.6+.4*easeOut(Math.min(1,(animT-b.grow)/dur));
+const growth=(b,dur)=>.6+.4*easeOut(clamp((animT-b.grow)/dur,0,1));
 function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") drawApts(b); else drawHouse(b); }
 function drawHouse(b){
   const sc=growth(b,.35), w=b.w, d=b.d, v=b.v;
@@ -3211,7 +3462,7 @@ function lot(b,sc,x0,y0,w,h,n,col){
   ctx.restore();
 }
 function drawDest(b){
-  const T=DEST[b.type], age=Math.min(1,(animT-b.grow)/.5), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
+  const T=DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
   const th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b);
   const here=parkedAt.get(b)||[];
   const stalls=(x0,w2,n,ly)=>{ if(!LOD) return; for(let i=0;i<Math.min(n,here.length);i++){ const p=toMap(b,(x0+2+(i+.5)*(w2-4)/n)*sc,ly*sc); parked(here[i],p.x,p.y,b.ang+Math.PI); } };
@@ -3357,7 +3608,8 @@ function drawDest(b){
     ctx.strokeStyle="rgba(30,36,22,.22)"; ctx.lineWidth=7*sc; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(ch.x,ch.y); ctx.lineTo(ch.x+SHX*24*sc,ch.y+SHY*24*sc); ctx.stroke(); ctx.lineCap="butt";
     ctx.fillStyle="#7b6a5c"; ctx.beginPath(); ctx.arc(ch.x,ch.y,4.5*sc,0,7); ctx.fill(); ctx.fillStyle="#3f352e"; ctx.beginPath(); ctx.arc(ch.x,ch.y,2.6*sc,0,7); ctx.fill();
     const working=!outside||b.raw>=.5;
-    for(let i=0;i<3;i++){ const ph=((t*.5+i/3)%1);
+    b.chim={x:ch.x,y:ch.y,on:working};
+    if(!ultra) for(let i=0;i<3;i++){ const ph=((t*.5+i/3)%1);
       ctx.fillStyle="rgba(240,240,240,"+((working?.55:.2)*(1-ph))+")"; ctx.beginPath(); ctx.arc(ch.x+ph*8,ch.y-ph*16,3+ph*5,0,7); ctx.fill(); }
   }
 }
@@ -3552,17 +3804,21 @@ function draw(){
   LOD=cam.z>.55;
   drawTerrain();
   worldT();
+  const fnow=performance.now()/1000, fdt=Math.min(.05,Math.max(0,fnow-(fxLast||fnow))); fxLast=fnow;
   drawWater();
+  if(ultra) drawBoats(fdt);
   drawRoads();
+  if(ultra) drawLamps();
   parkedAt.clear(); for(const c of cars) if(c.state==="park"&&c.at){ let a=parkedAt.get(c.at); if(!a) parkedAt.set(c.at,a=[]); a.push(c); }
   for(const c of cars) if(c.state==="drive"&&!c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawLots();
   drawZones();
   for(const b of blds) if(inView(b.x,b.y,b.r+30)){ if(moving&&moving.b===b) ctx.globalAlpha=.35; if(isHome(b)) drawHome(b); else drawDest(b); ctx.globalAlpha=1; }
+  if(ultra){ drawWalkers(); drawSmoke(fdt); }
   drawOverpasses();
   for(const c of cars) if(c.state==="drive"&&c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawOutside();
-  if(ultra) drawClouds();
+  if(ultra){ drawClouds(); drawBirds(fdt); drawNight(); drawRain(); worldT(); }
   for(const b of blds) if(!isHome(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
   drawHover();
   if(drag&&drag.lane&&segs.has(drag.lane.seg.id)) laneHover(drag.lane.seg,drag.lane.w0,drag.lane.w1);
@@ -3583,7 +3839,7 @@ function draw(){
 // ---------- loop ----------
 let lastTs=performance.now();
 function step(dt){
-  t+=dt;
+  t+=dt; fxStep(dt);
   if(!over){
     updateSpawns(dt); updateDemand(dt); if(city) cityTick(dt);
     dispatchT-=dt; if(dispatchT<=0){ dispatchT=.3; dispatch(); }
@@ -3595,7 +3851,7 @@ function step(dt){
   if(!over&&levelPending){ levelPending=false; levelUp(); }
 }
 function frame(now){
-  const dt=Math.min(.05,(now-lastTs)/1000); lastTs=now;
+  const dt=clamp((now-lastTs)/1000,0,.05); lastTs=now;
   if(running&&!paused){
     animT+=dt;
     if(!frozen){ const sdt=dt*speed, n=Math.ceil(sdt/.02); for(let i=0;i<n;i++) step(sdt/n); }
@@ -3665,7 +3921,9 @@ window.__gridlock={
   widen:(x,y,l)=>{ const s=segUnder({x,y},4); if(s) setLanes(s,l); return !!s; },
   setRes:r=>{ Object.assign(res,r); updateUI(); },
   gfx:g=>{ if(g) setGfx(g); return ultra?"ultra":"normal"; },
+  fx:o=>{ o=o||{}; if(o.day!==undefined) dayClock=o.day*DAY; if(o.rain!==undefined){ rainK=o.rain; rainLeft=o.rain?60:0; wetK=o.wet!==undefined?o.wet:o.rain; } return {day:+dayP().toFixed(3),night:+nightK().toFixed(2),rain:+rainK.toFixed(2),wet:+wetK.toFixed(2),smoke:smoke.length,boats:boats?boats.length:0,birds:birds.length,lamps:lampList.length}; },
   frozen:()=>frozen,
+  drawMs:n=>{ const t0=performance.now(); for(let i=0;i<n;i++) draw(); return +((performance.now()-t0)/n).toFixed(2); },
   step:sec=>{ for(let k=0;k<sec*50;k++) step(.02); },
   screenOf:(x,y)=>({x:(x-cam.x)*cam.z+vw/2,y:(y-cam.y)*cam.z+vh/2}),
   look:(x,y,z)=>{ cam.x=x; cam.y=y; if(z) cam.z=z; clampCam(); },
