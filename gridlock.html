@@ -234,7 +234,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 4.4</div>
+    <div class="small">Version 4.5</div>
   </div>
 </div>
 
@@ -245,7 +245,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
-    <div class="small">Version 4.4</div>
+    <div class="small">Version 4.5</div>
   </div>
 </div>
 
@@ -296,9 +296,9 @@ const BT={
   bighouse:{home:true,w:52,d:24,r:29,col:"#3c8a3e",name:"big house",names:"big houses"},
   apts:    {home:true,w:58,d:52,r:39,col:"#2f6e3d",name:"apartment block",names:"apartment blocks"},
   shop:    {w:54,d:46,r:35,col:"#3d7fe0",dark:"#2a5cb0",light:"#79a8f0",name:"shop",names:"shops",need:"cust",rate:1,cap:{cust:8,goods:6}},
-  mall:    {w:112,d:88,r:71,col:"#7fbcf0",dark:"#4f93cf",light:"#d3e9fb",name:"mall",names:"malls",need:"cust",rate:2,cap:{cust:20,goods:10}},
-  office:  {w:38,d:38,r:27,col:"#8a60d0",dark:"#6440a6",light:"#b394e6",name:"office",names:"offices",need:"work",rate:1,cap:{work:8}},
-  factory: {w:60,d:48,r:38,col:"#ee8a35",dark:"#bf6418",light:"#f7b273",name:"factory",names:"factories",need:"work",rate:1,cap:{work:8,raw:6}}
+  mall:    {w:112,d:88,r:71,col:"#7fbcf0",dark:"#4f93cf",light:"#d3e9fb",name:"mall",names:"malls",need:"cust",rate:1.4,cap:{cust:20,goods:10}},
+  office:  {w:38,d:38,r:27,col:"#8a60d0",dark:"#6440a6",light:"#b394e6",name:"office",names:"offices",need:"work",rate:.8,cap:{work:8}},
+  factory: {w:60,d:48,r:38,col:"#ee8a35",dark:"#bf6418",light:"#f7b273",name:"factory",names:"factories",need:"work",rate:.8,cap:{work:8,raw:6}}
 };
 const DEST=BT, TYPES=["house","bighouse","apts","shop","mall","office","factory"], KINDS=["cust","work","goods","raw"];
 const isHome=b=>!!BT[b.type].home;
@@ -326,7 +326,7 @@ let frozen=false, animT=0;     // frozen: the pause button has stopped the clock
 let res, score=0, t=0, level=1, lvTrips=0, levelPending=false, running=false, paused=false, speed=1, over=false, relaxed=false, viewing=false;
 let dispatchT=0, rr=0, effects=[], carsOn=new Map(), qOn=new Map(), laneSel=1, roadMode="draw", firstRoad=false, hintT=0, bid=1, segArr=[];
 let roadCache=null, tray={}, placeSel=null, ghost=null, buildHinted=false, outside=null, goodsHinted=false;
-let lineMode=false, lineGhosts=null, grid=null, gridCur=null, tuneNode=null;
+let lineMode=false, lineGhosts=null, grid=null, gridCur=null, tuneNode=null, mallBatch=false, lastMall=-9;
 const emptyTray=()=>{ const o={}; for(const k of TYPES) o[k]=0; return o; };
 
 // ---------- geometry ----------
@@ -568,19 +568,34 @@ function lightState(n,g,tt){
 function updateLights(dt){ for(const n of nodeList){ if(n.type!=="light"||!n.light||!n.light.ph)continue; const L=n.light, ph=L.ph[L.phase]; L.t+=dt; if(!ph||L.t>=ph.dur+AMBER){ L.t=0; L.phase=(L.phase+1)%L.ph.length; } } }
 
 // where a building's driveway meets the road
+// the ways in: a mall has two drives into its car park, one at each end of the front
+function doorsOf(b){
+  if(b.type!=="mall") return [b.door];
+  return [-1,1].map(k=>{ const p=toMap(b,k*b.w*.3,b.d/2); return {x:p.x,y:p.y}; });
+}
 function findAccess(b){
-  if(b.type==="house") return houseAccess(b);
+  if(b.type==="house"){ const a=houseAccess(b); if(a){ a.door=b.door; a.di=0; } return a; }
+  if(b.type==="mall"){
+    // either drive can take a road; a road that only reaches the middle of the front still gets in
+    const ds=doorsOf(b); b.accs=[];
+    ds.forEach((dr,i)=>{ const a=accessAt(b,dr); if(a){ a.door=dr; a.di=i+1; b.accs.push(a); } });
+    if(!b.accs.length){ const a=accessAt(b,b.door); if(a){ a.door=b.door; a.di=0; b.accs.push(a); } }
+    return b.accs[0]||null;
+  }
+  const a=accessAt(b,b.door); if(a){ a.door=b.door; a.di=0; } return a;
+}
+function accessAt(b,door){
   let best=null, bd=1e9;
   for(const s of segs.values()){
     if(s.over) continue;
     const A=nodes.get(s.a), B=nodes.get(s.b), hw=halfW(s.lanes);
-    const p=projSeg(b.door.x,b.door.y,A.x,A.y,B.x,B.y);
+    const p=projSeg(door.x,door.y,A.x,A.y,B.x,B.y);
     if(p.d>hw+30) continue;
-    if(p.d>2&&((p.x-b.door.x)*b.fx+(p.y-b.door.y)*b.fy)/p.d<.3) continue;   // road has to be in front of the door
+    if(p.d>2&&((p.x-door.x)*b.fx+(p.y-door.y)*b.fy)/p.d<.3) continue;   // road has to be in front of the door
     let lo=(s.ta+4)/s.len, hi=1-(s.tb+4)/s.len; if(lo>hi) lo=hi=(lo+hi)/2;   // short piece between two junctions: use its middle
-    const tt=clamp(p.t,lo,hi), x=A.x+(B.x-A.x)*tt, y=A.y+(B.y-A.y)*tt, d=Math.hypot(x-b.door.x,y-b.door.y);
+    const tt=clamp(p.t,lo,hi), x=A.x+(B.x-A.x)*tt, y=A.y+(B.y-A.y)*tt, d=Math.hypot(x-door.x,y-door.y);
     if(d>hw+46) continue;
-    if(d<bd){ bd=d; const side=((b.door.x-x)*(-s.uy)+(b.door.y-y)*s.ux)>0?1:-1;
+    if(d<bd){ bd=d; const side=((door.x-x)*(-s.uy)+(door.y-y)*s.ux)>0?1:-1;
       best={seg:s.id,t:tt,x,y,side,ex:x+(-s.uy)*side*hw,ey:y+s.ux*side*hw}; }
   }
   return best;
@@ -800,21 +815,54 @@ function snapDirs(a,S,E){
   return out;
 }
 // move a road end onto the line through Q at angle c: a loose end moves square to the line, an end on a road slides
-// along that road, and an end on a junction or a building can't move at all
-function placeOn(P,Q,c,lanes){
+// along that road, an end on a junction or a building can't move at all, and a dead end may slide along its own road
+function placeOn(P,Q,c,lanes,slide){
   const ux=Math.cos(c), uy=Math.sin(c);
   if(P.kind==="free"){ const t=(P.x-Q.x)*ux+(P.y-Q.y)*uy; return {kind:"free",x:Q.x+ux*t,y:Q.y+uy*t}; }
   if(P.kind==="seg"){ const s=P.seg, A=nodes.get(s.a), den=s.ux*uy-s.uy*ux; if(Math.abs(den)<.25) return null;
     const t=((Q.x-A.x)*uy-(Q.y-A.y)*ux)/den/s.len; if(t<-.02||t>1.02) return null;
     // too near the road's end means joining that end, which only works if it's on the line too
     const q=onSeg(s,t,snapR(),lanes); return q.kind==="seg"||Math.abs((q.x-Q.x)*uy-(q.y-Q.y)*ux)<1.5?q:null; }
-  return Math.abs((P.x-Q.x)*uy-(P.y-Q.y)*ux)<.5?P:null;
+  const off=Math.abs((P.x-Q.x)*uy-(P.y-Q.y)*ux); if(off<.01) return P;
+  const sl=P.kind==="node"&&slide?slideEnd(P.node,Q,ux,uy,lanes):null;
+  return sl||(off<.5?P:null);
+}
+// a dead end can be pulled out a little or cut back a little along its own road, so a road joining it comes out square
+function slideEnd(n,Q,ux,uy,lanes){
+  if(n.segs.length!==1||n.type!=="plain"||n.gd>0) return null;
+  const s=segs.get(n.segs[0]); if(s.over||s.fixed||s.water||s.bridgeHead) return null;
+  const d=dirFrom(s,n.id), ox=-d.x, oy=-d.y, den=ox*uy-oy*ux; if(Math.abs(den)<.7) return null;
+  const k=-((n.x-Q.x)*uy-(n.y-Q.y)*ux)/den, lim=Math.max(32,snapR()*1.3);
+  if(k>lim||k<-Math.min(lim,s.len-30)) return null;
+  const x=n.x+ox*k, y=n.y+oy*k;
+  if(k>0){ const hw=halfW(s.lanes), e={x,y}, st=Math.max(1,Math.ceil(k/4));
+    for(let i=0;i<=st;i++){ const px=n.x+ox*k*i/st, py=n.y+oy*k*i/st; if(px<4||py<4||px>MW-4||py>MH-4||isWater(px,py)||isHill(px,py)) return null; }
+    for(const b of blds) if(footD(b,n,e)<hw+1) return null;
+    for(const o of segs.values()){ if(o===s) continue; const A=nodes.get(o.a), B=nodes.get(o.b); if(o.a===n.id||o.b===n.id) continue;
+      if(segInter(n,{x:x+ox*hw,y:y+oy*hw},A,B)||projSeg(x,y,A.x,A.y,B.x,B.y).d<hw+halfW(o.lanes)-2) return null; } }
+  return {kind:"node",node:n,x,y,slide:k};
+}
+// move a dead end that a plan slid along its road
+function applySlide(P){
+  if(!P||!P.slide||P.kind!=="node"||!nodes.has(P.node.id)) return;
+  const n=P.node; if(n.segs.length!==1) return;
+  const s=segs.get(n.segs[0]), o=nodes.get(segOther(s,n.id));
+  n.x=P.x; n.y=P.y; reSeg(s,o,n);
+}
+// put a road back between two nodes as a new piece (so cars on it find their way again), keeping how it was set up
+function reSeg(s,a,b){
+  removeSeg(s);
+  const s2=addSeg(a,b,s.lanes);
+  s2.bridgeHead=s.bridgeHead; s2.over=s.over; s2.fixed=s.fixed;
+  for(const n of [a,b]){ if(n.lc[s.id]!==undefined){ n.lc[s2.id]=n.lc[s.id]; delete n.lc[s.id]; } if(n.slip[s.id]){ n.slip[s2.id]=true; delete n.slip[s.id]; }
+    if(n.light&&n.light.grp&&n.light.grp[s.id]!==undefined) n.light.grp[s2.id]=n.light.grp[s.id]; }
+  return s2;
 }
 // line the two ends up on the first of the directions they can both sit on, moving the end that's freest to move
 function fitDir(S,E,dirs,lanes){
   for(const o of dirs){
-    let s2=S, e2=placeOn(E,S,o.c,lanes);
-    if(!e2){ s2=placeOn(S,E,o.c,lanes); e2=E; }
+    let s2=S, e2=placeOn(E,S,o.c,lanes,true);
+    if(!e2){ s2=placeOn(S,E,o.c,lanes,true); e2=E; }
     if(s2&&e2&&(e2.x-s2.x)*Math.cos(o.c)+(e2.y-s2.y)*Math.sin(o.c)>12) return {S:s2,E:e2,o};
   }
   return null;
@@ -906,6 +954,7 @@ function makePlan(S,raw,wEnd,lanes,forceStraight,over){
 function validatePlan(pl){
   let len=0; for(let i=1;i<pl.pts.length;i++) len+=D(pl.pts[i-1],pl.pts[i]);
   pl.len=len; pl.cost=len*pl.lanes; pl.ok=true; pl.reason="";
+  for(const P of [pl.S,pl.E]) if(P.slide&&P.node.segs.length) pl.cost+=P.slide*segs.get(P.node.segs[0]).lanes;
   if(len<12){ pl.ok=false; return; }
   if(pl.pts.length===2&&pl.S.kind==="node"&&pl.E.kind==="node"&&(pl.S.node===pl.E.node||segBetween(pl.S.node,pl.E.node))){ pl.ok=false; pl.reason="There's already a road there."; return; }
   let br=0, inW=false;
@@ -957,6 +1006,7 @@ const roadUsed=()=>{ let u=0; for(const s of segs.values()) u+=s.len*s.lanes; re
 function commitPlan(pl,quiet){
   const used0=roadUsed(), sid0=sid, nid0=nid;
   const st={inWater:false,over:pl.over,first:true};
+  applySlide(pl.S); applySlide(pl.E);
   let prev=resolveSnap(pl.S);
   for(let i=1;i<pl.pts.length;i++){
     const last=i===pl.pts.length-1;
@@ -1129,13 +1179,16 @@ function makeLegs(sa,via,ea){
   const l=legs[legs.length-1]; if(legs.length>1&&l.d1<l.d0+.5) l.d1=l.d0+.5;
   return legs;
 }
+const accsOf=b=>b.accs&&b.accs.length?b.accs:b.acc?[b.acc]:[];
 function planRoute(sa,targets,onlyNode){
   dijkstra(sa,onlyNode);
   let bestT=null, bestA=null, bs=Infinity;
-  for(const tg of targets){ if(!tg.b.acc) continue; const a=arrival(sa,tg.b.acc,onlyNode); if(a.cost===Infinity) continue;
-    const sc=a.cost-(tg.bonus||0); if(sc<bs){ bs=sc; bestT=tg; bestA=a; } }
+  let bestAcc=null;
+  for(const tg of targets){ if(!tg.b.acc) continue;
+    for(const ac of accsOf(tg.b)){ const a=arrival(sa,ac,onlyNode); if(a.cost===Infinity) continue;
+      const sc=a.cost-(tg.bonus||0); if(sc<bs){ bs=sc; bestT=tg; bestA=a; bestAcc=ac; } } }
   if(!bestT) return null;
-  return {legs:makeLegs(sa,bestA.via,bestT.b.acc),tg:bestT,b:bestT.b,cost:bestA.cost};
+  return {legs:makeLegs(sa,bestA.via,bestAcc),tg:bestT,b:bestT.b,cost:bestA.cost,acc:bestAcc};
 }
 
 // ---------- route geometry ----------
@@ -1199,7 +1252,7 @@ function buildRoute(start,legs,endDoor){
   return {pts,cum,len:cum[cum.length-1],ctrls,legs:legR};
 }
 let legEndAcc=null;
-function routeFor(startPt,plan){ legEndAcc=plan.b.acc; return buildRoute(startPt,plan.legs,plan.b.door); }
+function routeFor(startPt,plan){ const ac=plan.acc||plan.b.acc; legEndAcc=ac; return buildRoute(startPt,plan.legs,ac.door||plan.b.door); }
 function sampleRoute(rt,s,out){
   const c=rt.cum, P=rt.pts; if(s<=0){ out.x=P[0].x; out.y=P[0].y; return out; }
   let lo=0, hi=c.length-1; if(s>=c[hi]){ out.x=P[hi].x; out.y=P[hi].y; return out; }
@@ -1252,12 +1305,14 @@ function nextDestType(){
   const n={shop:tray.shop+tray.mall,office:tray.office,factory:tray.factory};
   for(const d of dests()) n[d.type==="mall"?"shop":d.type]++;
   if(!n.shop) return "shop"; if(!n.office) return "office"; if(!n.factory) return "factory";
-  // the first mall turns up at level 4
-  if(level>=4&&!tray.mall&&!dests().some(d=>d.type==="mall")) return "mall";
+  // malls are rare: the first turns up at level 5, and you never get a second while one is still waiting to be
+  // placed, or more than one a level, or two levels running
+  const malls=dests().filter(d=>d.type==="mall").length, mallOK=level>=5&&!tray.mall&&!mallBatch&&level-lastMall>=3;
+  if(mallOK&&!malls){ mallBatch=true; lastMall=level; return "mall"; }
   let k;
   if(n.shop>n.factory*1.5+1) k=Math.random()<.6?"factory":"office";
   else { const r=Math.random(); k=r<.42?"shop":r<.74?"office":"factory"; }
-  if(k==="shop"&&level>=4&&Math.random()<.45) k="mall";
+  if(k==="shop"&&mallOK&&Math.random()<.2){ k="mall"; mallBatch=true; lastMall=level; }
   return k;
 }
 
@@ -1299,8 +1354,9 @@ function poof(c){
   effects.push({k:"puff",x:c.x,y:c.y,t:0,life:.6});
   c.state="home"; c.rt=null; c.cool=2;
 }
-function startDrive(c,fromB,plan){
-  c.rt=routeFor(fromB?{x:fromB.door.x,y:fromB.door.y}:{x:c.x,y:c.y},plan);
+function startDrive(c,fromB,plan,fromAcc){
+  const dr=fromAcc&&fromAcc.door||fromB&&fromB.door;
+  c.rt=routeFor(fromB?{x:dr.x,y:dr.y}:{x:c.x,y:c.y},plan); c.tDi=plan.acc?plan.acc.di:0;
   c.state="drive"; c.s=0; c.v=fromB?0:c.v; c.leg=0; c.ci=0; c.still=0; if(fromB){ c.t0=t; c.len0=c.rt.len; }
   const p=sampleRoute(c.rt,0,{}); c.x=p.x; c.y=p.y;
 }
@@ -1388,15 +1444,17 @@ function arrive(c){
     // a factory turns raw materials into goods as its workers turn up
     if(d.type==="factory"&&k==="work"){ if(!outside) d.stock=Math.min(5,d.stock+.75); else if(d.raw>=.5){ d.raw-=.5; d.stock=Math.min(5,d.stock+.75); } }
     if(d.type==="factory"&&k==="raw") d.raw=Math.min(6,d.raw+1.5);
-    c.purpose=null; c.state="park"; c.park=c.truck?1.5:.9; c.at=d; c.rt=null;
-  } else { c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):rnd(1.5,3.5); }
+    c.purpose=null; c.state="park"; c.park=c.truck?rnd(TPARK[0],TPARK[1]):rnd(PARK[0],PARK[1]); c.at=d; c.atDi=c.tDi; c.rt=null;
+  } else { c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
 }
 function goHome(c){
   const from=c.at, home=c.home;
   if(!from||!from.acc||!home.acc){ c.state="home"; c.cool=2; return; }
-  const pl=planRoute({seg:from.acc.seg,t:from.acc.t},[{b:home}],null);
+  // out the way it came in, or the other drive if that's quicker
+  let pl=null, fa=null;
+  for(const a of accsOf(from)){ const q=planRoute({seg:a.seg,t:a.t},[{b:home}],null); if(q&&(!pl||q.cost+(a.di===c.atDi?0:4)<pl.cost)){ pl=q; fa=a; } }
   if(!pl){ c.state="home"; c.cool=2; return; }
-  startDrive(c,from,pl);
+  startDrive(c,from,pl,fa);
 }
 function ringBlocked(c,n,k){
   for(const o of cars){ if(o===c||o.state!=="drive"||o.ringNode!==n.id) continue;
@@ -1411,7 +1469,9 @@ function mayCross(n,c,k){
   for(const q of n.near2){ if(q.c===c||q.c.state!=="drive"||q.c.rt!==q.rt) continue; if(clash(k,q.k)) return false; }
   return true;
 }
+let reroutes=0;
 function updateCars(dt){
+  const slow=[];
   carGrid.clear(); carsOn.clear(); qOn.clear();
   for(const n of nodeList) if(n.type==="light"){ n.near2=n.near; n.near=[]; }
   for(const c of cars){ if(c.state!=="drive") continue; const key=Math.floor(c.x/HC)*4096+Math.floor(c.y/HC); let a=carGrid.get(key); if(!a){a=[];carGrid.set(key,a);} a.push(c);
@@ -1482,31 +1542,66 @@ function updateCars(dt){
     c.x=tmpP.x; c.y=tmpP.y;
     if(Math.hypot(tmpQ.x-tmpP.x,tmpQ.y-tmpP.y)>.2){ const na=Math.atan2(tmpQ.y-tmpP.y,tmpQ.x-tmpP.x); let da=na-c.ang;
       while(da>Math.PI)da-=2*Math.PI; while(da<-Math.PI)da+=2*Math.PI; c.ang+=da*Math.min(1,dt*16); }
+    // coming up to a junction, a driver looks at the traffic ahead and may turn off another way; one stuck in a jam looks again now and then
+    if(c.v<6) c.slowT=(c.slowT||0)+dt; else c.slowT=0;
+    c.rrT=(c.rrT||0)-dt;
+    if(c.ghost<=0){ const k=rt.ctrls[c.ci];
+      if(k&&k.junc&&!k.passed&&c.rrK!==k&&k.s0-c.s<70&&k.s0-c.s>16){ c.rrK=k; slow.push(c); }
+      else if(c.slowT>2.5&&c.rrT<=0){ c.rrT=rnd(3,5); slow.push(c); } }
     if(c.s>=rt.len-.05) arrive(c);
   }
+  // look for another way round, a few cars at a time
+  for(let i=0;i<slow.length&&i<8;i++){ const c=slow[i]; if(c.state!=="drive") continue; if(reroute(c)){ c.rrT=8; c.slowT=0; } }
+}
+// a car stuck in traffic takes another way if it's clearly quicker now and not much further
+function reroute(c){
+  const rt=c.rt; if(!rt||c.leg>=rt.legs.length-1||window.__noRR) return false;
+  const lg=rt.legs[c.leg], s=segs.get(lg.seg); if(!s) return false;
+  // only from part-way along a road: not in a junction, and not right at the front of the queue
+  if(c.s<lg.s0+2||lg.s1-c.s<14) return false;
+  const A=nodes.get(s.a), dot=Math.cos(c.ang)*s.ux+Math.sin(c.ang)*s.uy; if(Math.abs(dot)<.7) return false;
+  const tt=clamp(((c.x-A.x)*s.ux+(c.y-A.y)*s.uy)/s.len,.002,.998), ahead=dot>0?s.b:s.a, tgt=c.purpose?c.purpose.d:c.home;
+  if(!tgt.acc) return false;
+  const pl=planRoute({seg:s.id,t:tt},[{b:tgt}],ahead); if(!pl) return false;
+  const old=rt.legs.slice(c.leg).map(L=>L.seg), nu=pl.legs.map(L=>L.seg.id);
+  if(old.length===nu.length&&old.every((id,i)=>id===nu[i])) return false;
+  // what the way it's going now costs, worked out the same way
+  let cur=(dot>0?1-tt:tt)*s.len/SPEED[s.lanes], len=lg.s1-c.s;
+  for(let q=c.leg+1;q<rt.legs.length;q++){ const L=rt.legs[q], sg=segs.get(L.seg); if(!sg) return false;
+    const last=q===rt.legs.length-1; cur+=last?(L.s1-L.s0)/SPEED[sg.lanes]:sg.len/SPEED[sg.lanes]*(1+cong(sg)); len+=L.s1-L.s0; }
+  for(let q=c.ci;q<rt.ctrls.length;q++){ const k=rt.ctrls[q]; if(k.passed) continue; const n=nodes.get(k.node), si=segs.get(k.inSeg), so=segs.get(k.outSeg);
+    if(!n||!si||!so) return false; cur+=juncCost(n,si,so,turnType(n,si,so)); }
+  let nl=0; for(const L of pl.legs) nl+=L.d1-L.d0;
+  if(pl.cost>cur*.88-1.5||nl>len*1.5+40) return false;
+  const v=c.v; releaseAll(c); startDrive(c,null,pl); c.v=v; c.rerouted=(c.rerouted||0)+1; reroutes++;
+  return true;
 }
 
 // ---------- demand ----------
-const lvNeed=()=>8+6*(level-1);
-const TRIP=20;                   // seconds a car takes over a trip, there and back, when the roads are clear
+const lvNeed=()=>6+8*(level-1);
+// cars don't just pop in and out: they stay a while wherever they go, and rest at home before heading out again
+const PARK=[30,60], TPARK=[6,10], REST=[20,40];
+const TRIP=115;                   // seconds a car takes over a trip when the roads are clear: there, a stay, back and a rest at home
+const GRACE=20, RAMPUP=60;       // a new place asks for nobody at first, then wants more and more over a minute
 function updateDemand(dt){
   // every place asks for visitors at a steady rate that creeps up slowly over time
-  const ds=dests().filter(d=>t-d.born>8);
+  const ds=dests().filter(d=>t-d.born>GRACE);
   if(!ds.length) return;
-  let per=.08*Math.min(2.5,1+t/600);
+  let per=.065*Math.min(2.2,1+t/700);
   // but never for more customers and workers than the town's cars can bring: each car that can reach a road
   // manages roughly one trip every TRIP seconds, so a town with lots of shops and few homes isn't swamped
   let cars=0, want=0; for(const h of homes()) if(h.acc) cars+=h.cars.length;
-  for(const d of ds) want+=per*BT[d.type].rate;
+  const warm=d=>Math.min(1,(t-d.born-GRACE)/RAMPUP);
+  for(const d of ds) want+=per*BT[d.type].rate*warm(d);
   if(want>0) per*=Math.min(1,Math.max(cars,4)/TRIP/want);
   const nF=ds.filter(d=>d.type==="factory").length;
   for(const d of ds){
-    const T=BT[d.type];
-    d.dem[T.need]+=dt*per*T.rate;
+    const T=BT[d.type], wm=warm(d);
+    d.dem[T.need]+=dt*per*T.rate*wm;
     // shops sell goods, which come from the town's factories or by truck from outside once the town is a bit bigger
-    if((d.type==="shop"||d.type==="mall")&&(nF>0||(outside&&level>=2))&&t-d.born>30){ d.dem.goods+=dt*per*.2*(d.type==="mall"?1.6:1);
+    if((d.type==="shop"||d.type==="mall")&&(nF>0||(outside&&level>=2))&&t-d.born>GRACE+40){ d.dem.goods+=dt*per*wm*.2*(d.type==="mall"?1.6:1);
       if(!goodsHinted&&!nF){ goodsHinted=true; setHint("Shops want goods now too. Trucks bring them in on the highway at the edge of the map, so join it up to your roads.",6); } }
-    if(d.type==="factory"&&outside) d.dem.raw+=dt*per*.22;
+    if(d.type==="factory"&&outside) d.dem.raw+=dt*per*wm*.22;
     let full=false;
     for(const k of KINDS){ const cap=capOf(d,k); if(!cap) continue;
       while(d.dem[k]>=1){ d.dem[k]-=1; if(d.pins[k]<cap+3){ d.pins[k]++; d.pop=1; } }
@@ -1544,9 +1639,9 @@ function ghostAt(type,w,ignore){
 const WHY={edge:"That's too close to the edge of the map.",land:"Buildings need dry, flat land. Not on the water or the hills.",bld:"There's another building in the way.",
   road:"That's on top of a road. Put it beside one.",smoke:"Too close to a factory. Nobody wants to live in the smoke, so keep homes and factories apart.",
   noise:"Too close to a highway. Nobody wants to live right next to all that traffic noise."};
-const PLACE_HINT={shop:"The shop will start asking for customers in a few seconds. Make sure a road reaches its front.",
-  mall:"Malls want lots of customers and goods. Give it a good road in, its car park fills up fast.",
-  office:"The office will start asking for workers in a few seconds. Make sure a road reaches its front.",
+const PLACE_HINT={shop:"The shop will start asking for customers after a little while. Make sure a road reaches its front.",
+  mall:"Malls want lots of customers and goods. There are two ways into the car park, so run a good road along the front.",
+  office:"The office will start asking for workers after a little while. Make sure a road reaches its front.",
   factory:"The factory wants workers, and raw materials trucked in on the highway at the edge of the map. Its trucks take goods to the shops.",
   apts:"Apartment blocks are home to lots of people, so expect a lot of cars from here."};
 // put a building down where a ghost showed it, checking again in case something changed
@@ -1641,7 +1736,7 @@ function newGame(isRelaxed){
   nodes=new Map(); segs=new Map(); nodeList=[]; segArr=[]; nid=1; sid=1; bid=1;
   blds=[]; cars=[]; effects=[];
   res={road:1500,round:1,light:1,bridge:2};
-  score=0; t=0; level=1; lvTrips=0; levelPending=false; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false;
+  score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false;
   // nothing is built yet: the first shop and houses are yours to place
   tray=emptyTray(); tray.shop=1; tray.house=6; placeSel="shop"; ghost=null; moving=null; buildHinted=true;
   grid=null; gridCur=null; lineGhosts=null; closeTune();
@@ -1685,6 +1780,7 @@ function levelBatch(L){
   const add=emptyTray();
   add.house=Math.min(12,3+2*L); if(L>=2) add.bighouse=1+Math.floor(L/4); if(L>=3) add.apts=L>=6?2:1;
   for(const k of TYPES) tray[k]+=add[k];
+  mallBatch=false;
   for(let i=0;i<(L<=3?1:2);i++){ const k=nextDestType(); add[k]++; tray[k]++; }
   return add;
 }
@@ -2132,7 +2228,7 @@ function buildRoadCache(){
       }
     }
   }
-  for(const b of blds){ if(!b.acc) continue; drives.moveTo(b.door.x,b.door.y); drives.lineTo(b.acc.ex,b.acc.ey); }
+  for(const b of blds) for(const a of accsOf(b)){ drives.moveTo(a.door.x,a.door.y); drives.lineTo(a.ex,a.ey); }
   // the highway carries on out past the edge of the map
   if(outside){ const n=nodes.get(outside.node); if(n&&n.segs.length){ const s=segs.get(n.segs[0]), f={x:outside.fx,y:outside.fy}, e={x:n.x-f.x*420,y:n.y-f.y*420};
     G.body[s.lanes].moveTo(n.x,n.y); G.body[s.lanes].lineTo(e.x,e.y);
@@ -2590,7 +2686,12 @@ function drawDest(b){
   const stalls=(x0,w2,n,ly)=>{ if(!LOD) return; for(let i=0;i<Math.min(n,here.length);i++){ const p=toMap(b,(x0+2+(i+.5)*(w2-4)/n)*sc,ly*sc); parked(here[i],p.x,p.y,b.ang+Math.PI); } };
   const box=(x,y,w2,h2,col,edge,hgt)=>rbox(x,y,w2,h2,lsx,lsy,hgt,col,edge);
   if(b.type==="mall"){
-    const park=carPark(b,sc,-w/2,0,w,d/2,[1,12,31.5],14,"#d5d2ca");
+    const park0=carPark(b,sc,-w/2,0,w,d/2,[1,12,31.5],14,"#d5d2ca"), gx=[-w*.3,w*.3];
+    // the two drives in cut through the front row of bays
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc); ctx.fillStyle="#d5d2ca";
+    for(const x of gx){ ctx.fillRect(x-6.5,30.5,13,d/2-30.5); ctx.fillStyle="rgba(255,255,255,.85)"; ctx.fillRect(x-.4,32,.8,3); ctx.fillRect(x-.4,38,.8,3); ctx.fillStyle="#d5d2ca"; }
+    ctx.restore();
+    const park=park0.filter(q=>!(q.y>30&&gx.some(x=>Math.abs(q.x-x)<9)));
     bodyShadow(b,sc,11,[[-w/2,-d/2,w,d/2-2]]);
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
     // trees along the edge of the car park
@@ -2650,6 +2751,10 @@ function drawDest(b){
     // its trucks wait in the loading bays
     const idle=b.cars.filter(c=>c.state==="home");
     if(LOD) idle.forEach((c,i)=>{ const p=toMap(b,(-w/2+11+i*19)*sc,(by+7)*sc); parked(c,p.x,p.y,th+Math.PI); });
+    // the workers' cars squeeze in between the trucks, and trucks bringing raw materials use the free loading bays
+    if(LOD){ const slots=[-9.5,9.5,-w/2+3.6,w/2-3.6]; let i=0, j=0;
+      for(const c of here){ if(c.truck){ const k=idle.length+j; if(k<3){ const p=toMap(b,(-w/2+11+k*19)*sc,(by+7)*sc); parked(c,p.x,p.y,th+Math.PI); j++; } }
+        else if(i<slots.length){ const p=toMap(b,slots[i]*sc,(by+5.5)*sc); parked(c,p.x,p.y,b.ang+Math.PI); i++; } } }
     bodyShadow(b,sc,9,[[-w/2,-d/2,w,by+d/2]]);
     if(silos) bodyShadow(b,sc,16,[[w/2-17,-d/2+2,15,15]]);
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
@@ -2707,6 +2812,9 @@ function drawPlan(){
   if(!pl) return;
   const hw=halfW(pl.lanes);
   ctx.lineCap="round"; ctx.lineJoin="round";
+  // a dead end that gets pulled out to meet the new road square
+  for(const P of [pl.S,pl.E]) if(P.slide>0&&P.node.segs.length){ const l=segs.get(P.node.segs[0]).lanes; ctx.strokeStyle=pl.ok?"rgba(255,255,255,.75)":"rgba(255,235,235,.7)"; ctx.lineWidth=2*halfW(l);
+    ctx.beginPath(); ctx.moveTo(P.node.x,P.node.y); ctx.lineTo(P.x,P.y); ctx.stroke(); }
   ctx.beginPath(); pl.pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
   if(pl.over){ ctx.save(); ctx.translate(SHX*8,SHY*8); ctx.strokeStyle="rgba(25,28,20,.15)"; ctx.lineWidth=2*hw; ctx.stroke(); ctx.restore(); }
   ctx.strokeStyle=pl.ok?"rgba(47,125,225,.35)":"rgba(226,73,58,.35)"; ctx.lineWidth=2*hw+3; ctx.stroke();
@@ -2916,6 +3024,7 @@ window.__gridlock={
   tune:(id,o)=>{ const n=nodes.get(id); if(!n) return null; o=o||{};
     if(o.prot!==undefined&&n.light){ n.light.prot=o.prot; lightPhases(n); n.light.phase=0; n.light.t=0; }
     if(o.green&&n.light){ Object.assign(n.light.green,o.green); lightPhases(n); }
+    if(o.phase!==undefined&&n.light){ n.light.phase=o.phase; n.light.t=0; }
     if(o.lc) Object.assign(n.lc,o.lc); if(o.slip) Object.assign(n.slip,o.slip); buildRoadCache();
     return {type:n.type,lc:Object.assign({},n.lc),slip:Object.assign({},n.slip),light:n.light&&{prot:n.light.prot,k:n.light.k,green:Object.assign({},n.light.green),ph:n.light.ph.map(p=>p.g+(p.left?"L":"")+p.dur)},
       appr:approaches(n).map(p=>({seg:p.s.id,lanes:p.s.lanes,from:compass(p.d),set:laneSet(n,p.s)}))}; },
@@ -2953,7 +3062,7 @@ window.__gridlock={
     return out; },
   stopped:()=>cars.filter(c=>c.state==="drive"&&c.v<1).map(c=>{ const k=c.rt.ctrls[c.ci]; return {x:Math.round(c.x),y:Math.round(c.y),still:+c.still.toFixed(1),ci:c.ci,next:k?{kind:k.kind,node:k.node,d:Math.round(k.s0-c.s)}:null}; }),
   nodeInfo:id=>{ const n=nodes.get(id); return n&&{type:n.type,deg:n.segs.length,hold:n.hold.map(h=>({in:h.k.inSeg,out:h.k.outSeg,s:Math.round(h.c.s-h.k.s1),v:+h.c.v.toFixed(1),st:h.c.state})),wait:[...n.wait.values()].map(w=>({in:w.k.inSeg,out:w.k.outSeg,since:Math.round(t-w.since)}))}; },
-  diag:()=>{ const o={home:0,drive:0,park:0,ghost:0,stopped:0}; for(const c of cars){ o[c.state]++; if(c.state==="drive"){ if(c.ghost>0)o.ghost++; if(c.v<1)o.stopped++; } } o.d=dests().map(d=>d.type[0]+(d.acc?"":"!")+":"+d.pins.cust+"/"+d.pins.work+"/"+d.pins.goods+"/"+d.pins.raw+" s"+d.stock+"r"+d.raw+" o"+Math.round(d.over)).join(" "); return o; }
+  diag:()=>{ const o={home:0,drive:0,park:0,ghost:0,stopped:0}; for(const c of cars){ o[c.state]++; if(c.state==="drive"){ if(c.ghost>0)o.ghost++; if(c.v<1)o.stopped++; } } o.rr=reroutes; o.d=dests().map(d=>d.type[0]+(d.acc?"":"!")+":"+d.pins.cust+"/"+d.pins.work+"/"+d.pins.goods+"/"+d.pins.raw+" s"+d.stock+"r"+d.raw+" o"+Math.round(d.over)).join(" "); return o; }
 };
 
 document.querySelectorAll("[data-gfx]").forEach(b=>b.onclick=()=>setGfx(b.dataset.gfx));
