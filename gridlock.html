@@ -241,7 +241,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 4.6</div>
+    <div class="small">Version 4.7</div>
   </div>
 </div>
 
@@ -252,7 +252,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
     <div class="gfx"><span>Graphics<small>Ultra adds soft shadows, reflections and street detail</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
-    <div class="small">Version 4.6</div>
+    <div class="small">Version 4.7</div>
   </div>
 </div>
 
@@ -286,7 +286,8 @@ const $=id=>document.getElementById(id);
 const cv=$("cv"); let ctx=cv.getContext("2d");
 
 // ---------- constants ----------
-const MW=2000, MH=1400;          // map size in world units (metres)
+const MW=2600, MH=1820;          // map size in world units (metres)
+const MAPK=MW*MH/(2000*1400);    // how much more land there is than the old 2000 x 1400 map
 const LW=7, KERB=2.5;            // lane width, kerb
 const halfW=l=>l*LW+KERB;        // half road width for 1 or 2 lanes each way
 const SPEED={1:52,2:80,3:100}, SPEED_HWY=125;
@@ -360,18 +361,22 @@ function lineInter(p,u,q,v){ const den=u.x*v.y-u.y*v.x; if(Math.abs(den)<.08)ret
 const D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 
 // ---------- terrain ----------
-// the land is a few smooth noise fields: hills round the edges, lakes and a river, patches of grass and sand.
+// the land is a few smooth noise fields: hills and a mountain range round the edges, lakes with islands, ponds and
+// rivers, woods, patches of grass and sand, and farm fields out in the country.
 // Each field is traced into smooth outlines once, so it stays sharp at any zoom.
 const WG=10, TG=10, TX0=-300, TY0=-300, TNX=(MW+600)/TG+1, TNY=(MH+600)/TG+1;
 const WATER=.37, HILL=.62;
 const sst=(a,b,x)=>{ const u=clamp((x-a)/(b-a),0,1); return u*u*(3-2*u); };
 const BIOMES=[
   {base:"#ebe9e1",sand:["#efe6cf","#e8dbbb"],beach:"#eee4c9",grass:["#d6e7b4","#c6de9c"],sandT:.64,grassT:.55,hills:3,
-   hill:["#d3d1c9","#acaaa4","#9a9892","#888680","#76746f"],lite:["","#c3c1bb","#b1afa9","#9f9d97","#8d8b85"]},
+   hill:["#d3d1c9","#acaaa4","#9a9892","#888680","#76746f","#6c6a64","#b4b2ac","#f3f4f1"],lite:["","#c3c1bb","#b1afa9","#9f9d97","#8d8b85","#7f7d77","#c9c7c1","#ffffff"],
+   field:["#e8dc9c","#c9dc98","#dcc9a2","#b9d38a"]},
   {base:"#ece9df",sand:["#eee2c4","#e6d3a8"],beach:"#ede0bf",grass:["#d9e6b6","#cddfa2"],sandT:.55,grassT:.62,hills:4,
-   hill:["#d6c6a4","#ad9161","#9b7f51","#887044","#755f37"],lite:["","#c1a878","#b09466","#9d8357","#8a714a"]},
+   hill:["#d6c6a4","#ad9161","#9b7f51","#887044","#755f37","#6a5532","#b8a68a","#f1ede4"],lite:["","#c1a878","#b09466","#9d8357","#8a714a","#7c6741","#cbbba0","#ffffff"],
+   field:["#ecd99a","#d8d49a","#dcc29a","#c8d48e"]},
   {base:"#eaebe2",sand:["#efe8d2","#e9dfc2"],beach:"#ede6cd",grass:["#d0e6ab","#bfdb92"],sandT:.7,grassT:.54,hills:2,
-   hill:["#cdd3bf","#a6ad98","#959c87","#848b77","#737a67"],lite:["","#b9c0aa","#a8af9a","#979e89","#868d79"]}
+   hill:["#cdd3bf","#a6ad98","#959c87","#848b77","#737a67","#676d5c","#b0b5a8","#f2f4ef"],lite:["","#b9c0aa","#a8af9a","#979e89","#868d79","#787e6c","#c5cabd","#ffffff"],
+   field:["#e6dc9e","#c4dc94","#d8caa4","#b3d488"]}
 ];
 function makeNoise(){
   const P=new Uint8Array(512), V=new Float32Array(256);
@@ -422,7 +427,7 @@ function contourPath(F,thr){
   return path;
 }
 function genMap(){
-  const fbm=makeNoise(), cx=MW/2, cy=MH/2, N=TNX*TNY;
+  const fbm=makeNoise(), cx=MW/2, cy=MH/2, N=TNX*TNY; let rivV=false;
   biome=pick(BIOMES);
   const Wf=new Float32Array(N), Hf=new Float32Array(N), Gf=new Float32Array(N), Sf=new Float32Array(N), Cv=new Float32Array(N);
   const X=i=>TX0+i*TG, Y=j=>TY0+j*TG;
@@ -432,28 +437,41 @@ function genMap(){
       const v=amp*Math.exp(-d2/(r*r)), k=j*TNX+i; if(useMax) F[k]=Math.max(F[k],v); else F[k]+=v; } };
   const at=(F,x,y)=>F[clamp(Math.round((y-TY0)/TG),0,TNY-1)*TNX+clamp(Math.round((x-TX0)/TG),0,TNX-1)];
   // a few hills out towards the edges, never in the middle where the town starts
-  const Mf=new Float32Array(N), hills=biome.hills+(Math.random()*3|0);
+  const Mf=new Float32Array(N), Rf=new Float32Array(N), hills=Math.round((biome.hills+(Math.random()*3|0))*Math.sqrt(MAPK));
   for(let k=0;k<hills;k++){ const a=Math.random()*Math.PI*2, r=rnd(.72,1.12), da=Math.random()*Math.PI*2;
     let x=cx+Math.cos(a)*r*MW*.5, y=cy+Math.sin(a)*r*MH*.5;
     for(let q=0;q<3;q++){ const R=rnd(120,200); blob(Mf,x,y,R,1,true); x+=Math.cos(da+rnd(-.6,.6))*R*.85; y+=Math.sin(da+rnd(-.6,.6))*R*.85; } }
+  // a mountain range along one side of the map, high enough for bare rock and snow on its peaks
+  { const side=Math.random()*4|0, horiz=side<2, len=horiz?MW:MH, a0=rnd(.05,.35)*len, a1=a0+rnd(.4,.6)*len, in0=rnd(40,120), ph=rnd(0,6);
+    for(let a=a0;a<=a1;a+=55){ const inn=in0+Math.sin(a*.004+ph)*60, R=rnd(110,170), h=.75+.45*Math.sin((a-a0)/(a1-a0)*Math.PI)*rnd(.8,1.2);
+      const x=horiz?a:side===2?inn:MW-inn, y=horiz?(side===0?inn:MH-inn):a; blob(Rf,x,y,R,h,true); } }
   for(let j=0;j<TNY;j++)for(let i=0;i<TNX;i++){ const x=X(i), y=Y(j), k=j*TNX+i, r=Math.hypot((x-cx)/(MW*.5),(y-cy)/(MH*.5));
-    Hf[k]=.7*fbm(x/240,y/240,4)+.75*Mf[k]-.33-.5*(1-sst(.35,.6,r));
+    Hf[k]=.7*fbm(x/240,y/240,4)+.75*Mf[k]+.85*Rf[k]*(.75+.5*fbm(x/90+3,y/90+8,3))-.33-.5*(1-sst(.35,.6,r));
     Gf[k]=fbm(x/210+31,y/210+57,3); Sf[k]=fbm(x/260+77,y/260+13,3); }
   // lakes, kept off the hills and away from the middle
-  const lakes=2+(Math.random()*2|0);
+  const lakes=3+(Math.random()*3|0), isl=[];
   for(let k=0;k<lakes;k++){
-    let bx,by,tries=0; do{ bx=rnd(160,MW-160); by=rnd(160,MH-160); tries++; }while(tries<300&&(Math.hypot(bx-cx,(by-cy)*1.3)<440||at(Hf,bx,by)>HILL-.1));
-    const R=rnd(55,95), parts=3+(Math.random()*4|0);
+    let bx,by,tries=0; do{ bx=rnd(160,MW-160); by=rnd(160,MH-160); tries++; }while(tries<300&&(Math.hypot(bx-cx,(by-cy)*1.3)<480||at(Hf,bx,by)>HILL-.1));
+    const R=rnd(60,115), parts=3+(Math.random()*4|0);
     for(let p=0;p<parts;p++){ const x=bx+rnd(-R,R)*.9, y=by+rnd(-R*.6,R*.6), r=R*rnd(.5,.8); blob(Wf,x,y,r,1); blob(Cv,x,y,r*1.6,1,true); }
+    // a wooded island in the middle of some of the bigger lakes
+    if(R>80&&Math.random()<.6) isl.push({x:bx+rnd(-R,R)*.2,y:by+rnd(-R,R)*.15,r:R*rnd(.22,.32)});
   }
+  // little ponds dotted about the countryside
+  const ponds=2+(Math.random()*4|0);
+  for(let k=0;k<ponds;k++){ let bx,by,tries=0; do{ bx=rnd(120,MW-120); by=rnd(120,MH-120); tries++; }while(tries<200&&(Math.hypot(bx-cx,(by-cy)*1.3)<360||at(Hf,bx,by)>HILL-.12));
+    const r=rnd(20,34); blob(Wf,bx,by,r,1.05); blob(Wf,bx+rnd(-r,r)*.6,by+rnd(-r,r)*.6,r*.7,.8); blob(Cv,bx,by,r*2,1,true); }
   // a river winding across the map, cutting its own valley through any hills
-  if(Math.random()<.7){
-    const vertical=Math.random()<.5, off=(Math.random()<.5?-1:1)*rnd(340,520), len=vertical?MH:MW, ph=rnd(0,6);
+  const rivers=Math.random()<.75?(Math.random()<.35?2:1):0, sides=[Math.random()<.5?-1:1];
+  for(let rv=0;rv<rivers;rv++){
+    const vertical=rv?!rivV:Math.random()<.5, off=(rv?-sides[0]:sides[0])*(vertical?rnd(.17,.26)*MW:rnd(.24,.37)*MH), len=vertical?MH:MW, ph=rnd(0,6); if(!rv) rivV=vertical;
     for(let s=-260;s<=len+260;s+=8){
       const w=off+Math.sin(s*.006+ph)*90+Math.sin(s*.017+ph*2)*30, x=vertical?cx+w:s, y=vertical?s:cy+w;
       blob(Wf,x,y,13+Math.sin(s*.03)*2,.9); blob(Cv,x,y,75,1,true);
     }
   }
+  for(const I of isl){ const R=I.r*2.4, i0=Math.max(0,Math.floor((I.x-R-TX0)/TG)), i1=Math.min(TNX-1,Math.ceil((I.x+R-TX0)/TG)), j0=Math.max(0,Math.floor((I.y-R-TY0)/TG)), j1=Math.min(TNY-1,Math.ceil((I.y+R-TY0)/TG));
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){ const dx=X(i)-I.x, dy=Y(j)-I.y, k=j*TNX+i; Wf[k]-=1.6*Math.exp(-(dx*dx+dy*dy)/(I.r*I.r)); } }
   for(let j=0;j<TNY;j++)for(let i=0;i<TNX;i++){ const k=j*TNX+i;
     Wf[k]*=.84+.32*fbm(X(i)/70+5,Y(j)/70+9,2);            // ragged shores
     Hf[k]-=.55*Cv[k];                                      // no hills right on the water
@@ -467,18 +485,40 @@ function genMap(){
     sand:[contourPath(Sf,biome.sandT),contourPath(Sf,biome.sandT+.05)],
     grass:[contourPath(Gf,biome.grassT),contourPath(Gf,biome.grassT+.05)],
     beach:contourPath(Wf,.2), water:contourPath(Wf,WATER), water2:contourPath(Wf,.6), water3:contourPath(Wf,1.05),
-    hills:[HILL-.035,HILL,HILL+.05,HILL+.1,HILL+.16].map(v=>contourPath(Hf,v)),
+    hills:[HILL-.035,HILL,HILL+.05,HILL+.1,HILL+.16,HILL+.26,HILL+.44,HILL+.52].map(v=>contourPath(Hf,v)),
     F:{W:Wf,H:Hf,G:Gf}
   };
+  // woods: a few big stands of trees out from the middle, with darker ground under them
+  const Ff=new Float32Array(N), woods=Math.round((4+(Math.random()*3|0))*MAPK*.7);
+  for(let k=0;k<woods;k++){ let bx,by,tries=0; do{ bx=rnd(80,MW-80); by=rnd(80,MH-80); tries++; }while(tries<200&&(Math.hypot(bx-cx,(by-cy)*1.3)<420||at(Wf,bx,by)>.2||at(Hf,bx,by)>HILL));
+    const R=rnd(70,130), parts=3+(Math.random()*3|0); for(let q=0;q<parts;q++) blob(Ff,bx+rnd(-R,R),by+rnd(-R,R)*.8,R*rnd(.5,.8),1); }
+  for(let k=0;k<N;k++){ Ff[k]*=.75+.5*fbm(X(k%TNX)/60+40,Y((k/TNX)|0)/60+2,2); if(Wf[k]>.2) Ff[k]=0; }
+  terrain.woods=contourPath(Ff,.42); terrain.F.F=Ff;
+  // farm fields out in the country: patchworks of crops in rows
+  const fields=[], nf=Math.round((5+(Math.random()*4|0))*MAPK*.8);
+  const clear=(x,y,m)=>{ if(x<m||y<m||x>MW-m||y>MH-m) return false; return at(Wf,x,y)<.12&&at(Hf,x,y)<HILL-.12&&at(Ff,x,y)<.3; };
+  for(let k=0;k<nf;k++){ let bx,by,tries=0; do{ bx=rnd(150,MW-150); by=rnd(150,MH-150); tries++; }while(tries<200&&(Math.hypot(bx-cx,(by-cy)*1.3)<520||!clear(bx,by,60)));
+    if(tries>=200) continue;
+    const ang=rnd(-.5,.5)+(Math.random()<.5?0:Math.PI/2), ux=Math.cos(ang), uy=Math.sin(ang), cols=2+(Math.random()*3|0), rows=1+(Math.random()*3|0), fw=rnd(70,110), fh=rnd(60,95);
+    for(let c=0;c<cols;c++)for(let r=0;r<rows;r++){ const ox=(c-(cols-1)/2)*(fw+6), oy=(r-(rows-1)/2)*(fh+6), x=bx+ux*ox-uy*oy, y=by+uy*ox+ux*oy;
+      let ok=true; for(const [a,b] of [[-1,-1],[1,-1],[1,1],[-1,1],[0,0]]){ const px=x+ux*a*fw/2-uy*b*fh/2, py=y+uy*a*fw/2+ux*b*fh/2; if(!clear(px,py,10)) ok=false; }
+      if(ok&&!fields.some(f=>Math.hypot(f.x-x,f.y-y)<(f.w+fw)*.45)) fields.push({x,y,ang,w:fw,h:fh,kind:Math.random()*4|0,cross:Math.random()<.5}); } }
+  terrain.fields=fields;
+  // boulders scattered round the foot of the hills and along the beaches
+  const rocks=[]; for(let k=0;k<1400*MAPK&&rocks.length<260*MAPK;k++){ const x=rnd(0,MW), y=rnd(0,MH), h=at(Hf,x,y), w=at(Wf,x,y);
+    if(w>WATER-.04||h>HILL) continue; const p=h>HILL-.12?.5:w>.2?.25:.01; if(Math.random()>p) continue; rocks.push({x,y,r:rnd(2.2,5.5),a:rnd(0,3),s:Math.random()}); }
+  terrain.rocks=rocks;
   // woods on the grass and round the foot of the hills, a few trees everywhere else
   trees=[];
-  for(let k=0;k<3200&&trees.length<1400;k++){
-    const x=rnd(10,MW-10), y=rnd(10,MH-10), w=at(Wf,x,y), h=at(Hf,x,y), g=at(Gf,x,y);
-    if(w>.24||h>HILL-.04||isWater(x,y)||isHill(x,y)) continue;
-    let p=.09; if(g>biome.grassT) p=.62; if(h>HILL-.11) p=Math.max(p,.55);
+  const inField=(x,y)=>fields.some(f=>{ const dx=x-f.x, dy=y-f.y, c=Math.cos(f.ang), sn=Math.sin(f.ang); return Math.abs(dx*c+dy*sn)<f.w/2+4&&Math.abs(-dx*sn+dy*c)<f.h/2+4; });
+  for(let k=0;k<6400*MAPK&&trees.length<2100*MAPK;k++){
+    const x=rnd(10,MW-10), y=rnd(10,MH-10), w=at(Wf,x,y), h=at(Hf,x,y), g=at(Gf,x,y), fo=at(Ff,x,y);
+    if(w>.24||h>HILL-.04||isWater(x,y)||isHill(x,y)||inField(x,y)) continue;
+    let p=.06; if(g>biome.grassT) p=.5; if(h>HILL-.11) p=Math.max(p,.55); if(fo>.42) p=.95; else if(fo>.3) p=Math.max(p,.6);
+    if(isl.some(I=>Math.hypot(x-I.x,y-I.y)<I.r*1.2)) p=.8;
     if(Math.hypot(x-cx,y-cy)<150) p*=.15;
     if(Math.random()>p) continue;
-    trees.push({x,y,r:rnd(4.5,8.5),alive:true,s:Math.random()});
+    trees.push({x,y,r:fo>.42?rnd(6,10):rnd(4.5,8.5),alive:true,s:fo>.42?Math.random()*.75:Math.random(),pine:h>HILL-.11&&Math.random()<.6});
   }
   tver++;
 }
@@ -2456,7 +2496,7 @@ const fieldAt=(F,x,y)=>F[clamp(Math.round((y-TY0)/TG),0,TNY-1)*TNX+clamp(Math.ro
 function decor(){
   const T=terrain; if(T.decor) return T.decor;
   const F=T.F, gt=biome.grassT, tuft=new Path2D(), tuft2=new Path2D(), fl=[new Path2D(),new Path2D(),new Path2D(),new Path2D()], peb=new Path2D(), pebL=new Path2D(), glints=[];
-  for(let i=0;i<9000;i++){
+  for(let i=0;i<9000*MAPK;i++){
     const x=TX0+hash(i,1)*(MW+600), y=TY0+hash(i,2)*(MH+600), w=fieldAt(F.W,x,y), r=hash(i,3);
     if(w>WATER+.12){ if(r<.06) glints.push({x,y,r:1.4+hash(i,4)*1.6,p:hash(i,5)*40}); continue; }
     if(w>.2||fieldAt(F.H,x,y)>HILL-.05) continue;
@@ -2548,6 +2588,8 @@ function drawGround(){
   ctx.fillStyle=B.base; ctx.fillRect(TX0,TY0,W,H);
   ctx.fillStyle=B.sand[0]; ctx.fill(T.sand[0],"evenodd"); ctx.fillStyle=B.sand[1]; ctx.fill(T.sand[1],"evenodd");
   ctx.fillStyle=B.grass[0]; ctx.fill(T.grass[0],"evenodd"); ctx.fillStyle=B.grass[1]; ctx.fill(T.grass[1],"evenodd");
+  ctx.fillStyle="rgba(78,120,48,.16)"; ctx.fill(T.woods,"evenodd");
+  drawFields();
   ctx.fillStyle=B.beach; ctx.fill(T.beach,"evenodd");
   if(ultra){ ctx.strokeStyle="rgba(130,105,60,.14)"; ctx.lineWidth=8; ctx.stroke(T.water); ctx.lineWidth=4; ctx.stroke(T.water); }
   ctx.fillStyle="#b5c9f3"; ctx.fill(T.water,"evenodd"); ctx.fillStyle="#a3bbef"; ctx.fill(T.water2,"evenodd"); ctx.fillStyle="#92adeb"; ctx.fill(T.water3,"evenodd");
@@ -2557,15 +2599,40 @@ function drawGround(){
     if(k){ ctx.save(); ctx.translate(4,6); ctx.fillStyle="rgba(40,35,25,.2)"; ctx.fill(p,"evenodd"); ctx.restore();
       ctx.save(); ctx.translate(-1.2,-1.6); ctx.fillStyle=B.lite[k]; ctx.fill(p,"evenodd"); ctx.restore(); }
     ctx.fillStyle=B.hill[k]; ctx.fill(p,"evenodd"); });
+  drawRocks();
   // beyond the edge of the map
   ctx.fillStyle="rgba(70,66,56,.13)"; ctx.fillRect(TX0,TY0,W,-TY0); ctx.fillRect(TX0,MH,W,H-MH+TY0); ctx.fillRect(TX0,0,-TX0,MH); ctx.fillRect(MW,0,W-MW+TX0,MH);
   ctx.strokeStyle="rgba(70,66,56,.2)"; ctx.lineWidth=1.5; ctx.strokeRect(0,0,MW,MH);
 }
+// farm fields: a hedge round the edge and the crops in rows
+function drawFields(){
+  const B=biome;
+  for(const f of terrain.fields){ if(!inView(f.x,f.y,f.w+f.h)) continue;
+    ctx.save(); ctx.translate(f.x,f.y); ctx.rotate(f.ang);
+    const w=f.w, h=f.h, col=B.field[f.kind];
+    ctx.fillStyle=col; roundRect(-w/2,-h/2,w,h,3); ctx.fill();
+    ctx.strokeStyle=shade(col,-26); ctx.globalAlpha=f.kind===2?.35:.45; ctx.lineWidth=f.kind===2?1.6:1.1; ctx.beginPath();
+    if(f.cross){ for(let y=-h/2+3;y<h/2-1;y+=f.kind===2?4.5:3.4){ ctx.moveTo(-w/2+2,y); ctx.lineTo(w/2-2,y); } }
+    else { for(let x=-w/2+3;x<w/2-1;x+=f.kind===2?4.5:3.4){ ctx.moveTo(x,-h/2+2); ctx.lineTo(x,h/2-2); } }
+    ctx.stroke(); ctx.globalAlpha=1;
+    if(ultra){ ctx.fillStyle="rgba(255,255,255,.12)"; ctx.fillRect(-w/2,-h/2,w,h*.3); }
+    ctx.strokeStyle="rgba(84,124,58,.55)"; ctx.lineWidth=2.2; roundRect(-w/2,-h/2,w,h,3); ctx.stroke();
+    ctx.restore(); }
+}
+// boulders round the foot of the hills and on the beaches
+function drawRocks(){
+  const sh=new Path2D(), body=new Path2D(), top=new Path2D();
+  for(const r of terrain.rocks){ if(!inView(r.x,r.y,8)) continue;
+    sh.moveTo(r.x+SHX*2+r.r,r.y+SHY*2); sh.ellipse(r.x+SHX*2,r.y+SHY*2,r.r,r.r*.75,r.a,0,7);
+    body.moveTo(r.x+r.r,r.y); body.ellipse(r.x,r.y,r.r,r.r*.75,r.a,0,7);
+    top.moveTo(r.x-r.r*.2+r.r*.5,r.y-r.r*.2); top.ellipse(r.x-r.r*.2,r.y-r.r*.2,r.r*.5,r.r*.38,r.a,0,7); }
+  ctx.fillStyle="rgba(40,35,25,.18)"; ctx.fill(sh); ctx.fillStyle="#a4a199"; ctx.fill(body); ctx.fillStyle="#cbc8c0"; ctx.fill(top);
+}
 function drawTrees(){
-  const sh=new Path2D(), c0=new Path2D(), c1=new Path2D(), c2=new Path2D(), hl=new Path2D(), U=ultra, sh2=new Path2D(), rim=new Path2D(), mid=new Path2D(), sp=new Path2D();
+  const sh=new Path2D(), c0=new Path2D(), c1=new Path2D(), c2=new Path2D(), pn=new Path2D(), hl=new Path2D(), U=ultra, sh2=new Path2D(), rim=new Path2D(), mid=new Path2D(), sp=new Path2D();
   for(const tr of trees){ if(!tr.alive||!inView(tr.x,tr.y,14)) continue; const r=tr.r, sx=tr.x+SHX*4, sy=tr.y+SHY*4;
     sh.moveTo(sx+r,sy); sh.arc(sx,sy,r,0,7);
-    const P=tr.s<.4?c0:tr.s<.75?c1:c2; P.moveTo(tr.x+r,tr.y); P.arc(tr.x,tr.y,r,0,7);
+    const P=tr.pine?pn:tr.s<.4?c0:tr.s<.75?c1:c2; P.moveTo(tr.x+r,tr.y); P.arc(tr.x,tr.y,r,0,7);
     const hx=tr.x-r*.3, hy=tr.y-r*.32; hl.moveTo(hx+r*.55,hy); hl.arc(hx,hy,r*.55,0,7);
     if(U){ const r2=r*1.22, x2=tr.x+SHX*7.5, y2=tr.y+SHY*7.5; sh2.moveTo(x2+r2,y2); sh2.arc(x2,y2,r2,0,7);
       rim.moveTo(tr.x+r+.8,tr.y+.5); rim.arc(tr.x,tr.y+.5,r+.8,0,7);
@@ -2573,7 +2640,7 @@ function drawTrees(){
       const qx=tr.x-r*.42, qy=tr.y-r*.46; sp.moveTo(qx+r*.2,qy); sp.arc(qx,qy,r*.2,0,7); } }
   if(U){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.fill(sh2); ctx.fillStyle="rgba(30,50,20,.17)"; ctx.fill(sh); ctx.fillStyle="rgba(38,72,28,.6)"; ctx.fill(rim); }
   else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.fill(sh); }
-  ctx.fillStyle="#5d9c41"; ctx.fill(c0); ctx.fillStyle="#4d8a37"; ctx.fill(c1); ctx.fillStyle="#6aa84a"; ctx.fill(c2);
+  ctx.fillStyle="#5d9c41"; ctx.fill(c0); ctx.fillStyle="#4d8a37"; ctx.fill(c1); ctx.fillStyle="#6aa84a"; ctx.fill(c2); ctx.fillStyle="#3e7a3c"; ctx.fill(pn);
   if(U){ ctx.fillStyle="rgba(125,185,85,.32)"; ctx.fill(mid); }
   ctx.fillStyle="rgba(150,205,105,.55)"; ctx.fill(hl);
   if(U){ ctx.fillStyle="rgba(232,255,195,.6)"; ctx.fill(sp); }
@@ -3242,6 +3309,8 @@ window.__gridlock={
   build:(pts,lanes,over,kind)=>{ lanes=lanes||1; const S=snapAt(pts[0].x,pts[0].y), last=pts[pts.length-1]; const pl=makePlan(S,pts,last,lanes,pts.length===2,over,kind); if(pl.ok) commitPlan(pl); return {ok:pl.ok,reason:pl.reason,cost:pl.cost,hit:pl.hitB?pl.hitB.type+pl.hitB.id:null,S:pl.S.kind,E:pl.E.kind}; },
   move:(id,x,y)=>{ const b=blds.find(q=>q.id===id); if(!b) return null; const g=ghostAt(b.type,{x,y},b); if(g.ok) moveBld(b,g); return {ok:g.ok,why:g.why,x:g.x,y:g.y}; },
   del:id=>{ const b=blds.find(q=>q.id===id); return b?deleteBld(b):null; },
+  terrainSpots:()=>{ const T=terrain, f=T.fields[0], r=T.rocks[0]; let pk=null, ph=-1; const H=T.F.H; for(let k=0;k<H.length;k+=7){ if(H[k]>ph){ const x=TX0+(k%TNX)*TG, y=TY0+((k/TNX)|0)*TG; if(x>0&&y>0&&x<MW&&y<MH){ ph=H[k]; pk={x,y}; } } }
+    return {peak:pk&&{x:pk.x,y:pk.y,z:1.1},field:f&&{x:f.x,y:f.y,z:1.6},rock:r&&{x:r.x,y:r.y,z:2.2},nfields:T.fields.length,nrocks:T.rocks.length}; },
   map:()=>{ let w=0,h=0; for(const v of waterGrid) w+=v; for(const v of hillGrid) h+=v; return {water:w/waterGrid.length,hill:h/hillGrid.length,trees:trees.length}; },
   overInfo:()=>[...segs.values()].filter(s=>s.over).map(s=>({id:s.id,len:Math.round(s.len),ga:nodes.get(s.a).gd,gb:nodes.get(s.b).gd})),
   outside:()=>outside&&{x:outside.ex,y:outside.ey,fx:outside.fx,fy:outside.fy,node:outside.node,acc:!!outside.acc,trucks:outside.cars.filter(c=>c.truck).length,visitors:outside.cars.filter(c=>!c.truck).length,busy:outside.cars.filter(c=>c.state!=="home").length},
