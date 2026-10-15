@@ -78,6 +78,13 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #buildBar .zs{display:none}
 #buildBar .br{flex-basis:100%;height:0}
 #buildBar button.chip{height:28px;font-size:11.5px;border:1.5px solid #dcd9d1;background:#faf9f6}
+#buildBar .tabs{display:flex;background:#eeece6;border-radius:9px;padding:2px;gap:2px}
+#buildBar .tabs button{height:24px;font-size:11.5px;padding:0 9px;border-radius:7px}
+#buildBar .tabs button.sel{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+#buildBar button b{font-weight:600;font-size:10.5px;color:#8a877e}
+#buildBar button.poor{opacity:.45}
+#buildBar .st{font-size:11.5px;font-weight:600;color:var(--soft);display:flex;align-items:center;gap:8px;padding:0 4px;white-space:nowrap}
+#buildBar .st .low{color:var(--bad)}
 @media (max-width:440px){#buildBar .zl{display:none}#buildBar .zs{display:inline}}
 #scoreN.neg{color:#d0392b}
 @media (max-width:480px){ body.city #popPill{display:flex} body.city #weekPill{display:none} body.city #scoreL{display:none} }
@@ -253,11 +260,11 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="legend"><span><i style="background:#3d7fe0"></i>Shop</span><span><i style="background:#8a60d0"></i>Office</span><span><i style="background:#ee8a35"></i>Factory</span><span><i style="background:#b98e57"></i>Warehouse</span><span><i style="background:#2fa596"></i>Assembly plant</span><span><i style="background:#7fbcf0"></i>Mall</span><span><i style="background:#6fbf4f"></i>Homes</span></div>
     <button class="big two" id="playBtn">Play<small>A building that stays full too long ends the game</small></button>
     <button class="big alt two" id="relaxBtn">Relaxed<small>Just build, no game over</small></button>
-    <button class="big alt two" id="cityBtn">City builder<small>Zone land and the town grows by itself. Roads cost money, and taxes pay for them</small></button>
+    <button class="big alt two" id="cityBtn">City builder<small>Zone land, bring in power and water, and the town grows by itself. Taxes pay for the roads and services</small></button>
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 5.1</div>
+    <div class="small">Version 5.2</div>
   </div>
 </div>
 
@@ -268,7 +275,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
-    <div class="small">Version 5.1</div>
+    <div class="small">Version 5.2</div>
   </div>
 </div>
 
@@ -330,7 +337,18 @@ const BT={
   // assembly plants and goods to the shops
   warehouse:{w:74,d:52,r:45,col:"#b98e57",dark:"#8a6634",light:"#dcbd8e",name:"warehouse",names:"warehouses",need:"work",rate:.45,cap:{work:6,goods:8}},
   // an assembly plant is a clean factory: no smoke, but it builds things from parts that only a warehouse can supply
-  plant:   {w:64,d:50,r:40,col:"#2fa596",dark:"#1d786d",light:"#86d6cb",name:"assembly plant",names:"assembly plants",need:"work",rate:.75,cap:{work:8,parts:6}}
+  plant:   {w:64,d:50,r:40,col:"#2fa596",dark:"#1d786d",light:"#86d6cb",name:"assembly plant",names:"assembly plants",need:"work",rate:.75,cap:{work:8,parts:6}},
+  // the City builder's public services (see SVC): bought outright, then paid for every month
+  power:   {svc:true,w:62,d:48,r:40,col:"#8d5a4a",name:"power plant",names:"power plants"},
+  solar:   {svc:true,w:56,d:44,r:36,col:"#3b5f93",name:"solar farm",names:"solar farms"},
+  water:   {svc:true,w:24,d:26,r:18,col:"#5aa7d8",name:"water tower",names:"water towers"},
+  pump:    {svc:true,w:30,d:26,r:20,col:"#3f8fc2",name:"water pump",names:"water pumps"},
+  fire:    {svc:true,w:42,d:34,r:27,col:"#d63a2c",name:"fire station",names:"fire stations"},
+  police:  {svc:true,w:38,d:32,r:25,col:"#2d4e9c",name:"police station",names:"police stations"},
+  clinic:  {svc:true,w:48,d:40,r:31,col:"#e2493a",name:"hospital",names:"hospitals"},
+  school:  {svc:true,w:58,d:46,r:37,col:"#e0a23a",name:"school",names:"schools"},
+  daycare: {svc:true,w:30,d:28,r:21,col:"#e06aa6",name:"daycare",names:"daycares"},
+  depot:   {svc:true,w:48,d:38,r:31,col:"#f08c1a",name:"road depot",names:"road depots"}
 };
 const DEST=BT, TYPES=["house","bighouse","apts","town","shop","center","mall","office","factory","warehouse","plant"], KINDS=["cust","work","goods","raw","parts"];
 const MAKERS=new Set(["factory","plant"]);
@@ -571,7 +589,7 @@ function splitSeg(s,t){
   const m=addNode(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t);
   removeSeg(s);
   const s1=addSeg(A,m,s.lf,s.lb), s2=addSeg(m,B,s.lf,s.lb);
-  s1.bridgeHead=s.bridgeHead; s1.over=s2.over=s.over; s1.fixed=s2.fixed=s.fixed; s1.hwy=s2.hwy=s.hwy;
+  s1.bridgeHead=s.bridgeHead; s1.over=s2.over=s.over; s1.fixed=s2.fixed=s.fixed; s1.hwy=s2.hwy=s.hwy; if(s.cond!==undefined) s1.cond=s2.cond=s.cond;
   // lane arrows and slip lanes set up at either end carry over to the new pieces
   for(const [n,ns] of [[A,s1],[B,s2]]){ if(n.lc[s.id]!==undefined){ n.lc[ns.id]=n.lc[s.id]; delete n.lc[s.id]; } if(n.slip[s.id]){ n.slip[ns.id]=true; delete n.slip[s.id]; }
     if(n.light&&n.light.grp&&n.light.grp[s.id]!==undefined) n.light.grp[ns.id]=n.light.grp[s.id]; }
@@ -592,7 +610,7 @@ function setL(s,lf,lb){ s.lf=lf; s.lb=lb; s.lanes=Math.max(lf,lb); }
 const divOff=(s,fromId)=>(s.a===fromId?s.lb-s.lf:s.lf-s.lb)*LW/2;
 // traffic runs straight on through joint nId from s1 to s2 with the same lanes both ways
 const flowsOn=(s1,nId,s2)=>inL(s1,nId)===dirL(s2,nId)&&dirL(s1,nId)===inL(s2,nId)&&s1.hwy===s2.hwy;
-const spd=s=>s.hwy?SPEED_HWY:SPEED[s.lanes];
+const spd=s=>(s.hwy?SPEED_HWY:SPEED[s.lanes])*wornK(s);
 const segUse=s=>s.len*totL(s)/2;                 // road used: a 2-lane street uses its length
 const ringR=n=>n.mh>20?31:n.mh>12?25:18;
 // how high an overpass is at fraction tt along a piece: it climbs over RAMP metres from where it meets the ground
@@ -1488,16 +1506,20 @@ function makeBld(type,x,y,ang){
 function placeWhy(x,y,r,type,ignore,ang){
   if(x<r+12||y<r+12||x>MW-r-12||y>MH-r-12) return "edge";
   if(isWater(x,y)||isHill(x,y)) return "land";
-  for(let k=0;k<8;k++){ const a=k*Math.PI/4, px=x+Math.cos(a)*r*.8, py=y+Math.sin(a)*r*.8; if(isWater(px,py)||isHill(px,py)) return "land"; }
+  // a water pump sits right on the shore with its back to the water, so only its own footprint has to be dry
+  const k8=type==="pump"?.55:.8;
+  for(let k=0;k<8;k++){ const a=k*Math.PI/4, px=x+Math.cos(a)*r*k8, py=y+Math.sin(a)*r*k8; if(isWater(px,py)||isHill(px,py)) return "land"; }
+  if(type==="pump"&&ang!==undefined){ const bx=x-Math.cos(ang)*(BT.pump.d/2+12), by=y-Math.sin(ang)*(BT.pump.d/2+12); if(!isWater(bx,by)) return "nowater"; }
   for(const b of blds) if(b!==ignore&&Math.hypot(b.x-x,b.y-y)<b.r+r+2) return "bld";
   const T=BT[type], fp=ang===undefined?null:{x,y,ang,w:T.w,d:T.d};
   for(const s of segs.values()){ const A=nodes.get(s.a),B=nodes.get(s.b); if(fp?footD(fp,A,B)<segHW(s)+3:projSeg(x,y,A.x,A.y,B.x,B.y).d<segHW(s)+r*.8) return "road"; }
   // nobody wants to live in the factory smoke, or right beside a highway
   if(BT[type].home){
-    for(const b of blds) if(b!==ignore&&b.type==="factory"&&Math.hypot(b.x-x,b.y-y)<POLL+r*.4) return "smoke";
+    for(const b of blds) if(b!==ignore&&SMOKY.has(b.type)&&Math.hypot(b.x-x,b.y-y)<POLL+r*.4) return "smoke";
     for(const s of segs.values()){ if(s.lanes<3) continue; const A=nodes.get(s.a),B=nodes.get(s.b); if(projSeg(x,y,A.x,A.y,B.x,B.y).d<halfW(3)+NOISE+r*.5) return "noise"; }
   }
-  if(type==="factory"){ for(const b of blds) if(b!==ignore&&isHome(b)&&Math.hypot(b.x-x,b.y-y)<POLL+b.r*.4) return "smoke"; }
+  if(SMOKY.has(type)){ for(const b of blds) if(b!==ignore&&isHome(b)&&Math.hypot(b.x-x,b.y-y)<POLL+b.r*.4) return "smoke"; }
+  if(city&&SVC[type]&&!ignore&&res.road<SVC[type].cost) return "cash";
   return "";
 }
 const canPlace=(x,y,r,type,ignore)=>!placeWhy(x,y,r,type,ignore);
@@ -1507,12 +1529,13 @@ function addBld(b){
   const nCars=b.nCars!==undefined?b.nCars:b.type==="house"?(b.big?2:1):b.type==="bighouse"?4:b.type==="apts"?10+(Math.random()*6|0):0;
   for(let i=0;i<nCars;i++){ const c=newCar(b,false); c.cool=rnd(.5,3+i*.6); b.cars.push(c); cars.push(c); }
   if(b.type==="factory"||b.type==="warehouse"||b.type==="plant"){ for(let i=0;i<(b.type==="plant"?2:3);i++){ const c=newCar(b,true); b.cars.push(c); cars.push(c); } }
+  if(SVC[b.type]&&SVC[b.type].cars) for(let i=0;i<SVC[b.type].cars;i++){ const c=svcCar(b,b.type); b.cars.push(c); cars.push(c); }
   b.acc=findAccess(b); if(b.acc) buildRoadCache(); tver++;
   effects.push({k:"ring",x:b.x,y:b.y,c:BT[b.type].col,t:0,life:b.type==="house"?.6:1.3,r:b.r});
   return b;
 }
 const homes=()=>blds.filter(isHome);
-const dests=()=>blds.filter(b=>!isHome(b));
+const dests=()=>blds.filter(b=>!isHome(b)&&!isSvc(b));
 // what kind of workplace or shop the town needs next
 function nextDestType(){
   const n={shop:tray.shop+tray.mall,office:tray.office,factory:tray.factory+tray.plant};
@@ -1573,7 +1596,7 @@ function mayEnter(n,c,k){
     if((mine===undefined||w.since<mine.since-.01)&&clash(k,w.k)) return false; }
   return true;
 }
-function unclaim(c){ if(c.purpose){ const d=c.purpose.d; d.claimed[c.purpose.kind]=Math.max(0,d.claimed[c.purpose.kind]-1); c.purpose=null; } }
+function unclaim(c){ if(c.purpose){ const d=c.purpose.d; if(c.purpose.svc) svcDrop(c); else d.claimed[c.purpose.kind]=Math.max(0,d.claimed[c.purpose.kind]-1); c.purpose=null; } }
 function poof(c){
   releaseAll(c); unclaim(c);
   effects.push({k:"puff",x:c.x,y:c.y,t:0,life:.6});
@@ -1682,6 +1705,7 @@ function dispatch(){
 }
 function arrive(c){
   releaseAll(c);
+  if(c.purpose&&c.purpose.svc) return svcArrive(c);
   if(c.purpose){
     const d=c.purpose.d, k=c.purpose.kind;
     d.claimed[k]=Math.max(0,d.claimed[k]-1);
@@ -1695,7 +1719,7 @@ function arrive(c){
     if(d.type==="plant"&&k==="parts") d.raw=Math.min(6,d.raw+1.5);
     if(d.type==="warehouse"&&k==="goods") d.stock=Math.min(12,d.stock+1);
     c.purpose=null; c.state="park"; c.park=c.truck?rnd(TPARK[0],TPARK[1]):rnd(PARK[0],PARK[1]); c.at=d; c.atDi=c.tDi; c.rt=null;
-  } else { c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
+  } else { c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.svc?rnd(1,3):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
 }
 function goHome(c){
   const from=c.at, home=c.home;
@@ -1725,7 +1749,7 @@ function updateCars(dt){
   carGrid.clear(); carsOn.clear(); qOn.clear();
   for(const n of nodeList) if(n.type==="light"){ n.near2=n.near; n.near=[]; }
   for(const c of cars){ if(c.state!=="drive") continue; const key=Math.floor(c.x/HC)*4096+Math.floor(c.y/HC); let a=carGrid.get(key); if(!a){a=[];carGrid.set(key,a);} a.push(c);
-    const rt=c.rt; while(c.leg<rt.legs.length-1&&c.s>rt.legs[c.leg].s1) c.leg++; const lg=rt.legs[c.leg]; if(c.s>=lg.s0-1) carsOn.set(lg.seg,(carsOn.get(lg.seg)||0)+1);
+    const rt=c.rt; while(c.leg<rt.legs.length-1&&c.s>rt.legs[c.leg].s1){ if(city) wearSeg(segs.get(rt.legs[c.leg].seg),c); c.leg++; } const lg=rt.legs[c.leg]; if(c.s>=lg.s0-1) carsOn.set(lg.seg,(carsOn.get(lg.seg)||0)+1);
     // how many are queued at each junction, for the route finder
     const nk=rt.ctrls[c.ci]; if(nk&&nk.junc&&c.v<4&&nk.s0-c.s<60){ const key2=nk.node*65536+nk.inSeg; qOn.set(key2,(qOn.get(key2)||0)+1); }
     // cars up on an overpass don't see the traffic underneath
@@ -1734,7 +1758,7 @@ function updateCars(dt){
     if(c.state==="home"){ c.cool-=dt; continue; }
     if(c.state==="park"){ c.park-=dt; if(c.park<=0) goHome(c); continue; }
     const rt=c.rt, lg=rt.legs[c.leg];
-    let limitV=(c.s<=lg.s1?lg.v:30)*(c.truck?.82:1), maxS=rt.len+5;
+    let limitV=(c.s<=lg.s1?lg.v:30)*(c.siren?1.3:c.truck?.82:1), maxS=rt.len+5;
     c.ringNode=0;
     for(let q=c.ci;q<rt.ctrls.length;q++){
       const k=rt.ctrls[q];
@@ -1787,7 +1811,7 @@ function updateCars(dt){
     c.braking=c.v<pv-.01||c.v<1.5;
     let ns=Math.min(c.s+c.v*dt,Math.max(c.s,maxS));
     if(ns-c.s<.3*dt) c.still+=dt; else c.still=0;
-    if(c.still>6){ c.ghost=1.6; c.still=0; }
+    if(c.still>(c.siren?2:6)){ c.ghost=1.6; c.still=0; }
     if(c.ghost>0) c.ghost-=dt;
     c.s=ns;
     sampleRoute(rt,c.s,tmpP); sampleRoute(rt,Math.min(rt.len,c.s+3),tmpQ);
@@ -1897,7 +1921,8 @@ function ghostAt(type,w,ignore){
   return {type,x,y,ang,r:T.r,w:T.w,d:T.d,snapped,ok:!why,why};
 }
 const WHY={edge:"That's too close to the edge of the map.",land:"Buildings need dry, flat land. Not on the water or the hills.",bld:"There's another building in the way.",
-  road:"That's on top of a road. Put it beside one.",smoke:"Too close to a factory. Nobody wants to live in the smoke, so keep homes and factories apart.",
+  road:"That's on top of a road. Put it beside one.",smoke:"Too close to a factory or power plant. Nobody wants to live in the smoke, so keep homes and smoky places apart.",
+  nowater:"A water pump has to go right on the shore of a lake or river, with its back to the water.",cash:"Not enough money for that. Taxes come in at the end of every month.",
   noise:"Too close to a highway. Nobody wants to live right next to all that traffic noise."};
 const PLACE_HINT={shop:"The shop will start asking for customers after a little while. Make sure a road reaches its front.",
   mall:"Malls want lots of customers and goods. There are two ways into the car park, so run a good road along the front.",
@@ -1908,15 +1933,18 @@ const PLACE_HINT={shop:"The shop will start asking for customers after a little 
   apts:"Apartment blocks are home to lots of people, so expect a lot of cars from here."};
 // put a building down where a ghost showed it, checking again in case something changed
 function placeGhost(g){
-  if(!tray[g.type]) return false;
+  const S=city&&SVC[g.type];
+  if(!S&&!tray[g.type]) return false;
   const why=placeWhy(g.x,g.y,g.r,g.type,null,g.ang);
-  if(why){ setHint(WHY[why]||"There's no room there.",3.5); return false; }
-  addBld(makeBld(g.type,g.x,g.y,g.ang)); tray[g.type]--; tver++; pruneLots();
+  if(why){ setHint(WHY[why]||"There's no room there.",3.5); if(why==="cash") flashTool("nRoad"); return false; }
+  addBld(makeBld(g.type,g.x,g.y,g.ang)); if(S) res.road-=S.cost; else tray[g.type]--; tver++; pruneLots();
+  if(S){ cityUtils(); cityCover(); effects.push({k:"ring",x:g.x,y:g.y,c:"#2f7de1",t:0,life:1.2,r:S.R||g.r+20}); }
   return true;
 }
 function afterPlace(type){
   if(PLACE_HINT[type]) setHint(PLACE_HINT[type],4);
-  if(tray[type]<=0) placeSel=TYPES.find(q=>tray[q]>0)||null;
+  if(SVC[type]&&city) setHint(SVC[type].done,5);
+  if(tray[type]<=0&&!SVC[type]) placeSel=TYPES.find(q=>tray[q]>0)||null;
   if(city&&!placeSel&&!zoneSel) zoneSel="res";
   updateUI();
   if(trayCount()<=0&&!city){ ghost=null; setHint("All placed. Drag a building to move it, or pick another tool.",3.5); }
@@ -2002,6 +2030,7 @@ function newGame(isRelaxed,isCity){
   score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; plantGiven=false; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false; partsHinted=false;
   // nothing is built yet: the first shop and houses are yours to place
   tray=emptyTray(); tray.shop=1; tray.house=6; placeSel="shop"; ghost=null; moving=null; buildHinted=true;
+  cityTab="zones"; firstFire=firstSick=firstWorn=false; utilStat={pow:[0,0],wat:[0,0]}; happyAvg=0; svcT=svcDT=0; utilHintT=-99;
   lots=[]; lotId=1; zoneSel="res"; zoneGhosts=null; growT=3; monthT=0; month=1; monthTrips=0; lastIn=lastOut=0; people=0; mallsGiven=0; cityTip=0; closedN=0; closeHintT=-99; compKey=-1; wantT={};
   for(const k of ZKEYS) cityD[k]=0;
   // in the City builder nothing comes to place: you zone land and it fills itself, and road costs money
@@ -2092,7 +2121,7 @@ const ZONES={
 };
 const ZKEYS=Object.keys(ZONES);
 const PRICE={round:250,light:200,bridge:400};
-const MONTH=30, CITY_START=5000, TAX_HOME=3, TAX_TRIP=5, UPKEEP=.02, MALL_AT=[150,350,650,1000];
+const MONTH=30, CITY_START=9000, TAX_HOME=3, TAX_TRIP=5, UPKEEP=.02, MALL_AT=[150,350,650,1000];
 const money=v=>(v<0?"-$":"$")+Math.abs(Math.round(v)).toLocaleString("en-US");
 const kmoney=v=>{ const a=Math.abs(v), s=v<0?"-$":"$"; return a>=10000?s+Math.round(a/1000)+"k":a>=1000?s+(a/1000).toFixed(1)+"k":s+Math.round(a); };
 const cost$=v=>city?money(v):Math.round(v)+" m";
@@ -2286,10 +2315,12 @@ const compOf=acc=>{ const s=acc&&segs.get(acc.seg); return s?comp.get(s.a):null;
 function cityDemand(){
   let R=0, nC=0, nO=0, nI=0;
   for(const b of blds){ if(isHome(b)){ if(b.acc) R+=b.cars.length; continue; }
+    if(isSvc(b)) continue;
     const k=b.k||1; if(b.type==="shop") nC+=k; else if(b.type==="center") nC+=2.2*k; else if(b.type==="mall") nC+=2.5; else if(b.type==="office") nO+=k; else nI+=k; }
   people=R;
   const u=R/12, nD=nC+nO+nI;
-  cityD.res=(12*nD+12-R)/10;
+  // a happy town draws people in; a miserable one puts them off
+  cityD.res=(12*nD+12-R)/10+(R>20?(happyAvg-55)/20:0);
   cityD.dense=cityD.res/(R<50?2:4);
   cityD.com=.42*u+.7-nC;
   cityD.off=.3*u+.2-nO;
@@ -2322,7 +2353,7 @@ function lotType(L){
 function lotBlocked(L,type){
   const S=L.site;
   if(BT[type].home){
-    for(const f of blds) if(f.type==="factory"&&Math.hypot(f.x-S.x,f.y-S.y)<POLL+L.r*.3) return true;
+    for(const f of blds) if(SMOKY.has(f.type)&&Math.hypot(f.x-S.x,f.y-S.y)<POLL+L.r*.3) return true;
     for(const s of nearSegs([S],halfW(3)+NOISE+L.r)){ if(s.lanes<3) continue; const A=nodes.get(s.a), B=nodes.get(s.b); if(projSeg(S.x,S.y,A.x,A.y,B.x,B.y).d<halfW(3)+NOISE*.6+S.d*.3) return true; }
   }
   if(type==="factory") for(const h of blds) if(isHome(h)&&Math.hypot(h.x-S.x,h.y-S.y)<POLL+h.r*.4) return true;
@@ -2371,13 +2402,14 @@ function yardTrees(L,b){
     out.push({x,y,r:rnd(3.2,4.8)}); }
   return out;
 }
-function cityGrow(){
+function cityGrow(sup){
   cityComp();
   const homeComps=new Set(); for(const b of blds) if(isHome(b)&&b.acc) homeComps.add(compOf(b.acc));
   // the kinds that want to grow, keenest first
   const order=ZKEYS.filter(k=>cityD[k]>(k==="res"?.12:k==="dense"?.3:.5)).sort((a,b)=>cityD[b]-cityD[a]);
   for(const k of order){
-    const free=lots.filter(L=>L.kind===k&&!L.b&&t>=L.cool&&lotAccess(L)&&(k==="res"||k==="dense"||homeComps.has(compOf(L.acc))));
+    // nothing grows without power and water reaching it along the roads
+    const free=lots.filter(L=>L.kind===k&&!L.b&&t>=L.cool&&lotAccess(L)&&(!sup||utilFor(L,sup))&&(k==="res"||k==="dense"||homeComps.has(compOf(L.acc))));
     if(!free.length) continue;
     // next to what's already there, so the town grows outwards from its middle
     let best=null, bs=1e9;
@@ -2389,18 +2421,23 @@ function cityGrow(){
   if(people>=200&&cityD.res>1.5&&Math.random()<.12){ for(const L of lots){ const b=L.b; if(L.kind==="dense"&&b&&b.type==="town"&&L.site.w>=32&&L.site.d>=30&&b.cars.every(c=>c.state==="home")) return growOn(L,"apts",b); } }
   return false;
 }
-// the end of a month: taxes from everyone living here and every trip made, less the upkeep of the roads and junctions
+// the end of a month: taxes from everyone living here (more when they're happy), every business and every trip made,
+// less the upkeep of the roads, the junctions and the services
 function cityMonth(){
   let up=0; for(const s of segs.values()) up+=segUse(s)*UPKEEP*(s.hwy?1.5:1)*(s.over?2:1);
   for(const n of nodeList) up+=n.type==="light"?6:n.type==="round"?3:0;
-  const inc=TAX_HOME*people+TAX_TRIP*monthTrips;
+  let biz=0; for(const b of blds){ if(SVC[b.type]) up+=SVC[b.type].up; else if(!isHome(b)) biz+=CITY_TAX_BIZ*(b.k||1); }
+  const inc=TAX_HOME*people*(.5+happyAvg/100)+biz+TAX_TRIP*monthTrips;
   lastIn=Math.round(inc); lastOut=Math.round(up); res.road+=lastIn-lastOut; monthTrips=0; month++;
   updateUI();
 }
 function cityTick(dt){
   monthT+=dt; if(monthT>=MONTH){ monthT-=MONTH; cityMonth(); }
+  svcTick(dt);
   growT-=dt;
-  if(growT<=0){ growT=2; cityDemand(); cityGrow(); updateUI(); demandBars(); }
+  if(growT<=0){ growT=2; const sup=cityUtils(); cityCover(); cityHappy(); cityDemand(); cityGrow(sup);
+    for(const b of blds.filter(q=>q.dry>150)) closeDown(b,"dry");
+    updateUI(); demandBars(); }
   // a mall for the town once it's big enough
   if(mallsGiven<MALL_AT.length&&people>=MALL_AT[mallsGiven]){ mallsGiven++; tray.mall++; updateUI(); flashTool("nBuild"); setHint("The town is big enough for a mall. Tap Zone, pick Mall and put it beside a good road. It brings lots of customers.",6); }
   cityTips(dt);
@@ -2409,16 +2446,21 @@ function cityTick(dt){
 function cityTips(dt){
   if(hintT>0) return;
   if(cityTip===0&&firstRoad&&!lots.length){ cityTip=1; setHint("Now zone some land. Tap Zone, pick Homes and drag along beside a road.",6); flashTool("nBuild"); return; }
+  // power and water first: nothing grows without them
+  const P=utilStat.pow, W=utilStat.wat;
+  if(lots.length&&(!P[1]||!W[1])&&t-utilHintT>30){ utilHintT=t; flashTool("nBuild");
+    setHint((!P[1]&&!W[1]?"Nothing grows without power and water. Tap Zone, then Services, and put a power plant and a water tower beside your roads.":!P[1]?"Nothing grows without power. Tap Zone, then Services, and build a power plant or a solar farm beside your roads.":"Nothing grows without water. Tap Zone, then Services, and build a water tower beside your roads.")+" They reach everything joined to them by road.",7); return; }
+  if(people>0&&t-utilHintT>45&&(P[0]>P[1]*.92||W[0]>W[1]*.92)){ utilHintT=t; setHint(P[0]>P[1]*.92?"The town is running out of power. Build another power plant or a solar farm, or new homes will go without.":"The town is running out of water. Build another water tower, or a pump on the shore.",5); return; }
   if(cityTip===1&&people>0){ cityTip=2; setHint("People are moving in. They'll want shops and jobs too, so zone some Shops, Offices and Industry.",6); return; }
   for(const k of ZKEYS){ const want=cityD[k]>(k==="res"?1:1.2)&&!lots.some(L=>L.kind===k&&!L.b);
     wantT[k]=want?(wantT[k]||0)+dt:0;
     if(wantT[k]>25){ wantT[k]=-60; setHint(k==="res"?"People want to move in. Zone more Homes beside a road.":k==="dense"?"The town could use some Apartments.":"The town wants more "+ZONES[k].name+". Zone some land for them.",5); return; } }
 }
 // a business that waited too long closes down; its lot grows something again later
-function closeDown(d){
+function closeDown(d,why){
   const L=d.lot, nm=BT[d.type].name; closedN++;
   deleteBld(d,true); if(L){ L.b=null; L.cool=t+60; }
-  if(t-closeHintT>40){ closeHintT=t; setHint((/^[aeiou]/.test(nm)?"An ":"A ")+nm+" closed down. People couldn't get there in time, so look at the traffic near it.",5); }
+  if(t-closeHintT>40){ closeHintT=t; setHint((/^[aeiou]/.test(nm)?"An ":"A ")+nm+(why==="dry"?" closed down. It went too long without power or water.":" closed down. People couldn't get there in time, so look at the traffic near it."),5); }
   effects.push({k:"ring",x:d.x,y:d.y,c:"#e2493a",t:0,life:1.2,r:d.r});
 }
 // the little bars beside each zone that say how keen the town is
@@ -2436,6 +2478,7 @@ function drawLots(){
       if(LOD&&L.trees) for(const tr of L.trees) tree(tr.x,tr.y,tr.r);
       continue; }
     const col=ZONES[L.kind].col, wait=t<L.cool;
+    if(L.burnt){ drawScorch(L); polyPath(L.poly); }
     ctx.globalAlpha=show?.3:.18; ctx.fillStyle=col; ctx.fill();
     ctx.globalAlpha=show?.85:.5; ctx.strokeStyle=wait?"#9a958a":col; ctx.lineWidth=1.2; ctx.setLineDash([3,2.5]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
 }
@@ -2444,6 +2487,296 @@ function drawZoneGhosts(){
   for(const g of gs){ polyPath(g.poly); ctx.globalAlpha=.5; ctx.fillStyle=ZONES[g.kind].col; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.3; ctx.stroke(); }
   if(drag&&drag.mode==="zone"){ const last=gs[gs.length-1]; pill(last.x,last.y-last.r-10/cam.z,gs.length+" plot"+(gs.length>1?"s":"")+" · "+ZONES[last.kind].name,"rgba(36,38,43,.85)"); }
 }
+
+// ---------- city services ----------
+// The City builder's public services, bought with money and paid for every month. Power and water come down the
+// roads to everything joined up to a plant, as far as its capacity goes, and nothing new grows without them. Fire
+// stations, police, clinics, schools and daycares look after the buildings within reach: fire trucks race out to
+// put fires out before a building burns down, ambulances fetch people who fall ill, police cars patrol where crime
+// builds up, and road depots send trucks to fix roads that traffic has worn out. All of it makes people happier,
+// and happy people pay more tax and want to move in; unhappy ones move out.
+const SVC={
+  power: {name:"Power plant",short:"Power",cost:1500,up:40,cap:220,util:"pow",done:"Power plant built. Its power reaches everything joined to it by road, as far as it goes.",tip:"Power plant: makes power for everything joined to it by road. It's smoky, so homes keep their distance."},
+  solar: {name:"Solar farm",short:"Solar",cost:900,up:15,cap:70,util:"pow",done:"Solar farm built. Clean power for everything joined to it by road.",tip:"Solar farm: clean power, but less of it. It can go right next to homes."},
+  water: {name:"Water tower",short:"Water",cost:700,up:20,cap:110,util:"wat",done:"Water tower built. Its water reaches everything joined to it by road.",tip:"Water tower: water for everything joined to it by road."},
+  pump:  {name:"Water pump",short:"Pump",cost:1100,up:25,cap:260,util:"wat",done:"Water pump built. Lots of water for everything joined to it by road.",tip:"Water pump: lots of water, but it has to go right beside a lake or river."},
+  fire:  {name:"Fire station",short:"Fire",cost:1200,up:35,R:300,cars:2,done:"Fire station built. Its trucks race to fires inside the blue circle.",tip:"Fire station: its fire trucks race out to fires nearby. A fire nobody puts out burns the building down."},
+  police:{name:"Police station",short:"Police",cost:1200,up:35,R:300,cars:2,done:"Police station built. Its cars keep crime down inside the blue circle.",tip:"Police station: its cars patrol nearby and keep crime down."},
+  clinic:{name:"Hospital",short:"Hospital",cost:1600,up:45,R:380,cars:2,done:"Hospital built. Its ambulances fetch people who fall ill inside the blue circle.",tip:"Hospital: ambulances fetch people who fall ill nearby."},
+  school:{name:"School",short:"School",cost:1300,up:35,R:340,cars:1,done:"School built. Families inside the blue circle are happier.",tip:"School: families nearby are happier, and its bus does the rounds."},
+  daycare:{name:"Daycare",short:"Daycare",cost:500,up:12,R:220,done:"Daycare built. Young families inside the blue circle are happier.",tip:"Daycare: young families nearby are happier."},
+  depot: {name:"Road depot",short:"Roads",cost:900,up:25,R:450,cars:2,done:"Road depot built. Its trucks fix worn roads inside the blue circle.",tip:"Road depot: its trucks fix roads nearby that traffic has worn out. Worn roads are slow."}
+};
+const SKEYS=Object.keys(SVC);
+const SVC_COLS={power:"#8d5a4a",solar:"#3b5f93",water:"#5aa7d8",pump:"#3f8fc2",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#e0a23a",daycare:"#e06aa6",depot:"#f08c1a"};
+const VEH={fire:{len:16,wid:7,col:"#d62f22",cab:"#c02218",truck:true},police:{len:11.5,wid:6,col:"#f4f4f2",truck:false,doors:"#20305c"},clinic:{len:13,wid:6.6,col:"#f7f7f5",cab:"#f7f7f5",truck:true,stripe:"#e2493a"},
+  school:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},depot:{len:14,wid:6.6,col:"#f08c1a",cab:"#e8e6df",truck:true}};
+const isSvc=b=>!!(BT[b.type]&&BT[b.type].svc), SMOKY=new Set(["factory","power"]);
+const CITY_TAX_BIZ=8, FIRE_BURN=75, HAPPY_LEAVE=22;
+let cityTab="zones", firstFire=false, firstSick=false, firstWorn=false, utilStat={pow:[0,0],wat:[0,0]}, happyAvg=0, svcT=0, svcDT=0, utilHintT=-99;
+
+// what each building takes from the power and water: more for bigger and busier places
+function useOf(b){
+  const k=b.k||1;
+  switch(b.type){
+    case "house": return 1; case "bighouse": return 2; case "town": return b.units*.7; case "apts": return b.lot?Math.max(5,b.floors*1.6):7;
+    case "shop": return 2*k; case "center": return 6*k; case "mall": return 9; case "office": return (b.tall?6:3)*k;
+    case "factory": return 6*k; case "warehouse": return 3*k; case "plant": return 5*k;
+    default: return isSvc(b)&&!SVC[b.type].util?2:0; }
+}
+// share out each plant's power and water among the buildings on its roads, oldest first
+function cityUtils(){
+  cityComp();
+  const sup={pow:new Map(),wat:new Map()}; utilStat={pow:[0,0],wat:[0,0]};
+  for(const b of blds){ const S=SVC[b.type]; if(!S||!S.util||!b.acc) continue; const c=compOf(b.acc), m=sup[S.util]; m.set(c,(m.get(c)||0)+S.cap); utilStat[S.util][1]+=S.cap; }
+  for(const b of blds){ const u=useOf(b); b.noPow=b.noWat=false; if(!u||!b.acc) continue;
+    const c=compOf(b.acc);
+    for(const q of ["pow","wat"]){ const m=sup[q], left=m.get(c)||0; utilStat[q][0]+=u;
+      if(left>=u) m.set(c,left-u); else { if(q==="pow") b.noPow=true; else b.noWat=true; } }
+    // a business left without power or water for long enough shuts up shop
+    if(b.lot&&!isHome(b)) b.dry=b.noPow||b.noWat?(b.dry||0)+2:0; }
+  return sup;
+}
+// is a plot's road network short of power or water for one more building
+function utilFor(L,sup){ const c=compOf(L.acc); return (sup.pow.get(c)||0)>=3&&(sup.wat.get(c)||0)>=3; }
+// how happy each home is: power and water first, then the services in reach, less crime, illness, smoke and noise
+function cityHappy(){
+  let sum=0, n=0; const sm=blds.filter(f=>SMOKY.has(f.type));
+  for(const b of blds){ if(!isHome(b)) continue;
+    let h=36;
+    h+=b.noPow?-28:10; h+=b.noWat?-28:10;
+    if(hasCov(b,"fire")) h+=7; if(hasCov(b,"police")) h+=7; if(hasCov(b,"clinic")) h+=9; if(hasCov(b,"school")) h+=8; if(hasCov(b,"daycare")) h+=6;
+    if((b.crime||0)>.5) h-=12; if(b.sick) h-=6; if(b.fire) h-=20;
+    for(const f of sm) if(Math.hypot(f.x-b.x,f.y-b.y)<POLL*1.4){ h-=10; break; }
+    b.happy=clamp(h,0,100); sum+=b.happy*(b.cars.length||1); n+=b.cars.length||1;
+    // people move out of a home that stays miserable
+    if(b.happy<HAPPY_LEAVE&&t-b.born>90){ b.sad=(b.sad||0)+2; if(b.sad>90&&b.lot) leaveHome(b); } else b.sad=0;
+  }
+  happyAvg=n?sum/n:0;
+}
+function leaveHome(b){ const L=b.lot; deleteBld(b,true); if(L){ L.b=null; L.cool=t+90; } effects.push({k:"ring",x:b.x,y:b.y,c:"#9a958a",t:0,life:1.2,r:b.r});
+  if(t-closeHintT>40){ closeHintT=t; setHint("A family moved out because they were unhappy. Homes want power, water and services nearby.",5); } }
+
+// fires, illness and crime, and the trucks, ambulances and police cars that answer them
+function svcTick(dt){
+  if(!city) return;
+  const n=blds.length;
+  for(const b of blds){
+    if(isSvc(b)) continue;
+    // fire: rarer where a fire station is near, never in a brand new town
+    if(!b.fire&&t>100&&Math.random()<dt/(16000*(hasCov(b,"fire")?2.6:1))){ b.fire={t0:t,truck:null}; if(!firstFire){ firstFire=true; setHint(blds.some(s=>s.type==="fire")?"A fire! A fire truck is on its way. Fires nobody reaches in time burn the building down.":"A fire! Build a fire station nearby, from Zone, Services, so its trucks can put fires out before buildings burn down.",6); } }
+    if(b.fire&&!b.fire.out&&t-b.fire.t0>FIRE_BURN) burnDown(b);
+    else if(b.fire&&b.fire.out&&t>b.fire.out){ b.fire=null; effects.push({k:"puff",x:b.x,y:b.y,t:0,life:1.2,big:b.r*.6}); }
+    if(isHome(b)&&!b.sick&&t>80&&Math.random()<dt/14000){ b.sick={t0:t,amb:null}; if(!firstSick){ firstSick=true; setHint(blds.some(s=>s.type==="clinic")?"Someone fell ill. An ambulance is on its way.":"Someone fell ill. A hospital nearby sends an ambulance; without one, people get unhappy.",5); } }
+    if(b.sick&&!b.sick.amb&&t-b.sick.t0>120) b.sick=null;    // they get over it in the end, but they remember
+    b.crime=clamp((b.crime||0)+dt/(hasCov(b,"police")?2400:700),0,1);
+  }
+  svcDT-=dt; if(n&&svcDT<=0){ svcDT=.3; svcDispatch(); }
+}
+function burnDown(b){
+  const L=b.lot; effects.push({k:"puff",x:b.x,y:b.y,t:0,life:1.6,big:b.r}); effects.push({k:"ring",x:b.x,y:b.y,c:"#e2493a",t:0,life:1.4,r:b.r});
+  if(L){ L.burnt=t; } deleteBld(b,true); if(L){ L.b=null; L.cool=t+60; }
+  if(t-closeHintT>30){ closeHintT=t; setHint("A building burned down. Fire stations only reach so far, so build one near every neighbourhood.",5); }
+}
+// a stand-in for a spot on a road, so a repair truck can drive to it like it would to a building
+function roadSpot(s){
+  const A=nodes.get(s.a), B=nodes.get(s.b), x=(A.x+B.x)/2, y=(A.y+B.y)/2, hw=segHW(s), side=s.lb&&!s.lf?-1:1, ex=x-s.uy*side*hw, ey=y+s.ux*side*hw;
+  const acc={seg:s.id,t:.5,x,y,side,ex,ey,door:{x:x-s.uy*side*(hw-4),y:y+s.ux*side*(hw-4)},di:0};
+  return {type:"spot",spot:s,x,y,w:0,d:0,r:0,door:acc.door,acc,cars:[],fx:-s.uy*side,fy:s.ux*side};
+}
+const freeVeh=s=>s.cars.find(c=>c.state==="home"&&c.cool<=0);
+// send the nearest free vehicle from any station of this kind to a target
+function sendVeh(kind,tgt,why){
+  let best=null;
+  for(const s of blds){ if(s.type!==kind||!s.acc) continue; const R=SVC[kind].R; if(Math.hypot(s.x-tgt.x,s.y-tgt.y)>R*1.6) continue;
+    const c=freeVeh(s); if(!c) continue;
+    const pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tgt,kind:why}],null); if(pl&&(!best||pl.cost<best.pl.cost)) best={s,c,pl}; }
+  if(!best) return null;
+  best.c.purpose={d:tgt,kind:why,svc:true}; best.c.siren=why==="fire"||why==="sick"; startDrive(best.c,best.s,best.pl);
+  return best.c;
+}
+function svcDispatch(){
+  for(const b of blds){
+    if(b.fire&&!b.fire.truck&&!b.fire.out&&b.acc) b.fire.truck=sendVeh("fire",b,"fire");
+    if(b.sick&&!b.sick.amb&&b.acc) b.sick.amb=sendVeh("clinic",b,"sick");
+  }
+  svcT-=.3; if(svcT>0) return; svcT=4;
+  for(const s of blds){ if(!s.acc) continue;
+    if(s.type==="police"){ const c=freeVeh(s); if(!c) continue; let tg=null, tc=.35;
+      for(const b of blds){ if(b.crime>tc&&!b.patrol&&b.acc&&Math.hypot(b.x-s.x,b.y-s.y)<SVC.police.R){ tc=b.crime; tg=b; } }
+      if(tg){ const pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"crime"}],null); if(pl){ tg.patrol=c; c.purpose={d:tg,kind:"crime",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
+    else if(s.type==="depot"){ const c=freeVeh(s); if(!c) continue; let tg=null, tc=.72;
+      for(const g of segs.values()){ if(g.fixing||g.over||g.hwy||(g.cond===undefined?1:g.cond)>=tc) continue; const A=nodes.get(g.a), B=nodes.get(g.b); if(projSeg(s.x,s.y,A.x,A.y,B.x,B.y).d>SVC.depot.R) continue; tc=g.cond; tg=g; }
+      if(tg){ const spot=roadSpot(tg), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:spot,kind:"fix"}],null); if(pl){ tg.fixing=c; c.purpose={d:spot,kind:"fix",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
+    else if(s.type==="school"&&Math.random()<.25){ const c=freeVeh(s); if(!c) continue; const hs=blds.filter(b=>isHome(b)&&b.acc&&Math.hypot(b.x-s.x,b.y-s.y)<SVC.school.R); if(!hs.length) continue;
+      const tg=pick(hs), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"bus"}],null); if(pl){ c.purpose={d:tg,kind:"bus",svc:true}; c.siren=false; startDrive(c,s,pl); } }
+  }
+}
+// a service vehicle that won't get there after all: the job goes back on the list for another
+function svcDrop(c){ const p=c.purpose, d=p.d; c.siren=false;
+  if(p.kind==="fire"&&d.fire&&d.fire.truck===c) d.fire.truck=null;
+  else if(p.kind==="sick"&&d.sick&&d.sick.amb===c) d.sick.amb=null;
+  else if(p.kind==="crime"&&d.patrol===c) d.patrol=null;
+  else if(p.kind==="fix"&&d.spot&&d.spot.fixing===c) d.spot.fixing=null; }
+// a service vehicle gets where it was going
+function svcArrive(c){
+  const d=c.purpose.d, k=c.purpose.kind; c.siren=false;
+  if(k==="fire"){ if(d.fire){ d.fire.out=t+5; } c.park=7; }
+  else if(k==="sick"){ if(d.sick) d.sick=null; c.park=4; }
+  // a patrol settles the whole street down, not just the one building
+  else if(k==="crime"){ d.patrol=null; for(const b of blds) if(Math.hypot(b.x-d.x,b.y-d.y)<90) b.crime=0; c.park=5; }
+  // a repair crew patches the stretch it's sent to and the roads joining it at either end
+  else if(k==="fix"){ const s=d.spot; if(s){ s.fixing=null; if(segs.has(s.id)){ s.cond=1; for(const id of [s.a,s.b]){ const n=nodes.get(id); if(n) for(const q of n.segs){ const g=segs.get(q); if(g&&g.cond!==undefined&&g.cond<.72) g.cond=1; } } } } c.park=8; }
+  else c.park=3;
+  c.purpose=null; c.state="park"; c.at=d; c.atDi=c.tDi; c.rt=null;
+}
+// roads wear out under the traffic, faster under trucks, and a worn road is a slow road
+function wearSeg(s,c){ if(!city||!s||s.hwy) return; s.cond=Math.max(.25,(s.cond===undefined?1:s.cond)-(c.truck?.0011:.00035));
+  if(!firstWorn&&s.cond<.5){ firstWorn=true; setHint(blds.some(b=>b.type==="depot")?"Some roads are wearing out. The road depot's trucks will fix them.":"Some roads are worn out and slow, with cracks and potholes. Build a road depot from Zone, Services to keep them fixed.",6); } }
+const wornK=s=>city&&s.cond!==undefined?.6+.4*s.cond:1;
+// which services reach each building, worked out every couple of seconds rather than every step
+function cityCover(){
+  const st=blds.filter(s=>SVC[s.type]&&SVC[s.type].R&&s.acc);
+  for(const b of blds){ let m=0; for(const s of st) if(Math.hypot(s.x-b.x,s.y-b.y)<SVC[s.type].R) m|=1<<SKEYS.indexOf(s.type); b.cov=m; }
+}
+const hasCov=(b,kind)=>!!((b.cov||0)&(1<<SKEYS.indexOf(kind)));
+
+// ---------- drawing services ----------
+function drawSvc(b){
+  const sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), col=SVC_COLS[b.type];
+  const tr=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc); };
+  const home=b.cars.filter(c=>c.state==="home");
+  const vans=(xs,y,a)=>{ if(!LOD) return; home.forEach((c,i)=>{ if(i<xs.length){ const p=toMap(b,xs[i]*sc,y*sc); parked(c,p.x,p.y,b.ang+(a||0)); } }); };
+  const box=(x,y,w2,h2,c2,e2,hh)=>rbox(x,y,w2,h2,lsx,lsy,hh,c2,e2);
+  if(b.type==="power"){
+    lot(b,sc,-w/2,-d/2,w,d,0,"#cbc5b8");
+    bodyShadow(b,sc,12,[[-w/2+3,-d/2+3,w*.5,d*.55]]); bodyShadow(b,sc,22,[[w/2-34,-d/2+4,14,14],[w/2-18,-d/2+4,14,14]]);
+    tr(); roofBlock(-w/2+3,-d/2+3,w*.5,d*.55,"#9a6352","#5e3a2f");
+    ctx.strokeStyle="rgba(255,255,255,.18)"; ctx.lineWidth=.5; ctx.beginPath(); for(let x=-w/2+6;x<-w/2+3+w*.5-2;x+=3){ ctx.moveTo(x,-d/2+4); ctx.lineTo(x,-d/2+2+d*.55); } ctx.stroke();
+    for(const cx of [w/2-27,w/2-11]){ ctx.fillStyle="#b9b5ad"; ctx.beginPath(); ctx.arc(cx,-d/2+11,8,0,7); ctx.fill(); ctx.fillStyle="#d6d3cc"; ctx.beginPath(); ctx.arc(cx-.8,-d/2+10.2,6.4,0,7); ctx.fill(); ctx.fillStyle="#8d8a84"; ctx.beginPath(); ctx.arc(cx,-d/2+11,4.6,0,7); ctx.fill(); }
+    // coal heaps and the yard
+    ctx.fillStyle="#3a3836"; ctx.beginPath(); ctx.ellipse(w/2-16,d/2-10,9,5,0,0,7); ctx.fill(); ctx.fillStyle="#55524e"; ctx.beginPath(); ctx.ellipse(w/2-17,d/2-11,5,2.6,0,0,7); ctx.fill();
+    ctx.restore();
+    // steam from the cooling towers, smoke from the stack
+    for(const cx of [w/2-27,w/2-11]){ const p=toMap(b,cx*sc,(-d/2+11)*sc); for(let i=0;i<3;i++){ const ph=((t*.35+i/3+cx*.01)%1); ctx.fillStyle="rgba(250,250,250,"+(.32*(1-ph)*ph*4)+")"; ctx.beginPath(); ctx.arc(p.x+ph*8*sc,p.y-ph*18*sc,(3+ph*6)*sc,0,7); ctx.fill(); } }
+    const ch=toMap(b,(-w/2+10)*sc,(d/2-12)*sc);
+    ctx.strokeStyle="rgba(30,36,22,.22)"; ctx.lineWidth=6*sc; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(ch.x,ch.y); ctx.lineTo(ch.x+SHX*30*sc,ch.y+SHY*30*sc); ctx.stroke(); ctx.lineCap="butt";
+    ctx.fillStyle="#7b6a5c"; ctx.beginPath(); ctx.arc(ch.x,ch.y,4*sc,0,7); ctx.fill(); ctx.fillStyle="#3f352e"; ctx.beginPath(); ctx.arc(ch.x,ch.y,2.3*sc,0,7); ctx.fill();
+    b.chim={x:ch.x,y:ch.y,on:true};
+    if(!ultra) for(let i=0;i<3;i++){ const ph=((t*.5+i/3)%1); ctx.fillStyle="rgba(120,115,110,"+(.5*(1-ph))+")"; ctx.beginPath(); ctx.arc(ch.x+ph*8,ch.y-ph*16,3+ph*5,0,7); ctx.fill(); }
+  } else if(b.type==="solar"){
+    tr(); ctx.fillStyle="#cfd6c3"; ctx.fillRect(-w/2,-d/2,w,d); ctx.strokeStyle="#9aa08f"; ctx.lineWidth=.8; ctx.setLineDash([1.6,1.2]); ctx.strokeRect(-w/2+1,-d/2+1,w-2,d-2); ctx.setLineDash([]);
+    for(let r=0;r<5;r++) for(let k=0;k<3;k++){ const x=-w/2+4+k*(w-8)/3+.8, y=-d/2+4+r*(d-12)/5, ww=(w-8)/3-1.6, hh=(d-12)/5-2.4;
+      ctx.fillStyle="#2f4f7a"; ctx.fillRect(x,y,ww,hh); ctx.strokeStyle="rgba(150,190,240,.55)"; ctx.lineWidth=.3; ctx.beginPath(); for(let q=1;q<5;q++){ ctx.moveTo(x+q*ww/5,y); ctx.lineTo(x+q*ww/5,y+hh); } ctx.stroke(); if(ultra) sheen(x,y,ww,hh,b.id+r*3+k,-w/2,w); }
+    ctx.restore(); bodyShadow(b,sc,3,[[-6,d/2-7,12,6]]); tr(); roofBlock(-6,d/2-7,12,6,"#e6e3dc","#9a958a"); ctx.restore();
+  } else if(b.type==="water"){
+    lot(b,sc,-w/2,-d/2,w,d,0,"#d3cfc4"); bodyShadow(b,sc,26,[[-8,-d/2+2,16,16]]); tr();
+    ctx.fillStyle="#3f7fae"; ctx.beginPath(); ctx.arc(0,-d/2+10,9,0,7); ctx.fill(); ctx.fillStyle="#7cc3ea"; ctx.beginPath(); ctx.arc(-.8,-d/2+9.2,7.4,0,7); ctx.fill();
+    ctx.fillStyle="#a9dbf5"; ctx.beginPath(); ctx.arc(-2.4,-d/2+7.6,3,0,7); ctx.fill(); ctx.fillStyle="#3f7fae"; ctx.beginPath(); ctx.arc(0,-d/2+10,1.6,0,7); ctx.fill();
+    box(-4,d/2-7,8,5,"#ecebe6","#b9b7b0",2); ctx.restore();
+  } else if(b.type==="pump"){
+    // the pipes run out the back into the water
+    tr(); ctx.strokeStyle="#5f6670"; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(-5,-d/2+4); ctx.lineTo(-5,-d/2-14); ctx.moveTo(5,-d/2+4); ctx.lineTo(5,-d/2-14); ctx.stroke();
+    ctx.fillStyle="#8e959e"; ctx.fillRect(-7,-d/2-16,4,3); ctx.fillRect(3,-d/2-16,4,3); ctx.restore();
+    bodyShadow(b,sc,8,[[-w/2+2,-d/2+2,w-4,d*.6]]); tr(); roofBlock(-w/2+2,-d/2+2,w-4,d*.6,"#4f9fd0","#2d6f99"); ctx.fillStyle="rgba(255,255,255,.4)"; ctx.fillRect(-w/2+5,-d/2+5,w-10,1.4); ctx.restore();
+  } else if(b.type==="fire"||b.type==="police"||b.type==="clinic"){
+    const apron=b.type==="clinic"?12:11;
+    lot(b,sc,-w/2,d/2-apron,w,apron,0,"#d7d3ca");
+    const bh=d-apron-2;
+    bodyShadow(b,sc,b.type==="clinic"?14:9,[[-w/2+1,-d/2+1,w-2,bh]]);
+    tr();
+    if(b.type==="clinic"){ roofBlock(-w/2+1,-d/2+1,w-2,bh,"#f1f1f4","#a8acb6"); roofBlock(-w*.18,-d/2+1,w*.36,bh,"#e3e5ea","#a8acb6");
+      ctx.fillStyle="#e2493a"; ctx.beginPath(); ctx.arc(0,-d/2+bh/2+1,7,0,7); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillRect(-1.4,-d/2+bh/2-3.6,2.8,9.2); ctx.fillRect(-4.6,-d/2+bh/2-.4,9.2,2.8); }
+    else { roofBlock(-w/2+1,-d/2+1,w-2,bh,col,shade(col,-55)); ctx.fillStyle=shade(col,30); ctx.fillRect(-w/2+3,-d/2+3,w-6,1.4);
+      if(b.type==="fire"){ ctx.fillStyle="#f4f4f2"; for(let i=0;i<3;i++) ctx.fillRect(-w/2+5+i*(w-10)/3+1,d/2-apron-2.4,(w-10)/3-2,2.4); box(w/2-11,-d/2+4,7,7,"#b8392c","#7a1f17",6); }
+      else { ctx.fillStyle="#f4f4f2"; ctx.fillRect(-w/2+3,-d/2+bh-3.4,w-6,1.8); box(-6,-d/2+6,12,8,shade(col,25),shade(col,-50),2.4); } }
+    ctx.restore();
+    vans(b.type==="fire"?[-w*.24,w*.04,w*.3]:[-w*.22,w*.18],d/2-apron/2,Math.PI/2);
+  } else if(b.type==="school"){
+    const fw=w*.42;
+    tr(); ctx.fillStyle="#7fbf5c"; ctx.fillRect(w/2-fw,-d/2+1,fw-1,d-12); ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=.9; roundRect(w/2-fw+3,-d/2+4,fw-7,d-18,(d-18)/2.2); ctx.stroke();
+    ctx.fillStyle="#d7d3ca"; ctx.fillRect(-w/2,d/2-11,w,11); ctx.restore();
+    const bw=w-fw-3;
+    bodyShadow(b,sc,10,[[-w/2+1,-d/2+1,bw,14],[-w/2+1,-d/2+15,14,d-28]]);
+    tr(); roofBlock(-w/2+1,-d/2+1,bw,14,"#c8743f","#7f4422"); roofBlock(-w/2+1,-d/2+15,14,d-28,"#c8743f","#7f4422");
+    ctx.fillStyle="rgba(255,255,255,.3)"; ctx.fillRect(-w/2+3,-d/2+7.5,bw-4,1); ctx.restore();
+    vans([-w*.18],d/2-5.5,0);
+  } else if(b.type==="daycare"){
+    tr(); ctx.fillStyle="#a5d77c"; ctx.fillRect(-w/2,-d/2,w,d-8); ctx.fillStyle="#d7d3ca"; ctx.fillRect(-w/2,d/2-8,w,8);
+    ctx.fillStyle="#efd9a0"; ctx.beginPath(); ctx.arc(w/2-7,-d/2+7,4.2,0,7); ctx.fill();
+    for(const [x,y,c2] of [[w/2-15,-d/2+5,"#e2493a"],[w/2-11,-d/2+14,"#3d7fe0"],[w/2-5,-d/2+16,"#f1c232"]]){ ctx.fillStyle=c2; ctx.fillRect(x-1.6,y-1.6,3.2,3.2); }
+    ctx.restore();
+    bodyShadow(b,sc,6,[[-w/2+2,-d/2+3,w*.55,d-14]]); tr(); roofBlock(-w/2+2,-d/2+3,w*.55,d-14,"#e06aa6","#9c3d6e"); ctx.fillStyle="#ffd84a"; ctx.fillRect(-w/2+4,-d/2+5,w*.55-4,1.6); ctx.restore();
+  } else if(b.type==="depot"){
+    lot(b,sc,-w/2,-d/2,w,d,0,"#cfcabd");
+    bodyShadow(b,sc,10,[[-w/2+2,-d/2+2,w*.62,d*.5]]); bodyShadow(b,sc,8,[[w/2-17,-d/2+3,14,14]]);
+    tr(); roofBlock(-w/2+2,-d/2+2,w*.62,d*.5,"#e9e6dc","#9a958a"); for(let i=0;i<5;i++){ ctx.fillStyle=i%2?"#f08c1a":"#f4f1e8"; ctx.fillRect(-w/2+3+i*(w*.62-2)/5,-d/2+3,(w*.62-2)/5,3); }
+    ctx.fillStyle="#e7dcc0"; ctx.beginPath(); ctx.arc(w/2-10,-d/2+10,7,0,7); ctx.fill(); ctx.fillStyle="#f5efdc"; ctx.beginPath(); ctx.arc(w/2-11,-d/2+9,4.4,0,7); ctx.fill();
+    for(let i=0;i<4;i++){ ctx.fillStyle=i%2?"#fff":"#f08c1a"; ctx.beginPath(); ctx.moveTo(-w/2+6+i*4,d/2-4); ctx.lineTo(-w/2+7.4+i*4,d/2-7); ctx.lineTo(-w/2+8.8+i*4,d/2-4); ctx.fill(); }
+    ctx.restore();
+    vans([w*.05,w*.32],d/2-8,Math.PI/2);
+  }
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// flames and smoke on a burning building, steam once the fire truck gets there
+function drawFire(b){
+  const f=b.fire, out=!!f.out, k=out?clamp((f.out-t)/5,0,1):1;
+  for(let i=0;i<5;i++){ const a=hash(b.id,i)*6.28, r=b.r*.35*hash(i,b.id), x=b.x+Math.cos(a)*r, y=b.y+Math.sin(a)*r;
+    const ph=(t*1.3+i*.21)%1;
+    if(!out||k>.4){ const fl=(4+3*Math.sin(t*14+i*2))*k*(b.r>20?1.4:1); ctx.fillStyle="rgba(255,120,30,.85)"; ctx.beginPath(); ctx.arc(x,y,fl+2,0,7); ctx.fill(); ctx.fillStyle="rgba(255,214,90,.9)"; ctx.beginPath(); ctx.arc(x,y-1,fl*.55+1,0,7); ctx.fill(); }
+    ctx.fillStyle=out?"rgba(235,235,235,"+(.55*(1-ph))+")":"rgba(60,55,50,"+(.5*(1-ph))+")"; ctx.beginPath(); ctx.arc(x+ph*14,y-ph*22,4+ph*9,0,7); ctx.fill(); }
+}
+// little badges over a building that's short of something
+function drawProblems(b){
+  const P=[];
+  if(b.noPow) P.push("pow"); if(b.noWat) P.push("wat"); if(b.sick) P.push("sick"); if((b.crime||0)>.6) P.push("crime");
+  if(!P.length) return;
+  const s=Math.max(1,1.4/cam.z), y=b.y-b.r-(b.pins&&KINDS.some(k=>b.pins[k]>0)?18:6)*s;
+  P.forEach((k,i)=>{ const x=b.x+(i-(P.length-1)/2)*9*s;
+    ctx.fillStyle=k==="sick"?"#ffffff":k==="crime"?"#3a3d44":"#c0392b"; ctx.beginPath(); ctx.arc(x,y,4*s,0,7); ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=.8*s; ctx.stroke();
+    ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
+    if(k==="pow"){ ctx.fillStyle="#ffd83a"; ctx.beginPath(); ctx.moveTo(.6,-3); ctx.lineTo(-1.8,.4); ctx.lineTo(-.1,.4); ctx.lineTo(-.7,3); ctx.lineTo(1.8,-.6); ctx.lineTo(.1,-.6); ctx.closePath(); ctx.fill(); }
+    else if(k==="wat"){ ctx.fillStyle="#8fd3ff"; ctx.beginPath(); ctx.moveTo(0,-2.8); ctx.quadraticCurveTo(2.4,.4,0,2.6); ctx.quadraticCurveTo(-2.4,.4,0,-2.8); ctx.fill(); }
+    else if(k==="sick"){ ctx.fillStyle="#e2493a"; ctx.fillRect(-.8,-2.6,1.6,5.2); ctx.fillRect(-2.6,-.8,5.2,1.6); }
+    else { ctx.fillStyle="#f4f4f2"; ctx.fillRect(-2.8,-1.3,5.6,2.4); ctx.fillStyle="#3a3d44"; ctx.fillRect(-1.9,-.6,1.3,1); ctx.fillRect(.6,-.6,1.3,1); }
+    ctx.restore(); });
+}
+// worn roads: cracks and potholes, more of them the worse the road gets
+function drawWear(){
+  for(const s of segs.values()){ if(s.cond===undefined||s.cond>=.62||s.hwy) continue;
+    const A=nodes.get(s.a), B=nodes.get(s.b); if(!inView((A.x+B.x)/2,(A.y+B.y)/2,s.len/2+20)) continue;
+    const n=Math.round((1-s.cond)*s.len/9), hw=segHW(s)-2;
+    for(let i=0;i<n;i++){ const u=hash(s.id,i), v=hash(i,s.id)*2-1, x=A.x+(B.x-A.x)*u-s.uy*v*hw, y=A.y+(B.y-A.y)*u+s.ux*v*hw, r=.9+hash(s.id+i,7)*(s.cond<.4?2.2:1.2);
+      if(i%3===0){ ctx.strokeStyle="rgba(60,58,54,.45)"; ctx.lineWidth=.45; ctx.beginPath(); ctx.moveTo(x-2.5,y-1); ctx.lineTo(x,y+.6); ctx.lineTo(x+1.6,y-.8); ctx.lineTo(x+3.4,y+.3); ctx.stroke(); }
+      else { ctx.fillStyle="rgba(70,66,60,.55)"; ctx.beginPath(); ctx.ellipse(x,y,r,r*.7,u*3,0,7); ctx.fill(); ctx.fillStyle="rgba(40,38,34,.35)"; ctx.beginPath(); ctx.ellipse(x+.2,y+.2,r*.6,r*.4,u*3,0,7); ctx.fill(); } } }
+}
+// while picking a service: the ground each existing one covers
+function drawCover(){
+  const ty=placeSel&&SVC[placeSel]&&tool==="build"?placeSel:null; if(!ty||!SVC[ty].R) return;
+  const R=SVC[ty].R, src=blds.filter(b=>b.type===ty&&!(moving&&moving.b===b)); if(ghost&&ghost.type===ty) src.push(ghost);
+  for(const s of src){ ctx.fillStyle="rgba(47,125,225,.08)"; ctx.beginPath(); ctx.arc(s.x,s.y,R,0,7); ctx.fill(); ctx.strokeStyle="rgba(47,125,225,.45)"; ctx.lineWidth=1.4; ctx.setLineDash([6,5]); ctx.stroke(); ctx.setLineDash([]); }
+}
+// the markings on a service vehicle, on its own plan (front at +x): light bars that flash on a call-out
+function svcMarks(c,L,W){
+  const k=c.svc, fl=c.siren&&performance.now()%420<210, red=fl?"#3d7fe0":"#e2493a", blue=fl?"#e2493a":"#3d7fe0";
+  const bar=(x)=>{ ctx.fillStyle=red; ctx.fillRect(x-.9,-W/2+.9,1.8,W/2-.9); ctx.fillStyle=blue; ctx.fillRect(x-.9,0,1.8,W/2-.9);
+    if(c.siren&&ultra){ glow(x,fl?W*.25:-W*.25,6,fl?"80,140,255":"255,60,50",.6); } };
+  if(k==="police"){ ctx.fillStyle="#20305c"; ctx.fillRect(L/2-L*.2,-W/2+.3,L*.2-.6,W-.6); ctx.fillRect(-L/2+.5,-W/2+.3,L*.12,W-.6); ctx.fillRect(-L*.25,-W/2,L*.4,.9); ctx.fillRect(-L*.25,W/2-.9,L*.4,.9); bar(-L*.04); }
+  else if(k==="fire"){ ctx.strokeStyle="rgba(235,235,235,.85)"; ctx.lineWidth=.45; ctx.beginPath(); ctx.moveTo(-L/2+1,-1.3); ctx.lineTo(L*.2,-1.3); ctx.moveTo(-L/2+1,1.3); ctx.lineTo(L*.2,1.3);
+      for(let x=-L/2+2;x<L*.2;x+=1.6){ ctx.moveTo(x,-1.3); ctx.lineTo(x,1.3); } ctx.stroke(); ctx.fillStyle="#f2f2f0"; ctx.fillRect(-L/2,-W/2,L*.72,.7); ctx.fillRect(-L/2,W/2-.7,L*.72,.7); bar(L/2-L*.2); }
+  else if(k==="clinic"){ ctx.fillStyle="#e2493a"; ctx.fillRect(-L/2,-W/2,L*.72,.9); ctx.fillRect(-L/2,W/2-.9,L*.72,.9); ctx.fillRect(-L*.2-.6,-2,1.2,4); ctx.fillRect(-L*.2-2,-.6,4,1.2); bar(L/2-L*.22); }
+  else if(k==="school"){ ctx.fillStyle="#2b2e33"; ctx.fillRect(-L/2+.6,-W/2,L*.7,.8); ctx.fillRect(-L/2+.6,W/2-.8,L*.7,.8); ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fillRect(-L/2+1,-.4,L*.68,.8); }
+  else if(k==="depot"){ ctx.fillStyle="#2b2e33"; for(let i=0;i<3;i++) ctx.fillRect(-L/2+.4,-W/2+.6+i*(W-1.2)/3,.9,(W-1.2)/6); const on=performance.now()%700<350; ctx.fillStyle=on?"#ffb52e":"#b8741a"; ctx.beginPath(); ctx.arc(L/2-L*.12,0,1.1,0,7); ctx.fill(); if(on&&ultra) glow(L/2-L*.12,0,5,"255,180,40",.5); }
+}
+// a service vehicle, ready to go out from its station
+function svcCar(b,kind){ const V=VEH[kind], c=newCar(b,V.truck); Object.assign(c,{len:V.len,wid:V.wid,col:V.col,cab:V.cab||null,svc:kind,cool:rnd(.5,2)}); return c; }
+// a burnt-out plot stays black for a while
+function drawScorch(L){ const k=clamp(1-(t-L.burnt)/90,0,1); if(k<=0) return; polyPath(L.poly); ctx.fillStyle="rgba(46,40,34,"+(.55*k)+")"; ctx.fill();
+  for(let i=0;i<5;i++){ const a=hash(L.id,i)*6.28, r=L.r*.4*hash(i,L.id); ctx.fillStyle="rgba(25,22,20,"+(.5*k)+")"; ctx.beginPath(); ctx.arc(L.x+Math.cos(a)*r,L.y+Math.sin(a)*r,2.5+hash(L.id+i,3)*3,0,7); ctx.fill(); } }
+// water from the fire truck onto the flames
+function drawHose(b){ const c=b.fire&&b.fire.truck; if(!c||c.state!=="park"||!b.fire.out) return;
+  const k=clamp((b.fire.out-t)/5,0,1); ctx.strokeStyle="rgba(200,230,255,"+(.75*k)+")"; ctx.lineWidth=1.4; ctx.setLineDash([2,1.5]); ctx.lineDashOffset=-t*30;
+  const mx=(c.x+b.x)/2, my=(c.y+b.y)/2-10; ctx.beginPath(); ctx.moveTo(c.x,c.y); ctx.quadraticCurveTo(mx,my,b.x,b.y); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset=0; }
 
 // ---------- UI ----------
 let tool="road";
@@ -2460,8 +2793,8 @@ function setTool(k){
   $("buildBar").classList.toggle("hide",k!=="build");
   if(k!=="tune") closeTune();
   if(k!=="road") grid=null;
-  if(k==="build"&&city){ if(!zoneSel&&!(placeSel&&tray[placeSel]>0)) zoneSel="res"; updateUI();
-    setHint(zoneSel?ZONES[zoneSel].tip+" Erase clears a lot.":"Put the "+BT[placeSel].name+" down beside a good road.",4); }
+  if(k==="build"&&city){ if(!zoneSel&&!(placeSel&&(tray[placeSel]>0||SVC[placeSel]))&&cityTab==="zones") zoneSel="res"; updateUI();
+    setHint(zoneSel?ZONES[zoneSel].tip+" Erase clears a lot.":placeSel?(SVC[placeSel]?SVC[placeSel].tip:"Put the "+BT[placeSel].name+" down beside a good road."):"Pick a service, then tap beside a road to build it.",4); }
   else if(k==="build"){ if(!placeSel||tray[placeSel]<=0) placeSel=TYPES.find(q=>tray[q]>0)||null; updateUI();
     setHint(placeSel?(isTouch?"Drag a new building to where you want it and let go. It snaps beside the nearest road. Drag one that's already there to move it.":"Click to put the building down. It snaps beside the nearest road. Drag one that's already there to move it."):"Nothing new to place right now. You can still drag buildings around to move them.",4); }
   if(k!=="build"){ ghost=null; moving=null; lineGhosts=null; zoneGhosts=null; }
@@ -2512,13 +2845,27 @@ function updateUI(){
   $("nRoad").classList.toggle("zero",res.road<20); $("nRound").classList.toggle("zero",out("round")); $("nLight").classList.toggle("zero",out("light")); $("nBridge").classList.toggle("zero",out("bridge"));
   $("nBuild").textContent=trayCount(); $("nBuild").classList.toggle("zero",trayCount()<=0); $("nBuild").style.display=city&&!trayCount()?"none":"";
   $("buildLb").textContent=city?"Zone":"Build";
-  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide:"-");
+  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide+cityTab:"-");
   if(city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
+    const tabs=document.createElement("div"); tabs.className="tabs";
+    for(const [k,nm] of [["zones","Zones"],["svc","Services"]]){ const b=document.createElement("button"); b.className=cityTab===k?"sel":""; b.textContent=nm;
+      b.onclick=()=>{ if(cityTab===k) return; cityTab=k; ghost=null; zoneGhosts=null;
+        if(k==="svc"){ zoneSel=null; if(!SVC[placeSel]) placeSel=null; setHint("Services: power and water first, then fire, police, hospitals, schools, daycare and a road depot. Each one costs money to build and a little every month.",5); }
+        else { if(SVC[placeSel]) placeSel=null; if(!placeSel) zoneSel=zoneSel||"res"; }
+        updateUI(); }; tabs.appendChild(b); }
+    if(cityTab==="svc"){
+      for(const k of SKEYS){ const S=SVC[k], btn=document.createElement("button"); btn.className=placeSel===k?"sel":""; btn.dataset.s=k; btn.title=S.tip;
+        btn.innerHTML='<i style="background:'+BT[k].col+'"></i>'+S.short+'<b>'+kmoney(S.cost)+'</b>';
+        btn.onclick=()=>{ zoneSel=null; placeSel=k; updateUI(); setHint(S.tip+" Costs "+money(S.cost)+", then "+money(S.up)+" a month.",5); }; bb.appendChild(btn); }
+      const br=document.createElement("div"); br.className="br"; bb.appendChild(br); bb.appendChild(tabs);
+      const st=document.createElement("span"); st.className="st"; st.id="svcSt"; bb.appendChild(st);
+      placeHint(); }
+    else {
     for(const k of ZKEYS){ const Z=ZONES[k], btn=document.createElement("button"); btn.className=zoneSel===k?"sel":""; btn.dataset.z=k; btn.title=Z.tip;
       btn.innerHTML='<i style="background:'+Z.col+'"></i>'+(k==="dense"?'<span class="zl">Apartments</span><span class="zs">Apts</span>':k==="ind"?'<span class="zl">Industry</span><span class="zs">Ind.</span>':Z.name)+'<em class="dm"><s></s></em>';
       btn.onclick=()=>{ zoneSel=k; placeSel=null; updateUI(); setHint(Z.tip,3.5); }; bb.appendChild(btn); }
     // how plots are cut: the same size or a random mix, how big, and one side of the road or both
-    const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
+    const br=document.createElement("div"); br.className="br"; bb.appendChild(br); bb.appendChild(tabs);
     const chip=(html,title,f)=>{ const c=document.createElement("button"); c.className="chip"; c.innerHTML=html; c.title=title; c.onclick=()=>{ f(); if(!zoneSel){ zoneSel="res"; placeSel=null; } updateUI(); }; bb.appendChild(c); };
     chip('<span class="zl">Split: </span>'+(plotSplit==="even"?"Even":"Random"),"Cut each strip into plots of the same size, or a random mix of big and small",
       ()=>{ plotSplit=plotSplit==="even"?"random":"even"; setHint(plotSplit==="even"?"Even: every strip is cut into plots the same size.":"Random: every strip is cut into a mix of big and small plots, like two big ones and a small one.",3.5); });
@@ -2529,7 +2876,11 @@ function updateUI(){
     for(const k of TYPES.filter(q=>tray[q]>0)){ const btn=document.createElement("button"); btn.className=!zoneSel&&placeSel===k?"sel":"";
       btn.innerHTML='<i style="background:'+BT[k].col+'"></i>'+SHORT[k]+" &times;"+tray[k];
       btn.onclick=()=>{ zoneSel=null; placeSel=k; updateUI(); setHint("Put the "+BT[k].name+" down beside a good road.",3); }; bb.appendChild(btn); }
-    demandBars(); placeHint(); }
+    demandBars(); placeHint(); } }
+  // what's left of the power and water, and how happy people are
+  if(city&&cityTab==="svc"){ const st=$("svcSt"); if(st){ const f=(nm,q)=>{ const [u,c]=utilStat[q]; return '<span class="'+(u>c*.92||!c?"low":"")+'">'+nm+" "+Math.round(u)+"/"+c+"</span>"; };
+      st.innerHTML=f("Power","pow")+f("Water","wat")+(people?"<span>Happy "+Math.round(happyAvg)+"%</span>":""); }
+    bb.querySelectorAll("[data-s]").forEach(b=>b.classList.toggle("poor",res.road<SVC[b.dataset.s].cost)); }
   if(!city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
     const any=TYPES.filter(k=>tray[k]>0);
     if(!any.length) bb.innerHTML='<div class="none">Nothing to place. More comes each time the town levels up.</div>';
@@ -2662,9 +3013,9 @@ cv.addEventListener("pointerdown",e=>{
     if(hb&&!(city&&hb.lot)){ drag.mode="move"; moving={b:hb,ox:hb.x-w.x,oy:hb.y-w.y}; ghost=ghostAt(hb.type,{x:hb.x,y:hb.y},hb); cv.style.cursor="grabbing"; return; }
     // zoning: drag along a road and lots line up beside it
     if(city&&zoneSel){ drag.mode="zone"; drag.path=[buildPt(e,w)]; ghost=null; zoneGhosts=zoneAt(zoneSel,drag.path); return; }
-    if(!placeSel){ setHint("Nothing new to place right now. Drag a building to move it.",3); drag=null; return; }
+    if(!placeSel){ setHint(city?"Pick a zone or a service first.":"Nothing new to place right now. Drag a building to move it.",3); drag=null; return; }
     const bp=buildPt(e,w);
-    if(lineMode){ drag.mode="line"; drag.path=[bp]; ghost=null; lineGhosts=lineAt(placeSel,drag.path); return; }
+    if(lineMode&&!city){ drag.mode="line"; drag.path=[bp]; ghost=null; lineGhosts=lineAt(placeSel,drag.path); return; }
     ghost=ghostAt(placeSel,bp); }
 });
 // on touch the building sits a little above your finger so you can see where it goes
@@ -3270,13 +3621,15 @@ function drawNight(){
   const Lt=(x,y,r,a,col)=>lights.push({x,y,r,a,col}), Gl=(x,y,r,a,col)=>glows.push({x,y,r,a,col});
   for(const l of lamps()){ if(!inView(l.x,l.y,40)) continue; const hx=l.hwy?l.x:l.x+l.ax*3.4, hy=l.hwy?l.y:l.y+l.ay*3.4;
     Lt(hx,hy,l.hwy?34:28,.95,"255,178,96"); Gl(hx,hy,7,.35,"255,190,110"); Gl(hx,hy,2.2,.95,"255,236,200"); }
-  for(const c of cars){ if(c.state!=="drive"||!inView(c.x,c.y,60)) continue;
+  for(const c of cars){ if(c.siren&&inView(c.x,c.y,60)){ const fl=performance.now()%420<210; Lt(c.x,c.y,26,.9,fl?"80,130,255":"255,50,40"); Gl(c.x,c.y,4,.9,fl?"120,170,255":"255,90,80"); }
+    if(c.state!=="drive"||!inView(c.x,c.y,60)) continue;
     const ca=Math.cos(c.ang), sa=Math.sin(c.ang), fx=c.x+ca*c.len/2, fy=c.y+sa*c.len/2, rx=c.x-ca*c.len/2, ry=c.y-sa*c.len/2;
     cones.push({x:fx,y:fy,a:c.ang,L:c.truck?50:44});
     Lt(rx,ry,7,c.braking?.9:.5,"255,40,25");
     for(const o of [-1,1]){ const ox=-sa*o*(c.wid/2-1), oy=ca*o*(c.wid/2-1);
       Gl(fx+ox,fy+oy,2.8,.9,"255,248,225"); Gl(rx+ox,ry+oy,c.braking?5:3,c.braking?.95:.6,"255,45,30"); } }
   for(const b of blds){ if(!inView(b.x,b.y,b.r+40)) continue;
+    if(b.fire&&!b.fire.out){ Lt(b.x,b.y,b.r*2.4,1,"255,140,50"); Gl(b.x,b.y,b.r*.8,.6,"255,150,60"); }
     const lit=hash(b.id,Math.floor(dayClock/40))<.8;
     if(isHome(b)){ if(lit){ Lt(b.x,b.y,b.r*1.6,b.type==="apts"?.8:.6,"255,184,110"); Gl(b.door.x,b.door.y,4,.8,"255,200,130");
         if(b.type==="apts") for(let k=0;k<8;k++){ const p=toMap(b,(k%4-1.5)*b.w*.28,(k<4?-1:1)*b.d*.5); if(hash(b.id,k+5)<.7) Gl(p.x,p.y,3,.7,"255,205,130"); } }
@@ -3284,6 +3637,7 @@ function drawNight(){
     if(b.type==="shop"||b.type==="mall"||b.type==="center"){ const big=b.type!=="shop", by=big?-1.5:3, cp=toMap(b,0,(by+b.d/2)/2+1), fr=toMap(b,0,by);
       Lt(cp.x,cp.y,big?b.w*.75:b.d*.95,1,"225,236,255"); Lt(b.x,b.y,b.r*1.3,.55,"190,205,255"); Gl(fr.x,fr.y,big?16:9,.7,"110,170,255"); continue; }
     if(b.type==="office"){ Lt(b.x,b.y,b.r*1.6,.7,"215,205,255"); Gl(b.x,b.y,b.r*.7,.25,"200,190,255"); continue; }
+    if(isSvc(b)){ if(b.type!=="solar"){ Lt(b.x,b.y,b.r*1.5,.75,"235,240,255"); const fr=toMap(b,0,b.d/2-4); Gl(fr.x,fr.y,6,.6,"255,240,210"); } continue; }
     // the yards are floodlit
     for(const k of [-1,1]){ const p=toMap(b,k*b.w*.42,b.d*.42); Lt(p.x,p.y,34,.95,"255,168,84"); Gl(p.x,p.y,4,.8,"255,220,170"); } }
   if(roadCache) for(const h of roadCache.heads){ if(!inView(h.x,h.y,20)) continue; const st=lightState(h.n,h.g,"S"), col=st==="g"?"60,220,100":st==="a"?"255,200,50":"255,70,55"; Lt(h.x,h.y,14,.8,col); Gl(h.x,h.y,6,.8,col); }
@@ -3520,6 +3874,7 @@ function drawCar(c){
       ctx.fillStyle="rgba(255,255,255,.75)"; ctx.beginPath(); ctx.moveTo(L*.15,-W/2+1.1); ctx.lineTo(L*.2,-W/2+1.1); ctx.lineTo(L*.165,W/2-1.1); ctx.lineTo(L*.125,W/2-1.1); ctx.closePath(); ctx.fill();
     }
   }
+  if(c.svc) svcMarks(c,L,W);
   if(c.braking&&ultra){ ctx.globalAlpha=.9; glow(-L/2,-W/2+1.3,4.5,"255,60,40",.5); glow(-L/2,W/2-1.3,4.5,"255,60,40",.5); ctx.globalAlpha=1; }
   if(c.braking){ ctx.fillStyle="#ff3b2e"; ctx.fillRect(-L/2-.4,-W/2+.6,1.2,1.4); ctx.fillRect(-L/2-.4,W/2-2,1.2,1.4); }
   // Ultra: the indicator blinks on the way up to a turn
@@ -3528,7 +3883,7 @@ function drawCar(c){
   ctx.restore();
 }
 // a car standing still somewhere: in a drive, a car park or a loading bay
-const parked=(c,x,y,ang)=>drawCar({x,y,ang,len:c.len,wid:c.wid,col:c.col,cab:c.cab,truck:c.truck,braking:false,h:0});
+const parked=(c,x,y,ang)=>drawCar({x,y,ang,len:c.len,wid:c.wid,col:c.col,cab:c.cab,truck:c.truck,braking:false,h:0,svc:c.svc});
 function hull(P){
   P.sort((a,b)=>a.x-b.x||a.y-b.y); const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x), lo=[], up=[];
   for(const p of P){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
@@ -3784,6 +4139,7 @@ function lot(b,sc,x0,y0,w,h,n,col){
   ctx.restore();
 }
 function drawDest(b){
+  if(isSvc(b)) return drawSvc(b);
   if(b.type==="center") return drawCenter(b);
   if(b.type==="office"&&b.lot) return drawLotOffice(b);
   const T=DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
@@ -3999,16 +4355,17 @@ function drawPlan(){
 // where nobody wants to live: a haze always hangs round the factories, and while you place a home or a factory
 // the smoke and the highway noise show up clearly
 function drawZones(){
-  for(const f of blds){ if(f.type!=="factory"||!inView(f.x,f.y,POLL)) continue; const g=ctx.createRadialGradient(f.x,f.y,f.r*.6,f.x,f.y,POLL);
+  drawCover();
+  for(const f of blds){ if(!SMOKY.has(f.type)||!inView(f.x,f.y,POLL)) continue; const g=ctx.createRadialGradient(f.x,f.y,f.r*.6,f.x,f.y,POLL);
     g.addColorStop(0,"rgba(120,100,80,.13)"); g.addColorStop(1,"rgba(120,100,80,0)"); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(f.x,f.y,POLL,0,7); ctx.fill(); }
   if(tool!=="build") return;
   const ty=moving?moving.b.type:placeSel; if(!ty) return;
-  const H=!!BT[ty].home; if(!H&&ty!=="factory") return;
-  const src=blds.filter(b=>b.type==="factory"&&!(moving&&moving.b===b)); if(ghost&&ghost.type==="factory") src.push(ghost);
+  const H=!!BT[ty].home; if(!H&&!SMOKY.has(ty)) return;
+  const src=blds.filter(b=>SMOKY.has(b.type)&&!(moving&&moving.b===b)); if(ghost&&SMOKY.has(ghost.type)) src.push(ghost);
   for(const f of src){ if(!inView(f.x,f.y,POLL)) continue; const g=ctx.createRadialGradient(f.x,f.y,f.r*.5,f.x,f.y,POLL);
     g.addColorStop(0,"rgba(226,73,58,.3)"); g.addColorStop(.8,"rgba(226,73,58,.16)"); g.addColorStop(1,"rgba(226,73,58,0)");
     ctx.fillStyle=g; ctx.beginPath(); ctx.arc(f.x,f.y,POLL,0,7); ctx.fill(); }
-  if(ty==="factory") for(const h of blds){ if(!isHome(h)||(moving&&moving.b===h)||!inView(h.x,h.y,POLL)) continue;
+  if(SMOKY.has(ty)) for(const h of blds){ if(!isHome(h)||(moving&&moving.b===h)||!inView(h.x,h.y,POLL)) continue;
     ctx.strokeStyle="rgba(226,73,58,.35)"; ctx.lineWidth=1.4; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(h.x,h.y,POLL+h.r*.4,0,7); ctx.stroke(); ctx.setLineDash([]); }
   if(H){ const P=new Path2D(); let any=false;
     for(const s of segs.values()){ if(s.lanes<3) continue; const A=nodes.get(s.a), B=nodes.get(s.b); P.moveTo(A.x,A.y); P.lineTo(B.x,B.y); any=true; }
@@ -4039,7 +4396,7 @@ function drawGhost(){
     const tw=ctx.measureText(txt).width+12/cam.z, y=g.y-g.r-8-22/cam.z;
     ctx.fillStyle="rgba(226,73,58,.92)"; roundRect(g.x-tw/2,y,tw,17/cam.z,8.5/cam.z); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillText(txt,g.x,y+12/cam.z); }
 }
-const WHY_SHORT={smoke:"Too close to a factory",noise:"Too close to a highway",road:"That's on a road",bld:"No room here",land:"Needs flat, dry land",edge:"Too near the edge"};
+const WHY_SHORT={nowater:"Needs to back onto water",cash:"Not enough money",smoke:"Too close to the smoke",noise:"Too close to a highway",road:"That's on a road",bld:"No room here",land:"Needs flat, dry land",edge:"Too near the edge"};
 function pill(x,y,txt,bg){ const fs=11/cam.z; ctx.font="700 "+fs+"px "+FONT; ctx.textAlign="center"; const tw=ctx.measureText(txt).width+12/cam.z;
   ctx.fillStyle=bg; roundRect(x-tw/2,y-13/cam.z,tw,17/cam.z,8.5/cam.z); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillText(txt,x,y); }
 // the grid tool's preview: the corners so far, then the whole grid following the pointer
@@ -4132,18 +4489,23 @@ function draw(){
   drawWater();
   if(ultra) drawBoats(fdt);
   drawRoads();
+  if(city) drawWear();
   if(ultra) drawLamps();
-  parkedAt.clear(); for(const c of cars) if(c.state==="park"&&c.at){ let a=parkedAt.get(c.at); if(!a) parkedAt.set(c.at,a=[]); a.push(c); }
+  parkedAt.clear(); for(const c of cars) if(c.state==="park"&&c.at&&!c.svc){ let a=parkedAt.get(c.at); if(!a) parkedAt.set(c.at,a=[]); a.push(c); }
   for(const c of cars) if(c.state==="drive"&&!c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawLots();
   drawZones();
   for(const b of blds) if(inView(b.x,b.y,b.r+30)){ if(moving&&moving.b===b) ctx.globalAlpha=.35; if(isHome(b)) drawHome(b); else drawDest(b); ctx.globalAlpha=1; }
+  // fire trucks, ambulances and police cars out on a call, stopped where they're needed
+  for(const c of cars) if(c.svc&&c.state==="park"&&inView(c.x,c.y,20)) drawCar(c);
+  if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)){ drawHose(b); drawFire(b); }
   if(ultra){ drawWalkers(); drawSmoke(fdt); }
   drawOverpasses();
   for(const c of cars) if(c.state==="drive"&&c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawOutside();
   if(ultra){ drawClouds(); drawBirds(fdt); drawNight(); drawRain(); worldT(); }
-  for(const b of blds) if(!isHome(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
+  for(const b of blds) if(!isHome(b)&&!isSvc(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
+  if(city) for(const b of blds) if(inView(b.x,b.y,b.r+40)) drawProblems(b);
   drawHover();
   if(drag&&drag.lane&&segs.has(drag.lane.seg.id)) laneHover(drag.lane.seg,drag.lane.w0,drag.lane.w1);
   drawPlan();
@@ -4230,6 +4592,17 @@ window.__gridlock={
   zone:(kind,path)=>{ zoneSel=kind; const gs=zoneAt(kind,path); addLots(gs); return gs.length; },
   zonePlan:(kind,path)=>zoneAt(kind,path).length,
   cash:v=>{ res.road=v; updateUI(); },
+  svc:(type,x,y)=>{ zoneSel=null; placeSel=type; cityTab="svc"; const g=ghostAt(type,{x,y}); if(!g.ok) return {ok:false,why:g.why}; const ok=placeGhost(g); if(ok) afterPlace(type); return {ok,x:Math.round(g.x),y:Math.round(g.y)}; },
+  svcStat:()=>{ const n={}; for(const b of blds) if(isSvc(b)) n[b.type]=(n[b.type]||0)+1;
+    return {svc:n,pow:utilStat.pow.map(Math.round),wat:utilStat.wat.map(Math.round),happy:Math.round(happyAvg),noPow:blds.filter(b=>b.noPow).length,noWat:blds.filter(b=>b.noWat).length,
+      fires:blds.filter(b=>b.fire).length,sick:blds.filter(b=>b.sick).length,crime:blds.filter(b=>(b.crime||0)>.6).length,out:cars.filter(c=>c.svc&&c.state!=="home").length,
+      sirens:cars.filter(c=>c.siren).length,worn:[...segs.values()].filter(s=>s.cond!==undefined&&s.cond<.6).length,burnt:lots.filter(L=>L.burnt).length}; },
+  ignite:i=>{ const hs=blds.filter(b=>!isSvc(b)&&!b.fire); const b=hs[i===undefined?0:i%hs.length]; if(b) b.fire={t0:t,truck:null}; return b&&b.type; },
+  sicken:()=>{ const b=blds.find(b=>isHome(b)&&!b.sick); if(b) b.sick={t0:t,amb:null}; return !!b; },
+  crime:v=>{ for(const b of blds) if(!isSvc(b)) b.crime=v; },
+  wear:v=>{ for(const s of segs.values()) if(!s.hwy) s.cond=v; },
+  wet:(x,y)=>isWater(x,y)||isHill(x,y)?(isWater(x,y)?"w":"h"):"",
+  svcCars:()=>cars.filter(c=>c.svc).map(c=>({k:c.svc,st:c.state,siren:!!c.siren,x:Math.round(c.x),y:Math.round(c.y),job:c.purpose&&c.purpose.kind})),
   zoneSel:k=>{ if(k!==undefined){ zoneSel=k; updateUI(); } return zoneSel; },
   plotOpts:o=>{ if(o){ if(o.split) plotSplit=o.split; if(o.size) plotSize=o.size; if(o.side) plotSide=o.side; updateUI(); } return {split:plotSplit,size:plotSize,side:plotSide}; },
   lotPolys:()=>lots.map(L=>({k:L.kind,b:L.b?L.b.type:null,poly:L.poly.map(p=>[Math.round(p.x),Math.round(p.y)]),site:{w:Math.round(L.site.w),d:Math.round(L.site.d)}})),
