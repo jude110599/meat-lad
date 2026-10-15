@@ -76,12 +76,14 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #buildBar .dm{width:4px;height:16px;border-radius:2px;background:rgba(0,0,0,.1);display:flex;align-items:flex-end;overflow:hidden}
 #buildBar .dm s{display:block;width:100%;height:0;background:#2f9e55;transition:height .6s}
 #buildBar .zs{display:none}
+#buildBar .br{flex-basis:100%;height:0}
+#buildBar button.chip{height:28px;font-size:11.5px;border:1.5px solid #dcd9d1;background:#faf9f6}
 @media (max-width:440px){#buildBar .zl{display:none}#buildBar .zs{display:inline}}
 #scoreN.neg{color:#d0392b}
 @media (max-width:480px){ body.city #popPill{display:flex} body.city #weekPill{display:none} body.city #scoreL{display:none} }
 #buildBar .none{font-size:12.5px;color:var(--soft);padding:8px 10px;white-space:nowrap}
 #buildBar.hide{display:none}
-@media (max-width:440px){#buildBar button{padding:0 7px;font-size:11px;height:32px;gap:4px}}
+@media (max-width:440px){#buildBar button{padding:0 7px;font-size:11px;height:32px;gap:4px}body.city #buildBar button{padding:0 5px;gap:3px}body.city #buildBar{gap:2px}}
 
 #roadBar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 82px);z-index:5;
   display:flex;flex-direction:column;align-items:center;gap:4px;width:max-content;max-width:calc(100vw - 12px)}
@@ -255,7 +257,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 5.0</div>
+    <div class="small">Version 5.1</div>
   </div>
 </div>
 
@@ -266,7 +268,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="big alt" id="restartBtn">New town</button>
     <button class="big alt" id="menuBtn">Back to main menu</button>
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
-    <div class="small">Version 5.0</div>
+    <div class="small">Version 5.1</div>
   </div>
 </div>
 
@@ -317,7 +319,10 @@ const BT={
   house:   {home:true,w:20,d:15,r:12,col:"#6fbf4f",name:"house",names:"houses"},
   bighouse:{home:true,w:52,d:24,r:29,col:"#3c8a3e",name:"big house",names:"big houses"},
   apts:    {home:true,w:58,d:52,r:39,col:"#2f6e3d",name:"apartment block",names:"apartment blocks"},
+  town:    {home:true,w:40,d:30,r:25,col:"#5d9a4c",name:"row of townhouses",names:"rows of townhouses"},
   shop:    {w:54,d:46,r:35,col:"#3d7fe0",dark:"#2a5cb0",light:"#79a8f0",name:"shop",names:"shops",need:"cust",rate:1,cap:{cust:8,goods:6}},
+  // a shopping center: a row of stores sharing a big parking lot out front
+  center:  {w:96,d:70,r:60,col:"#5b9be8",dark:"#3a74c4",light:"#a9cdf5",name:"shopping center",names:"shopping centers",need:"cust",rate:1.25,cap:{cust:14,goods:8}},
   mall:    {w:112,d:88,r:71,col:"#7fbcf0",dark:"#4f93cf",light:"#d3e9fb",name:"mall",names:"malls",need:"cust",rate:1.4,cap:{cust:20,goods:10}},
   office:  {w:38,d:38,r:27,col:"#8a60d0",dark:"#6440a6",light:"#b394e6",name:"office",names:"offices",need:"work",rate:.8,cap:{work:8}},
   factory: {w:60,d:48,r:38,col:"#ee8a35",dark:"#bf6418",light:"#f7b273",name:"factory",names:"factories",need:"work",rate:.8,cap:{work:8,raw:6}},
@@ -327,10 +332,10 @@ const BT={
   // an assembly plant is a clean factory: no smoke, but it builds things from parts that only a warehouse can supply
   plant:   {w:64,d:50,r:40,col:"#2fa596",dark:"#1d786d",light:"#86d6cb",name:"assembly plant",names:"assembly plants",need:"work",rate:.75,cap:{work:8,parts:6}}
 };
-const DEST=BT, TYPES=["house","bighouse","apts","shop","mall","office","factory","warehouse","plant"], KINDS=["cust","work","goods","raw","parts"];
+const DEST=BT, TYPES=["house","bighouse","apts","town","shop","center","mall","office","factory","warehouse","plant"], KINDS=["cust","work","goods","raw","parts"];
 const MAKERS=new Set(["factory","plant"]);
 const isHome=b=>!!BT[b.type].home;
-const capOf=(b,k)=>BT[b.type].cap[k]||0;
+const capOf=(b,k)=>(b.cap||BT[b.type].cap)[k]||0;
 const PINC={cust:"#3d7fe0",work:"#8a60d0",goods:"#a8743a",raw:"#5f6670",parts:"#1f8f83"};
 const BIGHOUSE_COLS=["#3c8a3e","#347c3b","#45914a","#2f7a48"], APT_COLS=["#2f6e3d","#2b6438","#376f42","#2d6a4a"];
 
@@ -1499,7 +1504,7 @@ const canPlace=(x,y,r,type,ignore)=>!placeWhy(x,y,r,type,ignore);
 function addBld(b){
   blds.push(b);
   for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r) tr.alive=false;
-  const nCars=b.type==="house"?(b.big?2:1):b.type==="bighouse"?4:b.type==="apts"?10+(Math.random()*6|0):0;
+  const nCars=b.nCars!==undefined?b.nCars:b.type==="house"?(b.big?2:1):b.type==="bighouse"?4:b.type==="apts"?10+(Math.random()*6|0):0;
   for(let i=0;i<nCars;i++){ const c=newCar(b,false); c.cool=rnd(.5,3+i*.6); b.cars.push(c); cars.push(c); }
   if(b.type==="factory"||b.type==="warehouse"||b.type==="plant"){ for(let i=0;i<(b.type==="plant"?2:3);i++){ const c=newCar(b,true); b.cars.push(c); cars.push(c); } }
   b.acc=findAccess(b); if(b.acc) buildRoadCache(); tver++;
@@ -1839,11 +1844,11 @@ function updateDemand(dt){
   // manages roughly one trip every TRIP seconds, so a town with lots of shops and few homes isn't swamped
   let cars=0, want=0; for(const h of homes()) if(h.acc) cars+=h.cars.length;
   const warm=d=>Math.min(1,(t-d.born-GRACE)/RAMPUP);
-  for(const d of ds) want+=per*BT[d.type].rate*warm(d);
+  for(const d of ds) want+=per*BT[d.type].rate*(d.k||1)*warm(d);
   if(want>0) per*=Math.min(1,Math.max(cars,4)/TRIP/want);
   const nF=ds.filter(d=>MAKERS.has(d.type)).length, nW=ds.filter(d=>d.type==="warehouse"&&d.acc).length, shut=[];
   for(const d of ds){
-    const T=BT[d.type], wm=warm(d);
+    const T=BT[d.type], wm=warm(d)*(d.k||1);
     d.dem[T.need]+=dt*per*T.rate*wm;
     // shops sell goods, which come from the town's factories or by truck from outside once the town is a bit bigger
     if((d.type==="shop"||d.type==="mall")&&(nF>0||(outside&&level>=2))&&t-d.born>GRACE+40){ d.dem.goods+=dt*per*wm*.2*(d.type==="mall"?1.6:1);
@@ -2041,10 +2046,10 @@ function icoSvg(k){
 // what you get to place each time the town levels up
 function levelBatch(L){
   const add=emptyTray();
-  add.house=Math.min(12,3+2*L); if(L>=2) add.bighouse=1+Math.floor(L/4); if(L>=3) add.apts=L>=6?2:1;
+  add.house=Math.min(8,2+L); if(L>=3&&L%2) add.bighouse=1; if(L>=5&&L%3===2) add.apts=1;
   for(const k of TYPES) tray[k]+=add[k];
   mallBatch=false;
-  for(let i=0;i<(L<=3?1:2);i++){ const k=nextDestType(); add[k]++; tray[k]++; }
+  for(let i=0;i<(L<=5||L%2?1:2);i++){ const k=nextDestType(); add[k]++; tray[k]++; }
   // the first assembly plant turns up at level 5, and a plant always comes with a warehouse if the town has none
   if(L>=5&&!plantGiven){ add.plant++; tray.plant++; }
   if(add.plant) plantGiven=true;
@@ -2079,10 +2084,10 @@ function levelUp(){
 let city=false, zoneSel="res", lots=[], lotId=1, zoneGhosts=null, cityD={res:0,dense:0,com:0,off:0,ind:0};
 let closedN=0, closeHintT=-99, growT=0, monthT=0, month=1, monthTrips=0, lastIn=0, lastOut=0, people=0, mallsGiven=0, cityTip=0, compKey=-1, comp=new Map(), wantT={};
 const ZONES={
-  res:  {name:"Homes",     foot:"house",    col:"#6fbf4f",tip:"Homes: drag along beside a road. Houses grow here when people want to move in."},
-  dense:{name:"Apartments",foot:"apts",     col:"#2f6e3d",tip:"Apartments: big lots for big houses, and apartment blocks once the town is busy. Lots of cars."},
-  com:  {name:"Shops",     foot:"shop",     col:"#3d7fe0",tip:"Shops: they open when there are enough people nearby to buy things."},
-  off:  {name:"Offices",   foot:"office",   col:"#8a60d0",tip:"Offices: jobs for the town. They open as more people move in."},
+  res:  {name:"Homes",     foot:"house",    col:"#6fbf4f",tip:"Homes: drag along beside a road to mark out plots. A house grows on each one when people want to move in, bigger on a bigger plot."},
+  dense:{name:"Apartments",foot:"apts",     col:"#2f6e3d",tip:"Apartments: rows of townhouses, and now and then an apartment block once the town is big and busy. Lots of cars."},
+  com:  {name:"Shops",     foot:"shop",     col:"#3d7fe0",tip:"Shops: they open when there are enough people nearby to buy things. A big plot gets a shopping center."},
+  off:  {name:"Offices",   foot:"office",   col:"#8a60d0",tip:"Offices: jobs for the town. They open as more people move in. Big plots can get a tower."},
   ind:  {name:"Industry",  foot:"warehouse",col:"#ee8a35",tip:"Industry: factories, warehouses and assembly plants. Factories are smoky, so keep homes away."}
 };
 const ZKEYS=Object.keys(ZONES);
@@ -2095,36 +2100,179 @@ const lack=txt=>city?"Not enough money for that. Taxes come in at the end of eve
 // buy a roundabout, a set of lights or a bridge when there are none left in stock
 function buy(k,n){ n=n||1; if(!city||res.road<PRICE[k]*n) return false; res.road-=PRICE[k]*n; res[k]+=n; return true; }
 
-// a lot is a footprint beside a road, zoned for one kind of building; b is what grew there
+// ---------- plots ----------
+// Zoning marks out a strip of land along a road and cuts it into plots: all the same width, or a random mix of big
+// and small ones. A plot follows the road, so plots on a bend fan out, and where a plot runs into a side road, the
+// water or another plot it's cut to fit, which gives corner plots all sorts of shapes. Plots on both sides of a
+// block meet in the middle. Whatever grows on a plot is sized to fit the biggest rectangle inside it.
+const PLOT={res:{w:24,d:32,mw:13,md:13},dense:{w:42,d:44,mw:22,md:20},com:{w:46,d:48,mw:26,md:26},off:{w:40,d:44,mw:24,md:24},ind:{w:62,d:60,mw:40,md:34}};
+const PSIZE={S:.72,M:1,L:1.5}, SETBACK=3;
+let plotSplit="even", plotSize="M", plotSide="one";
+const polyArea=P=>{ let a=0; for(let i=0;i<P.length;i++){ const p=P[i], q=P[(i+1)%P.length]; a+=p.x*q.y-q.x*p.y; } return a/2; };
+const polyMid=P=>{ let x=0, y=0; for(const p of P){ x+=p.x; y+=p.y; } return {x:x/P.length,y:y/P.length}; };
+// the part of a convex polygon where nx*x+ny*y >= c
+function clipHalf(P,nx,ny,c){ const out=[];
+  for(let i=0;i<P.length;i++){ const p=P[i], q=P[(i+1)%P.length], dp=p.x*nx+p.y*ny-c, dq=q.x*nx+q.y*ny-c;
+    if(dp>=0) out.push(p); if((dp>=0)!==(dq>=0)){ const k=dp/(dp-dq); out.push({x:p.x+(q.x-p.x)*k,y:p.y+(q.y-p.y)*k}); } }
+  return out; }
+function inPoly(P,x,y){ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const a=P[i], b=P[j]; if((a.y>y)!==(b.y>y)&&x<(b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x) c=!c; } return c; }
+// cut convex polygon P back along the cheapest line so it no longer overlaps convex polygon Q
+function sepClip(P,Q){ let best=null;
+  for(const R of [P,Q]) for(let i=0;i<R.length;i++){ const a=R[i], b=R[(i+1)%R.length]; let nx=b.y-a.y, ny=a.x-b.x; const l=Math.hypot(nx,ny); if(l<1e-6) continue; nx/=l; ny/=l;
+    let p0=1e9, p1=-1e9, q0=1e9, q1=-1e9;
+    for(const p of P){ const v=p.x*nx+p.y*ny; if(v<p0) p0=v; if(v>p1) p1=v; }
+    for(const q of Q){ const v=q.x*nx+q.y*ny; if(v<q0) q0=v; if(v>q1) q1=v; }
+    if(p1<=q0+.05||q1<=p0+.05) return P;
+    if(!best||q1-p0<best.cut) best={cut:q1-p0,nx,ny,c:q1};
+    if(p1-q0<best.cut) best={cut:p1-q0,nx:-nx,ny:-ny,c:-q0}; }
+  return best?clipHalf(P,best.nx,best.ny,best.c):P; }
+// how close a road's middle line comes to a polygon (0 if it crosses it)
+function polySegD(P,A,B){
+  if(inPoly(P,A.x,A.y)||inPoly(P,B.x,B.y)) return 0;
+  let m=1e9;
+  for(let i=0;i<P.length;i++){ const p=P[i], q=P[(i+1)%P.length]; if(segInter(p,q,A,B)) return 0;
+    m=Math.min(m,projSeg(p.x,p.y,A.x,A.y,B.x,B.y).d,projSeg(A.x,A.y,p.x,p.y,q.x,q.y).d,projSeg(B.x,B.y,p.x,p.y,q.x,q.y).d); }
+  return m; }
+const rectPoly=(x,y,ang,w,d)=>{ const fx=Math.cos(ang), fy=Math.sin(ang), rx=fy, ry=-fx;
+  return [[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>({x:x+rx*a*w/2+fx*b*d/2,y:y+ry*a*w/2+fy*b*d/2})); };
+function nearSegs(P,m){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of P){ x0=Math.min(x0,p.x); y0=Math.min(y0,p.y); x1=Math.max(x1,p.x); y1=Math.max(y1,p.y); }
+  const out=[]; for(const s of segs.values()){ const A=nodes.get(s.a), B=nodes.get(s.b);
+    if(Math.max(A.x,B.x)<x0-m||Math.min(A.x,B.x)>x1+m||Math.max(A.y,B.y)<y0-m||Math.min(A.y,B.y)>y1+m) continue; out.push(s); } return out; }
+// the roads near some points, each with its ends, half width and a box round it so most can be skipped at a glance
+function nearBoxes(P,m){ return nearSegs(P,m).map(s=>{ const A=nodes.get(s.a), B=nodes.get(s.b);
+  return {s,A,B,hw:segHW(s),x0:Math.min(A.x,B.x),y0:Math.min(A.y,B.y),x1:Math.max(A.x,B.x),y1:Math.max(A.y,B.y)}; }); }
+const nearRoad=(near,x,y,pad)=>near.some(q=>{ const r=q.hw+pad; return x>q.x0-r&&x<q.x1+r&&y>q.y0-r&&y<q.y1+r&&projSeg(x,y,q.A.x,q.A.y,q.B.x,q.B.y).d<r; });
+// how deep a plot can go from frontage point F straight back along N: to the water, the hills or the map edge, or
+// half way to the next road behind so the plots on that road get the other half
+function plotDepth(F,N,D,near){
+  for(let k=3;k<=2*D+3;k+=3){ const x=F.x+N.x*k, y=F.y+N.y*k;
+    if(x<14||y<14||x>MW-14||y>MH-14||isWater(x,y)||isHill(x,y)) return Math.min(D,k-3);
+    if(nearRoad(near,x,y,SETBACK)) return Math.min(D,k/2-.5); }
+  return D; }
+// the strips of road frontage a drag runs along: points on the pavement edge, the way into the plot, and the way along
+function frontage(path,kind){
+  const D=PLOT[kind].d*PSIZE[plotSize], pts=path.length>1?resample(path,4):path.slice(), near=nearBoxes(pts,2*D+60), reach=Math.max(30,snapR());
+  const hits=[];
+  for(let i=0;i<pts.length;i++){ const p=pts[i], a=pts[Math.max(0,i-1)], b=pts[Math.min(pts.length-1,i+1)], dx=b.x-a.x, dy=b.y-a.y, dl=Math.hypot(dx,dy)||1;
+    // the nearest road, favouring one that runs the way the finger is going over a side street just crossed
+    let best=null, bd=1e9;
+    for(const nb of near){ const s=nb.s, hw=nb.hw, r=hw+reach; if(s.over||s.hwy||p.x<nb.x0-r||p.x>nb.x1+r||p.y<nb.y0-r||p.y>nb.y1+r) continue;
+      const A=nb.A, B=nb.B, q=projSeg(p.x,p.y,A.x,A.y,B.x,B.y), sc=q.d+(pts.length>1?(1-Math.abs(dx*s.ux+dy*s.uy)/dl)*24:0);
+      if(q.d<hw+reach&&sc<bd){ bd=sc; best={s,q,hw}; } }
+    if(!best){ hits.push(null); continue; }
+    // the way along: the road's direction turned to match the way the finger is going
+    let ux=best.s.ux, uy=best.s.uy; if(dx*ux+dy*uy<0){ ux=-ux; uy=-uy; }
+    const prev=hits.length?hits[hits.length-1]:null; if(prev&&!(dx||dy)&&prev.ux*ux+prev.uy*uy<0){ ux=-ux; uy=-uy; }
+    best.ux=ux; best.uy=uy; best.p=p; best.side=((p.x-best.q.x)*-uy+(p.y-best.q.y)*ux)>=0?1:-1; hits.push(best); }
+  if(!hits.some(h=>h)) return [];
+  // one side: whichever side of its road the finger is on
+  const sides=plotSide==="both"&&pts.length>1?[1,-1]:[0], runs=[];
+  for(const s0 of sides){ let run=[];
+    const flush=()=>{ if(run.length) runs.push(run); run=[]; };
+    for(const h of hits){ if(!h){ flush(); continue; }
+      const sd=s0||h.side, nx=-h.uy*sd, ny=h.ux*sd, off=h.hw+SETBACK, F={x:h.q.x+nx*off,y:h.q.y+ny*off,nx,ny,ux:h.ux,uy:h.uy,s:h.s};
+      if(nearRoad(near,F.x,F.y,SETBACK-1)||isWater(F.x,F.y)||isHill(F.x,F.y)){ flush(); continue; }
+      const l=run[run.length-1];
+      if(l){ const g=Math.hypot(F.x-l.x,F.y-l.y); if(g>14){ flush(); }
+        else if((F.x-l.x)*F.ux+(F.y-l.y)*F.uy<.5) continue; }   // the drag doubled back: keep going from the furthest point
+      run.push(F); }
+    flush(); }
+  return runs.map(r=>({pts:r,D,near}));
+}
+// a point and the way into the plot, a distance s along a run
+function runAt(R,s){ const P=R.pts; let i=1; while(i<P.length-1&&P[i].a<s) i++;
+  const a=P[i-1], b=P[i], k=b.a>a.a?clamp((s-a.a)/(b.a-a.a),0,1):0;
+  let nx=a.nx+(b.nx-a.nx)*k, ny=a.ny+(b.ny-a.ny)*k; const l=Math.hypot(nx,ny)||1;
+  return {x:a.x+(b.x-a.x)*k,y:a.y+(b.y-a.y)*k,nx:nx/l,ny:ny/l}; }
+// the widths a run is cut into: all the same, or a random mix like two big and one small
+function cutWidths(L,W){
+  if(L<W*.55) return [];
+  if(plotSplit==="even"){ const n=Math.max(1,Math.round(L/W)); return Array(n).fill(L/n); }
+  const out=[]; let left=L;
+  while(left>W*.55){ const r=Math.random(), w=Math.min(left,W*(r<.3?.62:r<.62?1:r<.86?1.6:2.3)); out.push(w); left-=w; }
+  if(left>0&&out.length) out[out.length-1]+=left;
+  return out; }
+// the biggest rectangle that fits squarely inside a plot, facing its road: where the building goes
+function plotSite(P,ux,uy,nx,ny,kind){
+  const o=P[0], U=P.map(p=>({u:(p.x-o.x)*ux+(p.y-o.y)*uy,v:(p.x-o.x)*nx+(p.y-o.y)*ny}));
+  let v0=1e9, v1=-1e9; for(const q of U){ v0=Math.min(v0,q.v); v1=Math.max(v1,q.v); }
+  const span=v=>{ let lo=1e9, hi=-1e9; for(let i=0;i<U.length;i++){ const a=U[i], b=U[(i+1)%U.length];
+      if((a.v-v)*(b.v-v)<=0&&a.v!==b.v){ const u=a.u+(b.u-a.u)*(v-a.v)/(b.v-a.v); lo=Math.min(lo,u); hi=Math.max(hi,u); } else if(a.v===v){ lo=Math.min(lo,a.u); hi=Math.max(hi,a.u); } }
+    return [lo,hi]; };
+  const Z=PLOT[kind], H=v1-v0; let best=null;
+  for(const f0 of [.002,.06,.14,.25]) for(const f1 of [.002,.08,.18,.3,.45]){
+    const a=v0+H*f0, b=v1-H*f1; if(b-a<Z.md*.8) continue;
+    const s0=span(a), s1=span(b), lo=Math.max(s0[0],s1[0]), hi=Math.min(s0[1],s1[1]), w=hi-lo, d=b-a;
+    if(w<Z.mw) continue;
+    const sc=w*d*(d>=Z.md?1:.6)*(1-f0*.5);
+    if(!best||sc>best.sc) best={sc,u:(lo+hi)/2,v:(a+b)/2,w,d}; }
+  if(!best||best.d<Z.md) return null;
+  return {x:o.x+ux*best.u+nx*best.v,y:o.y+uy*best.u+ny*best.v,w:best.w,d:best.d,ang:Math.atan2(-ny,-nx)};
+}
+// the plots a drag along a road would make, cut to fit around the roads, the water and the plots already there
 function zoneAt(kind,path){
-  const Z=ZONES[kind], T=BT[Z.foot], step=T.w+6, out=[]; if(!path.length) return out;
-  const pts=path.length>1?resample(path,step/2):path;
-  for(const p of pts){
-    if(out.length>=60) break;
-    const g=ghostAt(Z.foot,p); if(!g.ok||!g.snapped) continue;
-    if(lots.some(L=>Math.hypot(L.x-g.x,L.y-g.y)<L.r+g.r+2)) continue;
-    if(out.some(o=>Math.hypot(o.x-g.x,o.y-g.y)<o.r+g.r+2)) continue;
-    g.kind=kind; out.push(g);
+  const Z=PLOT[kind], W=Z.w*PSIZE[plotSize], out=[]; if(!path.length) return out;
+  const others=lots.map(L=>({x:L.x,y:L.y,r:L.r,poly:L.poly}));
+  for(const b of blds) if(!b.lot) others.push({x:b.x,y:b.y,r:b.r+4,poly:rectPoly(b.x,b.y,b.ang,b.w+4,b.d+4)});
+  // a tap, or a drag too short to mean a row, makes one plot centred where you pressed
+  let pl=0; for(let i=1;i<path.length;i++) pl+=Math.hypot(path[i].x-path[i-1].x,path[i].y-path[i-1].y);
+  const tap=pl<10; if(tap) path=[path[path.length-1]];
+  for(const R of frontage(path,kind)){
+    let P=R.pts;
+    if(tap){ const m=P[0]; P=R.pts=[-1,1].map(k=>({x:m.x+m.ux*k*W/2,y:m.y+m.uy*k*W/2,nx:m.nx,ny:m.ny,ux:m.ux,uy:m.uy})); }
+    P[0].a=0; for(let i=1;i<P.length;i++) P[i].a=P[i-1].a+Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);
+    const len=P[P.length-1].a, widths=tap?[len]:cutWidths(len,W);
+    let s;
+    const left=len-widths.reduce((a,b)=>a+b,0); s=left/2;
+    for(const w of widths){
+      if(out.length>=60) break;
+      const A=runAt(R,s), B=runAt(R,s+w); s+=w;
+      let d0=plotDepth(A,{x:A.nx,y:A.ny},R.D,R.near), d1=plotDepth(B,{x:B.nx,y:B.ny},R.D,R.near);
+      if(Math.min(d0,d1)<Z.md*.7) continue;
+      let Q=[{x:A.x,y:A.y},{x:B.x,y:B.y},{x:B.x+B.nx*d1,y:B.y+B.ny*d1},{x:A.x+A.nx*d0,y:A.y+A.ny*d0}];
+      // on the inside of a tight bend the sides meet before the back: a wedge
+      const X=lineInter({x:A.x,y:A.y},{x:A.nx,y:A.ny},{x:B.x,y:B.y},{x:B.nx,y:B.ny});
+      if(X&&X.s>0&&X.s<d0) Q=[Q[0],Q[1],{x:X.x,y:X.y}];
+      if(polyArea(Q)<0) Q.reverse();
+      // cut back from any road that comes too close: a side road at a corner, or the road bending round
+      const mid=polyMid(Q);
+      let qx0=1e9, qy0=1e9, qx1=-1e9, qy1=-1e9; for(const p of Q){ qx0=Math.min(qx0,p.x); qy0=Math.min(qy0,p.y); qx1=Math.max(qx1,p.x); qy1=Math.max(qy1,p.y); }
+      for(const nb of R.near){ const sg=nb.s, SA=nb.A, SB=nb.B, hw=nb.hw+SETBACK-.6;
+        if(nb.x1<qx0-hw||nb.x0>qx1+hw||nb.y1<qy0-hw||nb.y0>qy1+hw||polySegD(Q,SA,SB)>=hw) continue;
+        let nx=-sg.uy, ny=sg.ux; const sd=(mid.x-SA.x)*nx+(mid.y-SA.y)*ny>=0?1:-1; nx*=sd; ny*=sd;
+        Q=clipHalf(Q,nx,ny,SA.x*nx+SA.y*ny+hw); if(Q.length<3) break; }
+      if(Q.length<3) continue;
+      const qm=polyMid(Q); let qr=0; for(const p of Q) qr=Math.max(qr,Math.hypot(p.x-qm.x,p.y-qm.y));
+      for(const O of others.concat(out)){ if(Math.hypot(O.x-qm.x,O.y-qm.y)>O.r+qr) continue; Q=sepClip(Q,O.poly); if(Q.length<3) break; }
+      if(Q.length<3||Math.abs(polyArea(Q))<Z.mw*Z.md) continue;
+      if(Q.some(p=>isWater(p.x,p.y)||isHill(p.x,p.y)||p.x<8||p.y<8||p.x>MW-8||p.y>MH-8)) continue;
+      let ux=B.x-A.x, uy=B.y-A.y; const ul=Math.hypot(ux,uy)||1; ux/=ul; uy/=ul;
+      let nx=(A.nx+B.nx)/2, ny=(A.ny+B.ny)/2; const nl=Math.hypot(nx,ny)||1; nx/=nl; ny/=nl;
+      // the way along has to be square to the way in
+      const dt=ux*nx+uy*ny; ux-=nx*dt; uy-=ny*dt; const l2=Math.hypot(ux,uy)||1; ux/=l2; uy/=l2;
+      const site=plotSite(Q,ux,uy,nx,ny,kind); if(!site) continue;
+      const c=polyMid(Q); let r=0; for(const p of Q) r=Math.max(r,Math.hypot(p.x-c.x,p.y-c.y));
+      out.push({kind,poly:Q,x:c.x,y:c.y,r,site,ang:site.ang,w:site.w,d:site.d,size:plotSize}); }
   }
   return out;
 }
-function zoneWhy(kind,p){ const g=ghostAt(ZONES[kind].foot,p);
-  if(!g.snapped) return "Zone beside a road: drag along one, and lots fill both sides of where you drag.";
-  if(g.ok) return "That's zoned already.";
-  return WHY[g.why]||"There's no room there."; }
-function addLots(gs){ for(const g of gs) lots.push({id:lotId++,kind:g.kind,foot:ZONES[g.kind].foot,x:g.x,y:g.y,ang:g.ang,w:g.w,d:g.d,r:g.r,b:null,cool:0,ver:-1,acc:null}); tver++; }
-function lotUnder(w){ for(const L of lots){ const th=L.ang-Math.PI/2, c=Math.cos(th), s=Math.sin(th), dx=w.x-L.x, dy=w.y-L.y;
-  if(Math.abs(dx*c+dy*s)<L.w/2+2&&Math.abs(-dx*s+dy*c)<L.d/2+2) return L; } return null; }
+function zoneWhy(kind,p){
+  if(!frontage([p],kind).length) return "Zone beside a road: drag along one, and plots fill "+(plotSide==="both"?"both sides":"the side you drag on")+".";
+  return lotUnder(p)?"That's zoned already.":"There's no room for a plot there.";
+}
+function addLots(gs){ for(const g of gs) lots.push(Object.assign(g,{id:lotId++,b:null,cool:0,ver:-1,acc:null})); tver++; }
+function lotUnder(w){ for(const L of lots) if(Math.hypot(w.x-L.x,w.y-L.y)<L.r+2&&inPoly(L.poly,w.x,w.y)) return L; return null; }
 function removeLot(L){ const i=lots.indexOf(L); if(i>=0) lots.splice(i,1); effects.push({k:"puff",x:L.x,y:L.y,t:0,life:.5,big:L.r*.5}); tver++; }
-// a new road over a lot, or a building put down on it, clears it
+// a new road over a plot, or a building put down on it, clears it
 function pruneLots(){ if(!city) return;
   lots=lots.filter(L=>{ if(L.b&&!blds.includes(L.b)) L.b=null; if(L.b) return true;
-    if(blds.some(b=>!b.lot&&Math.hypot(b.x-L.x,b.y-L.y)<b.r+L.r+2)) return false;
-    return placeWhy(L.x,L.y,L.r,L.foot,null,L.ang)!=="road"; }); }
-// can a lot be reached from a road: a stand-in building in the lot's place asks the same question a real one would
+    if(blds.some(b=>!b.lot&&Math.hypot(b.x-L.x,b.y-L.y)<b.r+L.r&&sepClip(L.poly,rectPoly(b.x,b.y,b.ang,b.w,b.d))!==L.poly)) return false;
+    for(const s of nearSegs(L.poly,40)){ if(polySegD(L.poly,nodes.get(s.a),nodes.get(s.b))<segHW(s)-.5) return false; }
+    return true; }); }
+// can a plot be reached from a road: a stand-in building in the plot's place asks the same question a real one would
 function lotAccess(L){
   if(L.ver===tver) return L.acc; L.ver=tver;
-  const fx=Math.cos(L.ang), fy=Math.sin(L.ang), o={type:L.foot==="house"?"house":"lot",x:L.x,y:L.y,w:L.w,d:L.d,f0x:fx,f0y:fy,fx,fy,door:{x:L.x+fx*L.d/2,y:L.y+fy*L.d/2}};
+  const S=L.site, fx=Math.cos(S.ang), fy=Math.sin(S.ang), o={type:"lot",x:S.x,y:S.y,w:S.w,d:S.d,f0x:fx,f0y:fy,fx,fy,door:{x:S.x+fx*S.d/2,y:S.y+fy*S.d/2}};
   return L.acc=findAccess(o);
 }
 // which roads join up, so a shop only opens where people can drive to it
@@ -2138,7 +2286,7 @@ const compOf=acc=>{ const s=acc&&segs.get(acc.seg); return s?comp.get(s.a):null;
 function cityDemand(){
   let R=0, nC=0, nO=0, nI=0;
   for(const b of blds){ if(isHome(b)){ if(b.acc) R+=b.cars.length; continue; }
-    if(b.type==="shop") nC++; else if(b.type==="mall") nC+=2.5; else if(b.type==="office") nO++; else nI++; }
+    const k=b.k||1; if(b.type==="shop") nC+=k; else if(b.type==="center") nC+=2.2*k; else if(b.type==="mall") nC+=2.5; else if(b.type==="office") nO+=k; else nI+=k; }
   people=R;
   const u=R/12, nD=nC+nO+nI;
   cityD.res=(12*nD+12-R)/10;
@@ -2150,22 +2298,78 @@ function cityDemand(){
 }
 function topOutside(){ if(!outside) return; const top=(tr,n)=>{ while(outside.cars.filter(c=>c.truck===tr).length<n){ const c=newCar(outside,tr); outside.cars.push(c); cars.push(c); } };
   top(true,Math.min(16,5+level)); top(false,Math.min(12,2+level)); }
-// what grows on an industry lot: a warehouse when the factories need one, a clean assembly plant where the smoke
+// what grows on an industry plot: a warehouse when the factories need one, a clean assembly plant where the smoke
 // would bother the neighbours, otherwise a factory
 function indType(L){
   let nF=0, nP=0, nW=0; for(const b of blds){ if(b.type==="factory") nF++; else if(b.type==="plant") nP++; else if(b.type==="warehouse") nW++; }
   if(nF+nP>=2&&nW<Math.ceil((nF+nP)/3)) return "warehouse";
   let k=nW&&Math.random()<.35?"plant":"factory";
-  if(k==="factory"&&placeWhy(L.x,L.y,BT.factory.r,"factory",null,L.ang)) k=nW?"plant":"warehouse";
+  if(k==="factory"&&lotBlocked(L,"factory")) k=nW?"plant":"warehouse";
   return k;
 }
+// what grows on a plot, from what it's zoned for and how big it is. Apartment blocks are kept for a big, busy town:
+// before that the Apartments zone grows rows of townhouses
+function lotType(L){
+  const S=L.site, k=L.kind;
+  if(k==="res") return "house";
+  if(k==="dense"){ let nA=0, nT=0; for(const b of blds){ if(b.type==="apts") nA++; else if(b.type==="town") nT++; }
+    return people>=140&&S.w>=32&&S.d>=30&&nA<(nT+1)*.5&&Math.random()<.4?"apts":"town"; }
+  if(k==="com") return S.w>=64&&S.d>=42?"center":"shop";
+  if(k==="off") return "office";
+  return indType(L);
+}
+// nobody wants to live in factory smoke or right beside a big road, and a factory won't go up next to homes
+function lotBlocked(L,type){
+  const S=L.site;
+  if(BT[type].home){
+    for(const f of blds) if(f.type==="factory"&&Math.hypot(f.x-S.x,f.y-S.y)<POLL+L.r*.3) return true;
+    for(const s of nearSegs([S],halfW(3)+NOISE+L.r)){ if(s.lanes<3) continue; const A=nodes.get(s.a), B=nodes.get(s.b); if(projSeg(S.x,S.y,A.x,A.y,B.x,B.y).d<halfW(3)+NOISE*.6+S.d*.3) return true; }
+  }
+  if(type==="factory") for(const h of blds) if(isHome(h)&&Math.hypot(h.x-S.x,h.y-S.y)<POLL+h.r*.4) return true;
+  return false;
+}
+const TOWN_COLS=["#b9604a","#8f6f5a","#6d7f8f","#a8835a","#7b8f5e","#9a5a5a"];
+// a building made to fit its plot
+function makeLotBld(L,type){
+  const S=L.site, T=BT[type], b=makeBld(type,S.x,S.y,S.ang);
+  b.lot=L; b.w=S.w; b.d=S.d;
+  if(type==="house"){
+    // near the front with a garden behind; a wide plot gets a wing and a second car, a deep one a pool
+    const hw=Math.min(S.w-6,rnd(15,19)), hd=Math.min(S.d-10,rnd(11,14.5)), off=S.d/2-6-hd/2;
+    b.w=hw; b.d=hd; b.x=S.x+b.fx*off; b.y=S.y+b.fy*off; b.big=S.w>=hw+17&&Math.random()<.75;
+    b.pool=S.d-hd-6>19&&S.w>22&&Math.random()<.55; b.tree=false;
+  }
+  else if(type==="town"){ b.units=clamp(Math.floor(S.w/8.5),2,8); b.cols=[pick(TOWN_COLS),pick(TOWN_COLS)]; b.nCars=b.units; }
+  else if(type==="apts"){ b.floors=4+(Math.random()*4|0); b.nCars=clamp(Math.round(S.w*S.d*b.floors/1400),6,18); }
+  else if(type==="office"){ b.tall=S.w*S.d>1500&&Math.random()<.6; b.floors=b.tall?9+(Math.random()*9|0):2+(Math.random()*2|0); }
+  b.r=Math.hypot(b.w+(b.big?18:0),b.d)/2;
+  b.door={x:b.x+b.fx*b.d/2,y:b.y+b.fy*b.d/2};
+  // a bigger plot means a bigger business: it asks for more people and holds more
+  if(!T.home){ b.k=clamp(S.w*S.d/(T.w*T.d),.55,2.4)*(b.tall?1.3:1); b.cap={}; for(const q in T.cap) b.cap[q]=Math.max(3,Math.round(T.cap[q]*clamp(b.k,.75,1.8))); }
+  return b;
+}
 function growOn(L,type,old){
-  // it goes in the middle of its lot, which is always at least as big as it is, so it never crowds the next lot
-  if(placeWhy(L.x,L.y,BT[type].r,type,old||null,L.ang)) return false;
-  const b=makeBld(type,L.x,L.y,L.ang); if(!findAccess(b)) return false;
+  if(lotBlocked(L,type)) return false;
+  const b=makeLotBld(L,type); if(!findAccess(b)) return false;
   if(old) deleteBld(old,true);
-  b.lot=L; L.b=b; addBld(b);
+  L.b=b; addBld(b);
+  // clear the trees off the plot, then plant a few in the garden
+  for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-L.x,tr.y-L.y)<L.r&&inPoly(L.poly,tr.x,tr.y)) tr.alive=false;
+  L.trees=yardTrees(L,b);
   return true;
+}
+// trees dotted round the edge of a plot, clear of the building, its drive and its car park
+function yardTrees(L,b){
+  const out=[], P=L.poly, n=L.kind==="res"?3:L.kind==="ind"?0:L.kind==="com"?2:3, keep=rectPoly(b.x,b.y,b.ang,b.w+(b.big?20:0)+6,b.d+(b.pool?26:0)+8);
+  const S=L.site, front=rectPoly(S.x+Math.cos(S.ang)*S.d*.3,S.y+Math.sin(S.ang)*S.d*.3,S.ang,b.type==="house"?8:S.w,S.d*.4+6);
+  for(let tries=0;tries<40&&out.length<n;tries++){
+    const a=P[0], i=1+(Math.random()*(P.length-2)|0), q=P[i], r=P[i+1], u=Math.random(), v=Math.random()*(1-u);
+    const x=a.x+(q.x-a.x)*u+(r.x-a.x)*v, y=a.y+(q.y-a.y)*u+(r.y-a.y)*v;
+    if(inPoly(keep,x,y)||inPoly(front,x,y)) continue;
+    let edge=1e9; for(let k=0;k<P.length;k++){ const p0=P[k], p1=P[(k+1)%P.length]; edge=Math.min(edge,projSeg(x,y,p0.x,p0.y,p1.x,p1.y).d); }
+    if(edge<2.5||out.some(o=>Math.hypot(o.x-x,o.y-y)<8)) continue;
+    out.push({x,y,r:rnd(3.2,4.8)}); }
+  return out;
 }
 function cityGrow(){
   cityComp();
@@ -2178,12 +2382,11 @@ function cityGrow(){
     // next to what's already there, so the town grows outwards from its middle
     let best=null, bs=1e9;
     for(const L of free){ let d=400; for(const b of blds){ const q=Math.hypot(b.x-L.x,b.y-L.y)-b.r-L.r; if(q<d) d=q; } d+=Math.random()*30; if(d<bs){ bs=d; best=L; } }
-    const type=k==="res"?"house":k==="dense"?(people<50?"bighouse":"apts"):k==="com"?"shop":k==="off"?"office":indType(best);
-    if(growOn(best,type)) return true;
+    if(growOn(best,lotType(best))) return true;
     best.cool=t+20;
   }
-  // a busy town swaps its big houses for apartment blocks, once everyone who lives there is at home
-  if(people>=60&&cityD.res>1.2){ for(const L of lots){ const b=L.b; if(L.kind==="dense"&&b&&b.type==="bighouse"&&b.cars.every(c=>c.state==="home")&&Math.random()<.3) return growOn(L,"apts",b); } }
+  // a big, busy town swaps the odd row of townhouses for an apartment block, once everyone who lives there is at home
+  if(people>=200&&cityD.res>1.5&&Math.random()<.12){ for(const L of lots){ const b=L.b; if(L.kind==="dense"&&b&&b.type==="town"&&L.site.w>=32&&L.site.d>=30&&b.cars.every(c=>c.state==="home")) return growOn(L,"apts",b); } }
   return false;
 }
 // the end of a month: taxes from everyone living here and every trip made, less the upkeep of the roads and junctions
@@ -2197,7 +2400,7 @@ function cityMonth(){
 function cityTick(dt){
   monthT+=dt; if(monthT>=MONTH){ monthT-=MONTH; cityMonth(); }
   growT-=dt;
-  if(growT<=0){ growT=1.6; cityDemand(); cityGrow(); updateUI(); demandBars(); }
+  if(growT<=0){ growT=2; cityDemand(); cityGrow(); updateUI(); demandBars(); }
   // a mall for the town once it's big enough
   if(mallsGiven<MALL_AT.length&&people>=MALL_AT[mallsGiven]){ mallsGiven++; tray.mall++; updateUI(); flashTool("nBuild"); setHint("The town is big enough for a mall. Tap Zone, pick Mall and put it beside a good road. It brings lots of customers.",6); }
   cityTips(dt);
@@ -2220,21 +2423,26 @@ function closeDown(d){
 }
 // the little bars beside each zone that say how keen the town is
 function demandBars(){ if(!city) return; document.querySelectorAll("#buildBar [data-z] s").forEach(s=>{ const v=cityD[s.parentNode.parentNode.dataset.z]||0; s.style.height=clamp(v/2,0,1)*100+"%"; }); }
+// plots: an empty one shows its zone colour; one with a building on it is a garden, a forecourt or a yard
+const YARD={res:["#a3cf75","#7aa858"],dense:["#a7d07c","#7aa95a"],com:["#dcd9d1","#c3bfb5"],off:["#e2ded5","#c8c3b8"],ind:["#d3cec2","#a9a397"]};
+const polyPath=P=>{ ctx.beginPath(); P.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); };
 function drawLots(){
   if(!lots.length) return;
   const show=tool==="build"||tool==="erase";
-  for(const L of lots){ if(L.b||!inView(L.x,L.y,L.r)) continue;
-    ctx.save(); ctx.translate(L.x,L.y); ctx.rotate(L.ang-Math.PI/2);
+  for(const L of lots){ if(!inView(L.x,L.y,L.r)) continue;
+    polyPath(L.poly);
+    if(L.b){ const Y=YARD[L.kind]; ctx.fillStyle=Y[0]; ctx.fill();
+      ctx.strokeStyle=show?ZONES[L.kind].col:Y[1]; ctx.lineWidth=L.kind==="res"||L.kind==="dense"?1.4:.9; if(L.kind==="ind") ctx.setLineDash([2,1.5]); ctx.stroke(); ctx.setLineDash([]);
+      if(LOD&&L.trees) for(const tr of L.trees) tree(tr.x,tr.y,tr.r);
+      continue; }
     const col=ZONES[L.kind].col, wait=t<L.cool;
-    ctx.globalAlpha=show?.32:.2; ctx.fillStyle=col; roundRect(-L.w/2,-L.d/2,L.w,L.d,2.5); ctx.fill();
-    ctx.globalAlpha=show?.85:.55; ctx.strokeStyle=wait?"#9a958a":col; ctx.lineWidth=1.3; ctx.setLineDash([3,2.5]); roundRect(-L.w/2+1,-L.d/2+1,L.w-2,L.d-2,2); ctx.stroke(); ctx.setLineDash([]);
-    ctx.restore(); ctx.globalAlpha=1; }
+    ctx.globalAlpha=show?.3:.18; ctx.fillStyle=col; ctx.fill();
+    ctx.globalAlpha=show?.85:.5; ctx.strokeStyle=wait?"#9a958a":col; ctx.lineWidth=1.2; ctx.setLineDash([3,2.5]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
 }
 function drawZoneGhosts(){
   const gs=zoneGhosts; if(!gs||!gs.length) return;
-  for(const g of gs){ ctx.save(); ctx.translate(g.x,g.y); ctx.rotate(g.ang-Math.PI/2); ctx.globalAlpha=.55; ctx.fillStyle=ZONES[g.kind].col; roundRect(-g.w/2,-g.d/2,g.w,g.d,2.5); ctx.fill();
-    ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.2; roundRect(-g.w/2,-g.d/2,g.w,g.d,2.5); ctx.stroke(); ctx.restore(); }
-  if(drag&&drag.mode==="zone"){ const last=gs[gs.length-1]; pill(last.x,last.y-last.r-10/cam.z,gs.length+" lot"+(gs.length>1?"s":"")+" · "+ZONES[last.kind].name,"rgba(36,38,43,.85)"); }
+  for(const g of gs){ polyPath(g.poly); ctx.globalAlpha=.5; ctx.fillStyle=ZONES[g.kind].col; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.3; ctx.stroke(); }
+  if(drag&&drag.mode==="zone"){ const last=gs[gs.length-1]; pill(last.x,last.y-last.r-10/cam.z,gs.length+" plot"+(gs.length>1?"s":"")+" · "+ZONES[last.kind].name,"rgba(36,38,43,.85)"); }
 }
 
 // ---------- UI ----------
@@ -2294,7 +2502,7 @@ document.querySelectorAll("#laneRow button[data-l]").forEach(b=>b.onclick=()=>{ 
   if(roadKind==="one"){ setHint(laneSel+" lane"+(laneSel>1?"s":"")+" going one way. Tap a road to make it one-way, tap again to turn it round.",3); return; }
   setHint(laneSel===3?"6-lane roads are fast and fit three times the cars. They cost three times the road, and nobody wants to live next to one.":laneSel===2?"4-lane avenues are faster and fit twice the cars. They cost twice the road. Tap a road to switch it.":"2-lane streets. Tap a wider road to narrow it and get road back.",3.5); });
 function flashTool(id){ const el=$(id).parentNode; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
-const SHORT={house:"House",bighouse:"Big house",apts:"Apartments",shop:"Shop",mall:"Mall",office:"Office",factory:"Factory",warehouse:"Warehouse",plant:"Plant"};
+const SHORT={house:"House",bighouse:"Big house",apts:"Apartments",town:"Townhouses",shop:"Shop",center:"Shopping center",mall:"Mall",office:"Office",factory:"Factory",warehouse:"Warehouse",plant:"Plant"};
 function updateUI(){
   if(!res) return;
   // in the City builder the road counter is money, and junctions and bridges are bought when there are none in stock
@@ -2304,11 +2512,20 @@ function updateUI(){
   $("nRoad").classList.toggle("zero",res.road<20); $("nRound").classList.toggle("zero",out("round")); $("nLight").classList.toggle("zero",out("light")); $("nBridge").classList.toggle("zero",out("bridge"));
   $("nBuild").textContent=trayCount(); $("nBuild").classList.toggle("zero",trayCount()<=0); $("nBuild").style.display=city&&!trayCount()?"none":"";
   $("buildLb").textContent=city?"Zone":"Build";
-  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel:"-");
+  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide:"-");
   if(city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
     for(const k of ZKEYS){ const Z=ZONES[k], btn=document.createElement("button"); btn.className=zoneSel===k?"sel":""; btn.dataset.z=k; btn.title=Z.tip;
-      btn.innerHTML='<i style="background:'+Z.col+'"></i>'+(k==="dense"?'<span class="zl">Apartments</span><span class="zs">Apts</span>':Z.name)+'<em class="dm"><s></s></em>';
+      btn.innerHTML='<i style="background:'+Z.col+'"></i>'+(k==="dense"?'<span class="zl">Apartments</span><span class="zs">Apts</span>':k==="ind"?'<span class="zl">Industry</span><span class="zs">Ind.</span>':Z.name)+'<em class="dm"><s></s></em>';
       btn.onclick=()=>{ zoneSel=k; placeSel=null; updateUI(); setHint(Z.tip,3.5); }; bb.appendChild(btn); }
+    // how plots are cut: the same size or a random mix, how big, and one side of the road or both
+    const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
+    const chip=(html,title,f)=>{ const c=document.createElement("button"); c.className="chip"; c.innerHTML=html; c.title=title; c.onclick=()=>{ f(); if(!zoneSel){ zoneSel="res"; placeSel=null; } updateUI(); }; bb.appendChild(c); };
+    chip('<span class="zl">Split: </span>'+(plotSplit==="even"?"Even":"Random"),"Cut each strip into plots of the same size, or a random mix of big and small",
+      ()=>{ plotSplit=plotSplit==="even"?"random":"even"; setHint(plotSplit==="even"?"Even: every strip is cut into plots the same size.":"Random: every strip is cut into a mix of big and small plots, like two big ones and a small one.",3.5); });
+    chip('<span class="zl">Size: </span>'+{S:"Small",M:"Medium",L:"Large"}[plotSize],"How wide and deep each plot is",
+      ()=>{ plotSize={S:"M",M:"L",L:"S"}[plotSize]; setHint({S:"Small plots: little houses and corner shops.",M:"Medium plots.",L:"Large plots: big houses with pools, apartment blocks, shopping centers and office towers."}[plotSize],3.5); });
+    chip(plotSide==="both"?'Both sides':'One side',"Zone both sides of the road at once, or just the side you drag on",
+      ()=>{ plotSide=plotSide==="both"?"one":"both"; setHint(plotSide==="both"?"Plots go on both sides of the road you drag along.":"Plots go only on the side of the road you drag on.",3); });
     for(const k of TYPES.filter(q=>tray[q]>0)){ const btn=document.createElement("button"); btn.className=!zoneSel&&placeSel===k?"sel":"";
       btn.innerHTML='<i style="background:'+BT[k].col+'"></i>'+SHORT[k]+" &times;"+tray[k];
       btn.onclick=()=>{ zoneSel=null; placeSel=k; updateUI(); setHint("Put the "+BT[k].name+" down beside a good road.",3); }; bb.appendChild(btn); }
@@ -2460,7 +2677,7 @@ function tapRoad(s,w){
 function buildPt(e,w){ return e.pointerType==="mouse"?w:{x:w.x,y:w.y-38/cam.z}; }
 function eraseAt(w,first){
   if(first){ const b=bldUnder(w,1); if(b){ const L=b.lot; if(deleteBld(b)&&L&&city) removeLot(L); return; } }
-  if(city){ const L=lotUnder(w); if(L&&!L.b){ removeLot(L); return; } }
+  if(city){ const L=lotUnder(w); if(L){ if(L.b&&first) deleteBld(L.b,true); if(!L.b||!blds.includes(L.b)){ removeLot(L); return; } } }
   const n=nodeUnder(w);
   if(n&&n.type!=="plain"&&Math.hypot(n.x-w.x,n.y-w.y)<n.trim){ if(n.type==="round")res.round++; else res.light++; n.type="plain"; n.light=null; afterEdit(); return; }
   const s=segUnder(w,3); if(s){ eraseSeg(s); afterEdit(); }
@@ -2475,7 +2692,9 @@ cv.addEventListener("pointermove",e=>{
   if(tool==="road"&&roadMode==="grid"&&(e.pointerType==="mouse"||drag)) gridCur=w;
   if(!drag) return;
   if(drag.mode==="build"){ if(placeSel) ghost=ghostAt(placeSel,buildPt(e,w)); return; }
-  if(drag.mode==="zone"){ const bp=buildPt(e,w), l=drag.path[drag.path.length-1]; if(Math.hypot(bp.x-l.x,bp.y-l.y)>2/cam.z){ drag.path.push(bp); zoneGhosts=zoneAt(zoneSel,drag.path); } return; }
+  if(drag.mode==="zone"){ const bp=buildPt(e,w), l=drag.path[drag.path.length-1], now=performance.now();
+    // cutting a long strip into plots takes a moment, so the preview catches up a few times a second rather than on every move
+    if(Math.hypot(bp.x-l.x,bp.y-l.y)>2/cam.z){ drag.path.push(bp); if(now-(drag.zt||0)>45){ drag.zt=now; zoneGhosts=zoneAt(zoneSel,drag.path); } } return; }
   if(drag.mode==="line"){ const bp=buildPt(e,w), l=drag.path[drag.path.length-1]; if(Math.hypot(bp.x-l.x,bp.y-l.y)>2/cam.z){ drag.path.push(bp); lineGhosts=lineAt(placeSel,drag.path); } return; }
   if(drag.mode==="move"){ if(Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>6) drag.moved=true; if(moving&&drag.moved) ghost=ghostAt(moving.b.type,{x:w.x+moving.ox,y:w.y+moving.oy},moving.b); return; }
   if(Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>7) drag.moved=true;
@@ -2503,7 +2722,7 @@ function endPtr(e){
   }
   if(dr.mode==="zone"){
     const gs=zoneSel?zoneAt(zoneSel,dr.path):[]; zoneGhosts=null;
-    if(gs.length){ addLots(gs); const nm=ZONES[zoneSel].name; setHint(gs.length>1?"Zoned "+gs.length+" lots for "+nm+". They fill up when the town wants them.":"Zoned a lot for "+nm+". Drag along a road to zone a row at once.",3.5); }
+    if(gs.length){ addLots(gs); const nm=ZONES[zoneSel].name; setHint(gs.length>1?"Marked out "+gs.length+" plots for "+nm+". Something grows on each one when the town wants it.":"Marked out a plot for "+nm+". Drag along a road to do a whole row at once.",3.5); }
     else if(zoneSel) setHint(zoneWhy(zoneSel,dr.path[dr.path.length-1]),3.5);
     return;
   }
@@ -3062,8 +3281,8 @@ function drawNight(){
     if(isHome(b)){ if(lit){ Lt(b.x,b.y,b.r*1.6,b.type==="apts"?.8:.6,"255,184,110"); Gl(b.door.x,b.door.y,4,.8,"255,200,130");
         if(b.type==="apts") for(let k=0;k<8;k++){ const p=toMap(b,(k%4-1.5)*b.w*.28,(k<4?-1:1)*b.d*.5); if(hash(b.id,k+5)<.7) Gl(p.x,p.y,3,.7,"255,205,130"); } }
       else Lt(b.x,b.y,b.r*1.2,.25,"120,140,220"); continue; }
-    if(b.type==="shop"||b.type==="mall"){ const by=b.type==="shop"?3:-1.5, cp=toMap(b,0,(by+b.d/2)/2+1), fr=toMap(b,0,by);
-      Lt(cp.x,cp.y,b.type==="mall"?b.w*.75:b.d*.95,1,"225,236,255"); Lt(b.x,b.y,b.r*1.3,.55,"190,205,255"); Gl(fr.x,fr.y,b.type==="mall"?16:9,.7,"110,170,255"); continue; }
+    if(b.type==="shop"||b.type==="mall"||b.type==="center"){ const big=b.type!=="shop", by=big?-1.5:3, cp=toMap(b,0,(by+b.d/2)/2+1), fr=toMap(b,0,by);
+      Lt(cp.x,cp.y,big?b.w*.75:b.d*.95,1,"225,236,255"); Lt(b.x,b.y,b.r*1.3,.55,"190,205,255"); Gl(fr.x,fr.y,big?16:9,.7,"110,170,255"); continue; }
     if(b.type==="office"){ Lt(b.x,b.y,b.r*1.6,.7,"215,205,255"); Gl(b.x,b.y,b.r*.7,.25,"200,190,255"); continue; }
     // the yards are floodlit
     for(const k of [-1,1]){ const p=toMap(b,k*b.w*.42,b.d*.42); Lt(p.x,p.y,34,.95,"255,168,84"); Gl(p.x,p.y,4,.8,"255,220,170"); } }
@@ -3383,10 +3602,11 @@ function tree(x,y,r){
   ctx.fillStyle="#57973e"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,.55)"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill();
   if(ultra){ ctx.fillStyle="rgba(232,255,195,.6)"; ctx.beginPath(); ctx.arc(x-r*.42,y-r*.46,r*.2,0,7); ctx.fill(); } }
 const growth=(b,dur)=>.6+.4*easeOut(clamp((animT-b.grow)/dur,0,1));
-function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") drawApts(b); else drawHouse(b); }
+function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") (b.lot?drawLotApts:drawApts)(b); else if(b.type==="town") drawTown(b); else drawHouse(b); }
 function drawHouse(b){
   const sc=growth(b,.35), w=b.w, d=b.d, v=b.v;
   const rects=[[-w/2,-d/2,w,d]]; if(b.big) rects.push([-w/2-9,-1,9,d/2+1]);
+  if(b.lot) houseGrounds(b,sc);
   bodyShadow(b,sc,v===3?6:5,rects);
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   if(b.big){ ctx.fillStyle=shade(b.col,-55); ctx.fillRect(-w/2-9.6,-1.6,10,d/2+2.2); ctx.fillStyle=shade(b.col,-16); ctx.fillRect(-w/2-9,-1,9,d/2+1);
@@ -3399,6 +3619,108 @@ function drawHouse(b){
   const home=b.cars.find(c=>c.state==="home");
   if(home&&b.acc) parked(home,b.door.x+b.fx*4.5,b.door.y+b.fy*4.5,b.ang);
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// a house on its own plot: the drive out to the road, and a pool in the back garden
+function houseGrounds(b,sc){
+  const a=Math.atan2(b.fy,b.fx); ctx.save(); ctx.translate(b.door.x,b.door.y); ctx.rotate(a); ctx.fillStyle="#cfcbc1"; ctx.fillRect(-1,-2.4,10.5,4.8); ctx.restore();
+  if(!b.pool) return;
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+  const px=(b.flip?1:-1)*b.w*.18, py=-b.d/2-8;
+  ctx.fillStyle="#efece4"; roundRect(px-6,py-3.6,12,7.2,1.6); ctx.fill(); ctx.fillStyle="#58bde6"; roundRect(px-4.8,py-2.5,9.6,5,1.2); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,.45)"; ctx.fillRect(px-3.6,py-1.6,3,.6); ctx.fillRect(px+.6,py+.4,2.6,.6);
+  ctx.restore();
+}
+// a row of townhouses: a long roof broken up by party walls, a little front garden each and a car out front
+function drawTown(b){
+  const sc=growth(b,.45), n=b.units, w=b.w, d=b.d, uw=(w-4)/n, ud=Math.min(13,d*.45), y0=d/2-7-ud;
+  bodyShadow(b,sc,7,[[-w/2+2,y0,w-4,ud]]);
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+  // fences between the back gardens, and a path to each front door
+  ctx.strokeStyle="rgba(120,100,70,.45)"; ctx.lineWidth=.5; ctx.beginPath();
+  for(let i=1;i<n;i++){ const x=-w/2+2+i*uw; ctx.moveTo(x,y0); ctx.lineTo(x,-d/2+2); } ctx.stroke();
+  ctx.fillStyle="#d3cfc6"; for(let i=0;i<n;i++) ctx.fillRect(-w/2+2+(i+.5)*uw-1.6,y0+ud,3.2,d/2-y0-ud);
+  if(!b.tc) b.tc=b.cols.map(c=>[shade(c,-55),shade(c,sunOn(b,0,-1)*30-2),shade(c,sunOn(b,0,1)*30-8)]);
+  for(let i=0;i<n;i++){ const x=-w/2+2+i*uw, C=b.tc[(i>>1)%b.tc.length];
+    ctx.fillStyle=C[0]; ctx.fillRect(x-.1,y0-.6,uw+.2,ud+1.2);
+    ctx.fillStyle=C[1]; ctx.fillRect(x+.3,y0,uw-.6,ud/2); ctx.fillStyle=C[2]; ctx.fillRect(x+.3,y0+ud/2,uw-.6,ud/2);
+    ctx.fillStyle=C[0]; ctx.fillRect(x+uw*.62,y0+ud*.2,1.8,2.2); }
+  ctx.strokeStyle="rgba(255,255,255,.28)"; ctx.lineWidth=.6; ctx.beginPath(); ctx.moveTo(-w/2+2,y0+ud/2); ctx.lineTo(w/2-2,y0+ud/2); ctx.stroke();
+  ctx.restore();
+  const home=b.cars.filter(c=>c.state==="home");
+  if(LOD) home.slice(0,n).forEach((c,i)=>{ const p=toMap(b,(-w/2+2+(i+.5)*uw+2.6)*sc,(y0+ud+3.4)*sc); parked(c,p.x,p.y,b.ang+Math.PI/2); });
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// an apartment block grown on a plot: one long block, an L or a few towers, with the residents' car park out front
+function drawLotApts(b){
+  const sc=growth(b,.5), w=b.w, d=b.d, col=b.col, edge=shade(col,-48), lite=shade(col,26), [lsx,lsy]=sunPlan(b), v=b.v%3, s=b.flip?-1:1;
+  const pd=clamp(d*.34,13,25), by0=-d/2+3, bh=d-pd-6, bw=w-6;
+  let blocks;
+  if(v===0||bw<36) blocks=[[-bw/2,by0,bw,Math.min(bh,20)]];
+  else if(v===1){ const lw=Math.min(18,bw*.35); blocks=[[-bw/2,by0,bw,Math.min(bh,15)],[s>0?-bw/2:bw/2-lw,by0+Math.min(bh,15),lw,bh-Math.min(bh,15)]]; }
+  else { const m=bw>70?3:2, g=6, tw=(bw-g*(m-1))/m; blocks=[]; for(let i=0;i<m;i++) blocks.push([-bw/2+i*(tw+g),by0,tw,Math.min(bh,tw*1.1)]); }
+  const park=carPark(b,sc,-w/2+3,d/2-pd,w-6,pd-1,pd>=24?[1.5,pd-12.5]:[(pd-11)/2],Math.max(3,Math.floor((w-6)/3.4)));
+  bodyShadow(b,sc,b.floors*3,blocks.filter(r=>r[2]>0&&r[3]>0));
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+  for(const [x,y,ww,hh] of blocks){ if(ww<=0||hh<=0) continue; roofBlock(x,y,ww,hh,col,edge);
+    ctx.strokeStyle=lite; ctx.lineWidth=.6; ctx.strokeRect(x+2.6,y+2.6,ww-5.2,hh-5.2);
+    ctx.fillStyle="rgba(255,255,255,.55)"; for(let xx=x+3;xx<x+ww-4;xx+=6) ctx.fillRect(xx,y+hh-2,3.6,1.3);
+    if(ww>14&&hh>12){ rbox(x+ww*.2,y+hh*.28,Math.min(8,ww*.2),Math.min(6,hh*.24),lsx,lsy,1.8); rbox(x+ww*.62,y+hh*.3,Math.min(6,ww*.15),Math.min(5,hh*.2),lsx,lsy,1.4); } }
+  ctx.restore();
+  fillBays(b,sc,park,b.cars.filter(c=>c.state==="home"));
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+const BRANDS=["#e2493a","#f1c232","#4caf50","#9b59b6","#ff8a3d","#1abc9c","#3d7fe0","#d6457f"];
+// a shopping center: a row of stores, each with its own sign and awning, and a big shared parking lot with two ways in
+function drawCenter(b){
+  const sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
+  const sd=clamp(d*.38,16,28), y0=-d/2+2, n=clamp(Math.floor((w-4)/17),3,8), uw=(w-4)/n;
+  const py=y0+sd+5, ph=d/2-1-py, rows=ph>=35?[1,12,ph-11.5]:ph>=23?[1,ph-12]:[Math.max(0,(ph-11)/2)], per=Math.max(4,Math.floor((w-6)/3.3));
+  const park0=carPark(b,sc,-w/2+3,py,w-6,ph,rows,per,"#d5d2ca"), gx=[-w*.3,w*.3], fr=py+rows[rows.length-1]-1;
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc); ctx.fillStyle="#d5d2ca";
+  for(const x of gx){ ctx.fillRect(x-6,fr,12,d/2-fr); ctx.fillStyle="rgba(255,255,255,.85)"; ctx.fillRect(x-.4,fr+2,.8,3); ctx.fillRect(x-.4,fr+8,.8,3); ctx.fillStyle="#d5d2ca"; }
+  ctx.restore();
+  const park=park0.filter(q=>!(q.y>fr&&gx.some(x=>Math.abs(q.x-x)<8)));
+  bodyShadow(b,sc,8,[[-w/2+2,y0,w-4,sd]]);
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+  ctx.fillStyle="#eeebe3"; ctx.fillRect(-w/2+2,y0+sd,w-4,4.5);
+  for(let i=0;i<n;i++){ const x=-w/2+2+i*uw, bc=BRANDS[(b.id*3+i*5)%BRANDS.length], hh=sd-(i%2?1.5:0);
+    roofBlock(x+.3,y0,uw-.6,hh,i%3===1?"#dfe3e8":"#e9e7e1","#a9a69e");
+    if(uw>10) rbox(x+uw*.22,y0+hh*.28,Math.min(6,uw*.3),Math.min(5,hh*.24),lsx,lsy,1.5);
+    ctx.fillStyle=bc; ctx.fillRect(x+1,y0+hh-2.6,uw-2,2.6);
+    for(let k=0;k<4;k++){ ctx.fillStyle=k%2?"#ffffff":bc; ctx.fillRect(x+2+k*(uw-4)/4,y0+hh,(uw-4)/4,2.2); } }
+  ctx.restore();
+  if(LOD){ for(const k of [-1,1]){ const p=toMap(b,k*(w/2-4)*sc,(d/2-3)*sc); tree(p.x,p.y,3.8*sc); }
+    for(let x=-w/2+14;x<w/2-12;x+=24){ if(gx.some(g=>Math.abs(g-x)<11)) continue; const p=toMap(b,x*sc,(d/2-2.2)*sc); tree(p.x,p.y,3*sc); } }
+  fillBays(b,sc,park,here);
+}
+// an office grown on a plot: a low block with skylights, or a tower in its own plaza; staff park out front
+function drawLotOffice(b){
+  const T=BT.office, sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
+  const pd=clamp(d*.3,13,22), park=carPark(b,sc,-w/2+3,d/2-pd,w-6,pd-1,pd>=24?[1.5,pd-12.5]:[(pd-11)/2],Math.max(3,Math.floor((w-6)/3.4)));
+  if(b.tall){
+    const tw=clamp(w*.5,16,32), td=clamp((d-pd)*.62,14,28), tx=-tw/2, ty=-d/2+2+(d-pd-4-td)/2;
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+    ctx.fillStyle="#ebe7de"; ctx.fillRect(-w/2+2,-d/2+2,w-4,d-pd-3);
+    ctx.fillStyle="#9fcf7a"; ctx.fillRect(-w/2+4,-d/2+4,Math.max(2,(w-tw)/2-6),d-pd-7); ctx.fillRect(tw/2+2,-d/2+4,Math.max(2,(w-tw)/2-6),d-pd-7);
+    ctx.restore();
+    bodyShadow(b,sc,b.floors*3.2,[[tx,ty,tw,td]]);
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+    roofBlock(tx,ty,tw,td,T.col,T.dark); ctx.fillStyle=shade(T.col,-12); ctx.fillRect(tx+2.5,ty+2.5,tw-5,td-5); sheen(tx+2.5,ty+2.5,tw-5,td-5,b.id);
+    ctx.strokeStyle="rgba(220,205,255,.55)"; ctx.lineWidth=.45; ctx.beginPath(); for(let x=tx+4.5;x<tx+tw-3;x+=4.2){ ctx.moveTo(x,ty+2.5); ctx.lineTo(x,ty+td-2.5); } ctx.stroke();
+    rbox(tx+tw*.3,ty+td*.3,Math.min(9,tw*.3),Math.min(7,td*.28),lsx,lsy,2.4,shade(T.col,30),T.dark);
+    ctx.strokeStyle="#fff"; ctx.globalAlpha=.75; ctx.lineWidth=.8; ctx.beginPath(); ctx.arc(tx+tw*.72,ty+td*.62,Math.min(4,tw*.12),0,7); ctx.stroke(); ctx.globalAlpha=1;
+    ctx.restore();
+  } else {
+    const bw=w-8, bh=d-pd-6;
+    bodyShadow(b,sc,b.floors*3.5,[[-bw/2,-d/2+3,bw,bh]]);
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
+    ctx.fillStyle=T.dark; roundRect(-bw/2,-d/2+3,bw,bh,1.5); ctx.fill(); ctx.fillStyle=T.col; ctx.fillRect(-bw/2+2,-d/2+5,bw-4,bh-4);
+    ctx.strokeStyle=T.light; ctx.globalAlpha=.5; ctx.lineWidth=.8; ctx.strokeRect(-bw/2+4,-d/2+7,bw-8,bh-8); ctx.globalAlpha=1;
+    ctx.fillStyle="rgba(215,235,255,.7)"; for(let x=-bw/2+7;x<bw/2-9;x+=11) ctx.fillRect(x,-d/2+8,6,bh-10);
+    rbox(-bw/2+5,-d/2+6,6,5,lsx,lsy,1.6); rbox(bw/2-11,-d/2+6,6,5,lsx,lsy,1.6);
+    ctx.restore();
+  }
+  fillBays(b,sc,park,here);
 }
 function needsRoad(b){ ctx.fillStyle="rgba(255,255,255,.85)"; ctx.beginPath(); ctx.arc(b.x,b.y-b.r-5,3,0,7); ctx.fill();
   ctx.fillStyle="#e2493a"; ctx.beginPath(); ctx.arc(b.x,b.y-b.r-5,1.8,0,7); ctx.fill(); }
@@ -3462,6 +3784,8 @@ function lot(b,sc,x0,y0,w,h,n,col){
   ctx.restore();
 }
 function drawDest(b){
+  if(b.type==="center") return drawCenter(b);
+  if(b.type==="office"&&b.lot) return drawLotOffice(b);
   const T=DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
   const th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b);
   const here=parkedAt.get(b)||[];
@@ -3904,7 +4228,11 @@ window.__gridlock={
     grown:lots.filter(L=>L.b).map(L=>L.b.type).reduce((o,k)=>(o[k]=(o[k]||0)+1,o),{}),dem:Object.fromEntries(ZKEYS.map(k=>[k,+cityD[k].toFixed(2)])),tray:trayCount(),level}),
   newCity:()=>{ $("ovStart").classList.remove("show"); newGame(false,true); },
   zone:(kind,path)=>{ zoneSel=kind; const gs=zoneAt(kind,path); addLots(gs); return gs.length; },
+  zonePlan:(kind,path)=>zoneAt(kind,path).length,
+  cash:v=>{ res.road=v; updateUI(); },
   zoneSel:k=>{ if(k!==undefined){ zoneSel=k; updateUI(); } return zoneSel; },
+  plotOpts:o=>{ if(o){ if(o.split) plotSplit=o.split; if(o.size) plotSize=o.size; if(o.side) plotSide=o.side; updateUI(); } return {split:plotSplit,size:plotSize,side:plotSide}; },
+  lotPolys:()=>lots.map(L=>({k:L.kind,b:L.b?L.b.type:null,poly:L.poly.map(p=>[Math.round(p.x),Math.round(p.y)]),site:{w:Math.round(L.site.w),d:Math.round(L.site.d)}})),
   setOver:(id,v)=>{ const b=blds.find(q=>q.id===id); if(b) b.over=v; return !!b; },
   lotInfo:()=>lots.map(L=>({k:L.kind,x:Math.round(L.x),y:Math.round(L.y),b:L.b?L.b.type:null,cool:Math.round(L.cool-t),acc:!!lotAccess(L)})),
   pick:i=>{ const b=document.querySelectorAll("#ups .up")[i||0]; if(b) b.click(); },
