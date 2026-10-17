@@ -77,6 +77,8 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 @keyframes flashTool{50%{background:rgba(226,73,58,.18)}}
 .tool.info{cursor:default}
 .tool .ls{display:none}
+/* on a PC the right mouse button moves the map, so it needs no button */
+body:not(.touch) .tool[data-tool="pan"]{display:none}
 @media (max-width:440px){.tool{width:47px;height:54px;font-size:9.5px}.tool svg{width:22px;height:22px}.tool .n{font-size:9px;padding:0 3px;min-width:16px;height:15px}.tool .lb{display:none}.tool .ls{display:inline}}
 #buildBar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 82px);z-index:5;
   display:flex;flex-wrap:wrap;justify-content:center;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;box-shadow:0 3px 12px rgba(0,0,0,.08);width:max-content;max-width:calc(100vw - 12px)}
@@ -330,7 +332,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 6.9</div>
+    <div class="small">Version 7.0</div>
   </div>
 </div>
 
@@ -344,7 +346,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 6.9</div>
+    <div class="small">Version 7.0</div>
   </div>
 </div>
 
@@ -356,6 +358,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="fsec"><span>Money in</span><span>a month</span></div>
     <div class="frow" id="finRowR"><span>Home tax<small></small></span><input type="range" id="finTaxR" min="0" max="20" step="1" aria-label="Home tax"><b></b><em></em></div>
     <div class="frow" id="finRowB"><span>Business tax<small></small></span><input type="range" id="finTaxB" min="0" max="20" step="1" aria-label="Business tax"><b></b><em></em></div>
+    <div class="frow" id="finRowP"><span>Parking fees<small></small></span><input type="range" id="finPark" min="0" max="5" step="0.5" aria-label="Parking fee"><b></b><em></em></div>
     <div class="frow tot" id="finIn"><span>Total in</span><i></i><b></b><em></em></div>
     <div class="fsec"><span>Money out</span><span>budget</span></div>
     <div id="finOut"></div>
@@ -438,7 +441,7 @@ const BT={
   police:  {svc:true,w:38,d:32,r:25,col:"#2d4e9c",name:"police station",names:"police stations"},
   clinic:  {svc:true,w:48,d:40,r:31,col:"#e2493a",name:"hospital",names:"hospitals"},
   school:  {svc:true,w:58,d:46,r:37,col:"#e0a23a",name:"school",names:"schools"},
-  daycare: {svc:true,w:30,d:28,r:21,col:"#e06aa6",name:"daycare",names:"daycares"},
+  daycare: {svc:true,w:24,d:22,r:17,col:"#e06aa6",name:"daycare",names:"daycares"},
   depot:   {svc:true,w:48,d:38,r:31,col:"#f08c1a",name:"road depot",names:"road depots"},
   parking: {svc:true,w:44,d:36,r:28,col:"#6d7f8f",name:"parking lot",names:"parking lots"},
   garage:  {svc:true,w:40,d:36,r:27,col:"#8f8b82",name:"parking garage",names:"parking garages"},
@@ -461,6 +464,7 @@ const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 
 let isTouch=matchMedia("(pointer:coarse)").matches;
 try{ const dv=localStorage.getItem("deviceType"); if(dv==="pc")isTouch=false; else if(dv==="mobile")isTouch=true; }catch(e){}
+document.body.classList.toggle("touch",isTouch);
 $("ctrlLine").textContent=isTouch
   ? "One finger draws. Tap a road to switch it to 2, 4 or 6 lanes, or to one-way. Two fingers move and zoom the map. With Build, drag a new building to where you want it, or turn on Line and drag along a road for a whole row. Drag a building that's already there to move it."
   : "Left-drag draws (hold Shift for a dead-straight road), right-drag moves the map, wheel zooms. Middle-drag or space-drag move it too. Click a road to switch its lanes. With Build, click to put a building down, turn on Line and drag along a road for a whole row, or drag a building to move it. Keys: 1-5 tools, B build, T tune, G grid, L add lane, O overpass, Q road width, H highway, N one-way, Esc menu (or cancels a grid), P pause and keep building, F speed.";
@@ -479,6 +483,8 @@ let lineMode=false, lineGhosts=null, grid=null, gridCur=null, tuneNode=null, mal
 const emptyTray=()=>{ const o={}; for(const k of TYPES) o[k]=0; return o; };
 
 // ---------- geometry ----------
+// what one unit of road costs: road length in the traffic game, money in the City builder, where roads are cheap
+const RDK=()=>city?.5:1;
 function projSeg(px,py,ax,ay,bx,by){ const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy||1e-9; let t=((px-ax)*dx+(py-ay)*dy)/l2; t=clamp(t,0,1);
   const x=ax+dx*t,y=ay+dy*t; return {t,x,y,d:Math.hypot(px-x,py-y)}; }
 // how far a road centreline a→c passes from a building's footprint (0 if it runs through it)
@@ -1156,8 +1162,8 @@ function makePlan(S,raw,wEnd,lanes0,forceStraight,over,kind){
 const planHW=pl=>pl.ow?pl.lanes*LW/2+KERB:halfW(pl.lanes);
 function validatePlan(pl){
   let len=0; for(let i=1;i<pl.pts.length;i++) len+=D(pl.pts[i-1],pl.pts[i]);
-  pl.len=len; pl.cost=len*pl.lanes*(pl.ow?.5:1); pl.ok=true; pl.reason="";
-  for(const P of [pl.S,pl.E]) if(P.slide&&P.node.segs.length) pl.cost+=P.slide*totL(segs.get(P.node.segs[0]))/2;
+  pl.len=len; pl.cost=len*pl.lanes*(pl.ow?.5:1)*RDK(); pl.ok=true; pl.reason="";
+  for(const P of [pl.S,pl.E]) if(P.slide&&P.node.segs.length) pl.cost+=P.slide*totL(segs.get(P.node.segs[0]))/2*RDK();
   if(len<12){ pl.ok=false; return; }
   if(pl.pts.length===2&&pl.S.kind==="node"&&pl.E.kind==="node"&&(pl.S.node===pl.E.node||segBetween(pl.S.node,pl.E.node))){ pl.ok=false; pl.reason="There's already a road there."; return; }
   let br=0, inW=false;
@@ -1248,7 +1254,7 @@ function commitPlan(pl,quiet){
   // a road that joined or crossed right beside an old joint leaves a stub of road there: make it one piece again
   for(const n of [...nodes.values()]) if(n.id<nid0&&n.segs.length===2&&n.segs.some(id=>id>=sid0)) healJoint(n);
   // pay for what actually got built (a stretch that's already road costs nothing)
-  const built=roadUsed()-used0; res.road-=Math.max(0,built);
+  const built=roadUsed()-used0; res.road-=Math.max(0,built)*RDK();
   if(built>1){ if(city){ const need=pl.bridges-res.bridge; if(need>0){ res.road-=need*PRICE.bridge; res.bridge+=need; } } res.bridge-=pl.bridges; }
   firstRoad=true; layRoad(st.made);
   if(!quiet) afterEdit();
@@ -1277,7 +1283,7 @@ function setLanes(seg,lanes){
     setHint("That's a ramp onto a highway, so it has to stay one-way. Pick One-way to turn it round.",3.5); return false; }
   if(seg.lf===lanes&&seg.lb===lanes&&!seg.hwy){ setHint("That's already a "+LNAME[lanes]+". Pick another width above, then tap it.",3); return false; }
   const chain=chainOf(seg);
-  let cost=0; for(const s of chain) cost+=s.len*(lanes-totL(s)/2);
+  let cost=0; for(const s of chain) cost+=s.len*(lanes-totL(s)/2)*RDK();
   if(cost>res.road){ flashTool("nRoad"); setHint(lack("Not enough road left to widen that."),3); return false; }
   if(halfW(lanes)>segHW(seg)){ for(const s of chain){ const A=nodes.get(s.a),B=nodes.get(s.b);
     for(const b of blds){ if(footD(b,A,B)<halfW(lanes)+1){ setHint("No room for "+lanes*2+" lanes next to that building.",3); effects.push({k:"ring",x:b.x,y:b.y,c:"#e2493a",t:0,life:.8,r:b.r}); return false; } }
@@ -1307,7 +1313,7 @@ function addLane(seg,p0,p1,side){
   if(want.some(o=>o.R>3||o.L>3)){
     if(side==="one"&&want.every(o=>o.R&&o.L)){ setHint("That side already has 3 lanes. Pick Both sides to take the road back down.",3); return undo(); }
     down=true; for(const o of want){ const one=!(o.fwd?o.s.lb:o.s.lf)||!(o.fwd?o.s.lf:o.s.lb); o.R=o.R?1:0; o.L=o.L?1:0; if(!one){ o.R=1; o.L=1; } } }
-  let cost=0; for(const o of want) cost+=o.s.len*(o.R+o.L-totL(o.s))/2;
+  let cost=0; for(const o of want) cost+=o.s.len*(o.R+o.L-totL(o.s))/2*RDK();
   if(cost>res.road){ flashTool("nRoad"); setHint(lack("Not enough road left for more lanes there."),3); return undo(); }
   for(const o of want){ const w2=(o.R+o.L)*LW/2+KERB; if(w2<=segHW(o.s)) continue; const A=nodes.get(o.s.a),B=nodes.get(o.s.b);
     for(const b of blds) if(footD(b,A,B)<w2+1){ setHint("No room for another lane next to that building.",3); effects.push({k:"ring",x:b.x,y:b.y,c:"#e2493a",t:0,life:.8,r:b.r}); return undo(); }
@@ -1352,7 +1358,7 @@ function makeOneWay(seg,w,lanes){
   if(seg.hwy){ setHint("Highways stay two-way. Draw one-way ramps to get on and off them.",3); return false; }
   const ch=orientedChain(seg), A=nodes.get(seg.a);
   const along=oneWay(seg)?!seg.lf:((w.x-A.x)*-seg.uy+(w.y-A.y)*seg.ux)>0;   // traffic will run the way the pieces are walked
-  let cost=0; for(const {s} of ch) cost+=s.len*(lanes-totL(s))/2;
+  let cost=0; for(const {s} of ch) cost+=s.len*(lanes-totL(s))/2*RDK();
   if(cost>res.road){ flashTool("nRoad"); setHint(lack("Not enough road left for that."),3); return false; }
   const w2=lanes*LW/2+KERB;
   for(const {s} of ch){ if(w2<=segHW(s)) continue; const P=nodes.get(s.a),Q=nodes.get(s.b);
@@ -1367,7 +1373,7 @@ function makeOneWay(seg,w,lanes){
 function eraseSeg(s){
   if(!segs.has(s.id)) return;
   if(s.fixed){ setHint("That road leads out of the map, where the trucks come from, so it stays.",3); return; }
-  res.road+=segUse(s); if(s.bridgeHead) res.bridge++;
+  res.road+=segUse(s)*RDK(); if(s.bridgeHead) res.bridge++;
   removeSeg(s);
 }
 function setNodeType(n,type){
@@ -2110,7 +2116,7 @@ function deleteBld(b,force){
 // in, then the walls rise floor by floor (with a tower crane over anything tall) until it's finished. Nobody moves in
 // and nothing opens until then.
 function startWork(b){
-  const h=Math.max(0,...footprint(b).map(r=>r.h)), dur=city?5+Math.min(12,h*.45):2.5;
+  const h=Math.max(0,...footprint(b).map(r=>r.h)), dur=city?4+Math.min(9,h*.35):2.5;
   b.cons={t0:t,dur,h,v:[{len:6.5,wid:3,truck:true,col:"#f2b632",cab:"#f2b632"},{len:9,wid:3.2,truck:true,col:"#dcd9d0",cab:"#e07b24"}]};
   b.born=Math.max(b.born,t+dur);
   for(const c of b.cars) c.cool+=dur;
@@ -2264,8 +2270,8 @@ function newGame(isRelaxed,isCity){
   score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; plantGiven=false; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false; partsHinted=false;
   // nothing is built yet: the first shop and houses are yours to place
   tray=emptyTray(); tray.shop=1; tray.house=6; placeSel="shop"; ghost=null; moving=null; buildHinted=true;
-  cityTab="zones"; firstFire=firstSick=firstWorn=false; utilStat={pow:[0,0],wat:[0,0]}; happyAvg=0; taxR=taxB=9; for(const k in BUDK) budget[k]=1; finLog=[]; finLast=null; hapTax=0; taxHintT=-99; svcT=svcDT=0; utilHintT=-99; tourism=0; parkHintT=-99;
-  lots=[]; lotId=1; zoneSel="res"; zoneGhosts=null; zpts=null; growT=3; monthT=0; month=1; monthTrips=0; lastIn=lastOut=0; people=0; mallsGiven=0; cityTip=0; closedN=0; closeHintT=-99; compKey=-1; wantT={};
+  cityTab="zones"; firstFire=firstSick=firstWorn=false; utilStat={pow:[0,0],wat:[0,0]}; happyAvg=0; taxR=taxB=9; parkFee=2; parkWant=0; for(const k in BUDK) budget[k]=1; finLog=[]; finLast=null; hapTax=0; taxHintT=-99; svcT=svcDT=0; utilHintT=-99; tourism=0; parkHintT=-99;
+  lots=[]; lotId=1; zoneSel="res"; zoneGhosts=null; zpts=null; growT=3; monthT=0; month=1; monthTrips=0; lastIn=lastOut=0; people=0; mallsGiven=0; cityTip=0; closedN=0; closeHintT=-99; compKey=-1; wantT={}; stuckT={};
   for(const k of ZKEYS) cityD[k]=0;
   // in the City builder nothing comes to place: you zone land and it fills itself, and road costs money
   if(city){ tray=emptyTray(); placeSel=null; res={road:CITY_START,round:0,light:0,bridge:0}; }
@@ -2276,7 +2282,7 @@ function newGame(isRelaxed,isCity){
   cam.x=MW/2; cam.y=MH/2;
   cam.z=vw<640?vw/420:Math.min(vw/760,vh/520); clampCam();
   running=true; setFrozen(false);
-  if(city){ setTool("road"); setHint("Draw some roads to start the town. Road costs $1 a metre, and you have "+money(CITY_START)+".",0); updateUI(); return; }
+  if(city){ setTool("road"); setHint("Draw some roads to start the town. Road costs 50¢ a metre, and you have "+money(CITY_START)+".",0); updateUI(); return; }
   setTool("build");
   setHint(isTouch?"The map is empty. Drag your shop and houses onto the map, then draw roads to join them up.":"The map is empty. Click to put down your shop and houses, then draw roads to join them up.",0);
   updateUI();
@@ -2345,7 +2351,7 @@ function levelUp(){
 // are people. Roads, roundabouts, lights and bridges cost money, and the town pays taxes at the end of every month.
 // A business nobody can get to closes down and its lot waits to grow again, instead of the game ending.
 let city=false, zoneSel="res", lots=[], lotId=1, zoneGhosts=null, zpts=null, zKey="", zT=0, zMs=0, viewZ=0, cityD={res:0,dense:0,com:0,off:0,ind:0,mixed:0};
-let closedN=0, closeHintT=-99, growT=0, monthT=0, month=1, monthTrips=0, lastIn=0, lastOut=0, people=0, mallsGiven=0, cityTip=0, compKey=-1, comp=new Map(), wantT={};
+let closedN=0, closeHintT=-99, growT=0, monthT=0, month=1, monthTrips=0, lastIn=0, lastOut=0, people=0, mallsGiven=0, cityTip=0, compKey=-1, comp=new Map(), wantT={}, stuckT={};
 const ZONES={
   res:  {name:"Homes",     foot:"house",    col:"#6fbf4f",tip:"Homes: tap the corners of some land, then the first corner again, and it fills with plots. Or drag along a road for a row. A house grows on each one when people want to move in, set back down a long drive on a deep plot."},
   dense:{name:"Apartments",foot:"apts",     col:"#2f6e3d",tip:"Apartments: rows of townhouses, and now and then an apartment block once the town is big and busy. Lots of cars."},
@@ -2356,11 +2362,11 @@ const ZONES={
 };
 const ZKEYS=Object.keys(ZONES);
 const PRICE={round:250,light:200,bridge:400};
-const MONTH=30, CITY_START=9000, TAX_HOME=2.2, TAX_TRIP=1.6, UPKEEP=.025, MALL_AT=[150,350,650,1000];
+const MONTH=30, CITY_START=15000, TAX_HOME=2.2, TAX_TRIP=1.6, UPKEEP=.018, MALL_AT=[150,350,650,1000];
 // taxes and budgets, set in the Finance panel. Taxes on homes and on businesses go from 0 to 20%: low ones bring
 // people and businesses in, high ones bring money in, and too high drives them away. Each service has a budget from
 // nothing to half as much again: less reaches less far and does less, more reaches further and does more
-let taxR=9, taxB=9, budget={}, finLog=[], finLast=null, hapTax=0, taxHintT=-99;
+let taxR=9, taxB=9, parkFee=2, parkWant=0, budget={}, finLog=[], finLast=null, hapTax=0, taxHintT=-99;
 const BUDK={roads:"Roads",pow:"Power",wat:"Water",fire:"Fire",police:"Police",health:"Health",edu:"Schools",parks:"Parks"};
 const SVC_BUD={power:"pow",solar:"pow",water:"wat",pump:"wat",fire:"fire",police:"police",clinic:"health",school:"edu",daycare:"edu",park:"parks",bigpark:"parks",plaza:"parks",beach:"parks",marina:"parks",depot:"roads"};
 for(const k in BUDK) budget[k]=1;
@@ -2369,9 +2375,9 @@ const reachK=b=>b<=0?0:.55+.45*Math.min(b,1.5);     // half the budget reaches .
 const outK=b=>b<=0?0:.3+.7*Math.min(b,1.5);        // and does .65 as much, or 1.35
 const svcR=type=>SVC[type].R*reachK(budOf(type));
 // how taxes on homes sit with people, and how keen they make others to move in
-const taxHappy=r=>r<=9?(9-r)*.8:-(r-9)*(1.2+(r-9)*.12);
-const taxPull=r=>r<=9?(9-r)*.2:-(r-9)*.35-Math.max(0,r-13)*.4;
-const bizPull=r=>r<=9?(9-r)*.05:-(r-9)*.12;
+const taxHappy=r=>r<=13?(13-r)*.45:-(r-13)*(1.3+(r-13)*.15);
+const taxPull=r=>r<=13?(13-r)*.12:-(r-13)*.4-Math.max(0,r-16)*.4;
+const bizPull=r=>r<=13?(13-r)*.04:-(r-13)*.12;
 const money=v=>(v<0?"-$":"$")+Math.abs(Math.round(v)).toLocaleString("en-US");
 const kmoney=v=>{ const a=Math.abs(v), s=v<0?"-$":"$"; return a>=10000?s+Math.round(a/1000)+"k":a>=1000?s+(a/1000).toFixed(1)+"k":s+Math.round(a); };
 const cost$=v=>city?money(v):Math.round(v)+" m";
@@ -2549,12 +2555,12 @@ function areaRuns(area,kind){
 // a drag beside one, or filling an area drawn round some land
 function zoneAt(kind,path,closed){
   const Z=PLOT[kind], W=Z.w*PSIZE[plotSize], out=[]; if(!path.length) return out;
-  const others=lots.map(L=>({x:L.x,y:L.y,r:L.r,poly:L.poly}));
+  const others=lots.map(L=>({x:L.x,y:L.y,r:L.r,poly:L.poly,L})), ext=[]; out.ext=[];
   for(const b of blds) if(!b.lot) others.push({x:b.x,y:b.y,r:b.r+4,poly:rectPoly(b.x,b.y,b.ang,b.w+4,b.d+4)});
   // a tap, or a drag too short to mean a row, makes one plot centred where you pressed
   let pl=0; for(let i=1;i<path.length;i++) pl+=Math.hypot(path[i].x-path[i-1].x,path[i].y-path[i-1].y);
   const area=(closed&&path.length>=3&&Math.abs(polyArea(path))>=250)||isArea(path)?path:null, tap=!area&&pl<10; if(tap) path=[path[path.length-1]];
-  for(const R of area?areaRuns(area,kind):frontage(path,kind)){
+  for(const R0 of area?areaRuns(area,kind):frontage(path,kind)) for(const R of tap?[R0]:freeRuns(R0,others,area?Z.mw:W*.55,ext)){
     let P=R.pts;
     if(tap){ const m=P[0]; P=R.pts=[-1,1].map(k=>({x:m.x+m.ux*k*W/2,y:m.y+m.uy*k*W/2,nx:m.nx,ny:m.ny,ux:m.ux,uy:m.uy})); }
     P[0].a=0; for(let i=1;i<P.length;i++) P[i].a=P[i-1].a+Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);
@@ -2596,7 +2602,63 @@ function zoneAt(kind,path,closed){
       const c=polyMid(Q); let r=0; for(const p of Q) r=Math.max(r,Math.hypot(p.x-c.x,p.y-c.y));
       out.push({kind,poly:Q,x:c.x,y:c.y,r,site,ang:site.ang,w:site.w,d:site.d,size:plotSize}); }
   }
+  // a stretch too short for a plot of its own, beside one already there: that plot takes it in, so no gap is left
+  const grown=new Map();
+  for(const e of ext) for(const O of e.O){ if(!O.L) continue;
+    const A=e.A, B=e.B, N=unitV({x:0,y:0},{x:A.nx+B.nx,y:A.ny+B.ny}), base=grown.get(O.L)||O.poly;
+    let d=0; for(const q of base) d=Math.max(d,(q.x-A.x)*N.x+(q.y-A.y)*N.y); d=clamp(d,4,2*PLOT[kind].d*PSIZE[plotSize]);
+    let Q=[{x:A.x,y:A.y},{x:B.x,y:B.y},{x:B.x+B.nx*d,y:B.y+B.ny*d},{x:A.x+A.nx*d,y:A.y+A.ny*d}]; if(polyArea(Q)<0) Q.reverse();
+    Q=roadClip(Q,e.near); if(Q.length<3) continue;
+    for(const o of others.concat(out)){ if(o.L===O.L) continue; const m=polyMid(Q); if(Math.hypot(o.x-m.x,o.y-m.y)>o.r+e.len+d) continue; Q=sepClip(Q,o.poly); if(Q.length<3) break; }
+    if(Q.length<3||Math.abs(polyArea(Q))<4) continue;
+    const U=hull(base.concat(Q));
+    if(Math.abs(polyArea(U))>(Math.abs(polyArea(base))+Math.abs(polyArea(Q)))*1.06+6) continue;
+    grown.set(O.L,U); break; }
+  for(const [L,poly] of grown) out.ext.push({L,poly});
   return out;
+}
+// the run, less the stretches of it already zoned, so new plots fill right up to the old ones. A free stretch too
+// short for a plot, beside an old plot, is handed back in ext for that plot to take in
+function freeRuns(R,others,minLen,ext){
+  const P=R.pts; P[0].a=0; for(let i=1;i<P.length;i++) P[i].a=P[i-1].a+Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);
+  const len=P[P.length-1].a; if(len<2) return [R];
+  let x0=1e9, y0=1e9, x1=-1e9, y1=-1e9; for(const q of P){ x0=Math.min(x0,q.x); y0=Math.min(y0,q.y); x1=Math.max(x1,q.x); y1=Math.max(y1,q.y); }
+  const near=others.filter(O=>O.x+O.r>x0-12&&O.x-O.r<x1+12&&O.y+O.r>y0-12&&O.y-O.r<y1+12); if(!near.length) return [R];
+  // what's just in from the front edge at a spot along the run
+  const occ=s=>{ const q=runAt(R,s), x=q.x+q.nx*4, y=q.y+q.ny*4; for(const O of near) if(Math.hypot(O.x-x,O.y-y)<O.r+1&&inPoly(O.poly,x,y)) return O; return null; };
+  const n=Math.max(2,Math.ceil(len/2)), st=[]; for(let i=0;i<=n;i++) st.push(occ(len*i/n));
+  if(st.every(o=>!o)) return [R];
+  const sAt=i=>len*i/n;
+  const mk=sv=>{ const q=runAt(R,sv); let i=1; while(i<P.length-1&&P[i].a<sv) i++; const b=P[i]; return {x:q.x,y:q.y,nx:q.nx,ny:q.ny,ux:b.ux,uy:b.uy,s:b.s}; };
+  const runs=[]; let i=0;
+  while(i<=n){ if(st[i]){ i++; continue; } let j=i; while(j<n&&!st[j+1]) j++;
+    const before=i>0?st[i-1]:null, after=j<n?st[j+1]:null;
+    // the edges between taken and free, found more closely
+    let s0=0, s1=len;
+    if(before){ let lo=sAt(i-1), hi=sAt(i); for(let k=0;k<7;k++){ const m=(lo+hi)/2; if(occ(m)) lo=m; else hi=m; } s0=hi; }
+    if(after){ let lo=sAt(j), hi=sAt(j+1); for(let k=0;k<7;k++){ const m=(lo+hi)/2; if(occ(m)) hi=m; else lo=m; } s1=lo; }
+    if(s1-s0>.5){
+      if(s1-s0>=minLen||!(before||after)){ const pts=[mk(s0)]; for(const q of P) if(q.a>s0+.3&&q.a<s1-.3) pts.push(Object.assign({},q)); pts.push(mk(s1)); runs.push({pts,D:R.D,near:R.near}); }
+      else ext.push({A:runAt(R,s0),B:runAt(R,s1),len:s1-s0,near:R.near,O:[before,after].filter(Boolean)}); }
+    i=j+1; }
+  return runs;
+}
+// cut a plot back from any road that comes too close: a side road at a corner, or the road bending round
+function roadClip(Q,near){
+  const mid=polyMid(Q);
+  let qx0=1e9, qy0=1e9, qx1=-1e9, qy1=-1e9; for(const p of Q){ qx0=Math.min(qx0,p.x); qy0=Math.min(qy0,p.y); qx1=Math.max(qx1,p.x); qy1=Math.max(qy1,p.y); }
+  for(const nb of near){ const sg=nb.s, SA=nb.A, SB=nb.B, hw=nb.hw+SETBACK-.6;
+    if(nb.x1<qx0-hw||nb.x0>qx1+hw||nb.y1<qy0-hw||nb.y0>qy1+hw||polySegD(Q,SA,SB)>=hw) continue;
+    let nx=-sg.uy, ny=sg.ux; const sd=(mid.x-SA.x)*nx+(mid.y-SA.y)*ny>=0?1:-1; nx*=sd; ny*=sd;
+    Q=clipHalf(Q,nx,ny,SA.x*nx+SA.y*ny+hw); if(Q.length<3) break; }
+  return Q;
+}
+// the convex hull round some points
+function hull(pts){
+  const P=pts.slice().sort((a,b)=>a.x-b.x||a.y-b.y), cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x), lo=[], up=[];
+  for(const p of P){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+  for(let i=P.length-1;i>=0;i--){ const p=P[i]; while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+  lo.pop(); up.pop(); return lo.concat(up).map(p=>({x:p.x,y:p.y}));
 }
 function zoneWhy(kind,p,path,closed){
   if(path&&(closed||isArea(path))) return "Put the corners round a road, or right up against one, so its plots can reach it.";
@@ -2697,9 +2759,13 @@ function zoneUndo(){ if(!zpts) return; zpts.pop(); zKey="";
   if(!zpts.length){ zpts=null; zoneGhosts=null; setHint("Corners cleared. Tap the corners of the land you want.",2.5); } else zoneHint(); updateUI(); }
 function zoneCancel(){ if(!zpts) return; zpts=null; zoneGhosts=null; zKey=""; setHint("Zoning cancelled.",2); updateUI(); }
 function zoneMade(gs,path,closed){
+  const ex=gs.ext||[]; for(const e of ex) growLot(e.L,e.poly);
+  if(!gs.length&&ex.length){ setHint(ex.length>1?"The gaps went to the plots beside them.":"That gap went to the plot beside it.",3); tver++; return; }
   if(gs.length){ addLots(gs); const nm=ZONES[zoneSel].name; setHint(gs.length>1?"Marked out "+gs.length+" plots for "+nm+". Something grows on each one when the town wants it.":"Marked out a plot for "+nm+". Tap the corners of some land to fill it, or drag along a road for a row.",3.5); }
   else setHint(zoneWhy(zoneSel,path[path.length-1],path,closed),3.5);
 }
+// a plot taking in a gap beside it: its building stays where it is, with more garden round it
+function growLot(L,poly){ L.poly=poly; const c=polyMid(poly); let r=0; for(const p of poly) r=Math.max(r,Math.hypot(p.x-c.x,p.y-c.y)); L.x=c.x; L.y=c.y; L.r=r; L.ver=-1; tver++; }
 function addLots(gs){ for(const g of gs) lots.push(Object.assign(g,{id:lotId++,b:null,cool:0,ver:-1,acc:null})); tver++; }
 function lotUnder(w){ for(const L of lots) if(Math.hypot(w.x-L.x,w.y-L.y)<L.r+2&&inPoly(L.poly,w.x,w.y)) return L; return null; }
 function removeLot(L){ const i=lots.indexOf(L); if(i>=0) lots.splice(i,1); effects.push({k:"puff",x:L.x,y:L.y,t:0,life:.5,big:L.r*.5}); tver++; }
@@ -2722,6 +2788,9 @@ function cityComp(){ if(compKey===tver) return; compKey=tver; const P=new Map(),
   comp=new Map(); for(const n of nodes.values()) comp.set(n.id,f(n.id)); }
 const compOf=acc=>{ const s=acc&&segs.get(acc.seg); return s?comp.get(s.a):null; };
 
+// how keen the town has to be on a kind before anything grows there (the bars beside the zones start from here), and
+// how many buildings can start going up at once
+const GROW_AT={res:.1,dense:.2,mixed:.25,com:.25,off:.25,ind:.25}, GROW_MAX=4;
 // what the town wants next, in buildings' worth: people come for jobs and shops, and shops and jobs follow people
 function cityDemand(){
   let R=0, Rc=0, nC=0, nO=0, nI=0, nH=0, hk=0;
@@ -2836,28 +2905,51 @@ function yardTrees(L,b){
     out.push({x,y,r:rnd(3.2,4.8)}); }
   return out;
 }
+// why an empty plot can't grow anything yet: no way in from a road, no power or water reaching it, or (for a business)
+// no homes joined to it by road for its customers and workers to come from
+function lotWhy(L,sup,homes){
+  if(!lotAccess(L)) return "road";
+  if(sup){ const c=compOf(L.acc); if((sup.pow.get(c)||0)<3) return "pow"; if((sup.wat.get(c)||0)<3) return "wat"; }
+  if(!(L.kind==="res"||L.kind==="dense"||L.kind==="mixed")&&!homes.has(compOf(L.acc))) return "homes";
+  if(L.kind==="res"&&lotBlocked(L,"house")) return "smoke";
+  return null;
+}
 function cityGrow(sup){
   cityComp();
   const homeComps=new Set(); for(const b of blds) if(isHome(b)&&b.acc) homeComps.add(compOf(b.acc));
-  // the kinds that want to grow, keenest first
-  const order=ZKEYS.filter(k=>cityD[k]>(k==="res"?.12:k==="dense"||k==="mixed"?.3:.5)).sort((a,b)=>cityD[b]-cityD[a]);
-  for(const k of order){
-    // nothing grows without power and water reaching it along the roads
-    const free=lots.filter(L=>L.kind===k&&!L.b&&t>=L.cool&&lotAccess(L)&&(!sup||utilFor(L,sup))&&(k==="res"||k==="dense"||k==="mixed"||homeComps.has(compOf(L.acc))));
-    if(!free.length) continue;
-    // next to what's already there, so the town grows outwards from its middle
-    let best=null, bs=1e9;
-    for(const L of free){ let d=400; for(const b of blds){ const q=Math.hypot(b.x-L.x,b.y-L.y)-b.r-L.r; if(q<d) d=q; } d+=Math.random()*30; if(d<bs){ bs=d; best=L; } }
-    if(growOn(best,lotType(best))) return true;
-    best.cool=t+20;
+  // everything the town wants goes up at once, a few at a time, not one building after another: after each one the
+  // demand is worked out again, as what's going up counts against it
+  let n=0; const done=new Set();
+  for(const L of lots) if(!L.b) L.why=null;
+  while(n<GROW_MAX){
+    const order=ZKEYS.filter(k=>!done.has(k)&&cityD[k]>GROW_AT[k]).sort((a,b)=>cityD[b]-cityD[a]);
+    let grew=null;
+    for(const k of order){
+      // nothing grows without power and water reaching it along the roads
+      const free=[];
+      for(const L of lots){ if(L.kind!==k||L.b||t<L.cool) continue; const w=lotWhy(L,sup,homeComps); L.why=w; if(!w) free.push(L); }
+      if(!free.length){ done.add(k); continue; }
+      // next to what's already there, so the town grows outwards from its middle
+      for(const L of free){ let d=400; for(const b of blds){ const q=Math.hypot(b.x-L.x,b.y-L.y)-b.r-L.r; if(q<d) d=q; } L.gd=d+Math.random()*30; }
+      free.sort((a,b)=>a.gd-b.gd);
+      for(const L of free.slice(0,5)){ if(growOn(L,lotType(L))){ grew=L; break; } L.cool=t+20; }
+      if(grew) break;
+      done.add(k);
+    }
+    if(!grew) break;
+    n++;
+    // its share of the power and water, before the next one asks
+    if(sup){ const c=compOf(grew.acc), u=useOf(grew.b)||1; for(const q of ["pow","wat"]) sup[q].set(c,(sup[q].get(c)||0)-u); }
+    cityDemand();
   }
+  if(n) return true;
   // a big, busy town swaps the odd row of townhouses for an apartment block, once everyone who lives there is at home
   if(people>=200&&cityD.res>1.5&&Math.random()<.12){ for(const L of lots){ const b=L.b; if(L.kind==="dense"&&b&&b.type==="town"&&L.site.w>=32&&L.site.d>=30&&b.cars.every(c=>c.state==="home")) return growOn(L,"apts",b); } }
   return false;
 }
 // the end of a month: taxes from everyone living here (more when they're happy), every business and every trip made,
 // less the upkeep of the roads, the junctions and the services
-function finCalc(trips,hap){
+function finCalc(trips,hap,pk){
   const out={}; for(const k in BUDK) out[k]=0; out.parking=0;
   let road=0; for(const s of segs.values()) road+=segUse(s)*UPKEEP*(s.hwy?1.5:1)*(s.over?2:1);
   for(const n of nodeList) road+=n.type==="light"?6:n.type==="round"?3:0;
@@ -2866,22 +2958,25 @@ function finCalc(trips,hap){
     if(S){ const k=SVC_BUD[b.type]; if(k){ out[k]+=S.up*budget[k]; nS[k]=(nS[k]||0)+1; } else { out.parking+=S.up; nS.parking=(nS.parking||0)+1; } }
     else if(!isHome(b)||b.type==="mixed"){ biz+=CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1); nB++; } }
   // businesses pay on what they make and on every trip their customers and workers make
-  const inc={homes:TAX_HOME*people*(.5+hap/100)*taxR/9, biz:(biz+TAX_TRIP*trips)*taxB/9};
+  const inc={homes:TAX_HOME*people*(.5+hap/100)*taxR/9, biz:(biz+TAX_TRIP*trips)*taxB/9, park:nS.parking?(pk||0)*parkFee*(1-parkTurn(parkFee))*3:0};
   let tin=0, tout=0; for(const k in inc) tin+=inc[k]; for(const k in out) tout+=out[k];
-  return {inc,out,tin,tout,nB,nS,road,trips};
+  return {inc,out,tin,tout,nB,nS,road,trips,pk};
 }
 function cityMonth(){
-  const f=finCalc(monthTrips,happyAvg);
-  lastIn=Math.round(f.tin); lastOut=Math.round(f.tout); res.road+=lastIn-lastOut; monthTrips=0;
+  const f=finCalc(monthTrips,happyAvg,parkWant);
+  lastIn=Math.round(f.tin); lastOut=Math.round(f.tout); res.road+=lastIn-lastOut; monthTrips=0; parkWant=0;
   finLast=f; finLog.push({m:month,i:lastIn,o:lastOut}); if(finLog.length>12) finLog.shift(); month++;
   updateUI(); if(finOpen) finDraw();
 }
 // ---------- the Finance panel ----------
 let finOpen=false, finFromMenu=false, finRows=null;
-function finEst(){ const trips=monthT>4?monthTrips*MONTH/monthT:finLast?finLast.trips:monthTrips;
-  return finCalc(trips,clamp(happyAvg+taxHappy(taxR)-hapTax,0,100)); }
-function taxWord(r){ return r<=3?["ok","Very low: people flock in"]:r<=7?["ok","Low: people like it"]:r<=10?["ok","Fair: nobody minds"]:r<=12?["meh","High: people grumble"]:r<=14?["bad","Too high: few move in"]:["bad","Way too high: families move out"]; }
-function bizWord(r){ return r<=6?["ok","Low: businesses flock in"]:r<=10?["ok","Fair"]:r<=13?["meh","High: fewer businesses open"]:r<=15?["bad","Too high: businesses stay away"]:["bad","Way too high: businesses close"]; }
+function finEst(){ const trips=monthT>4?monthTrips*MONTH/monthT:finLast?finLast.trips:monthTrips, pk=monthT>4?parkWant*MONTH/monthT:finLast?finLast.pk:parkWant;
+  return finCalc(trips,clamp(happyAvg+taxHappy(taxR)-hapTax,0,100),pk); }
+function taxWord(r){ return r<=4?["ok","Very low: people flock in"]:r<=8?["ok","Low: people like it"]:r<=13?["ok","Fair: nobody minds"]:r<=15?["meh","High: people grumble"]:r<=17?["bad","Too high: few move in"]:["bad","Way too high: families move out"]; }
+function bizWord(r){ return r<=7?["ok","Low: businesses flock in"]:r<=13?["ok","Fair"]:r<=15?["meh","High: fewer businesses open"]:r<=17?["bad","Too high: businesses stay away"]:["bad","Way too high: businesses close"]; }
+// parking fees: people pay up to about $3 without minding; past that more and more of them drive off instead
+const parkTurn=f=>f<=3?f*.03:.09+(f-3)*.3;
+function parkWord(f,n){ if(!n) return ["","No parking lots yet"]; return f<=0?["ok","Free"]:f<=2?["ok","Cheap: everyone pays"]:f<=3?["ok","Just right: most people pay"]:f<=4?["meh","Pricey: some drive off"]:["bad","Too dear: lots of people drive off"]; }
 function budWord(k,v,n){
   if(!n&&k!=="roads") return ["","None built yet"];
   if(v<=0) return ["bad",k==="roads"?"No upkeep: roads wear out fast":"Shut: it does nothing"];
@@ -2902,7 +2997,7 @@ function finBuild(){ if(finRows) return; finRows={}; const box=$("finOut");
     else { r.innerHTML='<span>'+BUDK[k]+'<small></small></span><input type="range" min="0" max="150" step="10" aria-label="'+BUDK[k]+' budget"><b></b><em></em>';
       const inp=r.querySelector("input"); inp.oninput=()=>{ budget[k]=+inp.value/100; if(city){ cityUtils(); cityCover(); } finDraw(); }; }
     box.appendChild(r); finRows[k]=r; }
-  $("finTaxR").oninput=e=>{ taxR=+e.target.value; finDraw(); }; $("finTaxB").oninput=e=>{ taxB=+e.target.value; finDraw(); };
+  $("finTaxR").oninput=e=>{ taxR=+e.target.value; finDraw(); }; $("finTaxB").oninput=e=>{ taxB=+e.target.value; finDraw(); }; $("finPark").oninput=e=>{ parkFee=+e.target.value; finDraw(); };
 }
 function finDraw(){
   const f=finEst(), net=f.tin-f.tout, sg=v=>(v<0?"-":"+")+kmoney(Math.abs(v)).replace("-","");
@@ -2921,6 +3016,7 @@ function finDraw(){
     r.querySelector("b").textContent=val; const em=r.querySelector("em"); em.textContent=amt; em.className=cls||""; };
   $("finTaxR").value=taxR; $("finTaxB").value=taxB;
   row($("finRowR"),taxWord(taxR),taxR+"%",kmoney(f.inc.homes),"pos"); row($("finRowB"),bizWord(taxB),taxB+"%",kmoney(f.inc.biz),"pos");
+  $("finPark").value=parkFee; row($("finRowP"),parkWord(parkFee,f.nS.parking||0),"$"+(parkFee%1?parkFee.toFixed(2):parkFee),kmoney(f.inc.park),"pos"); $("finRowP").classList.toggle("off",!f.nS.parking);
   row($("finIn"),null,"",kmoney(f.tin),"pos");
   for(const k in finRows){ const r=finRows[k], v=k==="parking"?1:budget[k], n=f.nS[k]||0;
     if(k==="parking"){ r.classList.toggle("off",!n); row(r,["",n?n+" parking lot"+(n>1?"s":"")+" and garages":"None built yet"],"",kmoney(f.out.parking),"neg"); continue; }
@@ -2936,8 +3032,8 @@ function cityTick(dt){
     const sup=cityUtils(); cityCover(); cityHappy(); cityDemand(); cityGrow(sup);
     for(const b of blds.filter(q=>q.dry>150)) closeDown(b,"dry");
     // business taxes far too high: now and then one gives up
-    if(taxB>=16&&Math.random()<(taxB-15)*.012){ const bz=blds.filter(b=>b.lot&&!isHome(b)&&!b.cons); if(bz.length) closeDown(pick(bz),"tax"); }
-    if(taxR>=14&&cityD.res<=0&&t-taxHintT>60&&hintT<=0){ taxHintT=t; setHint("Home taxes are so high nobody wants to move in. Tap your money to open Finance and bring them down.",5); }
+    if(taxB>=18&&Math.random()<(taxB-17)*.012){ const bz=blds.filter(b=>b.lot&&!isHome(b)&&!b.cons); if(bz.length) closeDown(pick(bz),"tax"); }
+    if(taxR>=17&&cityD.res<=0&&t-taxHintT>60&&hintT<=0){ taxHintT=t; setHint("Home taxes are so high nobody wants to move in. Tap your money to open Finance and bring them down.",5); }
     updateUI(); demandBars(); }
   // a mall for the town once it's big enough
   if(mallsGiven<MALL_AT.length&&people>=MALL_AT[mallsGiven]){ mallsGiven++; tray.mall++; updateUI(); flashTool("nBuild"); setHint("The town is big enough for a mall. Tap Zone, pick Mall and put it beside a good road. It brings lots of customers.",6); }
@@ -2953,7 +3049,13 @@ function cityTips(dt){
     setHint((!P[1]&&!W[1]?"Nothing grows without power and water. Tap Utilities and put a power plant and a water tower beside your roads.":!P[1]?"Nothing grows without power. Tap Utilities and build a power plant or a solar farm beside your roads.":"Nothing grows without water. Tap Utilities and build a water tower beside your roads.")+" They reach everything joined to them by road.",7); return; }
   if(people>0&&t-utilHintT>45&&(P[0]>P[1]*.92||W[0]>W[1]*.92)){ utilHintT=t; setHint(P[0]>P[1]*.92?"The town is running out of power. Build another power plant or a solar farm, or new homes will go without.":"The town is running out of water. Build another water tower, or a pump on the shore.",5); return; }
   if(cityTip===1&&people>0){ cityTip=2; setHint("People are moving in. They'll want shops and jobs too, so zone some Shops, Offices and Industry.",6); return; }
-  for(const k of ZKEYS){ const want=cityD[k]>(k==="res"?1:1.2)&&!lots.some(L=>L.kind===k&&!L.b);
+  for(const k of ZKEYS){
+    // the town wants them and there are plots, but none of them can grow: say what's missing
+    const em=cityD[k]>GROW_AT[k]?lots.filter(L=>L.kind===k&&!L.b&&t>=L.cool):[], why=em.length&&em.every(L=>L.why)?em[0].why:null;
+    stuckT[k]=why?(stuckT[k]||0)+dt:0;
+    if(stuckT[k]>12){ stuckT[k]=-50; const nm=ZONES[k].name;
+      setHint("The town wants more "+nm+", but the "+nm+" plots can't grow: "+(why==="road"?"they can't be reached from a road. Zone right beside one.":why==="pow"?"no power reaches them. Build a power plant or solar farm joined to them by road.":why==="wat"?"no water reaches them. Build a water tower joined to them by road.":why==="homes"?"no homes are joined to them by road, so nobody would come. Join their road up to the town.":"they're too close to factory smoke or a busy road."),6); return; }
+    const want=cityD[k]>(k==="res"?1:1.2)&&!lots.some(L=>L.kind===k&&!L.b);
     wantT[k]=want?(wantT[k]||0)+dt:0;
     if(wantT[k]>25){ wantT[k]=-60; setHint(k==="res"?"People want to move in. Zone more Homes beside a road.":k==="dense"?"The town could use some Apartments.":k==="mixed"?"The town could use a main street: zone some Mixed, with shops downstairs and flats upstairs.":"The town wants more "+ZONES[k].name+". Zone some land for them.",5); return; } }
 }
@@ -2966,7 +3068,7 @@ function closeDown(d,why){
   effects.push({k:"ring",x:d.x,y:d.y,c:"#e2493a",t:0,life:1.2,r:d.r});
 }
 // the little bars beside each zone that say how keen the town is
-function demandBars(){ if(!city) return; document.querySelectorAll("#buildBar [data-z] s").forEach(s=>{ const v=cityD[s.parentNode.parentNode.dataset.z]||0; s.style.height=clamp(v/2,0,1)*100+"%"; }); }
+function demandBars(){ if(!city) return; document.querySelectorAll("#buildBar [data-z] s").forEach(s=>{ const k=s.parentNode.parentNode.dataset.z, v=(cityD[k]||0)-(GROW_AT[k]||0); s.style.height=clamp(v/1.8,0,1)*100+"%"; }); }
 // plots: an empty one shows its zone colour; one with a building on it is a garden, a forecourt or a yard
 const YARD={res:["#a3cf75","#7aa858"],dense:["#a7d07c","#7aa95a"],com:["#dcd9d1","#c3bfb5"],off:["#e2ded5","#c8c3b8"],ind:["#d3cec2","#a9a397"],mixed:["#dcd6cb","#c6bfb2"]};
 const polyPath=P=>{ ctx.beginPath(); P.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); };
@@ -2992,6 +3094,8 @@ function drawZoneGhosts(){
     ctx.strokeStyle=ZONES[zoneSel].col; ctx.lineWidth=2/Math.max(.4,cam.z); ctx.setLineDash([6/cam.z,4/cam.z]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
   const gs=zoneGhosts;
   if(gs) for(const g of gs){ polyPath(g.poly); ctx.globalAlpha=.5; ctx.fillStyle=ZONES[g.kind].col; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.3; ctx.stroke(); }
+  // a plot already there that takes in the gap beside it
+  if(gs&&gs.ext) for(const e of gs.ext){ polyPath(e.poly); ctx.globalAlpha=.35; ctx.fillStyle=ZONES[e.L.kind].col; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.3; ctx.setLineDash([3,2]); ctx.stroke(); ctx.setLineDash([]); }
   // the corners go on top of the plots they make
   if(zpts&&zoneSel) drawCorners();
   else if(hoverW&&!drag&&zoneSel&&!bldUnder(hoverW,2)){ const z=zoneSnap(hoverW), col=ZONES[zoneSel].col; if(z.lot) drawLotSnap(z.lot,col,zoneK()); cornerDot(z.p,col,false,z.lot?.95:.75); }
@@ -3068,10 +3172,10 @@ function angleTag(c,u,v,ang,col,k,snap){
 // builds up, and road depots send trucks to fix roads that traffic has worn out. All of it makes people happier,
 // and happy people pay more tax and want to move in; unhappy ones move out.
 const SVC={
-  power: {name:"Power plant",short:"Power",cost:1500,up:40,cap:220,util:"pow",done:"Power plant built. Its power reaches everything joined to it by road, as far as it goes.",tip:"Power plant: makes power for everything joined to it by road. It's smoky, so homes keep their distance."},
-  solar: {name:"Solar farm",short:"Solar",cost:900,up:15,cap:70,util:"pow",done:"Solar farm built. Clean power for everything joined to it by road.",tip:"Solar farm: clean power, but less of it. It can go right next to homes."},
-  water: {name:"Water tower",short:"Water",cost:700,up:20,cap:110,util:"wat",done:"Water tower built. Its water reaches everything joined to it by road.",tip:"Water tower: water for everything joined to it by road."},
-  pump:  {name:"Water pump",short:"Pump",cost:1100,up:25,cap:260,util:"wat",done:"Water pump built. Lots of water for everything joined to it by road.",tip:"Water pump: lots of water, but it has to go right beside a lake or river."},
+  power: {name:"Power plant",short:"Power",cost:1500,up:40,cap:330,util:"pow",done:"Power plant built. Its power reaches everything joined to it by road, as far as it goes.",tip:"Power plant: makes power for everything joined to it by road. It's smoky, so homes keep their distance."},
+  solar: {name:"Solar farm",short:"Solar",cost:900,up:15,cap:110,util:"pow",done:"Solar farm built. Clean power for everything joined to it by road.",tip:"Solar farm: clean power, but less of it. It can go right next to homes."},
+  water: {name:"Water tower",short:"Water",cost:700,up:20,cap:170,util:"wat",done:"Water tower built. Its water reaches everything joined to it by road.",tip:"Water tower: water for everything joined to it by road."},
+  pump:  {name:"Water pump",short:"Pump",cost:1100,up:25,cap:390,util:"wat",done:"Water pump built. Lots of water for everything joined to it by road.",tip:"Water pump: lots of water, but it has to go right beside a lake or river."},
   fire:  {name:"Fire station",short:"Fire",cost:1200,up:35,R:400,cars:2,done:"Fire station built. Its trucks race to fires inside the blue circle.",tip:"Fire station: its fire trucks race out to fires nearby. A fire nobody puts out burns the building down."},
   police:{name:"Police station",short:"Police",cost:1200,up:35,R:400,cars:2,done:"Police station built. Its cars keep crime down inside the blue circle.",tip:"Police station: its cars patrol nearby and keep crime down."},
   clinic:{name:"Hospital",short:"Hospital",cost:1600,up:45,R:500,cars:2,done:"Hospital built. Its ambulances fetch people who fall ill inside the blue circle.",tip:"Hospital: ambulances fetch people who fall ill nearby."},
@@ -3124,7 +3228,7 @@ function cityHappy(){
   let sum=0, n=0; const sm=blds.filter(f=>SMOKY.has(f.type)), q=k=>Math.min(1.25,outK(budget[k]));
   const qf=q("fire"), qp=q("police"), qh=q("health"), qe=q("edu"), qk=q("parks");
   // taxes too high and families leave even a nice home
-  hapTax=taxHappy(taxR); const leave=HAPPY_LEAVE+Math.max(0,taxR-12)*6;
+  hapTax=taxHappy(taxR); const leave=HAPPY_LEAVE+Math.max(0,taxR-15)*6;
   for(const b of blds){ if(!isHome(b)) continue;
     let h=36+hapTax;
     h+=b.noPow?-28:10; h+=b.noWat?-28:10;
@@ -3139,7 +3243,7 @@ function cityHappy(){
   happyAvg=n?sum/n:0;
 }
 function leaveHome(b){ const L=b.lot; deleteBld(b,true); if(L){ L.b=null; L.cool=t+90; } effects.push({k:"ring",x:b.x,y:b.y,c:"#9a958a",t:0,life:1.2,r:b.r});
-  if(t-closeHintT>40){ closeHintT=t; setHint(taxR>=13?"A family moved out over the high taxes. Tap your money to open Finance and bring the home tax down.":"A family moved out because they were unhappy. Homes want power, water and services nearby.",5); } }
+  if(t-closeHintT>40){ closeHintT=t; setHint(taxR>=16?"A family moved out over the high taxes. Tap your money to open Finance and bring the home tax down.":"A family moved out because they were unhappy. Homes want power, water and services nearby.",5); } }
 
 // fires, illness and crime, and the trucks, ambulances and police cars that answer them
 function svcTick(dt){
@@ -3294,11 +3398,11 @@ function drawSvc(b){
     ctx.fillStyle="rgba(255,255,255,.3)"; ctx.fillRect(-w/2+3,-d/2+7.5,bw-4,1); ctx.restore();
     vans([-w*.18],d/2-5.5,0);
   } else if(b.type==="daycare"){
-    tr(); ctx.fillStyle="#a5d77c"; ctx.fillRect(-w/2,-d/2,w,d-8); ctx.fillStyle="#d7d3ca"; ctx.fillRect(-w/2,d/2-8,w,8);
-    ctx.fillStyle="#efd9a0"; ctx.beginPath(); ctx.arc(w/2-7,-d/2+7,4.2,0,7); ctx.fill();
-    for(const [x,y,c2] of [[w/2-15,-d/2+5,"#e2493a"],[w/2-11,-d/2+14,"#3d7fe0"],[w/2-5,-d/2+16,"#f1c232"]]){ ctx.fillStyle=c2; ctx.fillRect(x-1.6,y-1.6,3.2,3.2); }
+    tr(); ctx.fillStyle="#a5d77c"; ctx.fillRect(-w/2,-d/2,w,d-6); ctx.fillStyle="#d7d3ca"; ctx.fillRect(-w/2,d/2-6,w,6);
+    ctx.fillStyle="#efd9a0"; ctx.beginPath(); ctx.arc(w/2-4.5,-d/2+4.5,3,0,7); ctx.fill();
+    for(const [x,y,c2] of [[w/2-4,-d/2+10,"#e2493a"],[w/2-6.5,-d/2+13.5,"#3d7fe0"],[w/2-2.6,-d/2+14,"#f1c232"]]){ ctx.fillStyle=c2; ctx.fillRect(x-1.3,y-1.3,2.6,2.6); }
     ctx.restore();
-    bodyShadow(b,sc,6,[[-w/2+2,-d/2+3,w*.55,d-14]]); tr(); roofBlock(-w/2+2,-d/2+3,w*.55,d-14,"#e06aa6","#9c3d6e"); ctx.fillStyle="#ffd84a"; ctx.fillRect(-w/2+4,-d/2+5,w*.55-4,1.6); ctx.restore();
+    bodyShadow(b,sc,6,[[-w/2+1.5,-d/2+2,w*.6,d-10]]); tr(); roofBlock(-w/2+1.5,-d/2+2,w*.6,d-10,"#e06aa6","#9c3d6e"); ctx.fillStyle="#ffd84a"; ctx.fillRect(-w/2+3,-d/2+4,w*.6-3,1.4); ctx.restore();
   } else if(b.type==="depot"){
     lot(b,sc,-w/2,-d/2,w,d,0,"#cfcabd");
     bodyShadow(b,sc,10,[[-w/2+2,-d/2+2,w*.62,d*.5]]);
@@ -3320,6 +3424,18 @@ function drawFire(b){
     ctx.fillStyle=out?"rgba(235,235,235,"+(.55*(1-ph))+")":"rgba(60,55,50,"+(.5*(1-ph))+")"; ctx.beginPath(); ctx.arc(x+ph*14,y-ph*22,4+ph*9,0,7); ctx.fill(); }
 }
 // little badges over a building that's short of something
+// what's stopping an empty plot the town wants from growing
+function drawLotWhy(L){ const k=L.why; if(!k||L.b) return;
+  const s=Math.max(1,1.4/cam.z), x=L.x, y=L.y;
+  ctx.globalAlpha=.92; ctx.fillStyle=k==="pow"||k==="wat"?"#c0392b":k==="homes"?"#2f6fd0":"#5b5f66"; ctx.beginPath(); ctx.arc(x,y,4.6*s,0,7); ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.95)"; ctx.lineWidth=.9*s; ctx.stroke();
+  ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
+  if(k==="pow"){ ctx.fillStyle="#ffd83a"; ctx.beginPath(); ctx.moveTo(.6,-3); ctx.lineTo(-1.8,.4); ctx.lineTo(-.1,.4); ctx.lineTo(-.7,3); ctx.lineTo(1.8,-.6); ctx.lineTo(.1,-.6); ctx.closePath(); ctx.fill(); }
+  else if(k==="wat"){ ctx.fillStyle="#8fd3ff"; ctx.beginPath(); ctx.moveTo(0,-2.8); ctx.quadraticCurveTo(2.4,.4,0,2.6); ctx.quadraticCurveTo(-2.4,.4,0,-2.8); ctx.fill(); }
+  else if(k==="homes"){ ctx.fillStyle="#fff"; ctx.beginPath(); ctx.moveTo(0,-2.8); ctx.lineTo(2.6,-.4); ctx.lineTo(1.8,-.4); ctx.lineTo(1.8,2.4); ctx.lineTo(-1.8,2.4); ctx.lineTo(-1.8,-.4); ctx.lineTo(-2.6,-.4); ctx.closePath(); ctx.fill(); }
+  else if(k==="road"){ ctx.fillStyle="#fff"; ctx.fillRect(-2.8,-1.9,5.6,3.8); ctx.fillStyle="#5b5f66"; ctx.fillRect(-2.2,-.3,1.4,.6); ctx.fillRect(-.3,-.3,1.4,.6); ctx.fillRect(1.6,-.3,.8,.6); }
+  else { ctx.fillStyle="#e6e3dc"; ctx.beginPath(); ctx.arc(-1.2,.5,1.5,0,7); ctx.arc(.6,-.4,1.8,0,7); ctx.arc(1.8,.8,1.2,0,7); ctx.fill(); }
+  ctx.restore(); ctx.globalAlpha=1;
+}
 function drawProblems(b){ if(b.cons) return;
   const P=[];
   if(b.noPow) P.push("pow"); if(b.noWat) P.push("wat"); if(b.noPark&&t-b.noPark<25) P.push("park"); if(b.sick) P.push("sick"); if((b.crime||0)>.6) P.push("crime");
@@ -3389,7 +3505,10 @@ function parkOrDivert(c){
   const p=c.purpose, d=p.d;
   if(!city||c.truck||p.lot||(p.kind!=="cust"&&p.kind!=="work")||!d.bays||parkedN(d)<d.bays) return false;
   const P=freeLot(d), ac=accsOf(d).find(a=>a.di===c.tDi)||d.acc;
-  if(P&&ac){ const pl=planRoute({seg:ac.seg,t:ac.t},[{b:P}],null); if(pl){ p.lot=P; startDrive(c,d,pl,ac); return true; } }
+  if(P&&ac){ parkWant++;
+    // too dear and some would rather go home than pay
+    if(!(parkFee>0&&Math.random()<parkTurn(parkFee))){ const pl=planRoute({seg:ac.seg,t:ac.t},[{b:P}],null); if(pl){ p.lot=P; startDrive(c,d,pl,ac); return true; } }
+    else if(t-parkHintT>45&&hintT<=0&&parkFee>3){ parkHintT=t; setHint("People are driving off rather than pay $"+parkFee+" to park. Around $3 most people pay: tap your money to open Finance.",6); } }
   d.noPark=t; d.claimed[p.kind]=Math.max(0,d.claimed[p.kind]-1); c.purpose=null; c.at=d; c.atDi=c.tDi; goHome(c);
   if(t-parkHintT>45&&hintT<=0){ parkHintT=t; setHint((/^[aeiou]/.test(BT[d.type].name)?"An ":"A ")+BT[d.type].name+" has run out of parking, so people are giving up and going home. Build a parking lot or garage nearby, from Services.",6); }
   return true;
@@ -3703,7 +3822,7 @@ function updateUI(){
       btn.onclick=()=>{ zoneSel=null; placeSel=k; updateUI(); setHint("Put the "+BT[k].name+" down beside a good road.",3); }; bb.appendChild(btn); }
     demandBars(); placeHint(); } }
   // what's left of the power and water, and how happy people are
-  if(city&&cityTab!=="zones"){ const st=$("svcSt"); if(st&&cityTab==="parks") st.innerHTML=(people?"<span>Happy "+Math.round(happyAvg)+"%</span>":"")+"<span>Tourism "+tourism+"</span>"; else if(st&&cityTab==="util"){ const f=(nm,q)=>{ const [u,c]=utilStat[q]; return '<span class="'+(u>c*.92||!c?"low":"")+'">'+nm+" "+Math.round(u)+"/"+c+"</span>"; };
+  if(city&&cityTab!=="zones"){ const st=$("svcSt"); if(st&&cityTab==="parks") st.innerHTML=(people?"<span>Happy "+Math.round(happyAvg)+"%</span>":"")+"<span>Tourism "+tourism+"</span>"; else if(st&&cityTab==="util"){ const f=(nm,q)=>{ const [u,c]=utilStat[q]; return '<span class="'+(u>c*.92||!c?"low":"")+'">'+nm+" "+Math.round(u)+"/"+Math.round(c)+"</span>"; };
       st.innerHTML=f("Power","pow")+f("Water","wat"); } else if(st) st.innerHTML=people?"<span>Happy "+Math.round(happyAvg)+"%</span>":"";
     bb.querySelectorAll("[data-s]").forEach(b=>b.classList.toggle("poor",res.road<SVC[b.dataset.s].cost)); }
   if(!city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
@@ -3974,7 +4093,7 @@ function gridPlan(p0,p1,w,lanes){
   for(let i=0;i<=nu;i++) for(let j=0;j<nv;j++) edges.push([P(i,j),P(i,j+1)]);
   const g={edges,lanes,nu,nv,cost:0,bridges:0,ok:true,reason:"",hitB:null,far:P(nu,nv)};
   const hw=halfW(lanes);
-  for(const [a,c] of edges){ const L=D(a,c), k=Math.max(1,Math.ceil(L/5)); let inW=false; g.cost+=L*lanes;
+  for(const [a,c] of edges){ const L=D(a,c), k=Math.max(1,Math.ceil(L/5)); let inW=false; g.cost+=L*lanes*RDK();
     for(let q=0;q<=k;q++){ const x=a.x+(c.x-a.x)*q/k, y=a.y+(c.y-a.y)*q/k;
       if(x<4||y<4||x>MW-4||y>MH-4){ if(g.ok){ g.ok=false; g.reason="Part of that grid goes off the edge of the map."; } }
       else if(isHill(x,y)&&g.ok){ g.ok=false; g.reason="Part of that grid goes over the hills. Roads have to go round them."; }
@@ -5437,6 +5556,7 @@ function draw(){
   if(ultra){ drawClouds(); drawBirds(fdt); drawNight(); drawRain(); worldT(); }
   for(const b of blds) if((!isHome(b)||b.type==="mixed")&&!isSvc(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
   if(city) for(const b of blds) if(inView(b.x,b.y,b.r+40)) drawProblems(b);
+  if(city) for(const L of lots) if(L.why&&!L.b&&inView(L.x,L.y,10)) drawLotWhy(L);
   drawHover();
   if(drag&&drag.lane&&segs.has(drag.lane.seg.id)) laneHover(drag.lane.seg,drag.lane.w0,drag.lane.w1);
   drawPlan();
@@ -6316,6 +6436,7 @@ function v3overlay(){
     const h=V3.top(b)+V3.hAt(b.x,b.y)+3;
     if(!at(b.x,b.y,h,b.x,b.y-b.r-8)) continue;
     if(pins) drawPins(b); if(city) drawProblems(b); }
+  if(city) for(const L of lots){ if(!L.why||L.b||!at(L.x,L.y,V3.hAt(L.x,L.y)+2,L.x,L.y)) continue; drawLotWhy(L); }
   for(const e of effects){ if(e.k!=="plus") continue; const f=e.t/e.life; if(f>=1) continue; if(!at(e.x,e.y,10+V3.hAt(e.x,e.y),e.x,e.y)) continue;
     ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
   // labels from the overlays: price of a road, why a ghost can't go there, how many plots
@@ -6366,7 +6487,8 @@ window.__gridlock={
   city:()=>({money:Math.round(res.road),people,month,monthT:+monthT.toFixed(1),lastIn,lastOut,lots:lots.length,empty:lots.filter(L=>!L.b).length,closed:closedN,
     grown:lots.filter(L=>L.b).map(L=>L.b.type).reduce((o,k)=>(o[k]=(o[k]||0)+1,o),{}),dem:Object.fromEntries(ZKEYS.map(k=>[k,+cityD[k].toFixed(2)])),tray:trayCount(),level}),
   newCity:()=>{ $("ovStart").classList.remove("show"); newGame(false,true); },
-  zone:(kind,path)=>{ zoneSel=kind; const gs=zoneAt(kind,path); addLots(gs); return gs.length; },
+  zone:(kind,path)=>{ zoneSel=kind; const gs=zoneAt(kind,path); addLots(gs); for(const e of gs.ext||[]) growLot(e.L,e.poly); return gs.length; },
+  zoneExt:(kind,path)=>{ const gs=zoneAt(kind,path); return {n:gs.length,ext:(gs.ext||[]).map(e=>({id:e.L.id,poly:e.poly.map(p=>[Math.round(p.x),Math.round(p.y)])}))}; },
   zonePlan:(kind,path)=>zoneAt(kind,path).length,
   growAs:(kind,type)=>{ let n=0; for(const L of lots) if(L.kind===kind&&!L.b&&lotAccess(L)&&growOn(L,type)) n++; return n; },
   tour:v=>{ if(v!==undefined) tourism=v; return tourism; },
@@ -6383,7 +6505,7 @@ window.__gridlock={
   wet:(x,y)=>isWater(x,y)||isHill(x,y)?(isWater(x,y)?"w":"h"):"",
   svcCars:()=>cars.filter(c=>c.svc).map(c=>({k:c.svc,st:c.state,siren:!!c.siren,x:Math.round(c.x),y:Math.round(c.y),job:c.purpose&&c.purpose.kind})),
   zoneSel:k=>{ if(k!==undefined){ zoneSel=k; updateUI(); } return zoneSel; },
-  fin:o=>{ o=o||{}; if(o.taxR!==undefined) taxR=o.taxR; if(o.taxB!==undefined) taxB=o.taxB; if(o.budget) Object.assign(budget,o.budget); if(o.budget&&city){ cityUtils(); cityCover(); }
+  fin:o=>{ o=o||{}; if(o.taxR!==undefined) taxR=o.taxR; if(o.taxB!==undefined) taxB=o.taxB; if(o.park!==undefined) parkFee=o.park; if(o.budget) Object.assign(budget,o.budget); if(o.budget&&city){ cityUtils(); cityCover(); }
     if(o.open!==undefined){ if(o.open) openFin(false); else closeFin(); }
     const f=finEst(), r=v=>Math.round(v), m=O=>{ const q={}; for(const k in O) q[k]=r(O[k]); return q; };
     return {taxR,taxB,budget:Object.assign({},budget),est:{inc:m(f.inc),out:m(f.out),tin:r(f.tin),tout:r(f.tout)},log:finLog.slice(),open:finOpen,happy:r(happyAvg),R:{fire:r(svcR("fire")),clinic:r(svcR("clinic"))},util:JSON.parse(JSON.stringify(utilStat))}; },
@@ -6392,7 +6514,7 @@ window.__gridlock={
   plotOpts:o=>{ if(o){ if(o.split) plotSplit=o.split; if(o.size) plotSize=o.size; if(o.side) plotSide=o.side; updateUI(); } return {split:plotSplit,size:plotSize,side:plotSide}; },
   lotPolys:()=>lots.map(L=>({k:L.kind,b:L.b?L.b.type:null,poly:L.poly.map(p=>[Math.round(p.x),Math.round(p.y)]),site:{w:Math.round(L.site.w),d:Math.round(L.site.d)}})),
   setOver:(id,v)=>{ const b=blds.find(q=>q.id===id); if(b) b.over=v; return !!b; },
-  lotInfo:()=>lots.map(L=>({k:L.kind,x:Math.round(L.x),y:Math.round(L.y),b:L.b?L.b.type:null,cool:Math.round(L.cool-t),acc:!!lotAccess(L)})),
+  lotInfo:()=>lots.map(L=>({k:L.kind,x:Math.round(L.x),y:Math.round(L.y),b:L.b?L.b.type:null,cool:Math.round(L.cool-t),acc:!!lotAccess(L),why:L.why||null})),
   pick:i=>{ const b=document.querySelectorAll("#ups .up")[i||0]; if(b) b.click(); },
   tool:(k,m)=>{ if(k) setTool(k); if(m) setRoadMode(m); return tool; },
   tray:()=>Object.assign({},tray),
