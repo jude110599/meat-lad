@@ -330,7 +330,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 6.7</div>
+    <div class="small">Version 6.8</div>
   </div>
 </div>
 
@@ -344,7 +344,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 6.7</div>
+    <div class="small">Version 6.8</div>
   </div>
 </div>
 
@@ -5601,6 +5601,7 @@ function v3init(T){
       g.fillStyle="rgb("+v+","+v+","+v+")"; g.beginPath(); g.moveTo(x-w/cols/2+1,y); g.lineTo(x+w/cols/2-1,y); g.lineTo(x+w/cols/2-2,y+h/rows-2); g.quadraticCurveTo(x,y+h/rows+2,x-w/cols/2+2,y+h/rows-2); g.closePath(); g.fill();
       g.fillStyle="rgba(0,0,0,.22)"; g.fillRect(x-w/cols/2,y+h/rows-3,w/cols,3); } grain(g,w,h,600,.05); });
   mats.tile=new T.MeshStandardMaterial({map:tileTex,vertexColors:true,roughness:.8});
+  mats.trim=new T.MeshStandardMaterial({vertexColors:true,roughness:.7});
   // The map (ground, water, roads, plots and roofs) is painted by the 2D code into a big picture that lies on the
   // ground and on the flat roofs. The picture is cut into square cells laid out in a ring: when the view slides
   // along, only the cells coming into view are painted, into the slots of the ones going out; a cell is painted again
@@ -5668,10 +5669,13 @@ function v3init(T){
   const batches={};
   let batchDirty=true;
   const wallCols=["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6"];
+  // flats in render and brick colours
+  const APT_WALLS=["#ece2d2","#e3cdb0","#d2a585","#efe7da","#c99478","#e6d8c0"];
   function wallTint(b){ const k=b.type, T0=BT[k];
     if(k==="house"||k==="bighouse") return wallCols[b.id%wallCols.length];
     if(k==="town") return shade((b.cols&&b.cols[0])||"#b9604a",70);
-    if(k==="apts"||k==="mixed"||k==="hotel") return shade(b.col||T0.col,52);
+    if(k==="apts") return APT_WALLS[b.id%APT_WALLS.length];
+    if(k==="mixed"||k==="hotel") return shade(b.col||T0.col,52);
     if(k==="office") return "#e4edf6";
     if(k==="shop"||k==="center"||k==="mall") return "#f6f4ee";
     if(k==="datacenter") return "#eef2f5";
@@ -5682,6 +5686,49 @@ function v3init(T){
   function quad(P,a,b,c,d,ua,ub,uc,ud,col){ const n=faceN(a,b,c); pushTri(P,a,b,c,n,ua,ub,uc,col); pushTri(P,a,c,d,n,ua,uc,ud,col); }
   // a triangle turned so it faces the way out (ox,oz), with its picture coordinates kept to their corners
   function triOut(P,a,b,c,ua,ub,uc,ox,oz,col){ let n=faceN(a,b,c); if(n[0]*ox+n[2]*oz<0){ [a,b]=[b,a]; [ua,ub]=[ub,ua]; n=faceN(a,b,c); } pushTri(P,a,b,c,n,ua,ub,uc,col); }
+  // a solid from its 8 corners (one end, then the other), each face turned to look away from its middle
+  const BOX5=[[4,5,6,7],[3,2,6,7],[0,1,5,4],[0,3,7,4],[1,2,6,5]], BOX6=[[0,1,2,3],...BOX5];
+  function hexa(P,v,col,faces){ let cx=0, cy=0, cz=0; for(const q of v){ cx+=q[0]/8; cy+=q[1]/8; cz+=q[2]/8; }
+    for(const f of faces||BOX6){ let a=v[f[0]], bb=v[f[1]], c=v[f[2]], d=v[f[3]]; const n=faceN(a,bb,c);
+      if(n[0]*((a[0]+c[0])/2-cx)+n[1]*((a[1]+c[1])/2-cy)+n[2]*((a[2]+c[2])/2-cz)<0){ const x=a; a=c; c=x; }
+      quad(P,a,bb,c,d,[0,0],[1,0],[1,1],[0,1],col); } }
+  // a box standing out from a wall: s along it, y up, o out from it. Its back, against the wall, is left off
+  function wbox(P,F,s0,s1,y0,y1,o0,o1,col,back){ const pt=(s,y,o)=>[F.x+F.tx*s+F.nx*o,y,F.z+F.tz*s+F.nz*o];
+    hexa(P,[pt(s0,y0,o0),pt(s1,y0,o0),pt(s1,y1,o0),pt(s0,y1,o0),pt(s0,y0,o1),pt(s1,y0,o1),pt(s1,y1,o1),pt(s0,y1,o1)],col,back?BOX6:BOX5); }
+  // a shop's awning: sloping out and down from above the window, with a flap along the front
+  function awning(P,F,s0,s1,y1,y0,out,col){ const pt=(s,y,o)=>[F.x+F.tx*s+F.nx*o,y,F.z+F.tz*s+F.nz*o];
+    const a=pt(s0,y1,0), b=pt(s1,y1,0), c=pt(s1,y0,out), d=pt(s0,y0,out), e=pt(s1,y0-.8,out), g=pt(s0,y0-.8,out), n=faceN(a,b,c), up=n[0]*F.nx+n[1]+n[2]*F.nz>0;
+    if(up){ quad(P,a,b,c,d,[0,0],[1,0],[1,1],[0,1],col); quad(P,a,d,c,b,[0,0],[1,0],[1,1],[0,1],col); }
+    else { quad(P,a,d,c,b,[0,0],[1,0],[1,1],[0,1],col); quad(P,a,b,c,d,[0,0],[1,0],[1,1],[0,1],col); }
+    const m=faceN(d,c,e); if(m[0]*F.nx+m[2]*F.nz>0) quad(P,d,c,e,g,[0,0],[1,0],[1,1],[0,1],col); else quad(P,d,g,e,c,[0,0],[1,0],[1,1],[0,1],col); }
+  const TRIM={frame:[.93,.92,.89],sill:[.78,.77,.74],rail:[.58,.66,.72],fin:[.8,.84,.88]}, AWN=["#e2493a","#3d7fe0","#2f9e55","#f1c232"].map(LC);
+  // what stands out of a wall, lined up with the windows painted on it: frames and sills round the windows of houses
+  // and civic buildings, balconies on the flats, fins and a ledge at every floor on office glass, awnings over the
+  // shops, and a parapet round a flat roof. det is the finer work, left off on phones
+  function wallBits(P,a0,b0,len,Hw,lo,gf,fk,bw,V,wall,g0,flat,det){
+    const tx=(b0[0]-a0[0])/len, tz=(b0[2]-a0[2])/len, F={x:a0[0],z:a0[2],tx,tz,nx:-tz,nz:tx}, nb=Math.floor(len/bw+.02), top=g0+Hw;
+    // how high up the wall a spot on its picture is, and a fraction of the way up one floor
+    const yv=gf?v=>g0+v*V:v=>lo+v*V*(Hw+.6)/Hw, yAt=(f,q)=>yv((f+q)/NB), nf=Math.ceil(Hw/V*NB)+1;
+    const wb=(s0,s1,y0,y1,o0,o1,col,back)=>wbox(P,F,s0,s1,y0,y1,o0,o1,col,back);
+    if(flat) wb(0,len,top,top+1.1,-.6,.02,wall.map(c=>c*.86),true);
+    if(gf){ const sw=FSIZE.shop[0], ys=q=>lo+(gf+.6)*q; for(let k=0;k<Math.floor(len/sw+.02);k++) awning(P,F,k*sw+.6,(k+1)*sw-.6,ys(.86),ys(.66),2.3,AWN[k%4]); }
+    if(fk==="house"||fk==="civic"){ if(!det) return;
+      const hw=fk==="house"?.21:.23, q0=fk==="house"?.3:.24, q1=fk==="house"?.76:.84, t=.32;
+      for(let f=0;f<nf;f++) for(let k=0;k<nb;k++){ if(fk==="house"&&f%NB===0&&k%NB===1) continue;      // the front door
+        const sc=(k+.5)*bw, s0=sc-hw*bw, s1=sc+hw*bw, y0=yAt(f,q0), y1=yAt(f,q1); if(y1+t>top-.2||y0<g0) continue;
+        wb(s0-t-.2,s1+t+.2,y0-.38,y0,0,.62,TRIM.sill); wb(s0-t,s1+t,y1,y1+t,0,.32,TRIM.frame);
+        wb(s0-t,s0,y0,y1,0,.26,TRIM.frame); wb(s1,s1+t,y0,y1,0,.26,TRIM.frame); } }
+    else if(fk==="apts"){ if(len<14) return; const slab=wall.map(c=>c*.9);
+      for(let f=0;f<nf;f++){ const yb=yAt(f,.18), yt=yAt(f,.42); if(yb<(gf?g0+gf+.5:g0+3)||yt>top-.4) continue;
+        for(let k=0;k<nb;k++){ const s0=k*bw+bw*.08, s1=(k+1)*bw-bw*.08;
+          wb(s0,s1,yb,yb+.4,0,1.9,slab); wb(s0,s1,yb+.4,yt,1.76,1.9,TRIM.rail);
+          if(det){ wb(s0,s0+.12,yb+.4,yt,0,1.76,TRIM.rail); wb(s1-.12,s1,yb+.4,yt,0,1.76,TRIM.rail); } } } }
+    else if(fk==="office"){ if(!det) return;
+      for(let k=1;k<nb;k++) wb(k*bw-.15,k*bw+.15,lo,top,0,.55,TRIM.fin);
+      for(let f=1;f<nf;f++){ const y=yAt(f,0); if(y>top-.5) break; wb(0,len,y-.15,y+.25,0,.32,TRIM.fin); } }
+    else if(fk==="shop"){ const y1=yAt(0,.86), y0=yAt(0,.66); if(y1>top-.2) return;
+      for(let k=0;k<nb;k++) awning(P,F,k*bw+.5,(k+1)*bw-.5,y1,y0,2.3,AWN[k%4]); }
+  }
   function partsOf(b,recs){
     const parts={}, get=k=>parts[k]||(parts[k]={p:[],n:[],u:[],c:[]});
     const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th), fk=b.cons?"site":FKIND[b.type]||"civic", [bw,fh]=FSIZE[fk], U=bw*NB, V=fh*NB;
@@ -5701,7 +5748,8 @@ function v3init(T){
           const u1=len/U, v1=Hw/V, lo=g0-.6, gf=b.type==="mixed"&&!b.cons&&Hw>14?10:0;
           // mixed-use: shop fronts along the bottom, homes above
           if(gf){ const us=len/(FSIZE.shop[0]*NB); quad(get("f:shop"),[a0[0],lo,a0[2]],[b0[0],lo,b0[2]],[b0[0],g0+gf,b0[2]],[a0[0],g0+gf,a0[2]],[0,0],[us,0],[us,.25],[0,.25],shopWall); }
-          quad(W,[a0[0],gf?g0+gf:lo,a0[2]],[b0[0],gf?g0+gf:lo,b0[2]],[b0[0],g0+Hw,b0[2]],[a0[0],g0+Hw,a0[2]],[0,gf/V],[u1,gf/V],[u1,v1],[0,v1],wall); }
+          quad(W,[a0[0],gf?g0+gf:lo,a0[2]],[b0[0],gf?g0+gf:lo,b0[2]],[b0[0],g0+Hw,b0[2]],[a0[0],g0+Hw,a0[2]],[0,gf/V],[u1,gf/V],[u1,v1],[0,v1],wall);
+          if(!b.cons) wallBits(get("trim"),a0,b0,len,Hw,lo,gf,fk,bw,V,wall,g0,!pitched,!mobile); }
         if(!pitched){ const Rf=get("roof"); let P=corners.map(c=>M(c[0],c[1],Hw)), uvs=P.map(p=>[p[0]/MW,p[2]/MH]);
           if(faceN(P[0],P[1],P[2])[1]<0){ P.reverse(); uvs.reverse(); }
           quad(Rf,P[0],P[1],P[2],P[3],uvs[0],uvs[1],uvs[2],uvs[3],white); return; }
@@ -5722,6 +5770,8 @@ function v3init(T){
           if(hip){ const a=pt(le,D0,eave), bb=pt(le,D1,eave), c=pt(le-s*ins,Dm,Ht); triOut(Rf,a,bb,c,tu(0,0),tu(D1-D0,0),tu(half,half),ax*s,az*s,rc); }
           else { const lw=le-s*o, a=pt(lw,D0+o,Hw), bb=pt(lw,D1-o,Hw), c=pt(lw,Dm,Ht);
             triOut(W,a,bb,c,[0,Hw/V],[(D1-D0-2*o)/U,Hw/V],[(half-o)/U,Ht/V],ax*s,az*s,wall); } }
+        if(b.type==="house"&&qi===0){ const cx=x0+q[2]*.75+1.5, cy=y0+q[3]*.25-.1, k=1.15, c0=Hw-.5, c1=Ht+1.2;
+          hexa(get("trim"),[M(cx-k,cy-k,c0),M(cx+k,cy-k,c0),M(cx+k,cy-k,c1),M(cx-k,cy-k,c1),M(cx-k,cy+k,c0),M(cx+k,cy+k,c0),M(cx+k,cy+k,c1),M(cx-k,cy+k,c1)],LC("#8a6a5a")); }
       }); }
     return {parts,top};
   }
