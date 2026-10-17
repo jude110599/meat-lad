@@ -330,7 +330,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 6.5</div>
+    <div class="small">Version 6.6</div>
   </div>
 </div>
 
@@ -344,7 +344,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 6.5</div>
+    <div class="small">Version 6.6</div>
   </div>
 </div>
 
@@ -2344,7 +2344,7 @@ function levelUp(){
 // itself: homes turn up when there are jobs and shops to go to, and shops, offices and industry turn up when there
 // are people. Roads, roundabouts, lights and bridges cost money, and the town pays taxes at the end of every month.
 // A business nobody can get to closes down and its lot waits to grow again, instead of the game ending.
-let city=false, zoneSel="res", lots=[], lotId=1, zoneGhosts=null, zpts=null, zKey="", zT=0, zMs=0, cityD={res:0,dense:0,com:0,off:0,ind:0,mixed:0};
+let city=false, zoneSel="res", lots=[], lotId=1, zoneGhosts=null, zpts=null, zKey="", zT=0, zMs=0, viewZ=0, cityD={res:0,dense:0,com:0,off:0,ind:0,mixed:0};
 let closedN=0, closeHintT=-99, growT=0, monthT=0, month=1, monthTrips=0, lastIn=0, lastOut=0, people=0, mallsGiven=0, cityTip=0, compKey=-1, comp=new Map(), wantT={};
 const ZONES={
   res:  {name:"Homes",     foot:"house",    col:"#6fbf4f",tip:"Homes: tap the corners of some land, then the first corner again, and it fills with plots. Or drag along a road for a row. A house grows on each one when people want to move in, set back down a long drive on a deep plot."},
@@ -2605,11 +2605,41 @@ function zoneWhy(kind,p,path,closed){
 }
 // zoning by corners: tap each corner of the land, then the first one again (or Done) and it fills with plots.
 // Two corners and Done make a row along the road between them; one spot tapped twice makes a single plot.
-const zoneSnapR=()=>Math.max(8,22/cam.z);
+// the zoom on screen: while the 3D view paints its pictures cam.z is the picture's own scale, so this keeps the real one
+const zoomNow=()=>viewZ||cam.z;
+const zoneSnapR=()=>Math.max(8,22/zoomNow());
 function zonePrev(hv){
   const P=zpts.slice();
-  if(hv&&!(P.length>=3&&D(hv,P[0])<zoneSnapR())&&D(hv,P[P.length-1])>zoneSnapR()) P.push(hv);
+  if(hv&&!(P.length>=3&&D(hv,P[0])<zoneSnapR())&&D(hv,P[P.length-1])>zoneSnapR()) P.push(zoneSnap(hv).p);
   return {P,closed:P.length>=3};
+}
+// the guides from the last corner: square to the side before it and straight on from it (for the first side, along
+// and square to the road beside it), and square to the first side from the first corner, so a rectangle closes
+// square. A corner near one snaps onto it, and near two onto where they cross. Shift places it freely
+const unitV=(a,b)=>{ const x=b.x-a.x, y=b.y-a.y, l=Math.hypot(x,y)||1; return {x:x/l,y:y/l}; };
+function roadDirAt(p,R){ let best=null, bd=R;
+  for(const g of nearSegs([p],R)){ const A=nodes.get(g.a), B=nodes.get(g.b), q=projSeg(p.x,p.y,A.x,A.y,B.x,B.y); if(q.d<bd){ bd=q.d; best=unitV(A,B); } }
+  return best; }
+function zoneSnap(h){
+  const P=zpts, n=P.length, L=P[n-1], tol=18/Math.max(.35,zoomNow()), out={p:h,lines:[],hit:[],ang:null,rb:null,road:false};
+  if(!n) return out;
+  let rb=null;
+  if(n>=2) rb=unitV(L,P[n-2]); else { rb=roadDirAt(L,90); out.road=!!rb; }
+  out.rb=rb;
+  if(rb){ out.lines.push({o:L,d:{x:-rb.y,y:rb.x},k:90});
+    out.lines.push(n>=2?{o:L,d:{x:-rb.x,y:-rb.y},k:180,ray:true}:{o:L,d:rb,k:180}); }
+  if(n>=2){ const e=unitV(P[0],P[1]); out.lines.push({o:P[0],d:{x:-e.y,y:e.x},k:90,first:true}); }
+  for(const g of out.lines){ const vx=h.x-g.o.x, vy=h.y-g.o.y; g.along=vx*g.d.x+vy*g.d.y; g.off=Math.abs(vx*g.d.y-vy*g.d.x); }
+  if(!(shiftDown&&!isTouch)){
+    const ok=out.lines.filter(g=>g.off<tol&&Math.abs(g.along)>tol&&!(g.ray&&g.along<0));
+    const fl=ok.filter(g=>!g.first).sort((a,b)=>a.off-b.off)[0], ff=ok.find(g=>g.first);
+    const on=g=>({x:g.o.x+g.d.x*g.along,y:g.o.y+g.d.y*g.along});
+    if(fl&&ff){ const X=lineInter(fl.o,fl.d,ff.o,ff.d); if(X){ out.p={x:X.x,y:X.y}; out.hit=[fl,ff]; } }
+    if(!out.hit.length&&fl){ out.p=on(fl); out.hit=[fl]; }
+    else if(!out.hit.length&&ff){ out.p=on(ff); out.hit=[ff]; } }
+  // the angle the new side makes at the last corner: 180 is straight on, 90 square
+  if(rb){ const u=unitV(L,out.p), c=clamp(rb.x*u.x+rb.y*u.y,-1,1); let a=Math.acos(c)*180/Math.PI; if(out.road) a=180-Math.acos(Math.abs(c))*180/Math.PI; out.ang=a; }
+  return out;
 }
 // the preview catches up a few times a second, as cutting a big area into plots takes a moment
 function zoneTick(){
@@ -2621,12 +2651,13 @@ function zoneTick(){
   zKey=key; zT=now; zoneGhosts=zoneAt(zoneSel,z.P,z.closed); zMs=performance.now()-now;
 }
 function zoneHint(){ const n=zpts?zpts.length:0;
-  setHint(n===1?"Now tap the next corner. Tap this one again for a single plot.":n===2?"Tap the next corner, or Done for a row of plots along the road between these two.":"Keep tapping corners, then tap the first one again"+(isTouch?" or Done":" (or press Enter)")+" to zone it.",30); }
+  setHint(n===1?"Now tap the next corner. It snaps to the dotted lines, square or straight along the road. Tap this one again for a single plot.":n===2?"Tap the next corner, or Done for a row of plots along the road between these two.":"Keep tapping corners, then tap the first one again"+(isTouch?" or Done":" (or press Enter)")+" to zone it.",30); }
 function zoneTap(p){
   const r=zoneSnapR();
   if(!zpts){ zpts=[p]; zKey=""; zoneHint(); updateUI(); return; }
   if(zpts.length>=3&&D(p,zpts[0])<r) return zoneDone();
   if(D(p,zpts[zpts.length-1])<r) return zoneDone();
+  p=zoneSnap(p).p;
   if(zpts.length>=30){ setHint("That's a lot of corners. Tap the first one again to zone it.",3); return; }
   zpts.push(p); zKey=""; zoneHint(); updateUI();
 }
@@ -2939,12 +2970,14 @@ function drawZoneGhosts(){
   if(!gs||!gs.length) return;
   if(drag&&drag.mode==="zone"||zpts){ const last=gs[gs.length-1]; pill(last.x,last.y-last.r,gs.length+" plot"+(gs.length>1?"s":"")+" · "+ZONES[last.kind].name,"rgba(36,38,43,.85)",-10,11,{x:last.x,y:last.y}); }
 }
-function cornerDot(p,col,big,a){ const k=1/Math.max(.45,cam.z), r=(big?8:6)*k;
+// in 3D the marks are drawn bigger, as they lie on the ground further off
+const zoneK=()=>(v3live()?1.3:1)/Math.max(.45,zoomNow());
+function cornerDot(p,col,big,a){ const k=zoneK(), r=(big?8:6)*k;
   ctx.globalAlpha=a||1; ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,r,0,7); ctx.fill();
   ctx.strokeStyle=col; ctx.lineWidth=2.4*k; ctx.stroke(); ctx.globalAlpha=1; }
 // the corners tapped so far: solid sides between them, a dashed one out to the pointer and back to the start
 function drawCorners(){
-  const P=zpts, col=ZONES[zoneSel].col, k=1/Math.max(.45,cam.z), hv=hoverW&&!drag?hoverW:null;
+  const P=zpts, col=ZONES[zoneSel].col, k=zoneK(), hv=hoverW&&!drag?hoverW:null;
   const shut=hv&&P.length>=3&&D(hv,P[0])<zoneSnapR(), z=zonePrev(hv), Q=z.P;
   if(Q.length>=3&&!(zoneGhosts&&zoneGhosts.length)){ polyPath(Q); ctx.globalAlpha=.12; ctx.fillStyle=col; ctx.fill(); ctx.globalAlpha=1; }
   ctx.lineCap="round"; ctx.lineJoin="round";
@@ -2957,7 +2990,40 @@ function drawCorners(){
   // the first corner is the one to tap to finish: a ring round it once there are enough sides
   if(P.length>=3){ ctx.strokeStyle=shut?"#fff":col; ctx.globalAlpha=shut?1:.7; ctx.lineWidth=(shut?3:2)*k; ctx.beginPath(); ctx.arc(P[0].x,P[0].y,zoneSnapR()*.75,0,7); ctx.stroke(); ctx.globalAlpha=1; }
   P.forEach((p,i)=>cornerDot(p,col,i===0));
-  if(hv&&!shut&&Q.length>P.length) cornerDot(hv,col,false,.6);
+  if(hv&&!shut&&Q.length>P.length){ drawGuides(zoneSnap(hv),col,k); cornerDot(Q[Q.length-1],col,false,.6); }
+  // on a phone there's no pointer: the angle at the corner before the last one
+  else if(!hv){ drawGuides(zoneSnap(P[P.length-1]),col,k,true);
+    if(P.length>=3){ const a=P[P.length-3], c=P[P.length-2], d=P[P.length-1], u=unitV(c,a), v=unitV(c,d), g=Math.acos(clamp(u.x*v.x+u.y*v.y,-1,1))*180/Math.PI;
+      angleTag(c,u,v,g,col,k,Math.abs(g-90)<.5||g>179.5); } }
+}
+function drawGuides(z,col,k,bare){
+  const L=zpts[zpts.length-1], hits=new Set(z.hit);
+  ctx.lineCap="round";
+  for(const g of z.lines){ const hit=hits.has(g), ext=Math.max(220,Math.abs(g.along)+120), a0=g.ray?0:-ext;
+    ctx.strokeStyle=hit?"#fff":"rgba(255,255,255,.75)"; ctx.globalAlpha=hit?1:.55; ctx.lineWidth=(hit?3.2:2.2)*k; ctx.setLineDash([1.5*k,5*k]);
+    ctx.beginPath(); ctx.moveTo(g.o.x+g.d.x*a0,g.o.y+g.d.y*a0); ctx.lineTo(g.o.x+g.d.x*ext,g.o.y+g.d.y*ext); ctx.stroke();
+    ctx.strokeStyle=hit?col:"rgba(36,38,43,.5)"; ctx.lineWidth=(hit?1.8:1.1)*k; ctx.stroke(); }
+  ctx.setLineDash([]); ctx.globalAlpha=1; ctx.lineCap="butt";
+  // where two guides cross, a little square to say it's square there too
+  if(z.hit.length===2){ const p=z.p, s=7*k, a=z.hit[0].d, b=z.hit[1].d; ctx.strokeStyle="#fff"; ctx.lineWidth=1.6*k;
+    ctx.beginPath(); ctx.moveTo(p.x-a.x*s,p.y-a.y*s); ctx.lineTo(p.x-a.x*s-b.x*s,p.y-a.y*s-b.y*s); ctx.lineTo(p.x-b.x*s,p.y-b.y*s); ctx.stroke(); }
+  if(bare) return;
+  if(z.ang!==null){ const u=z.road?(()=>{ const r=z.rb, v=unitV(L,z.p); return r.x*v.x+r.y*v.y<0?r:{x:-r.x,y:-r.y}; })():z.rb;
+    angleTag(L,u,unitV(L,z.p),z.ang,col,k,z.hit.some(g=>!g.first)); }
+  // and with three corners down, the corner the pointer makes with the way back to the first one
+  const n=zpts.length; if(n>=3&&D(z.p,zpts[0])>zoneSnapR()&&D(z.p,L)>zoneSnapR()){ const u=unitV(z.p,L), v=unitV(z.p,zpts[0]);
+    angleTag(z.p,u,v,Math.acos(clamp(u.x*v.x+u.y*v.y,-1,1))*180/Math.PI,col,k,z.hit.some(g=>g.first)); }
+}
+// an arc between the two sides at a corner and the angle written beside it, green when it's snapped square or straight
+function angleTag(c,u,v,ang,col,k,snap){
+  const r=16*k, a0=Math.atan2(u.y,u.x), a1=Math.atan2(v.y,v.x); let da=a1-a0; while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI;
+  const a=Math.round(ang), sq=Math.abs(ang-90)<.5;
+  ctx.strokeStyle="#fff"; ctx.lineWidth=3.4*k; ctx.beginPath();
+  if(sq){ const s=r*.7; ctx.moveTo(c.x+u.x*s,c.y+u.y*s); ctx.lineTo(c.x+u.x*s+v.x*s,c.y+u.y*s+v.y*s); ctx.lineTo(c.x+v.x*s,c.y+v.y*s); }
+  else ctx.arc(c.x,c.y,r,a0,a0+da,da<0);
+  ctx.stroke(); ctx.strokeStyle=col; ctx.lineWidth=1.6*k; ctx.stroke();
+  const m=a0+da/2, lx=c.x+Math.cos(m)*(r+16*k), ly=c.y+Math.sin(m)*(r+16*k);
+  pill(lx,ly+4*k,a+"\u00b0",snap?"rgba(47,158,85,.95)":"rgba(36,38,43,.85)",0,11,{x:lx,y:ly});
 }
 
 // ---------- city services ----------
@@ -5791,9 +5857,9 @@ function v3init(T){
   function pass2d(cvs,px,x0,y0,S,fn){
     const sv={ctx,cx:cam.x,cy:cam.y,cz:cam.z,vw,vh,dpr,view,LOD};
     ctx=cvs.getContext("2d"); cam.x=x0+S/2; cam.y=y0+S/2; cam.z=px/S; vw=vh=px; dpr=1;
-    view={x0,y0,x1:x0+S,y1:y0+S}; LOD=cam.z>.4;
+    view={x0,y0,x1:x0+S,y1:y0+S}; LOD=cam.z>.4; viewZ=sv.cz;
     try{ fn(); } catch(e){ console.error(e); }
-    finally { rec3d=null; ctx=sv.ctx; cam.x=sv.cx; cam.y=sv.cy; cam.z=sv.cz; vw=sv.vw; vh=sv.vh; dpr=sv.dpr; view=sv.view; LOD=sv.LOD; }
+    finally { rec3d=null; viewZ=0; ctx=sv.ctx; cam.x=sv.cx; cam.y=sv.cy; cam.z=sv.cz; vw=sv.vw; vh=sv.vh; dpr=sv.dpr; view=sv.view; LOD=sv.LOD; }
   }
   // one cell of a picture: the ground from the layer's own copy (painted the first time), then water, roads, plots and
   // buildings, keeping the outlines of the buildings whose middles are in the cell for their walls
@@ -5945,7 +6011,7 @@ function v3init(T){
     const add=(x,y,r)=>{ if(x-r<x0) x0=x-r; if(y-r<y0) y0=y-r; if(x+r>x1) x1=x+r; if(y+r>y1) y1=y+r; };
     const seg=(s,m)=>{ for(const q of orientedChain(s)){ const A=nodes.get(q.s.a), B=nodes.get(q.s.b); if(A) add(A.x,A.y,m); if(B) add(B.x,B.y,m); } };
     if(tool==="build"){ if(zoneGhosts) for(const g of zoneGhosts) add(g.x,g.y,g.r+8);
-      if(zpts) for(const p of zpts) add(p.x,p.y,zoneSnapR()+6);
+      if(zpts){ for(const p of zpts) add(p.x,p.y,zoneSnapR()+14); if(hoverW&&!drag){ const z=zoneSnap(hoverW); add(z.p.x,z.p.y,70); const L=zpts[zpts.length-1]; add(L.x,L.y,70); } }
       if(lineGhosts) for(const g of lineGhosts) add(g.x,g.y,g.r+12);
       if(ghost){ add(ghost.x,ghost.y,ghost.r+18); if(ghost.snapped) add(ghost.x+Math.cos(ghost.ang)*(ghost.d/2+14),ghost.y+Math.sin(ghost.ang)*(ghost.d/2+14),4); } }
     if(drag&&drag.mode==="road"){ const pl=drag.plan, m=halfW(laneSel)+18;
@@ -5970,7 +6036,7 @@ function v3init(T){
     const now=performance.now(), r=v=>v?Math.round(v.x*2)+","+Math.round(v.y*2):"";
     const key=[tool,placeSel,zoneSel,roadMode,roadKind,laneSel,laneSide,r(hoverW),drag?drag.mode+(drag.raw?drag.raw.length+r(drag.raw[drag.raw.length-1]):"")+(drag.lane?r(drag.lane.w1):"")+(drag.path?drag.path.length:""):"",
       ghost?r(ghost)+ghost.ok+ghost.ang+ghost.why:"",zoneGhosts?zoneGhosts.length+r(zoneGhosts[0])+r(zoneGhosts[zoneGhosts.length-1]):"",lineGhosts?lineGhosts.length+r(lineGhosts[lineGhosts.length-1]):"",
-      grid?grid.pts.length+r(grid.pts[0])+r(grid.pts[1]):"",zpts?zpts.length+r(zpts[zpts.length-1]):"",r(gridCur),tuneNode?tuneNode.id:"",moving?1:0,running&&!paused?1:0,cam.z.toFixed(2)].join("|");
+      grid?grid.pts.length+r(grid.pts[0])+r(grid.pts[1]):"",zpts?zpts.length+r(zpts[zpts.length-1])+(shiftDown?"s":""):"",r(gridCur),tuneNode?tuneNode.id:"",moving?1:0,running&&!paused?1:0,cam.z.toFixed(2)].join("|");
     if(key===focKey) return;
     if(now-lastF<(mobile?45:20)) return;
     focKey=key; lastF=now;
@@ -6125,6 +6191,7 @@ window.__gridlock={
     const f=finEst(), r=v=>Math.round(v), m=O=>{ const q={}; for(const k in O) q[k]=r(O[k]); return q; };
     return {taxR,taxB,budget:Object.assign({},budget),est:{inc:m(f.inc),out:m(f.out),tin:r(f.tin),tout:r(f.tout)},log:finLog.slice(),open:finOpen,happy:r(happyAvg),R:{fire:r(svcR("fire")),clinic:r(svcR("clinic"))},util:JSON.parse(JSON.stringify(utilStat))}; },
   zpts:()=>zpts&&zpts.map(p=>({x:Math.round(p.x),y:Math.round(p.y)})),
+  zsnap:(x,y)=>{ if(!zpts) return null; const z=zoneSnap({x,y}); return {p:{x:+z.p.x.toFixed(1),y:+z.p.y.toFixed(1)},ang:z.ang&&+z.ang.toFixed(1),hit:z.hit.map(g=>g.k+(g.first?"f":"")),lines:z.lines.map(g=>g.k+":"+g.off.toFixed(1)+"/"+g.along.toFixed(1)),road:z.road}; },
   plotOpts:o=>{ if(o){ if(o.split) plotSplit=o.split; if(o.size) plotSize=o.size; if(o.side) plotSide=o.side; updateUI(); } return {split:plotSplit,size:plotSize,side:plotSide}; },
   lotPolys:()=>lots.map(L=>({k:L.kind,b:L.b?L.b.type:null,poly:L.poly.map(p=>[Math.round(p.x),Math.round(p.y)]),site:{w:Math.round(L.site.w),d:Math.round(L.site.d)}})),
   setOver:(id,v)=>{ const b=blds.find(q=>q.id===id); if(b) b.over=v; return !!b; },
