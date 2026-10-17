@@ -305,7 +305,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 6.2</div>
+    <div class="small">Version 6.3</div>
   </div>
 </div>
 
@@ -319,7 +319,7 @@ body.dark .pill,body.dark #dock,body.dark #buildBar,body.dark #roadBar .row{box-
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the menus and toolbars dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 6.2</div>
+    <div class="small">Version 6.3</div>
   </div>
 </div>
 
@@ -429,7 +429,7 @@ showBest();
 
 // ---------- state ----------
 let nodes=new Map(), segs=new Map(), nodeList=[], nid=1, sid=1;
-let blds=[], cars=[], trees=[], waterGrid=null, hillGrid=null, terrain=null, biome=null, tver=0, moving=null;
+let blds=[], cars=[], trees=[], waterGrid=null, hillGrid=null, terrain=null, biome=null, tver=0, moving=null, works=[], workId=1;
 let frozen=false, animT=0;     // frozen: the pause button has stopped the clock, but you can still build
 let res, score=0, t=0, level=1, lvTrips=0, levelPending=false, running=false, paused=false, speed=1, over=false, relaxed=false, viewing=false;
 let dispatchT=0, rr=0, effects=[], carsOn=new Map(), qOn=new Map(), laneSel=1, roadKind="two", laneSide="both", roadMode="draw", firstRoad=false, hintT=0, bid=1, segArr=[];
@@ -880,6 +880,7 @@ function addPiece(a,b,lanes,st){
   if(st.hwy) s.hwy=true;
   if(st.over){ s.over=true; if(st.first){ s.bridgeHead=true; st.first=false; } }
   else { if(s.water&&!st.inWater) s.bridgeHead=true; st.inWater=s.water; }
+  if(st.made&&!s.over&&!s.water) st.made.push({a,b,T:totL(s)});
   const hw=segHW(s)+5;
   for(const tr of trees){ if(tr.alive&&projSeg(tr.x,tr.y,a.x,a.y,b.x,b.y).d<hw+tr.r*.5) tr.alive=false; }
 }
@@ -1194,7 +1195,7 @@ function noisyHome(pts){
 const roadUsed=()=>{ let u=0; for(const s of segs.values()) u+=segUse(s); return u; };
 function commitPlan(pl,quiet){
   const used0=roadUsed(), sid0=sid, nid0=nid;
-  const st={inWater:false,over:pl.over,first:true,ow:!!pl.ow,hwy:!!pl.hwy};
+  const st={inWater:false,over:pl.over,first:true,ow:!!pl.ow,hwy:!!pl.hwy,made:[]};
   applySlide(pl.S); applySlide(pl.E);
   let prev=resolveSnap(pl.S);
   for(let i=1;i<pl.pts.length;i++){
@@ -1208,7 +1209,7 @@ function commitPlan(pl,quiet){
   // pay for what actually got built (a stretch that's already road costs nothing)
   const built=roadUsed()-used0; res.road-=Math.max(0,built);
   if(built>1){ if(city){ const need=pl.bridges-res.bridge; if(need>0){ res.road-=need*PRICE.bridge; res.bridge+=need; } } res.bridge-=pl.bridges; }
-  firstRoad=true;
+  firstRoad=true; layRoad(st.made);
   if(!quiet) afterEdit();
   return built;
 }
@@ -1355,6 +1356,8 @@ function setNodeType(n,type){
 }
 function afterEdit(){
   rebuildNet(); tver++; pruneLots();
+  // a road knocked down while it was still being laid takes its crew with it
+  if(works.length) works=works.filter(w=>{ const mx=(w.ax+w.bx)/2, my=(w.ay+w.by)/2; for(const q of segs.values()){ const A=nodes.get(q.a), B=nodes.get(q.b); if(projSeg(mx,my,A.x,A.y,B.x,B.y).d<1) return true; } return false; });
   for(const c of cars) if(c.state==="drive"&&!routeValid(c)) reanchor(c);
   updateUI();
 }
@@ -1996,13 +1999,13 @@ function placeGhost(g){
   if(!S&&!tray[g.type]) return false;
   const why=placeWhy(g.x,g.y,g.r,g.type,null,g.ang);
   if(why){ setHint(WHY[why]||"There's no room there.",3.5); if(why==="cash") flashTool("nRoad"); return false; }
-  addBld(makeBld(g.type,g.x,g.y,g.ang)); if(S) res.road-=S.cost; else tray[g.type]--; tver++; pruneLots();
+  startWork(addBld(makeBld(g.type,g.x,g.y,g.ang))); if(S) res.road-=S.cost; else tray[g.type]--; tver++; pruneLots();
   if(S){ cityUtils(); cityCover(); effects.push({k:"ring",x:g.x,y:g.y,c:"#2f7de1",t:0,life:1.2,r:S.R||g.r+20}); }
   return true;
 }
 function afterPlace(type){
   if(PLACE_HINT[type]) setHint(PLACE_HINT[type],4);
-  if(SVC[type]&&city) setHint(SVC[type].done,5);
+  if(SVC[type]&&city) setHint(SVC[type].done.replace(" built."," is going up."),5);
   if(tray[type]<=0&&!SVC[type]) placeSel=TYPES.find(q=>tray[q]>0)||null;
   if(city&&!placeSel&&!zoneSel) zoneSel="res";
   updateUI();
@@ -2061,6 +2064,135 @@ function deleteBld(b,force){
   return true;
 }
 
+// ---------- building work ----------
+// A new building takes a few seconds of game time to go up: the ground is dug over and pegged out, the foundations go
+// in, then the walls rise floor by floor (with a tower crane over anything tall) until it's finished. Nobody moves in
+// and nothing opens until then.
+function startWork(b){
+  const h=Math.max(0,...footprint(b).map(r=>r.h)), dur=city?5+Math.min(12,h*.45):2.5;
+  b.cons={t0:t,dur,h,v:[{len:6.5,wid:3,truck:true,col:"#f2b632",cab:"#f2b632"},{len:9,wid:3.2,truck:true,col:"#dcd9d0",cab:"#e07b24"}]};
+  b.born=Math.max(b.born,t+dur);
+  for(const c of b.cars) c.cool+=dur;
+}
+function finishWork(b){ b.cons=null; b.grow=animT; effects.push({k:"ring",x:b.x,y:b.y,c:BT[b.type].col,t:0,life:.9,r:b.r}); }
+const workK=b=>clamp((t-b.cons.t0)/b.cons.dur,0,1);
+// 0 pegged out, 1 the foundations, then 2 to 5 the walls a quarter, half, three quarters and all the way up
+function workStage(b){ const k=workK(b); return k<.16?0:k<.32?1:Math.min(5,2+Math.floor((k-.32)/.17)); }
+// the blocks a building is made of and how tall each one stands, taken from its own drawing
+let fpCtx=null;
+function footprint(b){
+  if(b.fp) return b.fp;
+  if(!fpCtx){ const c=document.createElement("canvas"); c.width=c.height=2; fpCtx=c.getContext("2d"); }
+  const sv=ctx, sr=rec3d, sg=b.grow, sw=b.cons, rc={own:()=>true,boxes:new Map(),parked:[],trees:[]};
+  ctx=fpCtx; rec3d=rc; b.grow=-1e9; b.cons=null;
+  try{ if(isHome(b)) drawHome(b); else drawDest(b); } catch(e){} finally{ ctx=sv; rec3d=sr; b.grow=sg; b.cons=sw; }
+  return b.fp=rc.boxes.get(b)||[];
+}
+function siteBox(b){
+  if(b.fpBox) return b.fpBox; let x0=1e9, y0=1e9, x1=-1e9, y1=-1e9;
+  for(const r of footprint(b)) for(const q of r.rects){ x0=Math.min(x0,q[0]*r.sc); y0=Math.min(y0,q[1]*r.sc); x1=Math.max(x1,(q[0]+q[2])*r.sc); y1=Math.max(y1,(q[1]+q[3])*r.sc); }
+  if(x0>x1){ x0=-b.w*.4; x1=b.w*.4; y0=-b.d*.4; y1=b.d*.4; }
+  return b.fpBox={x0,y0,x1,y1};
+}
+// the tower crane beside a tall building going up: where it stands, which way its arm points, and where the hook is
+function craneAt(b){
+  const W=b.cons; if(!W||W.h<14||workStage(b)<1) return null;
+  const B=siteBox(b), p=toMap(b,B.x1+3,B.y0+3), a0=Math.atan2(b.y-p.y,b.x-p.x), L=clamp(Math.hypot(B.x1-B.x0,B.y1-B.y0)*.8,20,42);
+  return {x:p.x,y:p.y,a:a0+Math.sin(t*.3+b.id)*.8,L,hook:L*(.5+.3*Math.sin(t*.45+b.id*2)),f:clamp((workK(b)-.32)/.51,0,1)};
+}
+const SITE={dirt:"#c9ad84",edge:"#a88a61",track:"rgba(112,86,54,.32)",slab:"#d4d0c7",slabE:"#a6a196",post:"#7f7a70",ply:"#e2cfa6",wood:"#dcb47c",woodE:"#a5793f",scaf:"#8f969d",board:"#c99e62",peg:"#e2742a"};
+function drawBld(b){ if(b.cons) drawSite(b); else if(isHome(b)) drawHome(b); else drawDest(b); }
+function drawSite(b){
+  const W=b.cons, k=workK(b), st=workStage(b), fp=footprint(b), B=siteBox(b), wood=PITCH3.has(b.type), m=3.5, th=b.ang-Math.PI/2;
+  const local=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); };
+  const each=f=>{ for(const r of fp) for(const q of r.rects) f(q[0]*r.sc,q[1]*r.sc,q[2]*r.sc,q[3]*r.sc); };
+  // the ground dug over, with tyre tracks in from the road
+  local();
+  ctx.fillStyle=SITE.dirt; roundRect(B.x0-m,B.y0-m,B.x1-B.x0+2*m,B.y1-B.y0+2*m,3); ctx.fill(); ctx.strokeStyle=SITE.edge; ctx.lineWidth=.8; ctx.stroke();
+  ctx.strokeStyle=SITE.track; ctx.lineWidth=.9; ctx.beginPath();
+  for(const o of [-1.1,1.1]){ ctx.moveTo((B.x0+B.x1)/2+o,B.y1+m); ctx.quadraticCurveTo(B.x1+m*.4+o,B.y1+m,B.x1+m*.4+o,(B.y0+B.y1)/2); }
+  ctx.stroke();
+  if(st===0){
+    // pegged out with string lines
+    ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=.45; ctx.setLineDash([1.6,1.2]); each((x,y,w,h)=>ctx.strokeRect(x,y,w,h)); ctx.setLineDash([]);
+    ctx.fillStyle=SITE.peg; each((x,y,w,h)=>{ for(const [px,py] of [[x,y],[x+w,y],[x+w,y+h],[x,y+h]]) ctx.fillRect(px-.5,py-.5,1,1); });
+  } else { ctx.fillStyle=wood?SITE.ply:SITE.slab; ctx.strokeStyle=SITE.slabE; ctx.lineWidth=.5; each((x,y,w,h)=>{ ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h); }); }
+  ctx.restore();
+  if(st>=2){
+    // the walls going up: in 3D they rise a quarter at a time, in 2D their shadow grows smoothly
+    const f=rec3d?(st-1)/4:clamp((k-.32)/.51,.06,1);
+    for(const r of fp) if(r.h>0) bodyShadow(b,r.sc,r.h*f,r.rects);
+    local();
+    each((x,y,w,h)=>{
+      ctx.fillStyle=wood?SITE.ply:SITE.slab; ctx.fillRect(x,y,w,h);
+      // the floor going in: joists, or the steel mesh for a concrete slab
+      const sp=wood?1.6:2.4; ctx.strokeStyle=wood?"rgba(165,121,63,.55)":"rgba(127,122,112,.35)"; ctx.lineWidth=.3; ctx.beginPath();
+      for(let u=x+sp;u<x+w;u+=sp){ ctx.moveTo(u,y); ctx.lineTo(u,y+h); }
+      if(!wood) for(let v=y+sp;v<y+h;v+=sp){ ctx.moveTo(x,v); ctx.lineTo(x+w,v); }
+      ctx.stroke();
+      // posts round the edge
+      const ps=wood?3.2:4.5, pz=wood?.55:.85, nx=Math.max(1,Math.round(w/ps)), ny=Math.max(1,Math.round(h/ps));
+      ctx.fillStyle=wood?SITE.woodE:SITE.post;
+      for(let i=0;i<=nx;i++) for(const yy of [y,y+h-pz]) ctx.fillRect(x+i*(w-pz)/nx,yy,pz,pz);
+      for(let j=1;j<ny;j++) for(const xx of [x,x+w-pz]) ctx.fillRect(xx,y+j*(h-pz)/ny,pz,pz);
+      ctx.strokeStyle=wood?SITE.wood:SITE.slabE; ctx.lineWidth=.5; ctx.strokeRect(x,y,w,h);
+      // scaffolding round anything bigger than a house, and roof trusses on a house once its walls are up
+      if(!wood){ ctx.strokeStyle=SITE.board; ctx.lineWidth=.6; ctx.strokeRect(x-1.1,y-1.1,w+2.2,h+2.2); ctx.strokeStyle=SITE.scaf; ctx.lineWidth=.35; ctx.strokeRect(x-1.7,y-1.7,w+3.4,h+3.4); }
+      else if(st>=5){ ctx.strokeStyle=SITE.wood; ctx.lineWidth=.45; ctx.beginPath();
+        if(w>=h) for(let u=x+.6;u<x+w;u+=1.2){ ctx.moveTo(u,y); ctx.lineTo(u,y+h); } else for(let v=y+.6;v<y+h;v+=1.2){ ctx.moveTo(x,v); ctx.lineTo(x+w,v); }
+        ctx.stroke(); } });
+    ctx.restore();
+  }
+  // a digger while the ground's being dug, then a lorry bringing materials
+  const v=W.v[st<2?0:1], vp=toMap(b,B.x1+m-1.6,B.y1-v.len/2);
+  parked(v,vp.x,vp.y,b.ang+Math.PI);
+  const cr=!rec3d&&craneAt(b);
+  if(cr){ const Hc=W.h*1.2+6, ca=Math.cos(cr.a), sa=Math.sin(cr.a), ex=cr.x+ca*cr.L, ey=cr.y+sa*cr.L, qx=cr.x-ca*10, qy=cr.y-sa*10, sx=SHX*Hc, sy=SHY*Hc;
+    ctx.lineCap="round";
+    // its shadow falls a long way off, it stands so high
+    ctx.strokeStyle="rgba(30,36,22,.16)"; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(cr.x,cr.y); ctx.lineTo(cr.x+sx,cr.y+sy); ctx.moveTo(qx+sx,qy+sy); ctx.lineTo(ex+sx,ey+sy); ctx.stroke();
+    ctx.strokeStyle="#c98f1c"; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(qx,qy); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.strokeStyle="#f2b632"; ctx.lineWidth=1; ctx.setLineDash([1.2,.8]); ctx.beginPath(); ctx.moveTo(qx,qy); ctx.lineTo(ex,ey); ctx.stroke(); ctx.setLineDash([]);
+    ctx.save(); ctx.translate(qx,qy); ctx.rotate(cr.a); ctx.fillStyle="#8d9299"; ctx.fillRect(-1.6,-1.4,3.2,2.8); ctx.restore();
+    ctx.fillStyle="#f2b632"; ctx.fillRect(cr.x-1.3,cr.y-1.3,2.6,2.6); ctx.strokeStyle="#9a6d10"; ctx.lineWidth=.4; ctx.strokeRect(cr.x-1.3,cr.y-1.3,2.6,2.6);
+    ctx.fillStyle="#e2493a"; ctx.beginPath(); ctx.arc(cr.x+ca*cr.hook,cr.y+sa*cr.hook,.8,0,7); ctx.fill(); ctx.lineCap="butt"; }
+}
+// A new road is marked out as a strip of bare earth, then a paving crew works along it: the paver laying asphalt with a
+// lorry ahead feeding it and a roller behind, and the lines go on once it's pressed down. It's only for show: traffic
+// can use the road straight away.
+const PAVE_SP=24;
+function layRoad(made){
+  let L=0; for(const q of made) L+=D(q.a,q.b); if(L<1) return;
+  const v=L/clamp(1.2+L/90,1.8,9); let at=animT+.8;
+  made.forEach((q,i)=>{ const len=D(q.a,q.b); if(len<.5) return; works.push({id:workId++,ax:q.a.x,ay:q.a.y,bx:q.b.x,by:q.b.y,len,T:q.T,t0:at,dur:len/v,first:!i,capA:q.a.segs.length===1,capB:q.b.segs.length===1}); at+=len/v; });
+}
+// how far along a piece the paver is, while its crew is there
+function crewAt(w){ if(animT>=w.t0+w.dur||(animT<w.t0&&!w.first)) return null; return clamp((animT-w.t0)/w.dur,0,1)*w.len; }
+function crew(w,d){
+  const ux=(w.bx-w.ax)/w.len, uy=(w.by-w.ay)/w.len, a=Math.atan2(uy,ux), Wd=widthOf(w.T)*.85, at=s=>({x:w.ax+ux*s,y:w.ay+uy*s,h:0,braking:false});
+  return [Object.assign(at(d),{ang:a,len:8,wid:Wd,truck:true,col:"#f2b632",cab:"#3a3e44"}),
+    Object.assign(at(Math.max(0,d-12)),{ang:a,len:6,wid:Math.min(Wd*.75,12),col:"#f2b632"}),
+    Object.assign(at(Math.min(w.len,d+12)),{ang:a+Math.PI,len:10,wid:4,truck:true,col:"#e07b24",cab:"#f2b632"})];
+}
+function drawWorks(){
+  if(!works.length) return;
+  ctx.lineCap="butt";
+  for(const w of works){
+    if(!inView((w.ax+w.bx)/2,(w.ay+w.by)/2,w.len/2+30)) continue;
+    const ux=(w.bx-w.ax)/w.len, uy=(w.by-w.ay)/w.len, nx=-uy, ny=ux, R=widthOf(w.T)+3;
+    let d=clamp((animT-w.t0)/w.dur,0,1)*w.len; if(rec3d) d=Math.floor(d/PAVE_SP)*PAVE_SP;
+    const run=(s0,s1,col,lw,o)=>{ if(s1<=s0) return; o=o||0; ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(w.ax+ux*s0+nx*o,w.ay+uy*s0+ny*o); ctx.lineTo(w.ax+ux*s1+nx*o,w.ay+uy*s1+ny*o); ctx.stroke(); };
+    // bare earth ahead of the crew, with tyre ruts and its edges pegged out
+    const cap=(x,y)=>{ ctx.fillStyle=SITE.edge; ctx.beginPath(); ctx.arc(x,y,R/2+2.5,0,7); ctx.fill(); ctx.fillStyle=SITE.dirt; ctx.beginPath(); ctx.arc(x,y,R/2+1.5,0,7); ctx.fill(); };
+    if(w.capA&&d<=0) cap(w.ax,w.ay); if(w.capB&&d<w.len) cap(w.bx,w.by);
+    run(d,w.len,SITE.edge,R+5); run(d,w.len,SITE.dirt,R+3);
+    for(const o of [-R*.22,R*.22]) run(d,w.len,SITE.track,.8,o);
+    ctx.fillStyle=SITE.peg; for(let s=Math.ceil(d/10)*10;s<w.len;s+=10) for(const o of [-R/2-2,R/2+2]) ctx.fillRect(w.ax+ux*s+nx*o-.5,w.ay+uy*s+ny*o-.5,1,1);
+    // fresh asphalt between the paver and the roller, still to be lined
+    run(Math.max(0,d-14),d,"#45474c",R-2);
+    if(!rec3d){ const cd=crewAt(w); if(cd!==null) for(const c of crew(w,cd)) drawCar(c); }
+  }
+}
 // ---------- game flow ----------
 // a highway in from beyond the edge of the map: where the trucks with goods and raw materials come from
 function makeOutside(){
@@ -2086,7 +2218,7 @@ function newGame(isRelaxed,isCity){
   relaxed=!!isRelaxed; city=!!isCity; viewing=false; document.body.classList.toggle("city",city);
   mapSize(city); genMap();
   nodes=new Map(); segs=new Map(); nodeList=[]; segArr=[]; nid=1; sid=1; bid=1;
-  blds=[]; cars=[]; effects=[]; fxReset();
+  blds=[]; cars=[]; effects=[]; works=[]; fxReset();
   res={road:1500,round:1,light:1,bridge:2};
   score=0; t=0; level=1; lvTrips=0; levelPending=false; mallBatch=false; lastMall=-9; plantGiven=false; paused=false; over=false; speed=1; firstRoad=false; goodsHinted=false; partsHinted=false;
   // nothing is built yet: the first shop and houses are yours to place
@@ -2442,11 +2574,11 @@ const compOf=acc=>{ const s=acc&&segs.get(acc.seg); return s?comp.get(s.a):null;
 
 // what the town wants next, in buildings' worth: people come for jobs and shops, and shops and jobs follow people
 function cityDemand(){
-  let R=0, nC=0, nO=0, nI=0, nH=0, hk=0;
-  for(const b of blds){ if(isHome(b)){ if(b.acc) R+=b.cars.length; if(b.type==="mixed") nC+=.6*(b.k||1); continue; }
+  let R=0, Rc=0, nC=0, nO=0, nI=0, nH=0, hk=0;
+  for(const b of blds){ if(isHome(b)){ if(b.acc){ R+=b.cars.length; if(b.cons) Rc+=b.cars.length; } if(b.type==="mixed") nC+=.6*(b.k||1); continue; }
     if(isSvc(b)) continue;
     const k=b.k||1; if(b.type==="hotel"){ nH++; hk+=.7*k; continue; } if(b.type==="shop") nC+=k; else if(b.type==="center") nC+=2.2*k; else if(b.type==="mall") nC+=2.5; else if(b.type==="office") nO+=k; else nI+=k; }
-  people=R;
+  people=R-Rc;
   const u=R/12, nD=nC+nO+nI+hk;
   // a happy town draws people in; a miserable one puts them off
   cityD.res=(12*nD+12-R)/10+(R>20?(happyAvg-55)/20:0)+TAXD[taxLv];
@@ -2531,7 +2663,7 @@ function growOn(L,type,old){
   if(lotBlocked(L,type)) return false;
   const b=makeLotBld(L,type); if(!findAccess(b)) return false;
   if(old) deleteBld(old,true);
-  L.b=b; addBld(b);
+  L.b=b; addBld(b); startWork(b);
   // clear the trees off the plot, then plant a few in the garden
   for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-L.x,tr.y-L.y)<L.r&&inPoly(L.poly,tr.x,tr.y)) tr.alive=false;
   L.trees=yardTrees(L,b);
@@ -2892,7 +3024,7 @@ function drawFire(b){
     ctx.fillStyle=out?"rgba(235,235,235,"+(.55*(1-ph))+")":"rgba(60,55,50,"+(.5*(1-ph))+")"; ctx.beginPath(); ctx.arc(x+ph*14,y-ph*22,4+ph*9,0,7); ctx.fill(); }
 }
 // little badges over a building that's short of something
-function drawProblems(b){
+function drawProblems(b){ if(b.cons) return;
   const P=[];
   if(b.noPow) P.push("pow"); if(b.noWat) P.push("wat"); if(b.noPark&&t-b.noPark<25) P.push("park"); if(b.sick) P.push("sick"); if((b.crime||0)>.6) P.push("crime");
   if(!P.length) return;
@@ -3900,7 +4032,7 @@ function drawLamps(){
 
 // smoke from the factory chimneys: it rises (so its shadow falls further away) and drifts off on the wind
 function drawSmoke(dt){
-  for(const b of blds){ if(b.type!=="factory"||!b.chim||!inView(b.x,b.y,240)) continue;
+  for(const b of blds){ if(b.type!=="factory"||!b.chim||b.cons||!inView(b.x,b.y,240)) continue;
     b.smk=(b.smk||0)+dt; const per=b.chim.on?.22:.6;
     while(b.smk>per){ b.smk-=per; if(smoke.length<700) smoke.push({x:b.chim.x,y:b.chim.y,h:0,age:0,life:5.5+frand()*3,r:2.6+frand()*1.6,vx:(frand()-.5)*3,vy:(frand()-.5)*3,on:b.chim.on}); } }
   if(!smoke.length) return;
@@ -3917,7 +4049,7 @@ const SHIRTS=["#e2493a","#3d7fe0","#f1c232","#4caf50","#9b59b6","#ff8a3d","#f4f4
 function drawWalkers(){
   if(cam.z<1.05||!LOD) return;
   const now=performance.now()/1000, body=SHIRTS.map(()=>new Path2D()), heads=SKIN.map(()=>new Path2D()), sh=new Path2D();
-  for(const b of blds){ const k=b.type; if((k!=="shop"&&k!=="office"&&k!=="mall")||!inView(b.x,b.y,b.r)||animT-b.grow<1) continue;
+  for(const b of blds){ const k=b.type; if((k!=="shop"&&k!=="office"&&k!=="mall")||!inView(b.x,b.y,b.r)||b.cons||animT-b.grow<1) continue;
     const here=(parkedAt.get(b)||[]).length, n=Math.min(k==="mall"?12:6,here+(k==="mall"?2:1));
     const by=k==="shop"?3:k==="office"?7:-1.5;
     for(let i=0;i<n;i++){
@@ -4045,7 +4177,7 @@ function drawNight(){
     Lt(rx,ry,7,c.braking?.9:.5,"255,40,25");
     for(const o of [-1,1]){ const ox=-sa*o*(c.wid/2-1), oy=ca*o*(c.wid/2-1);
       Gl(fx+ox,fy+oy,2.8,.9,"255,248,225"); Gl(rx+ox,ry+oy,c.braking?5:3,c.braking?.95:.6,"255,45,30"); } }
-  for(const b of blds){ if(!inView(b.x,b.y,b.r+40)) continue;
+  for(const b of blds){ if(!inView(b.x,b.y,b.r+40)||b.cons) continue;
     if(b.fire&&!b.fire.out){ Lt(b.x,b.y,b.r*2.4,1,"255,140,50"); Gl(b.x,b.y,b.r*.8,.6,"255,150,60"); }
     const lit=hash(b.id,Math.floor(dayClock/40))<.8;
     if(isHome(b)){ if(lit){ Lt(b.x,b.y,b.r*1.6,b.type==="apts"?.8:.6,"255,184,110"); Gl(b.door.x,b.door.y,4,.8,"255,200,130");
@@ -4736,7 +4868,7 @@ function drawDest(b){
       ctx.fillStyle="rgba(240,240,240,"+((working?.55:.2)*(1-ph))+")"; ctx.beginPath(); ctx.arc(ch.x+ph*8,ch.y-ph*16,3+ph*5,0,7); ctx.fill(); }
   }
 }
-function drawPins(b){
+function drawPins(b){ if(b.cons) return;
   const kinds=KINDS.filter(k=>b.pins[k]>0);
   if(!b.acc&&animT-b.grow>1){ ctx.font="600 7.5px "+FONT; ctx.textAlign="center"; const tw=ctx.measureText("needs a road").width+10; ctx.fillStyle="rgba(36,38,43,.82)"; roundRect(b.x-tw/2,b.y-b.r-24,tw,13,6.5); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillText("needs a road",b.x,b.y-b.r-15.2); }
   let row=0;
@@ -4932,12 +5064,13 @@ function draw(){
   if(ultra) drawBoats(fdt);
   drawRoads();
   if(city) drawWear();
+  drawWorks();
   if(ultra) drawLamps();
   parkedAt.clear(); for(const c of cars) if(c.state==="park"&&c.at&&!c.svc){ let a=parkedAt.get(c.at); if(!a) parkedAt.set(c.at,a=[]); a.push(c); }
   for(const c of cars) if(c.state==="drive"&&!c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawLots();
   drawZones();
-  for(const b of blds) if(inView(b.x,b.y,b.r+30)){ if(moving&&moving.b===b) ctx.globalAlpha=.35; if(isHome(b)) drawHome(b); else drawDest(b); ctx.globalAlpha=1; }
+  for(const b of blds) if(inView(b.x,b.y,b.r+30)){ if(moving&&moving.b===b) ctx.globalAlpha=.35; drawBld(b); ctx.globalAlpha=1; }
   // fire trucks, ambulances and police cars out on a call, stopped where they're needed
   for(const c of cars) if(c.svc&&c.state==="park"&&inView(c.x,c.y,20)) drawCar(c);
   if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)){ drawHose(b); drawFire(b); }
@@ -4972,7 +5105,7 @@ function step(dt){
   if(!over){
     updateSpawns(dt); updateDemand(dt); if(city) cityTick(dt);
     dispatchT-=dt; if(dispatchT<=0){ dispatchT=.3; dispatch(); }
-    for(const h of blds) if(h.wait>0) h.wait-=dt;
+    for(const h of blds){ if(h.wait>0) h.wait-=dt; if(h.cons&&t>=h.cons.t0+h.cons.dur) finishWork(h); }
   }
   updateLights(dt);
   updateCars(dt);
@@ -4982,7 +5115,7 @@ function step(dt){
 function frame(now){
   const dt=clamp((now-lastTs)/1000,0,.05); lastTs=now; const c0=performance.now();
   if(running&&!paused){
-    animT+=dt;
+    animT+=dt; if(works.length) works=works.filter(w=>animT<w.t0+w.dur+.25);
     if(!frozen){ const sdt=dt*speed, n=Math.ceil(sdt/.02); for(let i=0;i<n;i++) step(sdt/n); }
     else for(const e of effects) e.t+=dt;      // puffs and rings from building still play out
     if(hintT>0){ hintT-=dt; if(hintT<=0) hideHint(); }
@@ -5121,6 +5254,14 @@ function v3init(T){
         else if(kind==="garage"){
           if(lit){ g.fillStyle="#fff0cc"; g.fillRect(x,y+fh*.3,bw,fh*.42); continue; }
           g.fillStyle="#d4d1c9"; g.fillRect(x,y,bw,fh); g.fillStyle="#3a3e44"; g.fillRect(x,y+fh*.3,bw,fh*.42); g.fillStyle="#bdb9b0"; g.fillRect(x+bw/2-5,y+fh*.3,10,fh*.42); }
+        else if(kind==="site"){
+          if(lit) continue;
+          // an open frame going up: dark floors between the slabs and columns, scaffold poles and boards in front
+          g.fillStyle="#6a645a"; g.fillRect(x,y,bw,fh); g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(x,y+fh*.5,bw,fh*.34);
+          g.fillStyle="#d6d2c9"; g.fillRect(x,y+fh*.84,bw,fh*.16); g.fillStyle="#c9c4ba"; g.fillRect(x,y,bw*.09,fh*.84);
+          g.strokeStyle="#a3a9b0"; g.lineWidth=w/220; g.beginPath(); g.moveTo(x+bw*.55,y); g.lineTo(x+bw*.55,y+fh); g.moveTo(x,y+fh*.42); g.lineTo(x+bw,y+fh*.42);
+          if((i+j)%2){ g.moveTo(x+bw*.09,y+fh*.84); g.lineTo(x+bw*.55,y+fh*.42); } g.stroke();
+          g.fillStyle="#c79a5c"; g.fillRect(x,y+fh*.4,bw,fh*.045); }
       }
       if(!lit) grain(g,w,h,1200,.05,true);
     });
@@ -5128,7 +5269,7 @@ function v3init(T){
   const FKIND={house:"house",bighouse:"house",town:"house",apts:"apts",mixed:"apts",hotel:"apts",office:"office",shop:"shop",center:"shop",mall:"shop",
     factory:"ind",warehouse:"ind",plant:"ind",datacenter:"ind",power:"ind",solar:"ind",depot:"ind",pump:"ind",garage:"garage",parking:"garage"};
   // how much wall one window bay and one floor of a facade cover, in map units
-  const FSIZE={house:[7,6.2],apts:[7,7.2],office:[6,6.6],shop:[10,10],ind:[11,9],civic:[8,7.4],garage:[11,6.4]};
+  const FSIZE={house:[7,6.2],apts:[7,7.2],office:[6,6.6],shop:[10,10],ind:[11,9],civic:[8,7.4],garage:[11,6.4],site:[6,6.4]};
   const mats={};
   for(const k of Object.keys(FSIZE))
     mats["f:"+k]=new T.MeshStandardMaterial({map:facade(k),emissiveMap:facade(k,true),emissive:new T.Color(1,.86,.62),emissiveIntensity:0,vertexColors:true,roughness:k==="office"?.38:.85});
@@ -5220,21 +5361,21 @@ function v3init(T){
   function triOut(P,a,b,c,ua,ub,uc,ox,oz,col){ let n=faceN(a,b,c); if(n[0]*ox+n[2]*oz<0){ [a,b]=[b,a]; [ua,ub]=[ub,ua]; n=faceN(a,b,c); } pushTri(P,a,b,c,n,ua,ub,uc,col); }
   function partsOf(b,recs){
     const parts={}, get=k=>parts[k]||(parts[k]={p:[],n:[],u:[],c:[]});
-    const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th), fk=FKIND[b.type]||"civic", [bw,fh]=FSIZE[fk], U=bw*NB, V=fh*NB;
-    const wall=LC(wallTint(b)), white=[1,1,1], shopWall=LC("#f6f4ee"), g0=hAt(b.x,b.y);
+    const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th), fk=b.cons?"site":FKIND[b.type]||"civic", [bw,fh]=FSIZE[fk], U=bw*NB, V=fh*NB;
+    const wall=b.cons?[1,1,1]:LC(wallTint(b)), white=[1,1,1], shopWall=LC("#f6f4ee"), g0=hAt(b.x,b.y);
     let top=0;
     for(const r of recs){ const sc=r.sc, H=H3(r.h)*sc;
       const M=(lx,ly,y)=>[b.x+(lx*cs-ly*sn)*sc, g0+y, b.y+(lx*sn+ly*cs)*sc];
       r.rects.forEach((q,qi)=>{
         const x0=q[0], y0=q[1], x1=q[0]+q[2], y1=q[1]+q[3];
-        const pitched=PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
+        const pitched=!b.cons&&PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
         const Hw=pitched?Math.max(6.4,H*.56):H; top=Math.max(top,pitched?Math.max(H,Hw+3):H);
         const corners=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]], cc=M((x0+x1)/2,(y0+y1)/2,0);
         const W=get("f:"+fk);
         for(let i=0;i<4;i++){ const A=corners[i], B=corners[(i+1)%4];
           let a0=M(A[0],A[1],0), b0=M(B[0],B[1],0); const ex=b0[0]-a0[0], ez=b0[2]-a0[2], len=Math.hypot(ex,ez); if(len<.05) continue;
           if((-ez)*((a0[0]+b0[0])/2-cc[0])+ex*((a0[2]+b0[2])/2-cc[2])<0){ const s=a0; a0=b0; b0=s; }
-          const u1=len/U, v1=Hw/V, lo=g0-.6, gf=b.type==="mixed"&&Hw>14?10:0;
+          const u1=len/U, v1=Hw/V, lo=g0-.6, gf=b.type==="mixed"&&!b.cons&&Hw>14?10:0;
           // mixed-use: shop fronts along the bottom, homes above
           if(gf){ const us=len/(FSIZE.shop[0]*NB); quad(get("f:shop"),[a0[0],lo,a0[2]],[b0[0],lo,b0[2]],[b0[0],g0+gf,b0[2]],[a0[0],g0+gf,a0[2]],[0,0],[us,0],[us,.25],[0,.25],shopWall); }
           quad(W,[a0[0],gf?g0+gf:lo,a0[2]],[b0[0],gf?g0+gf:lo,b0[2]],[b0[0],g0+Hw,b0[2]],[a0[0],g0+Hw,a0[2]],[0,gf/V],[u1,gf/V],[u1,v1],[0,v1],wall); }
@@ -5331,8 +5472,25 @@ function v3init(T){
       if(nt<CAP-2&&(c.braking||lights)) for(const o of [-1,1]){ const ox=-sa*o*W*.34, oy=ca*o*W*.34; setM(tm,nt,x-ca*(L*.5+.05)+ox,gy+HH*.38,y-sa*(L*.5+.05)+oy,a,.3,.8,1.2); setC(tailI,nt,c.braking?"#ff3020":"#b81c12"); nt++; } };
     for(const c of cars){ if(c.state==="drive") put(c,c.x,c.y,c.ang,c.h||0,true); else if(c.svc&&c.state==="park") put(c,c.x,c.y,c.ang,0,false); }
     for(const q of parkedList) if(q.c.state!=="drive") put(q.c,q.x,q.y,q.a,0,false);
+    for(const w of works){ const d=crewAt(w); if(d!==null) for(const v of crew(w,d)) put(v,v.x,v.y,v.ang,0,true); }
     for(const [m,n] of [[carI,nc],[boxI,nb],[cabI,nb],[headI,nh],[tailI,nt],[barI,nr]]){ m.count=n; m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
     return nc+nb;
+  }
+
+  // ----- tower cranes over the tall buildings going up -----
+  const CRCAP=160, craneI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),new T.MeshStandardMaterial({roughness:.55}),CRCAP);
+  craneI.setColorAt(0,new T.Color(1,1,1)); craneI.count=0; craneI.frustumCulled=false; craneI.castShadow=true; scene.add(craneI);
+  function cranes(){
+    let n=0; const m=craneI.instanceMatrix.array, box=(x,y,z,a,sx,sy,sz,col)=>{ if(n>=CRCAP) return; setM(m,n,x,y,z,a,sx,sy,sz); setC(craneI,n,col); n++; };
+    for(const b of blds){ const c=b.cons&&craneAt(b); if(!c) continue;
+      const g0=hAt(c.x,c.y), H=H3(b.cons.h)*1.15+10, ca=Math.cos(c.a), sa=Math.sin(c.a), hx=c.x+ca*c.hook, hy=c.y+sa*c.hook, lo=hAt(hx,hy)+H3(b.cons.h)*c.f+3;
+      box(c.x,g0+H/2,c.y,c.a,2.2,H,2.2,"#f2b632");
+      box(c.x+ca*(c.L/2-3),g0+H+.8,c.y+sa*(c.L/2-3),c.a,c.L,1.4,1.4,"#f2b632");
+      box(c.x-ca*6,g0+H+.6,c.y-sa*6,c.a,10,1,1.2,"#f2b632");
+      box(c.x-ca*9.5,g0+H-.3,c.y-sa*9.5,c.a,3,2.6,2.6,"#8d9299");
+      box(c.x,g0+H+1.8,c.y,c.a,2.6,1.6,2.6,"#3a3e44");
+      if(g0+H>lo){ box(hx,(g0+H+lo)/2,hy,c.a,.25,g0+H-lo,.25,"#3a3e44"); box(hx,lo,hy,c.a,1.6,1.2,1.6,"#e2493a"); } }
+    craneI.count=n; craneI.instanceMatrix.needsUpdate=true; if(craneI.instanceColor) craneI.instanceColor.needsUpdate=true;
   }
 
   // ----- trees: a crown on a trunk, or a pine -----
@@ -5450,9 +5608,9 @@ function v3init(T){
         L.terr.getContext("2d").drawImage(stage,sx,sy); c.terr=true; }
       else ctx.drawImage(L.terr,sx,sy,CPX,CPX,0,0,CPX,CPX);
       worldT(); rec3d=rc;
-      drawWater(); drawRoads(); if(city) drawWear();
+      drawWater(); drawRoads(); if(city) drawWear(); drawWorks();
       drawLots();
-      for(const b of blds) if(inView(b.x,b.y,b.r+30)&&!(moving&&moving.b===b)){ if(isHome(b)) drawHome(b); else drawDest(b); }
+      for(const b of blds) if(inView(b.x,b.y,b.r+30)&&!(moving&&moving.b===b)) drawBld(b);
       if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)) drawHose(b);
       drawOutside();
     });
@@ -5464,7 +5622,7 @@ function v3init(T){
     return {c,old};
   }
   // the walls of the buildings in a cell that was painted again
-  const bkey=(b,recs)=>recs.map(r=>r.sc.toFixed(3)+"|"+r.h+"|"+r.rects.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(";")).join("/")+"@"+b.x.toFixed(1)+","+b.y.toFixed(1)+","+b.ang.toFixed(3)+(b.col||"")+(b.v||0)+(b.cols?b.cols.join(""):"");
+  const bkey=(b,recs)=>recs.map(r=>r.sc.toFixed(3)+"|"+r.h+"|"+r.rects.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(";")).join("/")+"@"+b.x.toFixed(1)+","+b.y.toFixed(1)+","+b.ang.toFixed(3)+(b.col||"")+(b.v||0)+(b.cols?b.cols.join(""):"")+(b.cons?"c":"");
   function adopt({c,old}){
     if(old) for(const b of old.boxes.keys()) if(!c.rec.boxes.has(b)){ const e=bcache.get(b); if(e&&e.cell===c){ bcache.delete(b); batchDirty=true; } }
     for(const [b,recs] of c.rec.boxes){ const key=bkey(b,recs), e=bcache.get(b); if(e&&e.key===key){ e.cell=c; continue; }
@@ -5486,10 +5644,13 @@ function v3init(T){
       for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const q=j*n+i; sig[q]=(sig[q]*31+h)%Q; } };
     const R4=v=>Math.round(v*4);
     for(const b of blds){ const f=b.fire, m=b.r+40;
-      add(b.x-m,b.y-m,b.x+m,b.y+m,b.id*131+b.type.length*7+(f?(f.out?3:5)+(f.truck&&f.truck.state==="park"?2:0):0)+(b.lot?11:0)+(b.floors||0)*13+Math.round((b.k||0)*10)*17+(b.v||0)*19+(moving&&moving.b===b?29:0)+R4(b.x)*7+R4(b.y)*3+Math.round(b.ang*100)); }
+      add(b.x-m,b.y-m,b.x+m,b.y+m,b.id*131+b.type.length*7+(f?(f.out?3:5)+(f.truck&&f.truck.state==="park"?2:0):0)+(b.lot?11:0)+(b.floors||0)*13+Math.round((b.k||0)*10)*17+(b.v||0)*19+(moving&&moving.b===b?29:0)+(b.cons?workStage(b)*53+7:0)+R4(b.x)*7+R4(b.y)*3+Math.round(b.ang*100)); }
     for(const L2 of lots) add(L2.x-L2.r,L2.y-L2.r,L2.x+L2.r,L2.y+L2.r,L2.id*37+(L2.b?L2.b.id*5+1:0)+(L2.burnt?Math.round((t-L2.burnt)/8)*3+2:0)+(t<L2.cool?7:0)+L2.kind.length*11);
     for(const s of segs.values()){ const A=nodes.get(s.a), B=nodes.get(s.b); if(!A||!B) continue; const m=widthOf(totL(s))/2+16;
       add(Math.min(A.x,B.x)-m,Math.min(A.y,B.y)-m,Math.max(A.x,B.x)+m,Math.max(A.y,B.y)+m,s.id*41+s.a*3+s.b*5+(s.lf||0)*7+(s.lb||0)*11+(s.hwy?17:0)+(s.over?19:0)+(s.fixed?23:0)+(s.cond===undefined?0:Math.round(s.cond*16)*29)+R4(A.x)+R4(B.y)*3); }
+    // a road being laid: each stretch of it changes when the crew gets there and again when it's finished
+    for(const w of works){ const ux=(w.bx-w.ax)/w.len, uy=(w.by-w.ay)/w.len, m=widthOf(w.T)/2+10, dq=Math.floor(clamp((animT-w.t0)/w.dur,0,1)*w.len/PAVE_SP)*PAVE_SP;
+      for(let s2=0;s2<=w.len;s2+=8){ if(s2<dq-14) continue; const x=w.ax+ux*s2, y=w.ay+uy*s2; add(x-m,y-m,x+m,y+m,w.id*59+(s2<dq?11:3)); } }
     for(const q of nodes.values()){ const m=(q.trim||12)+24; add(q.x-m,q.y-m,q.x+m,q.y+m,q.id*43+(q.type==="light"?13:q.type==="round"?26:0)+q.segs.length*3); }
     for(const c of cars) if(c.state==="park"&&c.at&&!c.svc){ const b=c.at, m=(b.r||10)+12; add(b.x-m,b.y-m,b.x+m,b.y+m,c.len*3+(c.col?c.col.charCodeAt(1)*7+c.col.charCodeAt(3):0)+1); }
     if(outside){ const q=nodes.get(outside.node); if(q) add(q.x-60,q.y-60,q.x+60,q.y+60,outside.node*7+3); }
@@ -5669,7 +5830,7 @@ function v3init(T){
     decks();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
     sky(nk,dk);
-    ncars=carsFrame(nk); ghosts(); fires(); streetLights(nk);
+    ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
     // the shadows follow the camera; when it's still they're drawn every other frame for the moving cars
     const ck=camera.position.x.toFixed(1)+camera.position.y.toFixed(1)+camera.position.z.toFixed(1);
     R.shadowMap.needsUpdate=rebuilt||painted>0||ck!==render.ck||(render.n=(render.n||0)+1)%(mobile?3:2)===0; render.ck=ck;
@@ -5710,6 +5871,7 @@ function draw3d(){
 
 // hooks used by automated checks; harmless in play
 window.__gridlock={
+  work:()=>({roads:works.map(w=>({len:Math.round(w.len),p:+clamp((animT-w.t0)/w.dur,0,1).toFixed(2),crew:crewAt(w)!==null})),sites:blds.filter(b=>b.cons).map(b=>({id:b.id,type:b.type,stage:workStage(b),h:b.cons.h,dur:+b.cons.dur.toFixed(1),crane:!!craneAt(b)}))}),
   state:()=>({score,t,homes:homes().length,dests:dests().length,driving:cars.filter(c=>c.state==="drive").length,cars:cars.length,res:Object.assign({},res),over,level,lvTrips,need:lvNeed(),nodes:nodes.size,segs:segs.size,blds:blds.length}),
   blds:()=>blds.map(b=>({id:b.id,type:b.type,x:b.x,y:b.y,door:b.door,fx:b.fx,fy:b.fy,att:!!b.acc,acc:b.acc?b.acc.seg:null,pins:b.pins?Object.assign({},b.pins):null,over:b.over})),
   build:(pts,lanes,over,kind)=>{ lanes=lanes||1; const S=snapAt(pts[0].x,pts[0].y), last=pts[pts.length-1]; const pl=makePlan(S,pts,last,lanes,pts.length===2,over,kind); if(pl.ok) commitPlan(pl); return {ok:pl.ok,reason:pl.reason,cost:pl.cost,hit:pl.hitB?pl.hitB.type+pl.hitB.id:null,S:pl.S.kind,E:pl.E.kind}; },
