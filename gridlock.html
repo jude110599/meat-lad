@@ -429,7 +429,7 @@ body.dark .ov{background:rgba(14,15,18,.74)}
     <div class="gfx"><span>Theme<small>Dark mode turns the map and the menus dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 7.4</div>
+    <div class="small">Version 7.5</div>
     <button class="lnk" data-log>What's new</button>
   </div>
 </div>
@@ -444,7 +444,7 @@ body.dark .ov{background:rgba(14,15,18,.74)}
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the map and the menus dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 7.4</div>
+    <div class="small">Version 7.5</div>
     <button class="lnk" data-log>What's new</button>
   </div>
 </div>
@@ -597,6 +597,7 @@ showBest();
 // ---------- state ----------
 let nodes=new Map(), segs=new Map(), nodeList=[], nid=1, sid=1;
 let blds=[], cars=[], trees=[], waterGrid=null, hillGrid=null, terrain=null, biome=null, tver=0, moving=null, works=[], workId=1;
+let rver=0, roadLate=false;    // rver: goes up whenever the roads change; roadLate: the road picture wants drawing again before the next frame
 let frozen=false, animT=0;     // frozen: the pause button has stopped the clock, but you can still build
 let res, score=0, t=0, level=1, lvTrips=0, levelPending=false, running=false, paused=false, speed=1, over=false, relaxed=false, viewing=false;
 let dispatchT=0, rr=0, effects=[], carsOn=new Map(), qOn=new Map(), laneSel=1, roadKind="two", laneSide="both", roadMode="draw", firstRoad=false, hintT=0, bid=1, segArr=[];
@@ -645,7 +646,7 @@ function inRect(F,x,y,pad){ const fx=Math.cos(F.ang), fy=Math.sin(F.ang), dx=x-F
 const bldHit=(b,F,pad)=>b.sand?sandHit(b,F,pad):rectHit(F,footRect(b),pad);
 // the trees a new building stands on come down; the ones round its edge stay
 function clearTrees(b){ const F=b.sand?null:footRect(b);
-  for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r&&(F?inRect(F,tr.x,tr.y,tr.r*.6):inSand(b,tr.x,tr.y,tr.r*.6))) tr.alive=false; }
+  for(const tr of treesIn(b.x-b.r-10,b.y-b.r-10,b.x+b.r+10,b.y+b.r+10)) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r&&(F?inRect(F,tr.x,tr.y,tr.r*.6):inSand(b,tr.x,tr.y,tr.r*.6))) fell(tr); }
 function segInter(p1,p2,p3,p4){ const d1x=p2.x-p1.x,d1y=p2.y-p1.y,d2x=p4.x-p3.x,d2y=p4.y-p3.y, den=d1x*d2y-d1y*d2x;
   if(Math.abs(den)<1e-9)return null; const t=((p3.x-p1.x)*d2y-(p3.y-p1.y)*d2x)/den, u=((p3.x-p1.x)*d1y-(p3.y-p1.y)*d1x)/den;
   if(t<=1e-6||t>=1-1e-6||u<=1e-6||u>=1-1e-6)return null; return {t,u,x:p1.x+d1x*t,y:p1.y+d1y*t}; }
@@ -658,7 +659,7 @@ const D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 // small ones, a river, woods, and patches of grass and sand.
 // Each field is traced into smooth outlines once, so it stays sharp at any zoom.
 const WG=10, TG=10, TX0=-300, TY0=-300; let TNX=0, TNY=0;
-function mapSize(big){ MW=big?3200:2600; MH=big?2240:1820; MAPK=MW*MH/(2000*1400); TNX=(MW+600)/TG+1; TNY=(MH+600)/TG+1; }
+function mapSize(big){ MW=big?6400:2600; MH=big?4480:1820; MAPK=MW*MH/(2000*1400); TNX=(MW+600)/TG+1; TNY=(MH+600)/TG+1; }
 mapSize(false);
 const WATER=.37, HILL=.62;
 const sst=(a,b,x)=>{ const u=clamp((x-a)/(b-a),0,1); return u*u*(3-2*u); };
@@ -683,44 +684,66 @@ function makeNoise(){
     return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v; };
   return (x,y,oct)=>{ let s=0,amp=1,f=1,tot=0; for(let o=0;o<oct;o++){ s+=n2(x*f+o*17.3,y*f+o*9.1)*amp; tot+=amp; amp*=.5; f*=2; } return s/tot; };
 }
-// marching squares: trace where field F crosses thr, joined into loops and drawn as smooth curves
+// marching squares: trace where field F crosses thr, joined into loops and drawn as smooth curves. Each loop's points
+// and box are kept on the path too (P.loops), so a corner of the map can be drawn from just the loops that reach it
+let csq=null;
 function contourPath(F,thr){
-  const nx=TNX, ny=TNY, link=new Map(), path=new Path2D();
-  const val=(i,j)=>(i<=0||j<=0||i>=nx-1||j>=ny-1)?-1e9:F[j*nx+i];
-  const add=(a,b)=>{ let l=link.get(a); if(!l) link.set(a,l=[]); l.push(b); l=link.get(b); if(!l) link.set(b,l=[]); l.push(a); };
-  for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){
-    const a=val(i,j), b=val(i+1,j), c=val(i+1,j+1), d=val(i,j+1);
-    const code=(a>thr?8:0)|(b>thr?4:0)|(c>thr?2:0)|(d>thr?1:0);
+  const nx=TNX, ny=TNY, NE=nx*ny*2, path=new Path2D(), loops=[];
+  // the links between crossing points, in flat arrays reused from one outline to the next (a map has a lot of them)
+  if(!csq||csq.n!==NE) csq={n:NE,a:new Int32Array(NE),b:new Int32Array(NE),ord:new Int32Array(NE),seen:new Uint8Array(NE),up:new Uint8Array(nx*ny),xy:new Float64Array(8192)};
+  const A=csq.a, B=csq.b, ord=csq.ord, seen=csq.seen, up=csq.up; let no=0;
+  A.fill(-1); B.fill(-1); seen.fill(0); up.fill(0);
+  // which corners are above the line: never the ones round the edge, so every outline closes
+  for(let j=1;j<ny-1;j++) for(let i=1,k=j*nx+1;i<nx-1;i++,k++) if(F[k]>thr) up[k]=1;
+  const val=k=>{ const i=k%nx, j=(k/nx)|0; return (i<=0||j<=0||i>=nx-1||j>=ny-1)?-1e9:F[k]; };
+  const add=(a,b)=>{ if(A[a]<0){ A[a]=b; ord[no++]=a; } else B[a]=b; if(A[b]<0){ A[b]=a; ord[no++]=b; } else B[b]=a; };
+  for(let j=0;j<ny-1;j++)for(let i=0,k=j*nx;i<nx-1;i++,k++){
+    const code=up[k]<<3|up[k+1]<<2|up[k+nx+1]<<1|up[k+nx];
     if(code===0||code===15) continue;
-    const T=(j*nx+i)*2, R=(j*nx+i+1)*2+1, B=((j+1)*nx+i)*2, L=(j*nx+i)*2+1;
+    const T=k*2, R=(k+1)*2+1, Bo=(k+nx)*2, L=k*2+1;
     switch(code){
-      case 1: case 14: add(L,B); break;
-      case 2: case 13: add(B,R); break;
+      case 1: case 14: add(L,Bo); break;
+      case 2: case 13: add(Bo,R); break;
       case 3: case 12: add(L,R); break;
       case 4: case 11: add(T,R); break;
-      case 6: case 9: add(T,B); break;
+      case 6: case 9: add(T,Bo); break;
       case 7: case 8: add(L,T); break;
-      case 5: if((a+b+c+d)/4>thr){ add(L,T); add(B,R); } else { add(T,R); add(L,B); } break;
-      case 10: if((a+b+c+d)/4>thr){ add(T,R); add(L,B); } else { add(L,T); add(B,R); } break;
+      case 5: if((val(k)+val(k+1)+val(k+nx+1)+val(k+nx))/4>thr){ add(L,T); add(Bo,R); } else { add(T,R); add(L,Bo); } break;
+      case 10: if((val(k)+val(k+1)+val(k+nx+1)+val(k+nx))/4>thr){ add(T,R); add(L,Bo); } else { add(L,T); add(Bo,R); } break;
     }
   }
-  const pt=id=>{ const k=id>>1, i=k%nx, j=(k/nx)|0, i1=id&1?i:i+1, j1=id&1?j+1:j;
-    const f0=val(i,j), f1=val(i1,j1); let u=(thr-f0)/(f1-f0); if(!(u>=0&&u<=1)) u=.5;
-    return {x:TX0+(i+(i1-i)*u)*TG, y:TY0+(j+(j1-j)*u)*TG}; };
-  const seen=new Set();
-  for(const start of link.keys()){
-    if(seen.has(start)) continue;
-    const loop=[]; let prev=-1, cur=start;
-    while(cur!==undefined&&!seen.has(cur)){ seen.add(cur); loop.push(pt(cur)); const nb=link.get(cur); const nx2=nb[0]!==prev?nb[0]:nb[1]; prev=cur; cur=nx2; }
-    const L=loop.length>40?loop.filter((p,q)=>q%2===0):loop, n=L.length;
-    if(n<3) continue;
-    const m=(p,q)=>({x:(p.x+q.x)/2,y:(p.y+q.y)/2});
-    const s0=m(L[n-1],L[0]); path.moveTo(s0.x,s0.y);
-    for(let q=0;q<n;q++){ const p=L[q], e=m(p,L[(q+1)%n]); path.quadraticCurveTo(p.x,p.y,e.x,e.y); }
-    path.closePath();
+  for(let s=0;s<no;s++){
+    const start=ord[s]; if(seen[start]) continue;
+    let prev=-1, cur=start, n=0, xy=csq.xy;
+    while(cur>=0&&!seen[cur]){ seen[cur]=1;
+      const k=cur>>1, k1=cur&1?k+nx:k+1, f0=val(k), f1=val(k1); let u=(thr-f0)/(f1-f0); if(!(u>=0&&u<=1)) u=.5;
+      if(n*2+2>xy.length){ const g=new Float64Array(xy.length*2); g.set(xy); xy=csq.xy=g; }
+      const i=k%nx, j=(k/nx)|0; xy[n*2]=TX0+(i+(cur&1?0:u))*TG; xy[n*2+1]=TY0+(j+(cur&1?u:0))*TG; n++;
+      const a=A[cur], nx2=a!==prev?a:B[cur]; prev=cur; cur=nx2; }
+    // long loops keep every other point
+    const st=n>40?2:1, m=Math.ceil(n/st);
+    if(m<3) continue;
+    const p=new Float32Array(m*2); let x0=1e9, y0=1e9, x1=-1e9, y1=-1e9;
+    for(let q=0;q<m;q++){ const x=xy[q*st*2], y=xy[q*st*2+1]; p[q*2]=x; p[q*2+1]=y; if(x<x0) x0=x; if(x>x1) x1=x; if(y<y0) y0=y; if(y>y1) y1=y; }
+    const o={x0,y0,x1,y1,p,P:null}; loops.push(o); loopTo(path,p);
   }
+  path.loops=loops;
   return path;
 }
+// a loop's points as a smooth curve through the middles of its sides
+function loopTo(P,p){ const n=p.length>>1;
+  P.moveTo((p[n*2-2]+p[0])/2,(p[n*2-1]+p[1])/2);
+  for(let q=0;q<n;q++){ const r=(q+1)%n; P.quadraticCurveTo(p[q*2],p[q*2+1],(p[q*2]+p[r*2])/2,(p[q*2+1]+p[r*2+1])/2); }
+  P.closePath(); }
+// the map's outlines cut down to the loops that reach a box: drawn there, they look just the same as the whole map
+function inBox(P,x0,y0,x1,y1){ const q=new Path2D();
+  for(const o of P.loops) if(o.x1>=x0&&o.y1>=y0&&o.x0<=x1&&o.y0<=y1){ if(!o.P){ o.P=new Path2D(); loopTo(o.P,o.p); } q.addPath(o.P); }
+  return q; }
+// Everything else reads (and anything drawn once and kept, like the meadow's flowers, is kept on) the map's own
+function terrIn(x0,y0,x1,y1){
+  const T=terrain, sub=v=>v instanceof Path2D?(v.loops?inBox(v,x0,y0,x1,y1):v):Array.isArray(v)&&v[0] instanceof Path2D?v.map(sub):v, o=Object.create(null);
+  for(const k in T){ const v=sub(T[k]); if(v!==T[k]) o[k]=v; }
+  return new Proxy(T,{get:(t,k)=>k in o?o[k]:t[k]}); }
 function genMap(){
   const fbm=makeNoise(), cx=MW/2, cy=MH/2, N=TNX*TNY; let rivV=false;
   biome=pick(BIOMES);
@@ -851,6 +874,16 @@ function shoreAt(w,R){
 }
 function isWater(x,y){ if(x<0||y<0||x>=MW||y>=MH)return false; return waterGrid[Math.floor(y/WG)*Math.ceil(MW/WG)+Math.floor(x/WG)]===1; }
 function isHill(x,y){ if(x<0||y<0||x>=MW||y>=MH)return false; return hillGrid[Math.floor(y/WG)*Math.ceil(MW/WG)+Math.floor(x/WG)]===1; }
+// a tree cut down for a road or a building: only the ground pictures under it (and its shadow) are drawn again
+function fell(tr){ tr.alive=false; const m=tr.r*1.3+8; groundDirty(tr.x-m,tr.y-m,tr.x+m,tr.y+m); }
+// the wild trees in a box of the map, from a grid of them made once a map (the big map has twenty thousand)
+let tgrid=null;
+function treesIn(x0,y0,x1,y1){ const Q=128;
+  if(!tgrid||tgrid.T!==trees){ const nx=Math.ceil(MW/Q)+1, ny=Math.ceil(MH/Q)+1, c=[]; for(let k=0;k<nx*ny;k++) c.push([]);
+    for(const tr of trees) c[clamp(Math.floor(tr.y/Q),0,ny-1)*nx+clamp(Math.floor(tr.x/Q),0,nx-1)].push(tr); tgrid={T:trees,nx,ny,c}; }
+  const g=tgrid, out=[], i0=clamp(Math.floor(x0/Q),0,g.nx-1), i1=clamp(Math.floor(x1/Q),0,g.nx-1), j0=clamp(Math.floor(y0/Q),0,g.ny-1), j1=clamp(Math.floor(y1/Q),0,g.ny-1);
+  for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++) for(const tr of g.c[j*g.nx+i]) if(tr.x>=x0&&tr.x<=x1&&tr.y>=y0&&tr.y<=y1) out.push(tr);
+  return out; }
 
 // ---------- road network ----------
 function addNode(x,y){ const n={id:nid++,x,y,segs:[],type:"plain",light:null,trim:0,mh:0,ix:0,gd:0,hold:[],wait:new Map(),near:[],near2:[],lc:{},slip:{}}; nodes.set(n.id,n); return n; }
@@ -867,7 +900,7 @@ function addSeg(a,b,lanes,back){
   return s;
 }
 function segWater(a,b){ const L=D(a,b), k=Math.max(1,Math.ceil(L/5)); for(let i=0;i<=k;i++){ if(isWater(a.x+(b.x-a.x)*i/k,a.y+(b.y-a.y)*i/k)) return true; } return false; }
-function removeSeg(s){ segs.delete(s.id); for(const id of [s.a,s.b]){ const n=nodes.get(id); if(n) n.segs=n.segs.filter(x=>x!==s.id); } }
+function removeSeg(s){ rver++; segs.delete(s.id); for(const id of [s.a,s.b]){ const n=nodes.get(id); if(n) n.segs=n.segs.filter(x=>x!==s.id); } }
 function splitSeg(s,t){
   const A=nodes.get(s.a), B=nodes.get(s.b);
   const m=addNode(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t);
@@ -889,7 +922,7 @@ const inL=(s,nId)=>s.b===nId?s.lf:s.lb;            // lanes arriving at node nId
 const totL=s=>s.lf+s.lb;
 const segHW=s=>totL(s)*LW/2+KERB;
 const oneWay=s=>!s.lf||!s.lb;
-function setL(s,lf,lb){ s.lf=lf; s.lb=lb; s.lanes=Math.max(lf,lb); }
+function setL(s,lf,lb){ s.lf=lf; s.lb=lb; s.lanes=Math.max(lf,lb); rver++; }
 // how far right of the road's middle the lanes heading away from fromId start: off-centre when one way has more lanes
 const divOff=(s,fromId)=>(s.a===fromId?s.lb-s.lf:s.lf-s.lb)*LW/2;
 // traffic runs straight on through joint nId from s1 to s2 with the same lanes both ways
@@ -901,6 +934,7 @@ const ringR=n=>n.mh>20?31:n.mh>12?25:18;
 function elevAt(s,tt){ if(!s.over) return 0; const A=nodes.get(s.a), B=nodes.get(s.b); return Math.min(1,(A.gd+tt*s.len)/RAMP,(B.gd+(1-tt)*s.len)/RAMP); }
 
 function rebuildNet(){
+  rver++;
   for(const s of segs.values()){ const A=nodes.get(s.a),B=nodes.get(s.b); s.len=Math.hypot(B.x-A.x,B.y-A.y)||.01; s.ux=(B.x-A.x)/s.len; s.uy=(B.y-A.y)/s.len; }
   for(const n of [...nodes.values()]) if(!n.segs.length) nodes.delete(n.id);
   nodeList=[...nodes.values()]; nodeList.forEach((n,i)=>n.ix=i);
@@ -1118,7 +1152,7 @@ function addPiece(a,b,lanes,st){
   else { if(s.water&&!st.inWater) s.bridgeHead=true; st.inWater=s.water; }
   if(st.made&&!s.over&&!s.water) st.made.push({a,b,T:totL(s)});
   const hw=segHW(s)+5;
-  for(const tr of trees){ if(tr.alive&&projSeg(tr.x,tr.y,a.x,a.y,b.x,b.y).d<hw+tr.r*.5) tr.alive=false; }
+  for(const tr of treesIn(Math.min(a.x,b.x)-hw-6,Math.min(a.y,b.y)-hw-6,Math.max(a.x,b.x)+hw+6,Math.max(a.y,b.y)+hw+6)){ if(tr.alive&&projSeg(tr.x,tr.y,a.x,a.y,b.x,b.y).d<hw+tr.r*.5) fell(tr); }
 }
 
 // smooth a freehand stroke into a few road pieces
@@ -1585,7 +1619,7 @@ function setNodeType(n,type){
   n.type=type; n.light=null;
   if(type==="round"){
     // a roundabout needs room: drop trees and check buildings
-    for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-n.x,tr.y-n.y)<34) tr.alive=false;
+    for(const tr of treesIn(n.x-34,n.y-34,n.x+34,n.y+34)) if(tr.alive&&Math.hypot(tr.x-n.x,tr.y-n.y)<34) fell(tr);
   }
   effects.push({k:"ring",x:n.x,y:n.y,c:"#2f7de1",t:0,life:.6,r:24});
   afterEdit();
@@ -1826,7 +1860,8 @@ function addBld(b){
   for(let i=0;i<nCars;i++){ const c=newCar(b,false); c.cool=rnd(.5,3+i*.6); b.cars.push(c); cars.push(c); }
   if(b.type==="factory"||b.type==="warehouse"||b.type==="plant"){ for(let i=0;i<(b.type==="plant"?2:3);i++){ const c=newCar(b,true); b.cars.push(c); cars.push(c); } }
   if(SVC[b.type]&&SVC[b.type].cars) for(let i=0;i<SVC[b.type].cars;i++){ const c=svcCar(b,b.type); b.cars.push(c); cars.push(c); }
-  b.acc=findAccess(b); if(b.acc) buildRoadCache(); tver++;
+  // its drive is part of the road picture, drawn again once before the next frame however many go up
+  b.acc=findAccess(b); if(b.acc) roadLate=true; tver++;
   if(!b.sand) effects.push({k:"ring",x:b.x,y:b.y,c:BT[b.type].col,t:0,life:b.type==="house"?.6:1.3,r:b.r});
   return b;
 }
@@ -2439,17 +2474,20 @@ function drawWorks(){
 // a highway in from beyond the edge of the map: where the trucks with goods and raw materials come from
 function makeOutside(){
   outside=null;
-  const sides=[0,1,2,3].sort(()=>Math.random()-.5), L=130;
-  for(const side of sides) for(let tries=0;tries<40;tries++){
-    const along=side<2?rnd(320,MW-320):rnd(260,MH-260);
+  // on the big map it runs in from the edge to where the edge of the old map was, so it's no further to join up to
+  // than it ever was; with no clear run for that, it's just the short piece at the edge
+  const sides=[0,1,2,3].sort(()=>Math.random()-.5);
+  for(const long of MW>3200?[true,false]:[false]) for(const side of sides) for(let tries=0;tries<40;tries++){
+    const L=long?130+(side<2?MH/2-1120:MW/2-1600):130;
+    const along=long?(side<2?MW/2+rnd(-1280,1280):MH/2+rnd(-860,860)):side<2?rnd(320,MW-320):rnd(260,MH-260);
     const e=side===0?{x:along,y:0}:side===1?{x:along,y:MH}:side===2?{x:0,y:along}:{x:MW,y:along};
     const f=side===0?{x:0,y:1}:side===1?{x:0,y:-1}:side===2?{x:1,y:0}:{x:-1,y:0};
     let ok=true;
     for(let k=0;k<=L+40&&ok;k+=6) for(const o of [-26,0,26]){ const x=e.x+f.x*k-f.y*o, y=e.y+f.y*k+f.x*o; if((x>2&&y>2&&x<MW-2&&y<MH-2)&&(isWater(x,y)||isHill(x,y))) ok=false; }
     if(!ok) continue;
     const A=addNode(e.x,e.y), B=addNode(e.x+f.x*L,e.y+f.y*L), sg=addSeg(A,B,2); sg.fixed=true;
-    for(const tr of trees) if(tr.alive&&projSeg(tr.x,tr.y,A.x,A.y,B.x,B.y).d<halfW(2)+12) tr.alive=false;
-    outside={type:"out",node:A.id,x:e.x-f.x*30,y:e.y-f.y*30,fx:f.x,fy:f.y,ex:e.x,ey:e.y,door:{x:e.x-f.x*60,y:e.y-f.y*60},cars:[],acc:null,r:0,w:0,d:0};
+    { const m=halfW(2)+12; for(const tr of treesIn(Math.min(A.x,B.x)-m,Math.min(A.y,B.y)-m,Math.max(A.x,B.x)+m,Math.max(A.y,B.y)+m)) if(tr.alive&&projSeg(tr.x,tr.y,A.x,A.y,B.x,B.y).d<m) fell(tr); }
+    outside={type:"out",node:A.id,tip:long?B.id:null,x:e.x-f.x*30,y:e.y-f.y*30,fx:f.x,fy:f.y,ex:e.x,ey:e.y,door:{x:e.x-f.x*60,y:e.y-f.y*60},cars:[],acc:null,r:0,w:0,d:0};
     for(let i=0;i<6;i++){ const c=newCar(outside,true); outside.cars.push(c); cars.push(c); }
     for(let i=0;i<3;i++){ const c=newCar(outside,false); outside.cars.push(c); cars.push(c); }
     outside.visT=6;
@@ -3110,12 +3148,12 @@ function pruneLots(){ if(!city) return;
     return true; }); }
 // can a plot be reached from a road: a stand-in building in the plot's place asks the same question a real one would
 function lotAccess(L){
-  if(L.ver===tver) return L.acc; L.ver=tver;
+  if(L.ver===rver) return L.acc; L.ver=rver;
   const S=L.site, fx=Math.cos(S.ang), fy=Math.sin(S.ang), o={type:"lot",x:S.x,y:S.y,w:S.w,d:S.d,f0x:fx,f0y:fy,fx,fy,door:{x:S.x+fx*S.d/2,y:S.y+fy*S.d/2}};
   return L.acc=findAccess(o);
 }
 // which roads join up, so a shop only opens where people can drive to it
-function cityComp(){ if(compKey===tver) return; compKey=tver; const P=new Map(), f=x=>{ while(P.get(x)!==x){ P.set(x,P.get(P.get(x))); x=P.get(x); } return x; };
+function cityComp(){ if(compKey===rver) return; compKey=rver; const P=new Map(), f=x=>{ while(P.get(x)!==x){ P.set(x,P.get(P.get(x))); x=P.get(x); } return x; };
   for(const n of nodes.values()) P.set(n.id,n.id);
   for(const s of segs.values()){ const a=f(s.a), b=f(s.b); if(a!==b) P.set(a,b); }
   comp=new Map(); for(const n of nodes.values()) comp.set(n.id,f(n.id)); }
@@ -3231,7 +3269,7 @@ function growOn(L,type,old){
   if(old) deleteBld(old,true);
   L.b=b; addBld(b); startWork(b);
   // clear the trees off the plot, then plant a few in the garden
-  for(const tr of trees) if(tr.alive&&Math.hypot(tr.x-L.x,tr.y-L.y)<L.r&&inPoly(L.poly,tr.x,tr.y)) tr.alive=false;
+  for(const tr of treesIn(L.x-L.r,L.y-L.r,L.x+L.r,L.y+L.r)) if(tr.alive&&Math.hypot(tr.x-L.x,tr.y-L.y)<L.r&&inPoly(L.poly,tr.x,tr.y)) fell(tr);
   L.trees=yardTrees(L,b);
   return true;
 }
@@ -3275,7 +3313,7 @@ function cityGrow(sup){
       for(const L of lots){ if(L.kind!==k||L.b||t<L.cool) continue; const w=lotWhy(L,sup,homeComps); L.why=w; if(!w) free.push(L); }
       if(!free.length){ done.add(k); continue; }
       // next to what's already there, so the town grows outwards from its middle
-      for(const L of free){ let d=400; for(const b of blds){ const q=Math.hypot(b.x-L.x,b.y-L.y)-b.r-L.r; if(q<d) d=q; } L.gd=d+Math.random()*30; }
+      for(const L of free){ let d=400; for(const b of blds){ const dx=b.x-L.x, dy=b.y-L.y, m=d+b.r+L.r; if(dx>=m||dx<=-m||dy>=m||dy<=-m) continue; const q=Math.hypot(dx,dy)-b.r-L.r; if(q<d) d=q; } L.gd=d+Math.random()*30; }
       free.sort((a,b)=>a.gd-b.gd);
       for(const L of free.slice(0,5)){ if(growOn(L,lotType(L))){ grew=L; break; } L.cool=t+20; }
       if(grew) break;
@@ -3296,7 +3334,7 @@ function cityGrow(sup){
 // less the upkeep of the roads, the junctions and the services
 function finCalc(trips,hap,pk){
   const out={}; for(const k in BUDK) out[k]=0; out.parking=0;
-  let road=0; for(const s of segs.values()) road+=segUse(s)*UPKEEP*(s.hwy?1.5:1)*(s.over?2:1);
+  let road=0; for(const s of segs.values()) road+=segUse(s)*UPKEEP*(s.hwy?1.5:1)*(s.over?2:1)*(s.fixed?Math.min(1,130/s.len):1);
   for(const n of nodeList) road+=n.type==="light"?6:n.type==="round"?3:0;
   out.roads=road*budget.roads;
   let biz=0, nB=0, nS={}; for(const b of blds){ const S=SVC[b.type];
@@ -4746,6 +4784,7 @@ function junctionPath(n,P){
 const WIDTHS=[1,2,3,4,5,6], byW=()=>{ const o={}; for(const k of WIDTHS) o[k]=new Path2D(); return o; };
 const roadLayer=()=>({body:byW(),yel:new Path2D(),dbl:new Path2D(),white:new Path2D(),med:new Path2D(),edge:new Path2D(),shadow:byW(),ends:[],any:false});
 function buildRoadCache(){
+  roadLate=false;
   const G=roadLayer(), U=roadLayer(), stops=new Path2D(), arrows=new Path2D(), heads0=new Path2D(), slipS=new Path2D(), slipH=new Path2D(), drives=new Path2D(), rails=byW();
   const junc=new Path2D(), rings=[], heads=[];
   // the lines on a road, given the lanes on the right and the left of the way the line f is drawn: a centre line
@@ -4853,28 +4892,42 @@ function gfxButtons(){ skyKey=""; if(!ultra) skyTint(0,0); cv.classList.toggle("
 // a fixed scatter of numbers for Ultra's decorations, so they stay put and never touch the game's own dice
 function hash(i,k){ let x=(Math.imul(i|0,374761393)+Math.imul(k|0,668265263))|0; x=Math.imul(x^(x>>>13),1274126177); x^=x>>>16; return (x>>>0)/4294967296; }
 const fieldAt=(F,x,y)=>F[clamp(Math.round((y-TY0)/TG),0,TNY-1)*TNX+clamp(Math.round((x-TX0)/TG),0,TNX-1)];
-// grass tufts and flowers on the grass, pebbles on the bare ground, glints on the water: made once per map
+// grass tufts and flowers on the grass, pebbles on the bare ground, glints on the water: scattered once per map and
+// sorted into squares of the map, each square's shapes made the first time it's drawn, so a corner of the map only
+// draws (and only ever makes) what's in it
+const DCH=256;
+let dec=null;
 function decor(){
-  const T=terrain; if(T.decor) return T.decor;
-  const F=T.F, gt=biome.grassT, tuft=new Path2D(), tuft2=new Path2D(), fl=[new Path2D(),new Path2D(),new Path2D(),new Path2D()], peb=new Path2D(), pebL=new Path2D(), glints=[];
+  const T=terrain; if(dec&&dec.F===T.F) return dec;
+  const F=T.F, nx=Math.ceil((MW+600)/DCH), ny=Math.ceil((MH+600)/DCH), at=[], glints=[];
+  for(let q=0;q<nx*ny;q++) at.push([]);
   for(let i=0;i<9000*MAPK;i++){
     const x=TX0+hash(i,1)*(MW+600), y=TY0+hash(i,2)*(MH+600), w=fieldAt(F.W,x,y), r=hash(i,3);
     if(w>WATER+.12){ if(r<.06) glints.push({x,y,r:1.4+hash(i,4)*1.6,p:hash(i,5)*40}); continue; }
     if(w>.2||fieldAt(F.H,x,y)>HILL-.05) continue;
-    const g=fieldAt(F.G,x,y);
+    at[Math.min(ny-1,(y-TY0)/DCH|0)*nx+Math.min(nx-1,(x-TX0)/DCH|0)].push(i);
+  }
+  return dec={F,nx,ny,at,sq:[],glints,tc:shade(biome.grass[0],-38),tc2:shade(biome.grass[1],-44)};
+}
+function decorSq(d,q){
+  if(d.sq[q]) return d.sq[q];
+  const F=d.F, gt=biome.grassT, tuft=new Path2D(), tuft2=new Path2D(), fl=[new Path2D(),new Path2D(),new Path2D(),new Path2D()], peb=new Path2D(), pebL=new Path2D();
+  for(const i of d.at[q]){
+    const x=TX0+hash(i,1)*(MW+600), y=TY0+hash(i,2)*(MH+600), r=hash(i,3), g=fieldAt(F.G,x,y);
     if(g>gt){ const lush=g>gt+.05;
       if(lush&&r<.13){ const P=fl[i%4]; for(let k=0;k<3;k++){ const a=hash(i,6+k)*6.28, d=1+hash(i,9+k)*1.8, fx=x+Math.cos(a)*d, fy=y+Math.sin(a)*d; P.moveTo(fx+.8,fy); P.arc(fx,fy,.8,0,7); } }
       else if(r<.7){ const P=lush?tuft2:tuft, z=1.6+hash(i,12)*1.5; P.moveTo(x-z*.7,y-z*.9); P.lineTo(x,y); P.lineTo(x+z*.12,y-z*1.3); P.moveTo(x,y); P.lineTo(x+z*.75,y-z*.85); } }
     else if(r<.2){ const z=.7+hash(i,13)*1.1; peb.moveTo(x+z,y); peb.ellipse(x,y,z,z*.72,hash(i,14)*3,0,7); pebL.moveTo(x-z*.2+z*.38,y-z*.22); pebL.arc(x-z*.2,y-z*.22,z*.38,0,7); }
   }
-  return T.decor={tuft,tuft2,fl,peb,pebL,glints,tc:shade(biome.grass[0],-38),tc2:shade(biome.grass[1],-44)};
+  return d.sq[q]={tuft,tuft2,fl,peb,pebL};
 }
 function drawDecor(){
-  const d=decor();
+  const d=decor(), m=5, i0=Math.max(0,Math.floor((view.x0-m-TX0)/DCH)), i1=Math.min(d.nx-1,Math.floor((view.x1+m-TX0)/DCH)), j0=Math.max(0,Math.floor((view.y0-m-TY0)/DCH)), j1=Math.min(d.ny-1,Math.floor((view.y1+m-TY0)/DCH)), S=[];
+  for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++) S.push(decorSq(d,j*d.nx+i));
   ctx.lineCap="round"; ctx.lineJoin="round"; ctx.lineWidth=.55;
-  ctx.strokeStyle=dark?"rgba(150,175,120,.5)":d.tc; ctx.globalAlpha=.55; ctx.stroke(d.tuft); ctx.strokeStyle=dark?"rgba(120,150,95,.5)":d.tc2; ctx.stroke(d.tuft2); ctx.globalAlpha=1;
-  ctx.fillStyle="rgba(120,110,90,.28)"; ctx.fill(d.peb); ctx.fillStyle=dark?"rgba(255,255,255,.1)":"rgba(255,255,255,.35)"; ctx.fill(d.pebL);
-  ["#ffffff","#f6d74a","#f29bb8","#b79cf0"].forEach((c,i)=>{ ctx.fillStyle=dk(c,.55); ctx.fill(d.fl[i]); });
+  ctx.strokeStyle=dark?"rgba(150,175,120,.5)":d.tc; ctx.globalAlpha=.55; for(const s of S) ctx.stroke(s.tuft); ctx.strokeStyle=dark?"rgba(120,150,95,.5)":d.tc2; for(const s of S) ctx.stroke(s.tuft2); ctx.globalAlpha=1;
+  ctx.fillStyle="rgba(120,110,90,.28)"; for(const s of S) ctx.fill(s.peb); ctx.fillStyle=dark?"rgba(255,255,255,.1)":"rgba(255,255,255,.35)"; for(const s of S) ctx.fill(s.pebL);
+  ["#ffffff","#f6d74a","#f29bb8","#b79cf0"].forEach((c,i)=>{ ctx.fillStyle=dk(c,.55); for(const s of S) ctx.fill(s.fl[i]); });
   ctx.lineCap="butt";
 }
 // speckled tarmac
@@ -4939,8 +4992,9 @@ function stains(b,pts){ if(!ultra) return; ctx.fillStyle="rgba(70,62,50,.1)"; ct
   pts.forEach((q,i)=>{ if(hash(b.id*7+i,3)<.72) return; const rx=1.6+hash(b.id,i+5)*1.4; ctx.moveTo(q.x+rx,q.y); ctx.ellipse(q.x,q.y,rx,rx*.7,hash(i,b.id)*3,0,7); }); ctx.fill(); }
 // cloud shadows drifting over the town
 function drawClouds(){
-  const now=performance.now()/1000, W=MW+1400, H=MH+1000;
-  for(let i=0;i<8;i++){
+  // as many to the square mile on the big map as on the others
+  const now=performance.now()/1000, W=MW+1400, H=MH+1000, n=Math.round(8*Math.max(1,MAPK/2.56));
+  for(let i=0;i<n;i++){
     const cx=((hash(i,1)*W+now*7)%W)-700, cy=((hash(i,2)*H+now*2.5)%H)-500, R=110+hash(i,3)*120;
     if(cx+R*1.8<view.x0||cx-R*1.8>view.x1||cy+R*1.3<view.y0||cy-R*1.3>view.y1) continue;
     for(let k=0;k<5;k++){ const bx=cx+(hash(i,10+k)-.5)*R*1.6, by=cy+(hash(i,20+k)-.5)*R*.8, r=R*(.4+hash(i,30+k)*.4);
@@ -5086,7 +5140,7 @@ function newFlock(){
   return {x,y,a:Math.atan2(ty-y,tx-x),v:24+frand()*16,n:5+Math.floor(frand()*7),s:frand()*20,gull:frand()<.4};
 }
 function drawBirds(dt){
-  if(!birds.length) for(let i=0;i<4;i++){ const f=newFlock(); const k=frand()*1500; f.x+=Math.cos(f.a)*k; f.y+=Math.sin(f.a)*k; birds.push(f); }
+  if(!birds.length) for(let i=0;i<Math.round(4*Math.max(1,MAPK/2.56));i++){ const f=newFlock(); const k=frand()*1500; f.x+=Math.cos(f.a)*k; f.y+=Math.sin(f.a)*k; birds.push(f); }
   const now=performance.now()/1000, sh=new Path2D(), dk=new Path2D(), wt=new Path2D();
   for(let fi=0;fi<birds.length;fi++){ const f=birds[fi];
     f.x+=Math.cos(f.a)*f.v*dt; f.y+=Math.sin(f.a)*f.v*dt; f.a+=Math.sin(now*.25+f.s)*dt*.05;
@@ -5377,30 +5431,95 @@ function drawTrees(){
   ctx.fillStyle=dk("#fbe9f0",.6); ctx.fill(fl);
   if(U){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; ctx.fill(sp); }
 }
-// the ground and trees only change when the camera zooms or something gets built, so keep a picture of them
-// with a margin round the screen; a small pan just slides the picture instead of drawing it again
-// While zooming, the picture is stretched to fit and only drawn again once the zoom stops (or it would stop covering
-// the view, or get too blurry), rather than every frame of the zoom
-let tcv=null, tkey="", tcx=0, tcy=0, tcz=1, tzAt=0, tzLast=0;
-function drawTerrain(){
-  if(!tcv) tcv=document.createElement("canvas");
-  const M=Math.round(Math.min(cv.width,cv.height)*.3), k=dpr*cam.z, now=performance.now();
-  if(tcv.width!==cv.width+2*M||tcv.height!==cv.height+2*M){ tcv.width=cv.width+2*M; tcv.height=cv.height+2*M; tkey=""; }
-  const key=tver+","+ultra+","+dark;
-  if(cam.z!==tzLast){ tzLast=cam.z; tzAt=now; }
-  const s=cam.z/tcz, hx=(M+cv.width/2)/(dpr*tcz), hy=(M+cv.height/2)/(dpr*tcz), still=now-tzAt>160;
-  const covers=Math.abs(cam.x-tcx)+vw/(2*cam.z)<=hx+.5&&Math.abs(cam.y-tcy)+vh/(2*cam.z)<=hy+.5;
-  let ox=Math.round((tcx-cam.x)*k), oy=Math.round((tcy-cam.y)*k);
-  if(key!==tkey||!covers||s>1.6||(s!==1&&still)){ tkey=key; tcx=cam.x; tcy=cam.y; tcz=cam.z; ox=oy=0;
-    const main=ctx, v0=view, m=M/k; ctx=tcv.getContext("2d");
-    view={x0:v0.x0-m,y0:v0.y0-m,x1:v0.x1+m,y1:v0.y1+m};
-    ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=dk("#d9d7cf"); ctx.fillRect(0,0,tcv.width,tcv.height);
-    ctx.setTransform(k,0,0,k,M+dpr*(vw/2-cam.x*cam.z),M+dpr*(vh/2-cam.y*cam.z));
-    drawGround(); if(ultra&&cam.z>.45) drawDecor(); drawTrees(); ctx=main; view=v0; }
-  ctx.setTransform(1,0,0,1,0,0);
-  if(tcz===cam.z) ctx.drawImage(tcv,ox-M,oy-M);
-  else { const r=cam.z/tcz; ctx.drawImage(tcv,-r*(M+cv.width/2)+k*(tcx-cam.x)+cv.width/2,-r*(M+cv.height/2)+k*(tcy-cam.y)+cv.height/2,tcv.width*r,tcv.height*r); }
+// The ground, the woods and the wild trees only change when something is built over them, so they're kept as
+// pictures: square tiles TPX pixels across, at a ladder of sharpnesses half a step apart (level L is 2^(L/2) pixels a
+// map unit). The view uses the first level at least as sharp as the screen. A tile it hasn't got yet is drawn a few
+// milliseconds' worth a frame, nearest the middle first, and until then the nearest level that has that spot stands in,
+// stretched or shrunk, down to the whole map as seen from furthest out. A tree cut down only marks the tiles over it
+// as out of date: they go on showing until they're drawn again the same way, so a growing town never redraws the view.
+const TPX=256, TGU=2;            // tile size in pixels, and a margin of pixels round it so neighbours meet cleanly
+let tiles=new Map(), tpool=[], tkey="", tterr=null, tframe=0, tbase=null, tcost={}, tfresh=false, tstaleAt=0, tstat={n:0,ms:0};
+const tsc=L=>Math.pow(2,L/2);
+const tlev=k=>Math.ceil(2*Math.log2(k)-1e-9);
+const tid=(L,i,j)=>((L+64)*8192+j+4096)*8192+i+4096;
+// the tiles of level L over a box of the map, if they're all drawn
+function tilesOver(L,x0,y0,x1,y1,out){ const W=TPX/tsc(L);
+  for(let j=Math.floor((y0-TY0)/W);TY0+j*W<y1;j++) for(let i=Math.floor((x0-TX0)/W);TX0+i*W<x1;i++){ const t=tiles.get(tid(L,i,j)); if(!t||!t.ok) return false; out.push(t); }
+  return true; }
+// something changed on the ground in a box of the map: the tiles over it are drawn again when they're next wanted
+function groundDirty(x0,y0,x1,y1){ for(const t of tiles.values()){ const W=TPX/tsc(t.L), tx=TX0+t.i*W, ty=TY0+t.j*W; if(tx<x1&&ty<y1&&tx+W>x0&&ty+W>y0) t.stale=true; } }
+function paintTile(L,i,j){
+  let t=tiles.get(tid(L,i,j));
+  if(!t){ const c=tpool.pop()||document.createElement("canvas"); if(c.width!==TPX+2*TGU) c.width=c.height=TPX+2*TGU; t={L,i,j,cv:c,ok:false,stale:false,used:tframe}; tiles.set(tid(L,i,j),t); }
+  const p=tsc(L), W=TPX/p, x0=TX0+i*W, y0=TY0+j*W, m=TGU/p, sv={ctx,view,z:cam.z,terrain,trees}, t0=performance.now();
+  ctx=t.cv.getContext("2d"); view={x0:x0-m,y0:y0-m,x1:x0+W+m,y1:y0+W+m}; cam.z=p/dpr;
+  try{ ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=dk("#d9d7cf"); ctx.fillRect(0,0,TPX+2*TGU,TPX+2*TGU);
+    ctx.setTransform(p,0,0,p,TGU-x0*p,TGU-y0*p);
+    // just the outlines near the tile (the hills' shadows and the shore's edge reach a little way past theirs)
+    terrain=terrIn(view.x0-20,view.y0-20,view.x1+20,view.y1+20); trees=treesIn(view.x0-24,view.y0-24,view.x1+24,view.y1+24);
+    drawGround(); if(ultra&&cam.z>.45) drawDecor(); drawTrees(); }
+  finally{ ctx=sv.ctx; view=sv.view; cam.z=sv.z; terrain=sv.terrain; trees=sv.trees; }
+  t.ok=true; t.stale=false; t.used=tframe;
+  const ms=performance.now()-t0; tcost[L]=tcost[L]===undefined?ms:tcost[L]*.7+ms*.3; tstat.n++; tstat.ms+=ms;
 }
+// a tile on the screen, landing on whole pixels exactly where it belongs; at its own sharpness, pixel for pixel
+function blit(t,k,ox,oy){
+  const p=tsc(t.L), W=TPX/p, ax=k*(TX0+t.i*W)+ox, ay=k*(TY0+t.j*W)+oy; t.used=tframe;
+  if(Math.abs(p-k)<1e-9){ ctx.drawImage(t.cv,Math.round(ax)-TGU,Math.round(ay)-TGU); return; }
+  const dx0=Math.round(ax), dy0=Math.round(ay), dx1=Math.round(k*(TX0+(t.i+1)*W)+ox), dy1=Math.round(k*(TY0+(t.j+1)*W)+oy), s=p/k;
+  if(dx1>dx0&&dy1>dy0) ctx.drawImage(t.cv,TGU+(dx0-ax)*s,TGU+(dy0-ay)*s,(dx1-dx0)*s,(dy1-dy0)*s,dx0,dy0,dx1-dx0,dy1-dy0);
+}
+function drawTerrain(){
+  const key=ultra+","+dark+","+dpr;
+  if(key!==tkey||terrain!==tterr){ for(const t of tiles.values()) tpool.push(t.cv); tiles.clear(); tkey=key; tterr=terrain; tcost={}; tbase=tlev(dpr*minZoom()); tfresh=true; }
+  tframe++;
+  // the pictures reach as far as the view ever can: right out past the map's edges when it's zoomed all the way out
+  const mz=minZoom(), gx0=Math.min(TX0,MW/2-vw/(2*mz)-20), gy0=Math.min(TY0,MH/2-vh/(2*mz)-20), gx1=MW-gx0, gy1=MH-gy0;
+  const k=dpr*cam.z, ox=dpr*vw/2-k*cam.x, oy=dpr*vh/2-k*cam.y, L=clamp(tlev(k),tbase,tlev(dpr*4.5)), W=TPX/tsc(L);
+  const X0=Math.max(view.x0,gx0), Y0=Math.max(view.y0,gy0), X1=Math.min(view.x1,gx1), Y1=Math.min(view.y1,gy1);
+  const i0=Math.floor((X0-TX0)/W), j0=Math.floor((Y0-TY0)/W), i1=Math.ceil((X1-TX0)/W)-1, j1=Math.ceil((Y1-TY0)/W)-1, show=[], miss=[], old=[];
+  for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const t=tiles.get(tid(L,i,j)); if(t&&t.ok){ show.push(t); if(t.stale) old.push(t); } else miss.push({L,i,j}); }
+  const t0=performance.now(), d2=q=>{ const W2=TPX/tsc(q.L), dx=TX0+(q.i+.5)*W2-cam.x, dy=TY0+(q.j+.5)*W2-cam.y; return dx*dx+dy*dy; };
+  // a new map, or the look changed: the view is drawn sharp at once
+  if(tfresh){ tfresh=false; for(const q of miss) paintTile(L,q.i,q.j); for(const q of miss) show.push(tiles.get(tid(L,q.i,q.j))); miss.length=0; }
+  ctx.setTransform(1,0,0,1,0,0);
+  if(dark&&(view.x0<gx0||view.y0<gy0||view.x1>gx1||view.y1>gy1)){ ctx.fillStyle=dk("#d9d7cf"); ctx.fillRect(0,0,cv.width,cv.height); }
+  // stand-ins for what's missing: a sharper picture left from before a zoom out, else the nearest blurrier one
+  const work=[];
+  if(miss.length){ const fb=new Set(), o=[], WB=TPX/tsc(tbase);
+    miss.sort((a,b)=>d2(a)-d2(b));
+    for(const m of miss){ const x0=TX0+m.i*W, y0=TY0+m.j*W; let hit=false;
+      for(let l=L+1;l<=L+2&&!hit;l++){ o.length=0; hit=tilesOver(l,x0,y0,x0+W,y0+W,o); }
+      for(let l=L-1;l>=tbase&&!hit;l--){ o.length=0; hit=tilesOver(l,x0,y0,x0+W,y0+W,o); }
+      if(hit) for(const t of o) fb.add(t);
+      // nothing at all: the whole-map picture there comes first, as one tile of it covers a lot of view
+      else { const bi=Math.floor((x0+W/2-TX0)/WB), bj=Math.floor((y0+W/2-TY0)/WB); if(!work.some(q=>q.L===tbase&&q.i===bi&&q.j===bj)) work.push({L:tbase,i:bi,j:bj,must:!work.length}); } }
+    [...fb].sort((a,b)=>a.L-b.L).forEach(t=>blit(t,k,ox,oy)); }
+  for(const t of show) blit(t,k,ox,oy);
+  // then drawing, a few milliseconds a frame: what's missing in view, nearest the middle first (one of them whatever
+  // it costs); what's out of date in view (now and then whatever it costs); then the ring of tiles round the view
+  miss.forEach((q,n)=>work.push({L,i:q.i,j:q.j,must:!n&&!work.length}));
+  old.sort((a,b)=>d2(a)-d2(b)).forEach((q,n)=>work.push({L,i:q.i,j:q.j,must:!n&&!work.length&&t0-tstaleAt>250,stale:true}));
+  for(let j=j0-1;j<=j1+1;j++) for(let i=i0-1;i<=i1+1;i++){ if(j>=j0&&j<=j1&&i>=i0&&i<=i1||TX0+i*W>=gx1||TY0+j*W>=gy1||TX0+(i+1)*W<=gx0||TY0+(j+1)*W<=gy0) continue; const t=tiles.get(tid(L,i,j)); if(!t||!t.ok||t.stale) work.push({L,i,j}); }
+  // and, with nothing else to do, the whole-map picture, for the next zoom out
+  const WB=TPX/tsc(tbase), bi0=Math.floor((gx0-TX0)/WB), bj0=Math.floor((gy0-TY0)/WB), nb=(Math.ceil((gx1-TX0)/WB)-bi0)*(Math.ceil((gy1-TY0)/WB)-bj0);
+  if(!work.length){ for(let j=bj0;TY0+j*WB<gy1&&!work.length;j++) for(let i=bi0;TX0+i*WB<gx1;i++){ const t=tiles.get(tid(tbase,i,j)); if(!t||!t.ok){ work.push({L:tbase,i,j,idle:true}); break; } } }
+  const bud=isTouch?6:4;
+  for(const q of work){ const est=tcost[q.L]===undefined?2:tcost[q.L];
+    if(!q.must&&performance.now()-t0+est>(q.idle?2*bud:bud)) break;
+    paintTile(q.L,q.i,q.j); if(q.stale) tstaleAt=t0;
+    // a tile drawn just now that's in view goes on the screen this frame too
+    if(q.L===L&&q.i>=i0&&q.i<=i1&&q.j>=j0&&q.j<=j1) blit(tiles.get(tid(L,q.i,q.j)),k,ox,oy); }
+  // the tiles not seen for longest go when there are too many
+  const cap=Math.round(1.6*(i1-i0+3)*(j1-j0+3))+nb;
+  if(tiles.size>cap){ const ev=[...tiles.values()].filter(t=>t.used<tframe&&t.L!==tbase).sort((a,b)=>a.used-b.used);
+    for(const t of ev.slice(0,tiles.size-cap)){ tiles.delete(tid(t.L,t.i,t.j)); tpool.push(t.cv); } }
+}
+// the outlines near the view, for what's drawn over the land every frame (the ripples and the foam on the water)
+let nvT=null, nvK="";
+function nearView(){ const q=512, x0=Math.floor(view.x0/q)*q, y0=Math.floor(view.y0/q)*q, x1=Math.ceil(view.x1/q)*q, y1=Math.ceil(view.y1/q)*q, key=x0+","+y0+","+x1+","+y1;
+  if(key!==nvK||!nvT||nvT.F!==terrain.F){ nvK=key; nvT=terrIn(x0-20,y0-20,x1+20,y1+20); }
+  return nvT; }
 let wavePat=null;
 function makeWaves(){ const c=document.createElement("canvas"); c.width=c.height=256; const g=c.getContext("2d");
   g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=1.6; g.lineCap="round";
@@ -6273,7 +6392,7 @@ function drawOutside(){
 }
 function drawOutsidePointer(){
   const O=outside; if(!O||level<2||O.used) return;
-  const n=nodes.get(O.node); if(!n) return;
+  const n=nodes.get(O.tip)||nodes.get(O.node); if(!n) return;     // the end of it to join up to
   const sp=scr(n.x,n.y), sx=sp.behind?vw-sp.x:sp.x, sy=sp.behind?vh*2:sp.y, m=34;
   if(sx>m&&sy>80&&sx<vw-m&&sy<vh-130) return;
   const cx=clamp(sx,m,vw-m), cy=clamp(sy,80,vh-130), a=Math.atan2(sy-cy,sx-cx);
@@ -6312,6 +6431,7 @@ function drawHover(){
 }
 let LOD=true;
 function draw(){
+  if(roadLate) buildRoadCache();
   if(v3live()){ draw3d(); return; }
   ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle="#d9d7cf"; ctx.fillRect(0,0,cv.width,cv.height);
@@ -6321,7 +6441,7 @@ function draw(){
   drawTerrain();
   worldT();
   const fnow=performance.now()/1000, fdt=Math.min(.05,Math.max(0,fnow-(fxLast||fnow))); fxLast=fnow;
-  drawWater();
+  { const T0=terrain; terrain=nearView(); try{ drawWater(); } finally{ terrain=T0; } }
   if(ultra) drawBoats(fdt);
   drawRoads();
   if(city) drawWear();
@@ -6434,6 +6554,7 @@ let dark=false;
 try{ const v=localStorage.getItem("gridlockTheme"); dark=v?v==="dark":matchMedia("(prefers-color-scheme: dark)").matches; }catch(e){}
 // what changed in each version, newest first, for the What's new list
 const CHANGES=[
+  ["7.5", "Oct 20", ["The City map is four times bigger, with room for a much larger town, more countryside, rivers, lakes and mountains.", "The highway in from outside still reaches as far in as before, so it's no further to join your roads up to it.", "Much less stutter: building, panning and zooming out no longer freeze the screen for a moment, even on phones. The ground and woods are drawn ahead in pieces, and a growing town only redraws what changed.", "In 3D, building something only redraws the ground right around it, so the view stays smooth while the town grows."]],
   ["7.4","Oct 19",["The ground is green everywhere now, with lusher and drier patches, wild flowers up close, and reeds along the shores.","Mountains are real: ridges and peaks of rock that stand up in 3D, with alpine grass low down.","Many more kinds of trees and plants: broadleaf, pine, fir, birch, poplar, bushes and reeds, with blossom and copper beech in gardens.","Water is a natural blue that deepens away from the shore, with gentle ripples and lapping foam, and in 3D it shines and moves.","More street lamps, closer together and in pairs on wide roads, and much brighter at night.","Houses look real: grey, slate, brown and clay-tile roofs, one or two storeys, some L-shaped, with solar panels, chimneys, garden sheds, patios, flower beds and hedges round the gardens.","Shops, offices, industry and mixed use have real roofing colours instead of bright blue, purple and orange, with coloured awnings on the shops.","In 3D, beach umbrellas, lifeguard chairs and the plant on rooftops now stand up for real."]],
   ["7.3","Oct 17",["Homes now come in Low, Medium and High residential. Medium grows real apartment blocks instead of long rows of townhouses, and the new High zone grows tower blocks and skyscrapers once the town passes about 150 people.","When you tap out a zone, a Houses bar shows the fewest and the most plots that land can take. Slide it to pick exactly how many houses you want.","Zone corners snap onto the edge of the pavement and onto block corners, so plots line up with the road.","Beaches: pick Beach in Parks, then tap round a stretch of shore or drag along the water's edge, and the sand follows the shoreline. Bigger beaches cost more and bring more tourists.","Marinas and lakeside pumps snap onto the nearest shore, facing the water, wherever you put them down.","Buildings only take up the space they really use, so things can go right up to them.","Shops, offices, industry, mixed use and houses all want to grow a lot more, kept in step with each other.","Plot yards are green grass, apartment roofs are grey and brown instead of green, and the mask icon over homes is gone."]],
   ["7.2","Oct 17",["A new look: the top bar and toolbars are joined-up panels in a road-sign typeface, picked tools are marked in road-paint yellow, and prices are plain text.","How to play folds away on the start screen, so Play is right there.","Zooming is smoother: the mouse wheel glides, and the map doesn't redraw the ground every frame while you zoom.","Buildings pop up with a little bounce and a puff of dust, and the money flashes green or red when the month's money comes in.","3D trees have fuller, lumpier crowns, and pines grow in tiers."]],
@@ -7040,8 +7161,8 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     for(const p of [pick(0,vh),pick(vw,vh),pick(vw/2,vh/2),pick(0,vh*.6),pick(vw,vh*.6)]){ if(p.sky) continue; n0=Math.min(n0,p.x); m0=Math.min(m0,p.y); n1=Math.max(n1,p.x); m1=Math.max(m1,p.y); }
     if(n0>n1){ n0=n1=cam.x; m0=m1=cam.y; }
     return {x0,y0,x1,y1,near:{x0:n0,y0:m0,x1:n1,y1:m1}}; }
-  let reg=null, lastD=0, lastF=0, dynKey="", focKey="", fxWas=false, gms=0, dms=0, rrAt=0, painted=0;
-  const mod=(a,n)=>((a%n)+n)%n, KMAX=9, SL=k=>256*Math.pow(2,k/2);
+  let reg=null, lastD=0, lastF=0, dynKey="", focKey="", fxWas=false, gms=0, dms=0, rrAt=0, painted=0, pcN=0, pcMs=0;
+  const mod=(a,n)=>((a%n)+n)%n, KMAX=11, SL=k=>256*Math.pow(2,k/2);
 
   // the 2D renderer pointed at a square of the map, drawing into a canvas px across
   function pass2d(cvs,px,x0,y0,S,fn){
@@ -7057,9 +7178,12 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const key=cx+","+cy, CW=L.CW, x0=cx*CW, y0=cy*CW, sx=mod(cx,NC)*CPX, sy=mod(cy,NC)*CPX;
     let c=L.cells.get(key); if(!c) L.cells.set(key,c={cx,cy,sig:-1,rec:null,terr:false,at:0});
     const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),parked:[],trees:[],models:[],props:[]};
+    const T0=terrain, t0=performance.now();
     pass2d(stage,CPX,x0,y0,CW,()=>{
+      // just the outlines that reach the cell, and the grass tufts and flowers only where they'd show, as in 2D
+      terrain=terrIn(x0-20,y0-20,x0+CW+20,y0+CW+20);
       ctx.setTransform(1,0,0,1,0,0);
-      if(!c.terr){ ctx.fillStyle=biome?mapBiome().base:"#d9d7cf"; ctx.fillRect(0,0,CPX,CPX); worldT(); drawGround(); if(ultra) drawDecor();
+      if(!c.terr){ ctx.fillStyle=biome?mapBiome().base:"#d9d7cf"; ctx.fillRect(0,0,CPX,CPX); worldT(); drawGround(); if(ultra&&cam.z>.45) drawDecor();
         L.terr.getContext("2d").drawImage(stage,sx,sy); c.terr=true; }
       else ctx.drawImage(L.terr,sx,sy,CPX,CPX,0,0,CPX,CPX);
       worldT(); rec3d=rc;
@@ -7069,11 +7193,12 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
       if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)) drawHose(b);
       drawOutside();
     });
+    terrain=T0;
     c.rec=rc; c.at=performance.now(); if(sig!==undefined) c.sig=sig;
     cellAt.set(sx,sy); R.copyTextureToTexture(cellAt,stageSrc,L.tex);
     // the blank picture the layer started from is on the card now, so its canvas can go
     if(!L.live){ L.live=true; L.tex.image.width=L.tex.image.height=1; }
-    painted++;
+    painted++; pcN++; pcMs+=performance.now()-t0;
     return {c,old};
   }
   // the walls of the buildings in a cell that was painted again
@@ -7087,7 +7212,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   // parked cars and trees from all the cells, and the wild trees on the land under the picture
   function gather(){
     const P=[], tl=[], M=[], Q=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
-    for(const tr of trees) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.k);
+    for(const tr of treesIn(x0,y0,x0+S,y0+S)) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.k);
     for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],-1);
       for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } }
       for(const q of c.rec.props||[]){ const k="p"+q.k+Math.round(q.x*4)+","+Math.round(q.y*4)+","+Math.round(q.z||0); if(!seen.has(k)){ seen.add(k); Q.push(q); } } }
@@ -7102,7 +7227,8 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const R4=v=>Math.round(v*4);
     for(const b of blds){ const f=b.fire, m=b.r+40;
       add(b.x-m,b.y-m,b.x+m,b.y+m,b.id*131+b.type.length*7+(f?(f.out?3:5)+(f.truck&&f.truck.state==="park"?2:0):0)+(b.lot?11:0)+(b.floors||0)*13+Math.round((b.k||0)*10)*17+(b.v||0)*19+(moving&&moving.b===b?29:0)+(b.cons?workStage(b)*53+7:0)+R4(b.x)*7+R4(b.y)*3+Math.round(b.ang*100)); }
-    for(const L2 of lots) add(L2.x-L2.r,L2.y-L2.r,L2.x+L2.r,L2.y+L2.r,L2.id*37+(L2.b?L2.b.id*5+1:0)+(L2.burnt?Math.round((t-L2.burnt)/8)*3+2:0)+(t<L2.cool?7:0)+L2.kind.length*11);
+    // (a plot that takes in a gap beside it changes shape)
+    for(const L2 of lots) add(L2.x-L2.r,L2.y-L2.r,L2.x+L2.r,L2.y+L2.r,L2.id*37+(L2.b?L2.b.id*5+1:0)+(L2.burnt?Math.round((t-L2.burnt)/8)*3+2:0)+(t<L2.cool?7:0)+L2.kind.length*11+L2.poly.length*13+R4(L2.x)*7+R4(L2.y)*3+R4(L2.r));
     for(const s of segs.values()){ const A=nodes.get(s.a), B=nodes.get(s.b); if(!A||!B) continue; const m=widthOf(totL(s))/2+16;
       add(Math.min(A.x,B.x)-m,Math.min(A.y,B.y)-m,Math.max(A.x,B.x)+m,Math.max(A.y,B.y)+m,s.id*41+s.a*3+s.b*5+(s.lf||0)*7+(s.lb||0)*11+(s.hwy?17:0)+(s.over?19:0)+(s.fixed?23:0)+(s.cond===undefined?0:Math.round(s.cond*16)*29)+R4(A.x)+R4(B.y)*3); }
     // a road being laid: each stretch of it changes when the crew gets there and again when it's finished
@@ -7137,8 +7263,8 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   let dark3=null;
   function cells(){
     const t0=performance.now(), nd=need(), nr=nd.near, n=Math.min(Math.max(nd.x1-nd.x0,nd.y1-nd.y0),Math.max(nr.x1-nr.x0,nr.y1-nr.y0)*3); painted=0;
-    // a new map, or the graphics changed: everything is painted again
-    const gk=tver+","+ultra+","+(biome?biome.base:"")+","+city+","+dark;
+    // a new map, or the graphics changed: everything is painted again. Building only changes the cells it's in
+    const gk=ultra+","+(biome?biome.base:"")+","+city+","+dark;
     if(hterr!==terrain){ hterr=terrain; heights(); front.S=0; back=null; bcache.clear(); batchDirty=true; }
     if(gk!==tkey3){ tkey3=gk; base.material.color.set(biome?mapBiome().base:"#cfe0a8"); for(const L of [front,back,spare]) if(L) for(const c of L.cells.values()){ c.terr=false; c.sig=-1; } }
     // a theme switch paints the whole view again at once, rather than creeping across it a square at a time
@@ -7306,7 +7432,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   }
   return {R,sync,pick,project,render,hAt,
     top:b=>{ const e=bcache.get(b); return e?e.top:0; },
-    stats:()=>({blds:bcache.size,batches:Object.keys(batches).length,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
+    stats:()=>({pc:pcN,pms:+pcMs.toFixed(1),blds:bcache.size,batches:Object.keys(batches).length,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
     dbg:()=>{ const nd=need(); return {nd,core:core(front,nd),ox:front.ox,oy:front.oy,S:front.S,CW:front.CW,todo:front.todo.length,cov:covers(front,core(front,nd))}; }};
 }
 
@@ -7424,6 +7550,8 @@ window.__gridlock={
   fx:o=>{ o=o||{}; if(o.day!==undefined) dayClock=o.day*DAY; if(o.rain!==undefined){ rainK=o.rain; rainLeft=o.rain?60:0; wetK=o.wet!==undefined?o.wet:o.rain; } return {day:+dayP().toFixed(3),night:+nightK().toFixed(2),rain:+rainK.toFixed(2),wet:+wetK.toFixed(2),smoke:smoke.length,boats:boats?boats.length:0,birds:birds.length,lamps:lampList.length}; },
   frozen:()=>frozen,
   drawMs:n=>{ const t0=performance.now(); for(let i=0;i<n;i++) draw(); return +((performance.now()-t0)/n).toFixed(2); },
+  size:()=>({w:MW,h:MH}),
+  tiles:()=>({n:tiles.size,painted:tstat.n,ms:+tstat.ms.toFixed(1),base:tbase,stale:[...tiles.values()].filter(t=>t.stale).length}),
   step:sec=>{ for(let k=0;k<sec*50;k++) step(.02); },
   screenOf:(x,y)=>scr(x,y),
   v3dbg:()=>V3&&V3.dbg(),
