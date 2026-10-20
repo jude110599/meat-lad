@@ -3837,6 +3837,138 @@ function drawProblems(b){ if(b.cons) return;
     else if(k==="park"){ ctx.fillStyle="#fff"; ctx.font="800 5.6px "+FONT; ctx.textAlign="center"; ctx.fillText("P",.1,2); }
     ctx.restore(); });
 }
+// ---------- notices over buildings (City builder) ----------
+// One small sign pops up over a building when it needs something, the way city builders do it: no road, no power or
+// water, not enough customers, workers or deliveries, traffic in the way, people unhappy enough to move out, a fire,
+// someone ill, nowhere to park, or crime. Only the most pressing one shows. It bounces in, bobs gently, gets a red ring
+// running down when the place is close to shutting (or its people to leaving), and fades away once it's sorted. Each
+// kind is painted once into a small picture and stamped, so hundreds of them cost next to nothing.
+const NOTE={fire:{c:"#c8452f",t:"On fire",d:"Fire trucks come from a fire station nearby."},
+  road:{c:"#c8452f",t:"No road",d:"Nothing can reach it. Join it up to a road."},
+  pow:{c:"#c8452f",t:"No power",d:"Build a power plant or a solar farm joined to it by road."},
+  wat:{c:"#c8452f",t:"No water",d:"Build a water tower or a pump joined to it by road."},
+  traffic:{c:"#cc6a2c",t:"Stuck in traffic",d:"People are on their way, but the roads to it are jammed."},
+  deliv:{c:"#c48a25",t:"No deliveries",d:"Its trucks aren't getting through. Join it up to the factories and the highway."},
+  work:{c:"#c48a25",t:"Not enough workers",d:"It needs more homes joined to it by road."},
+  cust:{c:"#c48a25",t:"Not enough customers",d:"It needs more homes joined to it by road."},
+  sad:{c:"#c48a25",t:"Unhappy",d:"People want power, water, services and parks nearby, and fair taxes."},
+  sick:{c:"#2d8a66",t:"Someone's ill",d:"A hospital nearby sends an ambulance."},
+  park:{c:"#3b6dba",t:"Nowhere to park",d:"Build a parking lot or a garage nearby."},
+  crime:{c:"#4b5462",t:"Crime",d:"A police station nearby keeps crime down."},
+  homes:{c:"#56677d",t:"No homes nearby",d:"Join its road up to where people live."},
+  smoke:{c:"#6b6e72",t:"Too smoky",d:"Nobody wants to live this close to factory smoke."}};
+// how close a place is to shutting down, or its people to moving out: 0 fine, 1 gone
+function urgency(b){ return clamp(Math.max(b.pins&&!isSvc(b)?(b.over||0)/(OVER_LIMIT*1.5):0,(b.dry||0)/150,isHome(b)&&b.lot?(b.sad||0)/90:0),0,1); }
+// the most pressing thing a building needs, if anything
+function noteOf(b){
+  if(b.cons) return null;
+  if(b.fire&&!b.fire.out) return "fire";
+  if(!b.acc) return "road";
+  if(b.noPow) return "pow"; if(b.noWat) return "wat";
+  // a business that's been full up a while: what it's waiting for most, or traffic if they're already on their way
+  if(b.pins&&!isSvc(b)&&b.over>3){ let k=null, v=0;
+    for(const q of KINDS){ const c=capOf(b,q); if(!c||b.type==="warehouse"&&q==="goods") continue; const f=b.pins[q]/c; if(f>v){ v=f; k=q; } }
+    if(k){ const j=noteJam.get(b); return j&&j[1]>=Math.max(2,j[0]*.4)?"traffic":k==="cust"?"cust":k==="work"?"work":"deliv"; } }
+  if((b.sad||0)>10) return "sad";
+  if(b.sick) return "sick";
+  if(b.noPark&&t-b.noPark<25) return "park";
+  if((b.crime||0)>.65&&!isSvc(b)) return "crime";
+  return null;
+}
+// what each building needs is looked at a few times a second; a new notice waits a moment so they don't flicker
+let noteAt=-1;
+const noteJam=new Map();
+function notesTick(){
+  if(animT>=noteAt&&animT-noteAt<.25) return; noteAt=animT;
+  // the cars on their way to each place, and how many of them are crawling along in traffic
+  noteJam.clear(); for(const c of cars){ if(c.state!=="drive"||!c.purpose||c.purpose.svc) continue; const d=c.purpose.d; let j=noteJam.get(d); if(!j) noteJam.set(d,j=[0,0]); j[0]++; if(c.v<2.5) j[1]++; }
+  for(const b of blds){ const k=noteOf(b), cur=b.nk||null;
+    if(k!==b.nw){ b.nw=k; b.ns=animT; }
+    if(k!==cur&&animT-b.ns>=(k==="fire"||k==="road"?.3:k?1:.6)){ if(cur){ b.no=cur; b.nf=animT; } b.nk=k; b.nt=animT; } }
+}
+const nrr=(g,x,y,w,h,r)=>{ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
+// the signs, in white on the disc (c is the disc's colour, for the holes), drawn round 0,0 about 16 across
+const NGLY={
+  pow:g=>{ g.fillStyle="#ffd84a"; g.beginPath(); g.moveTo(1.8,-8.2); g.lineTo(-5.2,1.3); g.lineTo(-.6,1.3); g.lineTo(-2.1,8.2); g.lineTo(5.2,-1.7); g.lineTo(.7,-1.7); g.closePath(); g.fill(); },
+  wat:g=>{ g.fillStyle="#cdeaff"; g.beginPath(); g.moveTo(0,-8.2); g.bezierCurveTo(3.4,-3.4,5.6,-.4,5.6,2.4); g.arc(0,2.4,5.6,0,Math.PI); g.bezierCurveTo(-5.6,-.4,-3.4,-3.4,0,-8.2); g.fill(); },
+  road:g=>{ g.strokeStyle="#fff"; g.lineCap="round"; g.lineWidth=2.1; g.beginPath(); g.moveTo(-6.2,7.6); g.lineTo(-2.3,-7.6); g.moveTo(6.2,7.6); g.lineTo(2.3,-7.6); g.stroke();
+    g.lineWidth=1.6; g.beginPath(); g.moveTo(0,-6.2); g.lineTo(0,-3.8); g.moveTo(0,-1.1); g.lineTo(0,1.5); g.moveTo(0,4.4); g.lineTo(0,7.2); g.stroke(); },
+  fire:(g,c)=>{ g.fillStyle="#fff"; g.beginPath(); g.moveTo(0,-8.6); g.bezierCurveTo(1.6,-4.6,6,-2.6,5.5,2.6); g.bezierCurveTo(5.1,6.3,2.7,8.2,0,8.2); g.bezierCurveTo(-3.3,8.2,-5.7,6,-5.7,2.6);
+    g.bezierCurveTo(-5.7,-.5,-3.5,-2,-2.9,-4.7); g.bezierCurveTo(-1.5,-2.9,-.8,-1.9,-.2,-1.5); g.bezierCurveTo(.9,-3.9,.7,-6.1,0,-8.6); g.fill();
+    g.fillStyle=c; g.beginPath(); g.moveTo(.2,1); g.bezierCurveTo(1,2.8,2.8,3.6,2.6,5.4); g.bezierCurveTo(2.4,6.6,1.4,7.1,.2,7.1); g.bezierCurveTo(-1.4,7.1,-2.5,6.2,-2.5,4.9); g.bezierCurveTo(-2.5,3.4,-.6,2.8,.2,1); g.fill(); },
+  traffic:(g,c)=>{ g.fillStyle="#fff"; nrr(g,-3.7,-8.4,7.4,16.8,2.6); g.fill(); g.fillStyle=c; for(const y of [-4.6,0,4.6]){ g.beginPath(); g.arc(0,y,1.9,0,7); g.fill(); }
+    g.fillStyle="#ffd7cc"; g.beginPath(); g.arc(0,-4.6,1.9,0,7); g.fill(); },
+  deliv:(g,c)=>{ g.fillStyle="#fff"; nrr(g,-8,-5.6,10,9.2,1); g.fill(); g.beginPath(); g.moveTo(2.9,-2.2); g.lineTo(5.6,-2.2); g.lineTo(8,.7); g.lineTo(8,3.6); g.lineTo(2.9,3.6); g.closePath(); g.fill();
+    g.fillStyle=c; g.fillRect(3.9,-1.2,1.9,1.9); for(const x of [-4.6,4.7]){ g.beginPath(); g.arc(x,4.9,3.3,0,7); g.fill(); }
+    g.fillStyle="#fff"; for(const x of [-4.6,4.7]){ g.beginPath(); g.arc(x,4.9,2.3,0,7); g.fill(); } g.fillStyle=c; for(const x of [-4.6,4.7]){ g.beginPath(); g.arc(x,4.9,.8,0,7); g.fill(); } },
+  work:g=>{ g.fillStyle="#fff"; g.beginPath(); g.arc(0,-.4,2.7,0,7); g.fill(); g.beginPath(); g.arc(0,-4.4,3.3,Math.PI,0); g.closePath(); g.fill(); nrr(g,-4.8,-4.6,9.6,1.2,.5); g.fill();
+    g.beginPath(); g.moveTo(-6.3,8.3); g.bezierCurveTo(-6.3,4.2,-3.5,2.9,0,2.9); g.bezierCurveTo(3.5,2.9,6.3,4.2,6.3,8.3); g.closePath(); g.fill(); },
+  cust:(g,c)=>{ g.fillStyle="#fff"; nrr(g,-5.8,-2.4,11.6,10.4,1.6); g.fill(); g.strokeStyle="#fff"; g.lineWidth=1.7; g.beginPath(); g.arc(0,-2.4,3.1,Math.PI,0); g.stroke();
+    g.fillStyle=c; g.beginPath(); g.arc(-2.7,.5,.85,0,7); g.arc(2.7,.5,.85,0,7); g.fill(); },
+  sad:g=>{ g.strokeStyle="#fff"; g.fillStyle="#fff"; g.lineWidth=1.8; g.lineCap="round"; g.beginPath(); g.arc(0,0,7,0,7); g.stroke();
+    g.beginPath(); g.arc(-2.5,-1.8,1.15,0,7); g.arc(2.5,-1.8,1.15,0,7); g.fill(); g.beginPath(); g.arc(0,5.4,3.4,Math.PI*1.22,Math.PI*1.78); g.stroke(); },
+  sick:g=>{ g.fillStyle="#fff"; nrr(g,-2.3,-7.2,4.6,14.4,1); g.fill(); nrr(g,-7.2,-2.3,14.4,4.6,1); g.fill(); },
+  park:g=>{ g.fillStyle="#fff"; g.font="800 16px "+FONT; g.textAlign="center"; g.textBaseline="middle"; g.fillText("P",.6,1); },
+  crime:(g,c)=>{ g.fillStyle="#fff"; g.beginPath(); g.moveTo(-8,-1.4); g.bezierCurveTo(-6,-4.6,-2,-3.7,0,-2.2); g.bezierCurveTo(2,-3.7,6,-4.6,8,-1.4); g.bezierCurveTo(8,2.6,5,4.7,2.4,3.7);
+    g.bezierCurveTo(1.2,3.3,.6,2.3,0,2.3); g.bezierCurveTo(-.6,2.3,-1.2,3.3,-2.4,3.7); g.bezierCurveTo(-5,4.7,-8,2.6,-8,-1.4); g.fill();
+    g.fillStyle=c; g.beginPath(); g.ellipse(-3.6,.1,1.9,1.25,.12,0,7); g.ellipse(3.6,.1,1.9,1.25,-.12,0,7); g.fill(); },
+  homes:(g,c)=>{ g.fillStyle="#fff"; g.beginPath(); g.moveTo(0,-7.6); g.lineTo(7.8,-.3); g.lineTo(5.5,-.3); g.lineTo(5.5,7.2); g.lineTo(-5.5,7.2); g.lineTo(-5.5,-.3); g.lineTo(-7.8,-.3); g.closePath(); g.fill();
+    g.fillStyle=c; g.fillRect(-1.5,2.6,3,4.6); },
+  smoke:g=>{ g.fillStyle="#fff"; g.beginPath(); g.arc(-3.4,1.8,3.4,0,7); g.arc(1,-1,4.3,0,7); g.arc(4.6,2.3,3,0,7); g.fill(); nrr(g,-6.8,1.8,11.4,3.6,1.6); g.fill(); }
+};
+const NSPR={};
+// a notice's picture: a coloured disc in a white rim with a little point underneath, softly shadowed, its sign in white
+function noteSpr(k,red){
+  const q=Math.min(3,Math.max(2,dpr*1.5)), key=k+(red?"!":"")+q; let c=NSPR[key]; if(c) return c;
+  c=document.createElement("canvas"); c.width=Math.ceil(36*q); c.height=Math.ceil(44*q); const g=c.getContext("2d"), col=red?"#c8452f":NOTE[k].c; g.scale(q,q);
+  const shape=(r,tip)=>{ g.beginPath(); g.arc(18,17,r,0,Math.PI*2); g.moveTo(18+r*.42,17+r*.9); g.lineTo(18,17+r+tip); g.lineTo(18-r*.42,17+r*.9); g.closePath(); };
+  g.shadowColor="rgba(10,14,20,.38)"; g.shadowBlur=3.2*q; g.shadowOffsetY=1.3*q; g.fillStyle="#fff"; shape(13.4,4.6); g.fill();
+  g.shadowColor="transparent"; g.fillStyle=col; shape(11.8,4.4); g.fill();
+  // a soft sheen on the top half
+  const gr=g.createLinearGradient(0,5,0,20); gr.addColorStop(0,"rgba(255,255,255,.2)"); gr.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=gr; g.beginPath(); g.arc(18,17,11.8,0,Math.PI*2); g.fill();
+  g.save(); g.translate(18,17); g.scale(.86,.86); NGLY[k](g,col); g.restore();
+  return NSPR[key]=c;
+}
+// one notice at screen point sx,sy (the tip of its point), at size s, see-through a, and the red ring u of the way round
+function noteDraw(k,sx,sy,s,a,u){
+  if(s<.03||a<=.01) return; const red=u>.35, c=noteSpr(k,red);
+  ctx.globalAlpha=a; ctx.drawImage(c,sx-18*s,sy-35*s,36*s,44*s);
+  if(red){ const cy=sy-18*s, R=15.8*s; ctx.lineCap="round"; ctx.lineWidth=2.3*s;
+    ctx.strokeStyle="rgba(200,69,47,.28)"; ctx.beginPath(); ctx.arc(sx,cy,R,0,7); ctx.stroke();
+    ctx.strokeStyle="#c8452f"; ctx.beginPath(); ctx.arc(sx,cy,R,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.max(.02,1-u)); ctx.stroke(); ctx.lineCap="butt"; }
+  ctx.globalAlpha=1;
+}
+// where a spot on the map is on the screen, and how big the notices there are drawn: full size close up, smaller
+// further out, and none at all from right out over the whole map
+function noteAt3(x,y,h){ const p=V3.project(x,h,y); if(p.behind||p.x<-40||p.y<-60||p.x>vw+40||p.y>vh+70) return null;
+  const q=V3.project(x+1,h,y), q2=V3.project(x,h,y+1), k=Math.max(Math.hypot(q.x-p.x,q.y-p.y),Math.hypot(q2.x-p.x,q2.y-p.y));
+  return k<.07?null:{x:p.x,y:p.y,s:clamp(.52+(k-.22)*.6,.52,1)}; }
+const nlist=[];
+function drawNotes(){
+  if(!city) return;
+  notesTick();
+  const v3=v3live(), zs=clamp(.52+(cam.z-.22)*.6,.52,1);
+  if(!v3&&cam.z<.08) return;
+  nlist.length=0;
+  for(const b of blds){ if(b.no&&animT-b.nf>.4) b.no=null; if(!b.nk&&!b.no) continue;
+    let p;
+    if(v3){ p=noteAt3(b.x,b.y,V3.top(b)+V3.hAt(b.x,b.y)+2); if(!p) continue; }
+    else { if(!inView(b.x,b.y,b.r+60)) continue; p={x:(b.x-cam.x)*cam.z+vw/2,y:(b.y-cam.y)*cam.z+vh/2-Math.min(b.d*.2,8)*cam.z,s:zs}; }
+    p.b=b; nlist.push(p); }
+  // the plots that can't grow, smaller and flat, under the buildings' notices
+  const lp=[];
+  for(const L of lots){ if(!L.why||L.b||!NOTE[L.why]) continue;
+    let p; if(v3){ p=noteAt3(L.x,L.y,V3.hAt(L.x,L.y)+1); if(!p) continue; } else { if(!inView(L.x,L.y,30)) continue; p={x:(L.x-cam.x)*cam.z+vw/2,y:(L.y-cam.y)*cam.z+vh/2,s:zs}; }
+    p.L=L; lp.push(p); }
+  if(!nlist.length&&!lp.length) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  for(const p of lp) noteDraw(p.L.why,p.x,p.y+6*p.s,p.s*.74,.88,0);
+  nlist.sort((a,b)=>a.y-b.y);
+  for(const p of nlist.length>600?nlist.slice(-600):nlist){ const b=p.b, s=p.s;
+    if(b.no){ const f=clamp((animT-b.nf)/.4,0,1); noteDraw(b.no,p.x,p.y-f*10*s,s*(1-.3*f),1-f,0); }
+    if(b.nk){ const age=animT-b.nt, e=clamp(age/.42,0,1), bob=Math.sin(animT*2.3+b.id*1.7)*1.1*s;
+      noteDraw(b.nk,p.x,p.y-(1-e)*7*s+bob,s*easeBack(e),Math.min(1,age/.12),urgency(b)); } }
+}
 // worn roads: cracks and potholes, more of them the worse the road gets
 function drawWear(){
   for(const s of segs.values()){ if(s.cond===undefined||s.cond>=.62||s.hwy) continue;
@@ -6461,9 +6593,8 @@ function draw(){
   for(const c of cars) if(c.state==="drive"&&c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawOutside();
   if(ultra){ drawClouds(); drawBirds(fdt); drawNight(); drawRain(); worldT(); }
-  for(const b of blds) if((!isHome(b)||b.type==="mixed")&&!isSvc(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
-  if(city) for(const b of blds) if(inView(b.x,b.y,b.r+40)) drawProblems(b);
-  if(city) for(const L of lots) if(L.why&&!L.b&&inView(L.x,L.y,10)) drawLotWhy(L);
+  // the Classic game's waiting dots; the City builder has its notices instead (drawNotes)
+  if(!city) for(const b of blds) if((!isHome(b)||b.type==="mixed")&&!isSvc(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
   drawHover();
   if(drag&&drag.lane&&segs.has(drag.lane.seg.id)) laneHover(drag.lane.seg,drag.lane.w0,drag.lane.w1);
   drawPlan();
@@ -6474,9 +6605,10 @@ function draw(){
     const f=e.t/e.life; if(f>=1) return false;
     if(e.k==="ring"){ ctx.strokeStyle=e.c; ctx.globalAlpha=1-f; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(e.x,e.y,(e.r||14)+f*24,0,7); ctx.stroke(); ctx.globalAlpha=1; }
     else if(e.k==="puff"){ const R=e.big||0; ctx.fillStyle="rgba(150,150,150,"+(.5*(1-f))+")"; ctx.beginPath(); ctx.arc(e.x,e.y,4+R*.7+f*(8+R*.6),0,7); ctx.fill(); }
-    else if(e.k==="plus"){ ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
+    else if(e.k==="plus"&&!city){ ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
     return true;
   });
+  drawNotes();
   drawOutsidePointer();
 }
 
@@ -7442,14 +7574,13 @@ function v3overlay(){
   const at=(x,y,h,ax,ay)=>{ const p=V3.project(x,h,y); if(p.behind||p.x<-60||p.y<-60||p.x>vw+60||p.y>vh+60) return null;
     const q=V3.project(x+1,h,y), q2=V3.project(x,h,y+1), k=clamp(Math.max(Math.hypot(q.x-p.x,q.y-p.y),Math.hypot(q2.x-p.x,q2.y-p.y))*1.15,.6,2.4); cam.z=k;
     ctx.setTransform(dpr*k,0,0,dpr*k,dpr*(p.x-k*ax),dpr*(p.y-k*ay)); return k; };
-  for(const b of blds){ const pins=(!isHome(b)||b.type==="mixed")&&!isSvc(b);
-    if(!pins&&!city) continue;
+  if(!city) for(const b of blds){ if(isHome(b)||isSvc(b)) continue;
     const h=V3.top(b)+V3.hAt(b.x,b.y)+3;
     if(!at(b.x,b.y,h,b.x,b.y-b.r-8)) continue;
-    if(pins) drawPins(b); if(city) drawProblems(b); }
-  if(city) for(const L of lots){ if(!L.why||L.b||!at(L.x,L.y,V3.hAt(L.x,L.y)+2,L.x,L.y)) continue; drawLotWhy(L); }
-  for(const e of effects){ if(e.k!=="plus") continue; const f=e.t/e.life; if(f>=1) continue; if(!at(e.x,e.y,10+V3.hAt(e.x,e.y),e.x,e.y)) continue;
+    drawPins(b); }
+  if(!city) for(const e of effects){ if(e.k!=="plus") continue; const f=e.t/e.life; if(f>=1) continue; if(!at(e.x,e.y,10+V3.hAt(e.x,e.y),e.x,e.y)) continue;
     ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
+  cam.z=sv; drawNotes();
   // labels from the overlays: price of a road, why a ghost can't go there, how many plots
   if(v3tagList.length){ ctx.setTransform(dpr,0,0,dpr,0,0); cam.z=1;
     for(const g of v3tagList){ const p=V3.project(g.x,V3.hAt(g.x,g.y)+g.lift,g.y); if(p.behind||p.x<-80||p.y<-40||p.x>vw+80||p.y>vh+40) continue; pill(p.x,p.y,g.txt,g.bg,g.dy,g.fs); } }
@@ -7482,6 +7613,8 @@ window.__gridlock={
   addLane:(x,y,x2,y2,side)=>{ const sg=segUnder({x,y},4); if(!sg) return null; const ok=addLane(sg,{x,y},x2!==undefined&&x2!==null?{x:x2,y:y2}:null,side||"both"); return ok?sg.lanes:false; },
   oneWay:(x,y,lanes)=>{ const sg=segUnder({x,y},4); return sg?makeOneWay(sg,{x,y},lanes||1):null; },
   hint:()=>$("hint").textContent,
+  setNeed:(id,k,n,over)=>{ const b=blds.find(q=>q.id===id); if(!b||!b.pins) return false; b.pins[k]=n; if(over!==undefined) b.over=over; return true; },
+  notes:()=>{ notesTick(); return blds.filter(b=>b.nk).map(b=>({id:b.id,type:b.type,k:b.nk,u:+urgency(b).toFixed(2)})); },
   kind:k=>{ if(k) { roadKind=k; laneButtons(); } return roadKind; },
   line:(type,path)=>{ const gs=lineAt(type,path); let n=0; for(const g of gs) if(placeGhost(g)) n++; if(n) afterPlace(type); return n; },
   tune:(id,o)=>{ const n=nodes.get(id); if(!n) return null; o=o||{};
