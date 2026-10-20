@@ -571,6 +571,13 @@ const MAKERS=new Set(["factory","plant"]);
 const isHome=b=>!!BT[b.type].home;
 const capOf=(b,k)=>(b.cap||BT[b.type].cap)[k]||0;
 const PINC={cust:"#3d7fe0",work:"#8a60d0",goods:"#a8743a",raw:"#5f6670",parts:"#1f8f83"};
+// the City builder's houses: real roofing (asphalt shingles, slate, clay tiles, weathered wood), nothing bright
+const HOUSE_ROOFS=["#5d6066","#6e7178","#4a4f57","#7a5b4c","#8e5a44","#a65f45","#b7714f","#6b6159","#58636e","#8a8279"];
+// and its businesses: grey membrane, gravel, ribbed metal and glass, with a splash of colour on the awnings
+const REAL_COLS={shop:["#c9c5bc","#b9b5ab","#d2ccc0","#aeb2b6"],mall:["#d0ccc3","#c2c0ba"],office:["#8e9ba8","#9aa4ad","#7f8c98","#a6a29a","#8b9590"],
+  factory:["#9ea3a8","#8f979d","#a6a49c","#879093"],warehouse:["#b5b1a6","#a8adb0","#bfb8a6"],plant:["#a2b0ae","#aab4b8"],datacenter:["#b6bcc2","#a9b0b6"]};
+const AWNINGS=["#c9493b","#2f6fae","#2f8a57","#d08a1f","#7a4b8c"];
+function realPal(type){ const c=pick(REAL_COLS[type]); return {col:c,dark:shade(c,-42),light:shade(c,30),awn:pick(AWNINGS)}; }
 const BIGHOUSE_COLS=["#3c8a3e","#347c3b","#45914a","#2f7a48"], APT_COLS=["#2f6e3d","#2b6438","#376f42","#2d6a4a"];
 
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -619,8 +626,8 @@ function footD(b,a,c){
 }
 // a building's footprint as it's drawn, for what it bumps into: its walls, a house's garage wing and the pool out back
 function footRect(b){
-  if(b.type!=="house"||!(b.big||b.pool)) return {x:b.x,y:b.y,ang:b.ang,w:b.w,d:b.d};
-  const u0=-b.w/2-(b.big?9.6:0), u1=b.w/2, v0=-b.d/2-(b.pool?12:0), v1=b.d/2, u=(u0+u1)/2, v=(v0+v1)/2, fx=Math.cos(b.ang), fy=Math.sin(b.ang);
+  if(b.type!=="house"||!(b.big||b.pool||b.shed||b.ell)) return {x:b.x,y:b.y,ang:b.ang,w:b.w,d:b.d};
+  const u0=-b.w/2-(b.big?9.6:0), u1=b.w/2, v0=-b.d/2-(b.pool||b.shed?12:b.ell?4:0), v1=b.d/2, u=(u0+u1)/2, v=(v0+v1)/2, fx=Math.cos(b.ang), fy=Math.sin(b.ang);
   return {x:b.x+fy*u+fx*v,y:b.y-fx*u+fy*v,ang:b.ang,w:u1-u0,d:v1-v0};
 }
 // do two footprints overlap, with a gap of pad kept between them
@@ -1770,7 +1777,7 @@ function placeWhy(x,y,r,type,ignore,ang){
   if(SHORE.has(type)&&ang!==undefined){ const bk=BT[type].d/2+12, ca=Math.cos(ang), sa=Math.sin(ang), wet=k=>isWater(x-ca*k,y-sa*k)||!!terrain&&wetAt(x-ca*k,y-sa*k)>WATER;
     if(!wet(bk)&&!wet(bk+8)) return "nowater"; }
   const T=BT[type], fp=ang===undefined?null:{x,y,ang,w:T.w,d:T.d};
-  for(const b of blds) if(b!==ignore&&Math.hypot(b.x-x,b.y-y)<b.r+r+(b.pool?14:2)&&(fp?bldHit(b,fp,2):Math.hypot(b.x-x,b.y-y)<b.r+r+2)) return "bld";
+  for(const b of blds) if(b!==ignore&&Math.hypot(b.x-x,b.y-y)<b.r+r+(b.pool||b.shed?14:2)&&(fp?bldHit(b,fp,2):Math.hypot(b.x-x,b.y-y)<b.r+r+2)) return "bld";
   for(const s of segs.values()){ const A=nodes.get(s.a),B=nodes.get(s.b); if(fp?footD(fp,A,B)<segHW(s)+3:projSeg(x,y,A.x,A.y,B.x,B.y).d<segHW(s)+r*.8) return "road"; }
   // nobody wants to live in the factory smoke, or right beside a highway
   if(BT[type].home){
@@ -2306,7 +2313,7 @@ function craneAt(b){
   return {x:p.x,y:p.y,a:a0+Math.sin(t*.3+b.id)*.8,L,hook:L*(.5+.3*Math.sin(t*.45+b.id*2)),f:clamp((workK(b)-.32)/.51,0,1)};
 }
 const SITE_L={dirt:"#c9ad84",edge:"#a88a61",track:"rgba(112,86,54,.32)",slab:"#d4d0c7",slabE:"#a6a196",post:"#7f7a70",ply:"#e2cfa6",wood:"#dcb47c",woodE:"#a5793f",scaf:"#8f969d",board:"#c99e62",peg:"#e2742a"};
-function drawBld(b){ if(b.cons) drawSite(b); else if(isHome(b)) drawHome(b); else drawDest(b); }
+function drawBld(b){ if(rec3d) rec3d.cur=b; if(b.cons) drawSite(b); else if(isHome(b)) drawHome(b); else drawDest(b); }
 function drawSite(b){
   const W=b.cons, k=workK(b), st=workStage(b), fp=footprint(b), B=siteBox(b), wood=PITCH3.has(b.type), m=3.5, th=b.ang-Math.PI/2;
   const local=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); };
@@ -3163,6 +3170,11 @@ function makeLotBld(L,type){
     const back=S.d>=60, off=back?-(S.d/2-hd/2-(b.pool?16:9)):S.d/2-fy-hd/2;
     b.w=hw; b.d=hd; b.x=S.x+b.fx*off; b.y=S.y+b.fy*off; b.big=S.w>=hw+17&&Math.random()<.75;
     if(back) b.front={x:S.x+b.fx*S.d/2,y:S.y+b.fy*S.d/2};
+    // no two alike: real roofing, one storey or two, some L-shaped with a wing out the back, solar panels, a shed or a
+    // patio in the garden, and only the odd flat-roofed modern one
+    b.col=pick(HOUSE_ROOFS); if(b.v===3&&Math.random()<.6) b.v=Math.random()<.5?0:1;
+    b.storeys=b.v!==3&&Math.random()<.4?2:1; b.ell=b.v!==3&&hw>=17&&hd>=13.5&&Math.random()<.42; b.solar=b.v!==3&&Math.random()<.22;
+    const yard=back?(b.pool?16:9):S.d-hd-fy; b.shed=!b.pool&&yard>=13&&Math.random()<.5; b.patio=!b.pool&&yard>=9&&Math.random()<.65;
   }
   else if(type==="town"){ b.units=clamp(Math.floor(S.w/8.5),2,8); b.cols=[pick(TOWN_COLS),pick(TOWN_COLS)]; b.nCars=b.units; }
   else if(type==="apts"&&L.kind==="high"){ b.tower=true; b.floors=12+(Math.random()*19|0); b.style=S.w>=70&&Math.random()<.5?"twin":S.w>S.d*1.5&&Math.random()<.6?"slab":"point";
@@ -3174,6 +3186,7 @@ function makeLotBld(L,type){
   else if(type==="mixed"){ b.floors=3+(Math.random()*3|0); b.nCars=clamp(Math.round(S.w*S.d*b.floors/3000),2,9); b.bays=clamp(Math.floor((S.w-8)/12),1,3); }
   else if(type==="hotel"){ b.floors=8+(Math.random()*10|0); b.bays=Math.max(3,Math.floor(Math.max(16,(S.w-6)*.42)/3.4)); }
   else if(type==="datacenter") b.bays=Math.max(3,Math.floor(S.w*.45/3.4));
+  if(REAL_COLS[type]) b.pal=realPal(type);
   else if(type==="center") b.bays=centerBays(S.w,S.d);
   else if(type!=="shop"&&!T.home) b.bays=clamp(Math.round(S.w*S.d/250),6,20);
   b.r=Math.hypot(b.w+(b.big?18:0),b.d)/2;
@@ -3381,7 +3394,9 @@ function drawLots(){
   for(const L of lots){ if(!inView(L.x,L.y,L.r)) continue;
     polyPath(L.poly);
     if(L.b){ const Y=YARD[L.kind]; ctx.fillStyle=dk(Y[0]); ctx.fill();
-      ctx.strokeStyle=show?ZONES[L.kind].col:dk(Y[1]); ctx.lineWidth=L.kind==="res"||L.kind==="dense"||L.kind==="high"?1.4:.9; if(L.kind==="ind") ctx.setLineDash([2,1.5]); ctx.stroke(); ctx.setLineDash([]);
+      // a hedge round each house's garden
+      if(!show&&L.kind==="res"&&LOD){ ctx.strokeStyle=dk("#4b7a37"); ctx.lineWidth=2.3; ctx.stroke(); ctx.strokeStyle=dk("#5f9446"); ctx.lineWidth=1.1; ctx.stroke(); }
+      else { ctx.strokeStyle=show?ZONES[L.kind].col:dk(Y[1]); ctx.lineWidth=L.kind==="res"||L.kind==="dense"||L.kind==="high"?1.4:.9; if(L.kind==="ind") ctx.setLineDash([2,1.5]); ctx.stroke(); ctx.setLineDash([]); }
       if(LOD&&L.trees) for(const tr of L.trees) tree(tr.x,tr.y,tr.r);
       const b=L.b; if(b.front&&b.acc){ ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(b.door.x,b.door.y); ctx.lineTo(b.acc.ex,b.acc.ey);
         ctx.strokeStyle=KC; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle=rdc("drive"); ctx.lineWidth=6.4; ctx.stroke(); }
@@ -3956,13 +3971,16 @@ function drawBeach(b){
   ctx.strokeStyle="rgba(255,255,255,"+(.55+.2*Math.sin(now*1.3+b.id))*k+")"; ctx.lineWidth=1.6; ctx.setLineDash([7,5]); ctx.lineDashOffset=-now*3; ctx.stroke(S.edge); ctx.setLineDash([]); ctx.lineDashOffset=0;
   ctx.restore();
   ctx.strokeStyle="rgba(160,138,90,.3)"; ctx.lineWidth=1; ctx.stroke(S.path);
+  const P3=rec3d&&rec3d.props;
   if(LOD) for(const q of S.spots){ if(!inView(q.x,q.y,6)) continue; const i=Math.floor(q.s*997);
     if(q.s<.06){ // a lifeguard's chair
+      if(P3){ P3.push({k:"box",x:q.x,y:q.y,z:0,a:0,w:3.2,d:3.2,h:5,col:"#f4f2ec"},{k:"box",x:q.x,y:q.y,z:5,a:0,w:3.6,d:3.6,h:.9,col:"#e2493a"}); continue; }
       ctx.fillStyle="#fff"; ctx.fillRect(q.x-2,q.y-2,4,4); ctx.fillStyle="#e2493a"; ctx.fillRect(q.x-2,q.y-2,4,1.3); continue; }
     ctx.fillStyle=TOWELS[i%TOWELS.length]; ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(q.s*6); ctx.fillRect(2.4,.6,2.4,4.4); ctx.restore();
+    if(q.s<.7&&P3){ P3.push({k:"umb",x:q.x,y:q.y,w:3.6,h:4.6,col:UMB[i%UMB.length]}); continue; }
     if(q.s<.7){ ctx.fillStyle=UMB[i%UMB.length]; ctx.beginPath(); ctx.arc(q.x,q.y,3.6,0,7); ctx.fill(); ctx.fillStyle="rgba(255,255,255,.75)";
       for(let a=0;a<4;a++){ ctx.beginPath(); ctx.moveTo(q.x,q.y); ctx.arc(q.x,q.y,3.6,a*Math.PI/2+q.s,a*Math.PI/2+q.s+.5); ctx.fill(); } } }
-  if(LOD&&cam.z>.6) for(let i=0;i<S.swim.length;i++){ if(hash(b.id,i)>.35) continue; const q=S.swim[i], o=6+hash(i,b.id)*10, x=q.x+q.nx*o+Math.sin(now*.7+i)*1.5, y=q.y+q.ny*o+Math.cos(now*.6+i*2)*1.5;
+  if(LOD&&cam.z>.6&&!rec3d) for(let i=0;i<S.swim.length;i++){ if(hash(b.id,i)>.35) continue; const q=S.swim[i], o=6+hash(i,b.id)*10, x=q.x+q.nx*o+Math.sin(now*.7+i)*1.5, y=q.y+q.ny*o+Math.cos(now*.6+i*2)*1.5;
     if(!inView(x,y,3)||wetAt(x,y)<=WATER) continue;
     ctx.fillStyle="rgba(255,255,255,.5)"; ctx.beginPath(); ctx.arc(x,y,1.8,0,7); ctx.fill(); ctx.fillStyle=SKIN[i%SKIN.length]; ctx.beginPath(); ctx.arc(x,y,.9,0,7); ctx.fill(); }
   ctx.globalAlpha=1;
@@ -4123,7 +4141,7 @@ function drawHotel(b){
 }
 // a data centre: a sealed white hall covered in cooling fans, generators in a fenced yard
 function drawDatacenter(b){
-  const T=BT.datacenter, sc=growth(b,.5), w=b.w, d=b.d, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
+  const T=b.pal||BT.datacenter, sc=growth(b,.5), w=b.w, d=b.d, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
   const pd=clamp(d*.24,12,16), park=carPark(b,sc,-w/2+3,d/2-pd,w*.45,pd-1,[(pd-11)/2],Math.max(3,Math.floor(w*.45/3.4)));
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   ctx.fillStyle="#d9d8d2"; ctx.fillRect(-w/2+1,-d/2+1,w-2,d-pd-1); ctx.strokeStyle="rgba(90,95,100,.55)"; ctx.lineWidth=.5; ctx.setLineDash([1.2,1]); ctx.strokeRect(-w/2+1,-d/2+1,w-2,d-2); ctx.setLineDash([]);
@@ -4154,7 +4172,7 @@ function drawParkWalkers(){
 const LEIS=new Set(["parking","garage","park","bigpark","plaza","beach","marina"]);
 const FUNK=SKEYS.filter(k=>SVC[k].fun);
 const MIXED_COLS=["#b86a50","#a5765a","#8f6f8a","#b5835a","#7f8f9a"];
-const HOTEL_COLS=["#c99a2e","#b8614a","#4f7f9e","#3f8f86","#d9cdb4","#7d6aa0"];
+const HOTEL_COLS=["#b8614a","#4f7f9e","#d1c4aa","#8a8f96","#a39486","#6d7f8f"];
 
 // ---------- UI ----------
 let tool="road";
@@ -5381,9 +5399,9 @@ function hull(P){
   up.pop(); lo.pop(); return lo.concat(up);
 }
 // a building's shadow: its footprint swept down-right by its height
-function bodyShadow(b,sc,h,rects){
+function bodyShadow(b,sc,h,rects,flat){
   // the 3D view keeps the outline and height to raise real walls from, and the sun casts the real shadow
-  if(rec3d){ let a=rec3d.boxes.get(b); if(!a) rec3d.boxes.set(b,a=[]); a.push({sc,h,rects:rects.map(r=>r.slice())}); return; }
+  if(rec3d){ let a=rec3d.boxes.get(b); if(!a) rec3d.boxes.set(b,a=[]); a.push({sc,h,rects:rects.map(r=>r.slice()),flat:!!flat}); return; }
   if(!ultra){ shadowHull(b,sc,h,rects,"rgba(30,36,22,.25)",0); return; }
   // Ultra: a soft penumbra, a darker core near the walls, and a dark line where the walls meet the ground
   shadowHull(b,sc,h*1.3,rects,"rgba(30,36,22,.07)",1.4);
@@ -5454,21 +5472,45 @@ const easeBack=x=>1+2.7*Math.pow(x-1,3)+1.7*Math.pow(x-1,2);
 const growth=(b,dur)=>rec3d?1:.6+.4*easeBack(clamp((animT-b.grow)/dur,0,1));
 function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") (b.lot?drawLotApts:drawApts)(b); else if(b.type==="town") drawTown(b); else if(b.type==="mixed") drawMixed(b); else drawHouse(b); }
 function drawHouse(b){
-  const sc=growth(b,.35), w=b.w, d=b.d, v=b.v;
-  const rects=[[-w/2,-d/2,w,d]]; if(b.big) rects.push([-w/2-9,-1,9,d/2+1]);
+  const sc=growth(b,.35), w=b.w, d=b.d, v=b.v, P=housePlan(b), main=P.rects[0];
   if(b.lot) houseGrounds(b,sc);
-  bodyShadow(b,sc,v===3?6:5,rects);
+  bodyShadow(b,sc,(v===3?6:5)*(b.storeys===2?1.45:1),P.rects.concat(b.big?[[-w/2-9,-1,9,d/2+1]]:[]));
+  if(P.shed) bodyShadow(b,sc,2.6,[P.shed],true);
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   if(b.big){ ctx.fillStyle=shade(b.col,-55); ctx.fillRect(-w/2-9.6,-1.6,10,d/2+2.2); ctx.fillStyle=shade(b.col,-16); ctx.fillRect(-w/2-9,-1,9,d/2+1);
     ctx.fillStyle=shade(b.col,-30); ctx.fillRect(-w/2-9,d/2-1.2,9,1.2); }
-  if(v===1) gableRoof(b,w,d,b.col); else if(v===3) flatRoof(w,d,b.col); else hipRoof(b,w,d,b.col);
-  if(v!==3){ ctx.fillStyle=shade(b.col,-70); ctx.fillRect(w/4,-d/4-1.6,3,3); ctx.fillStyle="#8a7f76"; ctx.fillRect(w/4+.5,-d/4-1.1,2,2); }
+  const roof=(q,o)=>{ const rw=q[2], rd=q[3]+(o||0), x=q[0]+rw/2, y=q[1]+rd/2;
+    if(v===1) gableRoof(b,rw,rd,b.col,x,y); else if(v===3) flatRoof(rw,rd,b.col,x,y); else hipRoof(b,rw,rd,b.col,x,y); };
+  // an L: the wing goes in first, tucked under the front block's roof
+  if(P.rects[1]) roof(P.rects[1],1.6);
+  roof(main);
+  if(v!==3){ const cx=main[0]+main[2]*.75, cy=main[1]+main[3]*.25-1.6;
+    // solar panels on the back slope, clear of the chimney
+    if(b.solar&&main[2]>=main[3]){ const r=v===1?0:main[3]/2, px=main[0]+r*.6+.6, pw=(main[2]-2*r*.6-1.2)*.7, py=main[1]+main[3]*.08, ph=main[3]*.3;
+      ctx.fillStyle="#1f2a3d"; ctx.fillRect(px-.25,py-.25,pw+.5,ph+.5); ctx.fillStyle="#2c3c58"; ctx.fillRect(px,py,pw,ph);
+      ctx.strokeStyle="rgba(150,175,215,.55)"; ctx.lineWidth=.22; ctx.beginPath();
+      for(let i=1;i<Math.round(pw/1.7);i++){ const xx=px+i*pw/Math.round(pw/1.7); ctx.moveTo(xx,py); ctx.lineTo(xx,py+ph); } ctx.moveTo(px,py+ph/2); ctx.lineTo(px+pw,py+ph/2); ctx.stroke(); }
+    ctx.fillStyle=shade(b.col,-70); ctx.fillRect(cx,cy,3,3); ctx.fillStyle="#8a7f76"; ctx.fillRect(cx+.5,cy+.5,2,2); }
+  // the garden shed: a little gabled roof in weathered timber
+  if(P.shed){ const [x,y,ww,hh]=P.shed; ctx.fillStyle="#5e4a3a"; ctx.fillRect(x-.4,y-.4,ww+.8,hh+.8);
+    ctx.fillStyle=shade("#8a6e55",sunOn(b,0,-1)*30); ctx.fillRect(x,y,ww,hh/2); ctx.fillStyle=shade("#8a6e55",sunOn(b,0,1)*30); ctx.fillRect(x,y+hh/2,ww,hh/2); }
   ctx.restore();
   if(b.tree&&LOD){ const p=toMap(b,(b.flip?1:-1)*(w/2-2)*sc,(-d/2-6)*sc); tree(p.x,p.y,4.2*sc); }
   // the cars stand in the drive, nose in
   const dv=houseDrive(b);
   if(dv){ let i=0; for(const c of b.cars) if(c.state==="home"&&i<dv.pads.length){ const q=dv.pads[i++]; parked(c,q.x,q.y,q.a); } }
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// a house's plan on its own frame: one block, or an L with a wing going back on one side (inside the same footprint, so
+// it takes no more room), and where its shed stands in the back garden
+function housePlan(b){
+  const w=b.w, d=b.d, k=w+","+d+","+(b.ell?1:0)+(b.shed?1:0)+(b.flip?1:0);
+  if(b.plan&&b.plan.k===k) return b.plan;
+  // the wing reaches a little way past the back of the house, on the side away from the pool, the shed and the patio
+  const ws=b.flip?-1:1, dm=Math.round(d*.58*10)/10, ww=Math.min(w*.42,8);
+  const rects=b.ell?[[-w/2,d/2-dm,w,dm],[ws>0?w/2-ww:-w/2,-d/2-4,ww,d-dm+4]]:[[-w/2,-d/2,w,d]];
+  const shed=b.shed?[ws>0?-w/2+1:w/2-6,-d/2-10.5,5,4.2]:null;
+  return b.plan={k,rects,shed,ws};
 }
 // a house's drive: off to one side of the front door (in front of the garage wing, two cars wide, if it has one) and
 // straight out to the road, with room for the cars to stand in it nose in. A house set back on a deep plot keeps its long
@@ -5500,6 +5542,16 @@ function houseGrounds(b,sc){
     // and a path up to the front door
     const q=dv.path; if(q){ ctx.beginPath(); ctx.moveTo(q.x0,q.y0); ctx.lineTo(q.x1,q.y1); ctx.strokeStyle=dk("#ddd6c8",.9); ctx.lineWidth=2.4; ctx.stroke(); } }
   else if(!dv){ const a=Math.atan2(b.fy,b.fx); ctx.save(); ctx.translate(b.door.x,b.door.y); ctx.rotate(a); ctx.fillStyle=dk("#cfcbc1",.9); ctx.fillRect(-1,-2.4,10.5,4.8); ctx.restore(); }
+  // a paved patio out the back with a table, and a flower bed along the front on the side away from the drive
+  if(LOD&&(b.patio||!b.big)){ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+    const s=b.flip?1:-1, w=b.w, d=b.d;
+    // (on an L, in the corner between the front block and the wing)
+    if(b.patio){ const my=housePlan(b).rects[0][1], px=-housePlan(b).ws*w*(b.ell?.22:.12), pw=Math.min(b.ell?w*.48:11,w*.55); ctx.fillStyle=dk("#d8d2c4",.9); ctx.fillRect(px-pw/2,my-5.2,pw,5.2);
+      ctx.strokeStyle=dk("#c4bdae",.9); ctx.lineWidth=.25; ctx.beginPath(); for(let x=px-pw/2+1.8;x<px+pw/2;x+=1.8){ ctx.moveTo(x,my-5.2); ctx.lineTo(x,my); } ctx.stroke();
+      ctx.fillStyle="#f4f2ec"; ctx.beginPath(); ctx.arc(px+pw*.2,my-2.8,1.1,0,7); ctx.fill(); }
+    if(!b.big){ const ds=b.flip?1:-1, x0=ds>0?-w/2+1:1.6, x1=ds>0?-1.6:w/2-1; ctx.fillStyle=dk("#6f5a43",.9); ctx.fillRect(x0,d/2,x1-x0,1.5);
+      const FL=["#e8a33c","#d9534f","#f1e6f0","#c46fb0","#f2d04a"]; for(let x=x0+.6,i=0;x<x1-.4;x+=1.3,i++){ ctx.fillStyle=i%3===2?"#4f8a3a":FL[(b.id+i)%FL.length]; ctx.beginPath(); ctx.arc(x,d/2+.75,.55,0,7); ctx.fill(); } }
+    ctx.restore(); }
   if(!b.pool) return;
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   const px=(b.flip?1:-1)*b.w*.18, py=-b.d/2-8;
@@ -5615,7 +5667,7 @@ function drawCenter(b){
 // an office grown on a plot: a tower (or two, or an L) in its own plaza, a low block, a glass box, or a campus of
 // low wings round a garden; staff park out front
 function drawLotOffice(b){
-  const T=BT.office, sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
+  const T=b.pal||BT.office, sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
   const pd=clamp(d*.3,13,22), park=carPark(b,sc,-w/2+3,d/2-pd,w-6,pd-1,pd>=24?[1.5,pd-12.5]:[(pd-11)/2],Math.max(3,Math.floor((w-6)/3.4)));
   const glass=(x,y,ww,hh,col,dark,i)=>{ roofBlock(x,y,ww,hh,col,dark); ctx.fillStyle=shade(col,-12); ctx.fillRect(x+2.5,y+2.5,ww-5,hh-5); sheen(x+2.5,y+2.5,ww-5,hh-5,b.id+(i||0));
     ctx.strokeStyle="rgba(220,205,255,.55)"; ctx.lineWidth=.45; ctx.beginPath(); for(let q=x+4.5;q<x+ww-3;q+=4.2){ ctx.moveTo(q,y+2.5); ctx.lineTo(q,y+hh-2.5); } ctx.stroke(); };
@@ -5655,7 +5707,7 @@ function drawLotOffice(b){
     const bw=w-8, bh=d-pd-6, gl=b.style==="glass";
     bodyShadow(b,sc,b.floors*3.5,[[-bw/2,-d/2+3,bw,bh]]);
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
-    if(gl){ glass(-bw/2,-d/2+3,bw,bh,"#6f8fc9","#40588c"); ctx.fillStyle="#9fcf7a"; ctx.fillRect(-bw*.22,-d/2+3+bh*.3,bw*.44,bh*.4); ctx.fillStyle="#7fb85c"; ctx.beginPath(); ctx.arc(-bw*.1,-d/2+3+bh*.5,2,0,7); ctx.arc(bw*.08,-d/2+3+bh*.45,1.7,0,7); ctx.fill(); }
+    if(gl){ glass(-bw/2,-d/2+3,bw,bh,"#7d93a8","#4b5d70"); ctx.fillStyle="#9fcf7a"; ctx.fillRect(-bw*.22,-d/2+3+bh*.3,bw*.44,bh*.4); ctx.fillStyle="#7fb85c"; ctx.beginPath(); ctx.arc(-bw*.1,-d/2+3+bh*.5,2,0,7); ctx.arc(bw*.08,-d/2+3+bh*.45,1.7,0,7); ctx.fill(); }
     else { ctx.fillStyle=T.dark; roundRect(-bw/2,-d/2+3,bw,bh,1.5); ctx.fill(); ctx.fillStyle=T.col; ctx.fillRect(-bw/2+2,-d/2+5,bw-4,bh-4);
       ctx.strokeStyle=T.light; ctx.globalAlpha=.5; ctx.lineWidth=.8; ctx.strokeRect(-bw/2+4,-d/2+7,bw-8,bh-8); ctx.globalAlpha=1;
       ctx.fillStyle="rgba(215,235,255,.7)"; for(let x=-bw/2+7;x<bw/2-9;x+=11) ctx.fillRect(x,-d/2+8,6,bh-10); }
@@ -5682,7 +5734,14 @@ function fillBays(b,sc,bays,list){ if(!LOD) return; const n=Math.min(bays.length
   if(!b.bo||b.bo.length!==bays.length){ b.bo=bays.map((q,i)=>i); for(let i=b.bo.length-1;i>0;i--){ const j=Math.random()*(i+1)|0, x=b.bo[i]; b.bo[i]=b.bo[j]; b.bo[j]=x; } }
   for(let i=0;i<n;i++){ const q=bays[b.bo[i]], p=toMap(b,q.x*sc,q.y*sc); parked(list[i],p.x,p.y,b.ang+(b.bo[i]%2?0:Math.PI),q.bw?Math.max(2.6,q.bw*sc-.5):0); } }
 function roofBlock(x,y,w,h,col,edge){ ctx.fillStyle=edge; ctx.fillRect(x-.6,y-.6,w+1.2,h+1.2); ctx.fillStyle=col; ctx.fillRect(x+.8,y+.8,w-1.6,h-1.6); }
-const rbox=(x,y,w2,h2,lsx,lsy,hgt,col,edge)=>{ ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(x+lsx*hgt,y+lsy*hgt,w2,h2); ctx.fillStyle=edge||"#b9b7b0"; ctx.fillRect(x,y,w2,h2); ctx.fillStyle=col||"#ecebe6"; ctx.fillRect(x+.5,y+.5,w2-1,h2-1); };
+// in 3D a box on a roof stands up for real, on whichever part of the building it sits on
+function roofProp(b,x,y,w,h,hgt,col){
+  const recs=rec3d.boxes.get(b); if(!recs||!rec3d.props) return false; const cx=x+w/2, cy=y+h/2; let top=-1;
+  for(const r of recs) for(const q of r.rects) if(cx>=q[0]*r.sc&&cx<=(q[0]+q[2])*r.sc&&cy>=q[1]*r.sc&&cy<=(q[1]+q[3])*r.sc) top=Math.max(top,H3(r.h)*r.sc);
+  if(top<0) return false;
+  const p=toMap(b,cx,cy); rec3d.props.push({k:"box",x:p.x,y:p.y,gx:b.x,gy:b.y,z:top,a:b.ang-Math.PI/2,w,d:h,h:clamp(hgt*1.5,1.6,6),col:col||"#ecebe6"});
+  return true; }
+const rbox=(x,y,w2,h2,lsx,lsy,hgt,col,edge)=>{ if(rec3d&&rec3d.cur&&roofProp(rec3d.cur,x,y,w2,h2,hgt,col)) return; ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(x+lsx*hgt,y+lsy*hgt,w2,h2); ctx.fillStyle=edge||"#b9b7b0"; ctx.fillRect(x,y,w2,h2); ctx.fillStyle=col||"#ecebe6"; ctx.fillRect(x+.5,y+.5,w2-1,h2-1); };
 // the sun's direction on a building's own plan, for little rooftop shadows
 function sunPlan(b){ const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th); return [SHX*cs+SHY*sn,-SHX*sn+SHY*cs]; }
 function drawBigHouse(b){
@@ -5732,7 +5791,7 @@ function drawDest(b){
   if(b.type==="datacenter") return drawDatacenter(b);
   if(b.type==="center") return drawCenter(b);
   if(b.type==="office"&&b.lot) return drawLotOffice(b);
-  const T=DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
+  const T=b.pal||DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
   const th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b);
   const here=parkedAt.get(b)||[];
   const stalls=(x0,w2,n,ly)=>{ if(!LOD) return; for(let i=0;i<Math.min(n,here.length);i++){ const p=toMap(b,(x0+2+(i+.5)*(w2-4)/n)*sc,ly*sc); parked(here[i],p.x,p.y,b.ang+Math.PI); } };
@@ -5766,13 +5825,13 @@ function drawDest(b){
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
     for(const [x,y,ww,hh] of rects){ ctx.fillStyle=T.dark; roundRect(x,y,ww,hh,1.5); ctx.fill(); ctx.fillStyle=T.col; ctx.fillRect(x+1.8,y+1.8,ww-3.6,hh-3.6); }
     if(v===1){ // a striped awning along the front
-      for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffffff":T.light; ctx.fillRect(-w/2+2+i*(w-4)/9,by-5,(w-4)/9,4.4); }
+      for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffffff":T.awn||T.light; ctx.fillRect(-w/2+2+i*(w-4)/9,by-5,(w-4)/9,4.4); }
       box(-w/2+6,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8); box(w/2-16,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8);
     } else {
       ctx.fillStyle=T.light; ctx.globalAlpha=.6; for(let i=0;i<(v===2?2:4);i++) ctx.fillRect(-w/2+5+i*12,-d/2+5,8,4.5); ctx.globalAlpha=1;
       for(let i=0;i<(v===2?2:4);i++) sheen(-w/2+5+i*12,-d/2+5,8,4.5,b.id,-w/2,w);
       box(-w/2+7,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); box(-w/2+16,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); if(v===0) box(w/2-13,-d/2+12,7,5,"#ecebe6","#b9b7b0",1.8);
-      ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=T.dark; ctx.fillRect(-7,by-2.6,14,2.6);
+      ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=T.awn||T.dark; ctx.fillRect(-7,by-2.6,14,2.6);
     }
     ctx.restore();
   } else if(b.type==="office"){
@@ -6401,7 +6460,7 @@ function v3init(T){
   const bcache=new Map();   // building -> {key, parts:{material:{p,n,u,c}}, top}
   const batches={};
   let batchDirty=true;
-  const wallCols=["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6"];
+  const wallCols=["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6","#c98a6c","#b8735a","#cfd8dd","#d6ccb4","#c2c9b4","#9fb0bd"];
   // flats in render and brick colours
   const APT_WALLS=["#ece2d2","#e3cdb0","#d2a585","#efe7da","#c99478","#e6d8c0"];
   function wallTint(b){ const k=b.type, T0=BT[k];
@@ -6471,7 +6530,7 @@ function v3init(T){
       const M=(lx,ly,y)=>[b.x+(lx*cs-ly*sn)*sc, g0+y, b.y+(lx*sn+ly*cs)*sc];
       r.rects.forEach((q,qi)=>{
         const x0=q[0], y0=q[1], x1=q[0]+q[2], y1=q[1]+q[3];
-        const pitched=!b.cons&&PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
+        const pitched=!b.cons&&!r.flat&&PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
         const Hw=pitched?Math.max(6.4,H*.56):H; top=Math.max(top,pitched?Math.max(H,Hw+3):H);
         const corners=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]], cc=M((x0+x1)/2,(y0+y1)/2,0);
         const W=get("f:"+fk);
@@ -6503,7 +6562,10 @@ function v3init(T){
           if(hip){ const a=pt(le,D0,eave), bb=pt(le,D1,eave), c=pt(le-s*ins,Dm,Ht); triOut(Rf,a,bb,c,tu(0,0),tu(D1-D0,0),tu(half,half),ax*s,az*s,rc); }
           else { const lw=le-s*o, a=pt(lw,D0+o,Hw), bb=pt(lw,D1-o,Hw), c=pt(lw,Dm,Ht);
             triOut(W,a,bb,c,[0,Hw/V],[(D1-D0-2*o)/U,Hw/V],[(half-o)/U,Ht/V],ax*s,az*s,wall); } }
-        if(b.type==="house"&&qi===0){ const cx=x0+q[2]*.75+1.5, cy=y0+q[3]*.25-.1, k=1.15, c0=Hw-.5, c1=Ht+1.2;
+        // solar panels lying on the back slope, as in 2D
+        if(b.type==="house"&&b.solar&&qi===0&&along){ const f=dd=>eave+(Ht-eave)*(dd-D0)/(Dm-D0)+.14, k=.6, la=L0+ins*k+.9, lb=la+(L1-L0-2*ins*k-1.8)*.7, da=D0+(Dm-D0)*.2, db=D0+(Dm-D0)*k;
+          let Q=[pt(la,da,f(da)),pt(lb,da,f(da)),pt(lb,db,f(db)),pt(la,db,f(db))]; if(faceN(Q[0],Q[1],Q[2])[1]<0) Q.reverse(); quad(get("trim"),Q[0],Q[1],Q[2],Q[3],[0,0],[1,0],[1,1],[0,1],LC("#24314a")); }
+        if(b.type==="house"&&qi===0&&!r.flat){ const cx=x0+q[2]*.75+1.5, cy=y0+q[3]*.25-.1, k=1.15, c0=Hw-.5, c1=Ht+1.2;
           hexa(get("trim"),[M(cx-k,cy-k,c0),M(cx+k,cy-k,c0),M(cx+k,cy-k,c1),M(cx-k,cy-k,c1),M(cx-k,cy+k,c0),M(cx+k,cy+k,c0),M(cx+k,cy+k,c1),M(cx-k,cy+k,c1)],LC("#8a6a5a")); }
       }); }
     return {parts,top};
@@ -6634,6 +6696,25 @@ function v3init(T){
     const n={}; for(const k in mdlI) n[k]=0;
     for(const q of list){ const m=mdlI[q.k]; if(!m||n[q.k]>=MCAP) continue; const s=q.s||1; setM(m.instanceMatrix.array,n[q.k]++,q.x,hAt(q.x,q.y)-.2,q.y,q.a||0,s,s,s); }
     for(const k in mdlI){ mdlI[k].count=n[k]; mdlI[k].instanceMatrix.needsUpdate=true; }
+  }
+
+  // ----- small things that stand up: plant on the roofs, beach umbrellas and lifeguard chairs -----
+  const PCAP=4000, UCAP=1500, propI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),new T.MeshStandardMaterial({roughness:.7}),PCAP),
+    umbTopI=new T.InstancedMesh(new T.ConeGeometry(1,.36,10),new T.MeshStandardMaterial({roughness:.6,side:T.DoubleSide}),UCAP),
+    umbPoleI=new T.InstancedMesh(new T.CylinderGeometry(.07,.07,1,5),new T.MeshStandardMaterial({color:0xe8e4da,roughness:.6}),UCAP);
+  propI.setColorAt(0,new T.Color(1,1,1)); umbTopI.setColorAt(0,new T.Color(1,1,1));
+  for(const m of [propI,umbTopI,umbPoleI]){ m.count=0; m.frustumCulled=false; m.castShadow=true; m.receiveShadow=m===propI; scene.add(m); }
+  let propKey="";
+  function propsSet(list){
+    let key=list.length+":"; for(const q of list) key+=Math.round(q.x*2)+","+Math.round(q.y*2)+";";
+    if(key===propKey) return; propKey=key;
+    let n=0, u=0; const A=propI.instanceMatrix.array, U=umbTopI.instanceMatrix.array, V=umbPoleI.instanceMatrix.array;
+    for(const q of list){
+      if(q.k==="umb"){ if(u>=UCAP) continue; const g=hAt(q.x,q.y); setM(U,u,q.x,g+q.h,q.y,0,q.w,q.w,q.w); setC(umbTopI,u,q.col); setM(V,u,q.x,g+q.h/2,q.y,0,1,q.h,1); u++; }
+      else { if(n>=PCAP) continue; const g=q.gx!==undefined?hAt(q.gx,q.gy):hAt(q.x,q.y); setM(A,n,q.x,g+q.z+q.h/2,q.y,q.a,q.w,q.h,q.d); setC(propI,n,q.col); n++; } }
+    propI.count=n; umbTopI.count=umbPoleI.count=u;
+    for(const m of [propI,umbTopI,umbPoleI]) m.instanceMatrix.needsUpdate=true;
+    for(const m of [propI,umbTopI]) if(m.instanceColor) m.instanceColor.needsUpdate=true;
   }
 
   // ----- tower cranes over the tall buildings going up -----
@@ -6767,7 +6848,7 @@ function v3init(T){
   function paintCell(L,cx,cy,sig){
     const key=cx+","+cy, CW=L.CW, x0=cx*CW, y0=cy*CW, sx=mod(cx,NC)*CPX, sy=mod(cy,NC)*CPX;
     let c=L.cells.get(key); if(!c) L.cells.set(key,c={cx,cy,sig:-1,rec:null,terr:false,at:0});
-    const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),parked:[],trees:[],models:[]};
+    const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),parked:[],trees:[],models:[],props:[]};
     pass2d(stage,CPX,x0,y0,CW,()=>{
       ctx.setTransform(1,0,0,1,0,0);
       if(!c.terr){ ctx.fillStyle=biome?mapBiome().base:"#d9d7cf"; ctx.fillRect(0,0,CPX,CPX); worldT(); drawGround(); if(ultra) drawDecor();
@@ -6797,11 +6878,12 @@ function v3init(T){
   function drop(c){ if(c.rec) for(const b of c.rec.boxes.keys()){ const e=bcache.get(b); if(e&&e.cell===c){ bcache.delete(b); batchDirty=true; } } }
   // parked cars and trees from all the cells, and the wild trees on the land under the picture
   function gather(){
-    const P=[], tl=[], M=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
+    const P=[], tl=[], M=[], Q=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
     for(const tr of trees) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.pine?1:0);
     for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],0);
-      for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } } }
-    parkedList=P; treesSet(tl); modelsSet(M);
+      for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } }
+      for(const q of c.rec.props||[]){ const k="p"+q.k+Math.round(q.x*4)+","+Math.round(q.y*4)+","+Math.round(q.z||0); if(!seen.has(k)){ seen.add(k); Q.push(q); } } }
+    parkedList=P; treesSet(tl); modelsSet(M); propsSet(Q);
   }
   // a fingerprint of everything drawn in each cell of a layer, to tell which ones changed
   function cellSigs(L){
@@ -7051,7 +7133,7 @@ function draw3d(){
 window.__gridlock={
   work:()=>({roads:works.map(w=>({len:Math.round(w.len),p:+clamp((animT-w.t0)/w.dur,0,1).toFixed(2),crew:crewAt(w)!==null})),sites:blds.filter(b=>b.cons).map(b=>({id:b.id,type:b.type,stage:workStage(b),h:b.cons.h,dur:+b.cons.dur.toFixed(1),crane:!!craneAt(b)}))}),
   state:()=>({score,t,homes:homes().length,dests:dests().length,driving:cars.filter(c=>c.state==="drive").length,cars:cars.length,res:Object.assign({},res),over,level,lvTrips,need:lvNeed(),nodes:nodes.size,segs:segs.size,blds:blds.length}),
-  blds:()=>blds.map(b=>({id:b.id,type:b.type,x:b.x,y:b.y,w:b.w,d:b.d,big:!!b.big,door:b.door,fx:b.fx,fy:b.fy,att:!!b.acc,acc:b.acc?b.acc.seg:null,pins:b.pins?Object.assign({},b.pins):null,over:b.over})),
+  blds:()=>blds.map(b=>({id:b.id,type:b.type,x:b.x,y:b.y,w:b.w,d:b.d,big:!!b.big,ell:!!b.ell,storeys:b.storeys||1,solar:!!b.solar,shed:!!b.shed,patio:!!b.patio,pool:!!b.pool,col:b.col,tower:!!b.tower,floors:b.floors||0,door:b.door,fx:b.fx,fy:b.fy,att:!!b.acc,acc:b.acc?b.acc.seg:null,pins:b.pins?Object.assign({},b.pins):null,over:b.over})),
   build:(pts,lanes,over,kind)=>{ lanes=lanes||1; const S=snapAt(pts[0].x,pts[0].y), last=pts[pts.length-1]; const pl=makePlan(S,pts,last,lanes,pts.length===2,over,kind); if(pl.ok) commitPlan(pl); return {ok:pl.ok,reason:pl.reason,cost:pl.cost,hit:pl.hitB?pl.hitB.type+pl.hitB.id:null,S:pl.S.kind,E:pl.E.kind}; },
   move:(id,x,y)=>{ const b=blds.find(q=>q.id===id); if(!b) return null; const g=ghostAt(b.type,{x,y},b); if(g.ok) moveBld(b,g); return {ok:g.ok,why:g.why,x:g.x,y:g.y}; },
   del:id=>{ const b=blds.find(q=>q.id===id); return b?deleteBld(b):null; },
