@@ -624,13 +624,16 @@ function mapSize(big){ MW=big?3200:2600; MH=big?2240:1820; MAPK=MW*MH/(2000*1400
 mapSize(false);
 const WATER=.37, HILL=.62;
 const sst=(a,b,x)=>{ const u=clamp((x-a)/(b-a),0,1); return u*u*(3-2*u); };
+// the land is all green: a meadow, drier and lusher patches on it (sand and grass), the darker floor of the woods, wet
+// grass and a muddy edge where it meets the water, and the mountains going up from alpine grass to bare rock (low,
+// middle and high), with no snow
 const BIOMES=[
-  {base:"#ebe9e1",sand:["#efe6cf","#e8dbbb"],beach:"#eee4c9",grass:["#d6e7b4","#c6de9c"],sandT:.64,grassT:.55,hills:3,
-   hill:["#d3d1c9","#acaaa4","#9a9892","#888680","#76746f","#6c6a64","#b4b2ac","#f3f4f1"],lite:["","#c3c1bb","#b1afa9","#9f9d97","#8d8b85","#7f7d77","#c9c7c1","#ffffff"]},
-  {base:"#ece9df",sand:["#eee2c4","#e6d3a8"],beach:"#ede0bf",grass:["#d9e6b6","#cddfa2"],sandT:.55,grassT:.62,hills:4,
-   hill:["#d6c6a4","#ad9161","#9b7f51","#887044","#755f37","#6a5532","#b8a68a","#f1ede4"],lite:["","#c1a878","#b09466","#9d8357","#8a714a","#7c6741","#cbbba0","#ffffff"]},
-  {base:"#eaebe2",sand:["#efe8d2","#e9dfc2"],beach:"#ede6cd",grass:["#d0e6ab","#bfdb92"],sandT:.7,grassT:.54,hills:2,
-   hill:["#cdd3bf","#a6ad98","#959c87","#848b77","#737a67","#676d5c","#b0b5a8","#f2f4ef"],lite:["","#b9c0aa","#a8af9a","#979e89","#868d79","#787e6c","#c5cabd","#ffffff"]}
+  {base:"#97c46c",sand:["#a3c86f","#aecb75"],grass:["#8cbd63","#81b55b"],wood:"#699a4a",lush:"#7db45b",mud:"#7f8156",sandT:.64,grassT:.55,hills:3,
+   alp:"#89aa62",rock:["#7d786c","#8e8a80","#a09d95"]},
+  {base:"#9dc56b",sand:["#aac970","#b5cc76"],grass:["#91bf62","#86b75a"],wood:"#6e9b49",lush:"#81b45a",mud:"#857f55",sandT:.55,grassT:.62,hills:4,
+   alp:"#93ab5f",rock:["#83705a","#95836c","#a69780"]},
+  {base:"#8fc36b",sand:["#9bc76f","#a6ca74"],grass:["#84be63","#79b65b"],wood:"#64994b",lush:"#75b15b",mud:"#7c835c",sandT:.7,grassT:.54,hills:2,
+   alp:"#84ad67",rock:["#767b72","#888d85","#9b9f98"]}
 ];
 function makeNoise(){
   const P=new Uint8Array(512), V=new Float32Array(256);
@@ -741,9 +744,9 @@ function genMap(){
   terrain={
     sand:[contourPath(Sf,biome.sandT),contourPath(Sf,biome.sandT+.05)],
     grass:[contourPath(Gf,biome.grassT),contourPath(Gf,biome.grassT+.05)],
-    beach:contourPath(Wf,.2), water:contourPath(Wf,WATER), water2:contourPath(Wf,.6), water3:contourPath(Wf,1.05),
-    hills:[HILL-.035,HILL,HILL+.05,HILL+.1,HILL+.16,HILL+.26,HILL+.44,HILL+.52].map(v=>contourPath(Hf,v)),
-    F:{W:Wf,H:Hf,G:Gf}
+    // the shore, then the water getting deeper out from it a step at a time
+    water:contourPath(Wf,WATER), deep:[.45,.58,.76,1].map(v=>contourPath(Wf,v)),
+    F:{W:Wf,H:Hf,G:Gf}, fbm
   };
   // woods: a few big stands of trees out from the middle, with darker ground under them
   const Ff=new Float32Array(N), woods=Math.round((4+(Math.random()*3|0))*MAPK*.7);
@@ -766,6 +769,33 @@ function genMap(){
     if(Math.random()>p) continue;
     trees.push({x,y,r:fo>.42?rnd(6,10):rnd(4.5,8.5),alive:true,s:fo>.42?Math.random()*.75:Math.random(),pine:h>HILL-.11&&Math.random()<.6});
   }
+  // From here on the land only gets its looks, from a fixed scatter (hash) rather than the game's own dice, so the
+  // game plays out just as it would have.
+  // What kind each tree is (TK): pines and firs at the foot of the hills, the woods mostly broadleaf with firs and
+  // birches among them, birches by the water, and a mix out on the meadows
+  for(const tr of trees){ const s=hash(tr.x*10|0,tr.y*10|0), fo=at(Ff,tr.x,tr.y);
+    tr.k=tr.pine?(s<.55?1:4):fo>.42?(s<.62?0:s<.84?4:2):at(Wf,tr.x,tr.y)>.12?(s<.45?2:s<.6?3:0):s<.56?0:s<.74?2:s<.88?3:4; }
+  // the woods filled in, so they read as woods rather than as a park
+  for(let i=0;i<2600*MAPK;i++){ const x=hash(i,91)*MW, y=hash(i,92)*MH, fo=at(Ff,x,y), s=hash(i,93);
+    if(fo<.5||at(Hf,x,y)>HILL-.04||at(Wf,x,y)>.2||isWater(x,y)||isHill(x,y)||Math.hypot(x-cx,y-cy)<150) continue;
+    trees.push({x,y,r:6+hash(i,94)*4,alive:true,s:s*.75,pine:false,k:s<.6?0:s<.85?4:2}); }
+  // bushes round the edges of the woods and dotted over the grass, and stands of reeds along the shore
+  for(let i=0;i<9000*MAPK;i++){ const x=10+hash(i,81)*(MW-20), y=10+hash(i,82)*(MH-20), fo=at(Ff,x,y), r=hash(i,83);
+    if(at(Wf,x,y)>.22||at(Hf,x,y)>HILL-.04||isWater(x,y)||isHill(x,y)||Math.hypot(x-cx,y-cy)<150) continue;
+    if(r<(fo>.3&&fo<.55?.4:fo>=.55?.08:at(Gf,x,y)>biome.grassT?.08:.04)) trees.push({x,y,r:2.4+hash(i,84)*2.4,alive:true,s:hash(i,85),pine:false,k:5}); }
+  for(let i=0;i<90000*MAPK;i++){ const x=10+hash(i,86)*(MW-20), y=10+hash(i,87)*(MH-20), w=at(Wf,x,y);
+    if(w<WATER-.1||w>WATER+.06||hash(i,88)>.5||fbm(x/45+9,y/45+4,1)<.42||at(Hf,x,y)>HILL-.1) continue;
+    trees.push({x,y,r:2.2+hash(i,89)*1.8,alive:true,s:hash(i,90),pine:false,k:6}); }
+  // the mountains as they look: above the hill line the land climbs in ridges to rocky peaks (a ridge wherever the
+  // noise crosses its middle). Below the line it's how far below. Where you can build still goes by the hill line
+  const MR=4, mw=Math.ceil((MW+600)/MR)+1, mh=Math.ceil((MH+600)/MR)+1, Mh=new Float32Array(mw*mh).fill(-1);
+  const Hb=(x,y)=>{ const gx=clamp((x-TX0)/TG,0,TNX-1.001), gy=clamp((y-TY0)/TG,0,TNY-1.001), i=gx|0, j=gy|0, fx=gx-i, fy=gy-j, k=j*TNX+i;
+    return (Hf[k]*(1-fx)+Hf[k+1]*fx)*(1-fy)+(Hf[k+TNX]*(1-fx)+Hf[k+TNX+1]*fx)*fy; };
+  for(let j=0;j<mh;j++) for(let i=0;i<mw;i++){ const x=TX0+i*MR, y=TY0+j*MR, e=Hb(x,y)-HILL; if(e<-.06) continue;
+    if(e<=0){ Mh[j*mw+i]=e; continue; }
+    let c=0, a=1, f=1/220; for(let o=0;o<4;o++){ const n=1-Math.abs(2*fbm(x*f+o*7.3+40,y*f+o*3.1+70,1)-1); c+=n*n*a; a*=.45; f*=2.2; } c/=1.69;
+    Mh[j*mw+i]=Math.pow(e,.85)*(.5+.8*c)+.6*Math.pow(e,1.5)*c*c; }
+  terrain.mt={R:MR,w:mw,h:mh,H:Mh};
   tver++;
 }
 function isWater(x,y){ if(x<0||y<0||x>=MW||y>=MH)return false; return waterGrid[Math.floor(y/WG)*Math.ceil(MW/WG)+Math.floor(x/WG)]===1; }
@@ -4511,12 +4541,11 @@ const dk=(h,k)=>dark?darkC(h,k):h;
 let dkB=null, dkFor=null;
 function mapBiome(){ if(!dark||!biome) return biome; if(dkFor!==biome){ dkFor=biome; dkB={};
     for(const k in biome){ const v=biome[k]; dkB[k]=Array.isArray(v)?v.map(c=>c?darkC(c):c):typeof v==="string"&&v[0]==="#"?darkC(v):v; }
-    // the hills step down darker than the land, a clear step at a time, up to a pale grey top
-    const hd=c=>{ const n=parseInt(c.slice(1),16), l=((n>>16&255)+(n>>8&255)+(n&255))/765, v=Math.round(255*(.035+.3*Math.pow(l,1.7))), t=(n>>16&255)>(n&255)+20?6:0;
-      return "#"+[v+t,v+t/2,v].map(q=>clamp(q,0,255).toString(16).padStart(2,"0")).join(""); };
-    dkB.hill=biome.hill.map(hd); dkB.lite=biome.lite.map(c=>c?hd(c):c); }
+    // the bare rock stays a little lighter than the land round it, so the mountains still stand out at night
+    dkB.rock=biome.rock.map(c=>darkC(c,.72)); }
   return dkB; }
-const WATER_C=[["#b5c9f3","#a3bbef","#92adeb"],["#1c2c48","#192842","#16243c"]];
+// the water from the shallows at the shore out to the deep middle, by day and by night
+const WATER_C=[["#8ccbe0","#76bbe0","#62a8da","#5196d2","#4486c9"],["#1a3a4e","#183549","#163044","#142b3f","#13273a"]];
 function shade(hex,amt){ const n=parseInt(hex.slice(1),16); const f=v=>Math.round(clamp(v+amt,0,255)); return "rgb("+f(n>>16&255)+","+f(n>>8&255)+","+f(n&255)+")"; }
 const easeOut=x=>1-Math.pow(1-x,3);
 let view={x0:0,y0:0,x1:0,y1:0};
@@ -4657,17 +4686,21 @@ const lightSpr=rgb=>sprite("l"+rgb,64,(g,s)=>{ const r=g.createRadialGradient(s/
 const glowSpr=rgb=>sprite("g"+rgb,64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba("+rgb+",1)"); r.addColorStop(.18,"rgba("+rgb+",.55)"); r.addColorStop(.5,"rgba("+rgb+",.14)"); r.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
 const coneSpr=rgb=>sprite("c"+rgb,128,(g,s)=>{ for(let i=0;i<26;i++){ const u=i/25, x=3+u*(s-30), r=3+u*26, a=.2*(1-u*.85);
   const q=g.createRadialGradient(x,s/2,0,x,s/2,r); q.addColorStop(0,"rgba("+rgb+","+a+")"); q.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=q; g.fillRect(x-r,s/2-r,2*r,2*r); } });
+// a street lamp lit up: a hot white middle in a warm halo
+const lampSpr=()=>sprite("lamp",64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba(255,250,236,1)"); r.addColorStop(.1,"rgba(255,236,196,.95)"); r.addColorStop(.28,"rgba(255,206,140,.42)"); r.addColorStop(.6,"rgba(255,186,110,.1)"); r.addColorStop(1,"rgba(255,180,100,0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
 const puffSpr=()=>sprite("puff",64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba(255,255,255,.9)"); r.addColorStop(.55,"rgba(255,255,255,.45)"); r.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
 
-// street lights along every road, on alternate sides, and down the middle of a highway
+// street lights along every road: one every 34 along a street, on alternate sides, facing pairs along a wide road,
+// and down the middle of a highway
 function lamps(){
   if(lampKey===roadCache) return lampList; lampKey=roadCache; lampList=[];
   for(const s of segs.values()){
     if(s.over) continue;
-    const A=nodes.get(s.a), hw=segHW(s), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb; if(run<22) continue;
-    const step=s.hwy?80:58, k=Math.max(1,Math.round(run/step));
-    for(let i=0;i<k;i++){ const d=s.ta+run*(i+.5)/k, side=s.hwy?0:((i+s.id)%2?1:-1), o=s.hwy?0:side*(hw+2.2);
-      lampList.push({x:A.x+s.ux*d+nx*o,y:A.y+s.uy*d+ny*o,ax:-nx*side,ay:-ny*side,hwy:!!s.hwy}); }
+    const A=nodes.get(s.a), hw=segHW(s), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb; if(run<16) continue;
+    const two=!s.hwy&&totL(s)>=4, step=s.hwy?62:two?44:34, k=Math.max(1,Math.round(run/step));
+    for(let i=0;i<k;i++){ const d=s.ta+run*(i+.5)/k;
+      for(const side of s.hwy?[0]:two?[1,-1]:[(i+s.id)%2?1:-1]){ const o=side*(hw+2.2);
+        lampList.push({x:A.x+s.ux*d+nx*o,y:A.y+s.uy*d+ny*o,ax:-nx*side,ay:-ny*side,hwy:!!s.hwy}); } }
   }
   return lampList;
 }
@@ -4822,8 +4855,8 @@ function drawNight(){
   if(dark<.015&&on<.02) return;
   const lights=[], glows=[], cones=[];
   const Lt=(x,y,r,a,col)=>lights.push({x,y,r,a,col}), Gl=(x,y,r,a,col)=>glows.push({x,y,r,a,col});
-  for(const l of lamps()){ if(!inView(l.x,l.y,40)) continue; const hx=l.hwy?l.x:l.x+l.ax*3.4, hy=l.hwy?l.y:l.y+l.ay*3.4;
-    Lt(hx,hy,l.hwy?34:28,.95,"255,178,96"); Gl(hx,hy,7,.35,"255,190,110"); Gl(hx,hy,2.2,.95,"255,236,200"); }
+  for(const l of lamps()){ if(!inView(l.x,l.y,50)) continue; const hx=l.hwy?l.x:l.x+l.ax*3.4, hy=l.hwy?l.y:l.y+l.ay*3.4;
+    Lt(hx,hy,l.hwy?46:40,1,"255,198,130"); Gl(hx,hy,9,1,"lamp"); }
   for(const c of cars){ if(c.siren&&inView(c.x,c.y,60)){ const fl=performance.now()%420<210; Lt(c.x,c.y,26,.9,fl?"80,130,255":"255,50,40"); Gl(c.x,c.y,4,.9,fl?"120,170,255":"255,90,80"); }
     if(c.state!=="drive"||!inView(c.x,c.y,60)) continue;
     const ca=Math.cos(c.ang), sa=Math.sin(c.ang), fx=c.x+ca*c.len/2, fy=c.y+sa*c.len/2, rx=c.x-ca*c.len/2, ry=c.y-sa*c.len/2;
@@ -4865,55 +4898,189 @@ function drawNight(){
   // then the lamps and lights themselves glow on top
   if(on<.02) return;
   ctx.globalCompositeOperation="lighter";
-  for(const o of glows){ ctx.globalAlpha=Math.min(1,o.a*on); ctx.drawImage(glowSpr(o.col),o.x-o.r,o.y-o.r,2*o.r,2*o.r); }
+  for(const o of glows){ ctx.globalAlpha=Math.min(1,o.a*on); ctx.drawImage(o.col==="lamp"?lampSpr():glowSpr(o.col),o.x-o.r,o.y-o.r,2*o.r,2*o.r); }
   ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
 }
 
 function drawGround(){
-  const T=terrain, B=mapBiome(), W=MW+600, H=MH+600;
-  ctx.fillStyle=B.base; ctx.fillRect(TX0,TY0,W,H);
+  const T=terrain, B=mapBiome(), W=MW+600, H=MH+600, E=2400, wc=WATER_C[+dark];
+  // meadow right out past the edges, so the land never ends in a blank
+  ctx.fillStyle=B.base; ctx.fillRect(TX0-E,TY0-E,W+2*E,H+2*E);
   ctx.fillStyle=B.sand[0]; ctx.fill(T.sand[0],"evenodd"); ctx.fillStyle=B.sand[1]; ctx.fill(T.sand[1],"evenodd");
   ctx.fillStyle=B.grass[0]; ctx.fill(T.grass[0],"evenodd"); ctx.fillStyle=B.grass[1]; ctx.fill(T.grass[1],"evenodd");
-  ctx.fillStyle="rgba(78,120,48,.16)"; ctx.fill(T.woods,"evenodd");
-  ctx.fillStyle=B.beach; ctx.fill(T.beach,"evenodd");
-  if(ultra){ ctx.strokeStyle="rgba(130,105,60,.14)"; ctx.lineWidth=8; ctx.stroke(T.water); ctx.lineWidth=4; ctx.stroke(T.water); }
-  const wc=WATER_C[+dark]; ctx.fillStyle=wc[0]; ctx.fill(T.water,"evenodd"); ctx.fillStyle=wc[1]; ctx.fill(T.water2,"evenodd"); ctx.fillStyle=wc[2]; ctx.fill(T.water3,"evenodd");
-  // hills in steps, each one lit on top and throwing a shadow down the slope
-  T.hills.forEach((p,k)=>{
-    if(k&&ultra){ ctx.save(); ctx.translate(10,14); ctx.fillStyle=dark?"rgba(0,0,0,.12)":"rgba(40,35,25,.06)"; ctx.fill(p,"evenodd"); ctx.translate(-3,-4); ctx.fill(p,"evenodd"); ctx.restore(); }
-    if(k){ ctx.save(); ctx.translate(4,6); ctx.fillStyle=dark?"rgba(0,0,0,.42)":"rgba(40,35,25,.2)"; ctx.fill(p,"evenodd"); ctx.restore();
-      ctx.save(); ctx.translate(-1.2,-1.6); ctx.fillStyle=B.lite[k]; ctx.fill(p,"evenodd"); ctx.restore(); }
-    ctx.fillStyle=B.hill[k]; ctx.fill(p,"evenodd"); });
+  // the shady floor of the woods, its edge softened
+  ctx.lineJoin="round"; ctx.strokeStyle=ctx.fillStyle=B.wood; ctx.globalAlpha=.35; ctx.lineWidth=14; ctx.stroke(T.woods); ctx.globalAlpha=.75; ctx.fill(T.woods,"evenodd"); ctx.globalAlpha=1;
+  drawMeadow();
+  // wet grass where the land meets the water, then a thin muddy edge
+  ctx.strokeStyle=B.lush; ctx.globalAlpha=.6; ctx.lineWidth=26; ctx.stroke(T.water); ctx.globalAlpha=1;
+  ctx.strokeStyle=B.mud; ctx.lineWidth=5; ctx.stroke(T.water);
+  // the water, a deeper blue a step at a time out from the shore, each step blended into the one before
+  ctx.fillStyle=wc[0]; ctx.fill(T.water,"evenodd");
+  ctx.save(); ctx.clip(T.water,"evenodd");
+  T.deep.forEach((p,k)=>{ ctx.strokeStyle=ctx.fillStyle=wc[k+1]; ctx.globalAlpha=.45; ctx.lineWidth=16; ctx.stroke(p); ctx.globalAlpha=1; ctx.fill(p,"evenodd"); });
+  // the pale shallows right at the edge
+  ctx.strokeStyle=dark?"rgba(120,170,190,.18)":"rgba(225,245,240,.4)"; ctx.lineWidth=5; ctx.stroke(T.water);
+  ctx.restore();
+  // the mountains: their soft foot and shadows, then the faces of rock and grass, then the crags on the steep sides
+  const M=T.mt; ctx.drawImage(mtPic(),TX0-M.R/2,TY0-M.R/2,M.w*M.R,M.h*M.R);
+  drawFacets();
+  if(cam.z>.6) drawCrags();
   drawRocks();
   // beyond the edge of the map
-  ctx.fillStyle="rgba(70,66,56,.13)"; ctx.fillRect(TX0,TY0,W,-TY0); ctx.fillRect(TX0,MH,W,H-MH+TY0); ctx.fillRect(TX0,0,-TX0,MH); ctx.fillRect(MW,0,W-MW+TX0,MH);
-  ctx.strokeStyle="rgba(70,66,56,.2)"; ctx.lineWidth=1.5; ctx.strokeRect(0,0,MW,MH);
+  ctx.fillStyle="rgba(28,44,20,.14)"; ctx.fillRect(TX0-E,TY0-E,W+2*E,E-TY0); ctx.fillRect(TX0-E,MH,W+2*E,H-MH+TY0+E); ctx.fillRect(TX0-E,0,E-TX0,MH); ctx.fillRect(MW,0,W-MW+TX0+E,MH);
+  ctx.strokeStyle="rgba(28,44,20,.22)"; ctx.lineWidth=1.5; ctx.strokeRect(0,0,MW,MH);
 }
-// boulders round the foot of the hills and on the beaches
+// the mountains, painted once per map and theme into a picture with a pixel for each point of their height grid:
+// alpine grass on the low, gentle slopes and bare rock on the steep and high ones (lighter the higher it goes), lit
+// from the top left like everything else, with the ridges' shadows falling across the valleys and onto the grass
+// below. At the foot it turns to the meadow's own green, so the hills rise straight out of the grass
+const MTK=130, MTZ=70;                          // map units of height for one unit of the height field, in 3D and for the 2D shading
+function mtPic(){
+  const M=terrain.mt; if(M.pic&&M.dk===dark) return M.pic; M.dk=dark;
+  const B=mapBiome(), R=M.R, w=M.w, h=M.h, H=M.H, fbm=terrain.fbm, Z=MTZ/R;
+  const c=M.pic||document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d"), im=g.createImageData(w,h), d=im.data;
+  const rgb=s=>{ const n=parseInt(s.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }, al=rgb(B.alp), rk=B.rock.map(rgb), mb=rgb(B.base);
+  const ca=.64, sa=.77, tn=1.2;                 // the sun 50 degrees up
+  const hz=(i,j)=>Math.max(0,H[clamp(j,0,h-1)*w+clamp(i,0,w-1)]);
+  for(let j=1;j<h-1;j++) for(let i=1;i<w-1;i++){ const k=j*w+i, e=H[k], e0=Math.max(e,0);
+    let occ=0; for(let s=2;s<=24;s+=s<8?2:4){ const q=hz(Math.round(i+LDX*s),Math.round(j+LDY*s)); if(q>e0) occ=Math.max(occ,clamp(((q-e0)*Z-s*tn)*.4,0,1)); }
+    if(e<-.012){ if(occ>0) d[k*4+3]=Math.round(occ*(dark?54:28)); continue; }
+    const gx=(hz(i+1,j)-hz(i-1,j))*Z/2, gy=(hz(i,j+1)-hz(i,j-1))*Z/2, sl=Math.hypot(gx,gy), x=TX0+i*R, y=TY0+j*R;
+    const lt=clamp((-gx*LDX*ca-gy*LDY*ca+sa)/(Math.sqrt(gx*gx+gy*gy+1)*sa),.6,1.16)*(1-.28*occ);
+    // grass up to about a fifth of the way, less of it where it's steep; then rock, lighter higher up, and mottled
+    const gr=clamp(clamp((.2-e0)*9+(fbm(x/40+3,y/40+1,2)-.5)*1.6,0,1)*clamp(1.8-sl,0,1),0,1);
+    const t=clamp((e0-.15)/.55,0,2), a=t<1?rk[0]:rk[1], b=t<1?rk[1]:rk[2], u=t<1?t:t-1, mot=.88+.24*fbm(x/14+7,y/14+5,2);
+    const fm=sst(-.004,.05,e); for(let q=0;q<3;q++) d[k*4+q]=clamp(((a[q]+(b[q]-a[q])*u)*mot*(1-gr)+al[q]*gr)*lt*fm+mb[q]*(1-fm),0,255);
+    d[k*4+3]=Math.round(255*sst(-.006,.001,e)); }
+  g.putImageData(im,0,0); return M.pic=c;
+}
+// Above the foot the mountains are cut into flat faces, a few metres across, each lit by which way it faces, so
+// the ridges and peaks stay sharp at any zoom. Faces are grouped by colour: what they are (grass, or rock low, middle
+// or high up, or the foot), a little mottling, and how much light they get. They are kept in squares of the map so
+// only those in view are drawn
+const FACE=14, FCQ=600;
+function drawFacets(){
+  const M=terrain.mt; if(!M.fac){ const R=M.R, w=M.w, h=M.h, H=M.H, fbm=terrain.fbm, F=FACE, nx=Math.ceil((MW+600)/F)+1, ny=Math.ceil((MH+600)/F)+1, Z=MTZ;
+    const hb=(x,y)=>{ const gx=clamp((x-TX0)/R,0,w-1.001), gy=clamp((y-TY0)/R,0,h-1.001), i=gx|0, j=gy|0, fx=gx-i, fy=gy-j, k=j*w+i, q=v=>v<-.06?-.06:v;
+      return (q(H[k])*(1-fx)+q(H[k+1])*fx)*(1-fy)+(q(H[k+w])*(1-fx)+q(H[k+w+1])*fx)*fy; };
+    const vx=new Float32Array(nx*ny), vy=new Float32Array(nx*ny), vh=new Float32Array(nx*ny);
+    for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ const k=j*nx+i, x=TX0+i*F+(hash(i,j*7+1)-.5)*.6*F, y=TY0+j*F+(hash(i+3,j*7+2)-.5)*.6*F; vx[k]=x; vy[k]=y; vh[k]=hb(x,y); }
+    const G=new Map(), K=new Set(), ca=.64, sa=.77;
+    const tri=(a,b,c)=>{ const ha=vh[a], hb2=vh[b], hc=vh[c]; if(ha<.002||hb2<.002||hc<.002) return;
+      const ux=vx[b]-vx[a], uy=vy[b]-vy[a], uz=(hb2-ha)*Z, wx=vx[c]-vx[a], wy=vy[c]-vy[a], wz=(hc-ha)*Z;
+      let n0=uy*wz-uz*wy, n1=uz*wx-ux*wz, n2=ux*wy-uy*wx; if(n2<0){ n0=-n0; n1=-n1; n2=-n2; } const nl=Math.hypot(n0,n1,n2)||1;
+      const cx=(vx[a]+vx[b]+vx[c])/3, cy=(vy[a]+vy[b]+vy[c])/3, m=(ha+hb2+hc)/3, sl=Math.hypot(n0,n1)/n2;
+      // the shadow of the land between here and the sun
+      let occ=0; for(let s=8;s<=96;s+=s<32?8:16){ const q=hb(cx+LDX*s,cy+LDY*s); if(q>m) occ=Math.max(occ,clamp(((q-m)*Z-s*1.2)*.12,0,1)); }
+      const lt=clamp((n0*LDX*ca+n1*LDY*ca+n2*sa)/(nl*sa),.5,1.2)*(1-.28*occ);
+      const zone=m<.035?4:m<.2+(fbm(cx/40+3,cy/40+1,2)-.5)*.16&&sl<1.1?0:m<.42?1:m<.75?2:3, mot=Math.min(2,fbm(cx/16+7,cy/16+5,2)*3|0), sh=clamp(Math.round((lt-.42)/.055),0,15);
+      const key=zone*100+mot*20+sh, q=Math.floor(cx/FCQ)+","+Math.floor(cy/FCQ); let Q=G.get(q); if(!Q) G.set(q,Q=new Map()); let P=Q.get(key); if(!P) Q.set(key,P=new Path2D()); K.add(key);
+      P.moveTo(vx[a],vy[a]); P.lineTo(vx[b],vy[b]); P.lineTo(vx[c],vy[c]); P.closePath(); };
+    for(let j=0;j<ny-1;j++) for(let i=0;i<nx-1;i++){ const a=j*nx+i, b=a+1, c=a+nx, d=c+1;
+      // split along whichever diagonal keeps closer to level, so the ridges and gullies run along the edges
+      if(Math.abs(vh[a]-vh[d])<Math.abs(vh[b]-vh[c])){ tri(a,b,d); tri(a,d,c); } else { tri(a,b,c); tri(b,d,c); } }
+    M.fac=G; M.fkeys=K; M.fcol={}; }
+  const B=mapBiome(), ck=dark?"d":"l"; let C=M.fcol[ck]; if(!C){ C=M.fcol[ck]={}; const base=[B.alp,...B.rock,B.base].map(c=>{ const n=parseInt(c.slice(1),16); return [n>>16&255,n>>8&255,n&255]; });
+    base[4]=base[4].map((v,i)=>(v+base[0][i])/2);  // the foot: halfway from the meadow to the alpine grass
+    for(const key of M.fkeys){ const z=Math.floor(key/100), mo=Math.floor(key%100/20), sh=key%20, k=(.92+mo*.06)*(.42+sh*.055);
+      C[key]="rgb("+base[z].map(v=>Math.round(clamp(v*k,0,255))).join(",")+")"; } }
+  ctx.lineJoin="round"; ctx.lineWidth=.8;
+  const m=FACE, x0=Math.floor((view.x0-m)/FCQ), x1=Math.floor((view.x1+m)/FCQ), y0=Math.floor((view.y0-m)/FCQ), y1=Math.floor((view.y1+m)/FCQ);
+  for(let j=y0;j<=y1;j++) for(let i=x0;i<=x1;i++){ const Q=M.fac.get(i+","+j); if(Q) for(const [key,P] of Q){ ctx.fillStyle=ctx.strokeStyle=C[key]; ctx.fill(P); ctx.stroke(P); } }
+}
+// ledges and cracks across the steep rock, dark below and catching the light above, and scree under them
+function drawCrags(){
+  const M=terrain.mt; if(!M.crag){ const R=M.R, w=M.w, h=M.h, H=M.H; M.crag=new Map();
+    for(let n=0;n<9000*MAPK;n++){ const x=TX0+hash(n,61)*(MW+600), y=TY0+hash(n,62)*(MH+600), i=Math.round((x-TX0)/R), j=Math.round((y-TY0)/R);
+      if(i<1||j<1||i>=w-1||j>=h-1) continue; const e=H[j*w+i]; if(e<.16) continue;
+      const q=Math.floor(x/FCQ)+","+Math.floor(y/FCQ); let C=M.crag.get(q); if(!C) M.crag.set(q,C={dkp:new Path2D(),ltp:new Path2D(),scr:new Path2D()}); const {dkp,ltp,scr}=C;
+      const gx=(H[j*w+i+1]-H[j*w+i-1])*MTZ/(2*R), gy=(H[(j+1)*w+i]-H[(j-1)*w+i])*MTZ/(2*R), sl=Math.hypot(gx,gy);
+      if(sl<.45){ if(hash(n,63)<.4){ const z=.5+hash(n,64)*.8; scr.moveTo(x+z,y); scr.arc(x,y,z,0,7); } continue; }
+      const L=2+hash(n,65)*3.5, tx=-gy/sl, ty=gx/sl, b=(hash(n,66)-.5)*.6;
+      dkp.moveTo(x-tx*L,y-ty*L); dkp.quadraticCurveTo(x+ty*b*L,y-tx*b*L,x+tx*L,y+ty*L);
+      ltp.moveTo(x-tx*L*.8+LDX,y-ty*L*.8+LDY); ltp.lineTo(x+tx*L*.6+LDX,y+ty*L*.6+LDY); } }
+  ctx.lineCap="round";
+  const x0=Math.floor((view.x0-8)/FCQ), x1=Math.floor((view.x1+8)/FCQ), y0=Math.floor((view.y0-8)/FCQ), y1=Math.floor((view.y1+8)/FCQ);
+  for(let j=y0;j<=y1;j++) for(let i=x0;i<=x1;i++){ const C=M.crag.get(i+","+j); if(!C) continue;
+    ctx.strokeStyle=dark?"rgba(0,0,0,.26)":"rgba(48,40,32,.2)"; ctx.lineWidth=1; ctx.stroke(C.dkp);
+    ctx.strokeStyle=dark?"rgba(200,200,190,.06)":"rgba(255,252,240,.14)"; ctx.lineWidth=.7; ctx.stroke(C.ltp);
+    ctx.fillStyle=dark?"rgba(150,150,140,.16)":"rgba(70,62,52,.2)"; ctx.fill(C.scr); }
+  ctx.lineCap="butt";
+}
+// patches of wild flowers on the grass, in squares of the map so only the ones in view are drawn
+const FLOWERS=["#ffffff","#f6d74a","#f29bb8","#b79cf0","#7fb2f0"], FPICK=[.36,.68,.82,.92,1], FCH=400;
+function drawMeadow(){
+  if(cam.z<1) return;
+  const T=terrain; if(!T.fl){ T.fl=new Map(); const F=T.F;
+    for(let i=0;i<1300*MAPK;i++){ const x=hash(i,41)*MW, y=hash(i,42)*MH, g=fieldAt(F.G,x,y);
+      if(fieldAt(F.W,x,y)>.2||fieldAt(F.H,x,y)>HILL-.05||fieldAt(F.F,x,y)>.4||g<biome.grassT-.08) continue;
+      const key=Math.floor(x/FCH)+","+Math.floor(y/FCH); let P=T.fl.get(key); if(!P) T.fl.set(key,P=FLOWERS.map(()=>new Path2D()));
+      const q=P[FPICK.findIndex(v=>hash(i,43)<v)], n=6+hash(i,44)*8, R=1.6+hash(i,45)*2.6;
+      for(let k=0;k<n;k++){ const a=hash(i,50+k)*6.28, d=Math.sqrt(hash(i,70+k))*R, fx=x+Math.cos(a)*d, fy=y+Math.sin(a)*d, z=.55+hash(i,90+k)*.4; q.moveTo(fx+z,fy); q.arc(fx,fy,z,0,7); } } }
+  const x0=Math.floor(view.x0/FCH), x1=Math.floor(view.x1/FCH), y0=Math.floor(view.y0/FCH), y1=Math.floor(view.y1/FCH);
+  for(let j=y0;j<=y1;j++) for(let i=x0;i<=x1;i++){ const P=T.fl.get(i+","+j); if(!P) continue; P.forEach((q,k)=>{ ctx.fillStyle=dk(FLOWERS[k],.85); ctx.fill(q); }); }
+}
+// boulders round the foot of the hills and by the water
 function drawRocks(){
   const sh=new Path2D(), body=new Path2D(), top=new Path2D();
   for(const r of terrain.rocks){ if(!inView(r.x,r.y,8)) continue;
     sh.moveTo(r.x+SHX*2+r.r,r.y+SHY*2); sh.ellipse(r.x+SHX*2,r.y+SHY*2,r.r,r.r*.75,r.a,0,7);
     body.moveTo(r.x+r.r,r.y); body.ellipse(r.x,r.y,r.r,r.r*.75,r.a,0,7);
     top.moveTo(r.x-r.r*.2+r.r*.5,r.y-r.r*.2); top.ellipse(r.x-r.r*.2,r.y-r.r*.2,r.r*.5,r.r*.38,r.a,0,7); }
-  ctx.fillStyle="rgba(40,35,25,.18)"; ctx.fill(sh); ctx.fillStyle=dk("#a4a199",.8); ctx.fill(body); ctx.fillStyle=dk("#cbc8c0",.8); ctx.fill(top);
+  ctx.fillStyle="rgba(30,40,22,.22)"; ctx.fill(sh); ctx.fillStyle=dk("#9c9a92",.8); ctx.fill(body); ctx.fillStyle=dk("#c6c3bb",.8); ctx.fill(top);
 }
+// Trees and plants of every kind (TK), seen from above: 0 broadleaf, 1 pine, 2 birch, 3 poplar, 4 fir, 5 bush, 6 reeds,
+// and in gardens 7 a tree in blossom and 8 a copper beech. Their colours, the light on their tops, and how far their
+// shadows fall (taller ones further)
+const TCOL=[["#5d9c41","#4d8a37","#6aa84a"],["#3e7a3c","#356f37"],["#95c45b","#88b953"],["#5a963d","#4f8a37"],["#2f6948","#295e41"],["#4a8537","#56923f","#3f7a33"],["#7f9b4a"],["#efb6c8","#f5c9d6"],["#9c5741","#8a4a38"]];
+const TLIT=["150,205,105","95,150,82","200,232,140","140,196,100","88,142,106","128,180,94","","255,240,245","214,142,112"], TSH=[4,6,3.5,0,7,1.6,0,4,4];
+const gardenKind=s=>s<.5?0:s<.63?2:s<.72?3:s<.84?7:s<.93?8:4;
+// a crown into path P: a broadleaf is lumpy, a pine or a fir a star of branches, a birch a loose cluster, a poplar a
+// tight knot, a bush a low clump
+function crown(P,k,x,y,r,s){
+  if(k===1||k===4){ const n=k===1?9:12, a0=s*6, ri=r*(k===1?.66:.5); P.moveTo(x+Math.cos(a0)*r,y+Math.sin(a0)*r);
+    for(let i=1;i<2*n;i++){ const a=a0+i*Math.PI/n, q=i%2?ri:r; P.lineTo(x+Math.cos(a)*q,y+Math.sin(a)*q); } P.closePath(); return; }
+  if(k===3){ P.moveTo(x+r*.56,y); P.arc(x,y,r*.56,0,7); return; }
+  const n=k===2?5:k===5?3:4, lr=k===2?.42:k===5?.55:.5, ld=k===2?.5:k===5?.42:.55, c=k===2?.48:k===5?.5:.78;
+  P.moveTo(x+r*c,y); P.arc(x,y,r*c,0,7);
+  for(let i=0;i<n;i++){ const a=s*6+i*6.283/n, px=x+Math.cos(a)*r*ld, py=y+Math.sin(a)*r*ld; P.moveTo(px+r*lr,py); P.arc(px,py,r*lr,0,7); }
+}
+// the sunlit side of a crown
+function crownLit(P,k,x,y,r,s){
+  if(k===1||k===4){ crown(P,k,x-r*.16,y-r*.2,r*.52,s+.3); return; }
+  const z=k===3?.3:k===2||k===5?.36:.55, hx=x-r*(k===3?.16:.3), hy=y-r*(k===3?.18:.32); P.moveTo(hx+r*z,hy); P.arc(hx,hy,r*z,0,7);
+}
+// a tree's shadow: a poplar's is long and thin
+function crownSh(P,k,x,y,r,s,lo){
+  if(k===3){ const a=Math.atan2(SHY,SHX), cx=x+SHX*r*1.9, cy=y+SHY*r*1.9; P.moveTo(cx+Math.cos(a)*r*2,cy+Math.sin(a)*r*2); P.ellipse(cx,cy,r*2,r*.5,a,0,7); return; }
+  const o=TSH[k], sx=x+SHX*o, sy=y+SHY*o; if(lo){ P.moveTo(sx+r,sy); P.arc(sx,sy,r,0,7); } else crown(P,k,sx,sy,r,s);
+}
+// a stand of reeds: blades fanning out from a clump, some with a brown head
+function reeds(P,H,x,y,r,s){
+  for(let i=0;i<7;i++){ const a=s*6+i*.9, L=r*(.6+hash(i,s*999|0)*.6), bx=x+Math.cos(a*2.3)*r*.3, by=y+Math.sin(a*2.3)*r*.3, ex=bx+Math.cos(a)*L, ey=by+Math.sin(a)*L;
+    P.moveTo(bx,by); P.lineTo(ex,ey); if(i%3===0){ H.moveTo(ex+.45,ey); H.ellipse(ex,ey,.45,.3,a,0,7); } }
+}
+// far out every tree is a plain round blob; a little closer the pines and firs get their stars and the crowns their
+// light; close up the crowns get their lumps, the reeds their blades and the bushes their flowers
 function drawTrees(){
-  const sh=new Path2D(), c0=new Path2D(), c1=new Path2D(), c2=new Path2D(), pn=new Path2D(), hl=new Path2D(), U=ultra, sh2=new Path2D(), rim=new Path2D(), mid=new Path2D(), sp=new Path2D();
-  for(const tr of trees){ if(!tr.alive||!inView(tr.x,tr.y,14)) continue; const r=tr.r, sx=tr.x+SHX*4, sy=tr.y+SHY*4;
-    sh.moveTo(sx+r,sy); sh.arc(sx,sy,r,0,7);
-    const P=tr.pine?pn:tr.s<.4?c0:tr.s<.75?c1:c2; P.moveTo(tr.x+r,tr.y); P.arc(tr.x,tr.y,r,0,7);
-    const hx=tr.x-r*.3, hy=tr.y-r*.32; hl.moveTo(hx+r*.55,hy); hl.arc(hx,hy,r*.55,0,7);
-    if(U){ const r2=r*1.22, x2=tr.x+SHX*7.5, y2=tr.y+SHY*7.5; sh2.moveTo(x2+r2,y2); sh2.arc(x2,y2,r2,0,7);
-      rim.moveTo(tr.x+r+.8,tr.y+.5); rim.arc(tr.x,tr.y+.5,r+.8,0,7);
-      const mx=tr.x-r*.14, my=tr.y-r*.17; mid.moveTo(mx+r*.8,my); mid.arc(mx,my,r*.8,0,7);
-      const qx=tr.x-r*.42, qy=tr.y-r*.46; sp.moveTo(qx+r*.2,qy); sp.arc(qx,qy,r*.2,0,7); } }
-  if(U){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.fill(sh2); ctx.fillStyle="rgba(30,50,20,.17)"; ctx.fill(sh); ctx.fillStyle="rgba(38,72,28,.6)"; ctx.fill(rim); }
-  else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.fill(sh); }
-  ctx.fillStyle=dk("#5d9c41",.75); ctx.fill(c0); ctx.fillStyle=dk("#4d8a37",.75); ctx.fill(c1); ctx.fillStyle=dk("#6aa84a",.75); ctx.fill(c2); ctx.fillStyle=dk("#3e7a3c",.75); ctx.fill(pn);
-  const dm=dark?.45:1;
-  if(U){ ctx.fillStyle="rgba(125,185,85,"+.32*dm+")"; ctx.fill(mid); }
-  ctx.fillStyle="rgba(150,205,105,"+.55*dm+")"; ctx.fill(hl);
+  const U=ultra, lo=cam.z<.45, md=cam.z<.85, dm=dark?.45:1, sh=new Path2D(), sh2=new Path2D(), rim=new Path2D(), sp=new Path2D(), rd=new Path2D(), cat=new Path2D(), fl=new Path2D();
+  const cr=TCOL.map(a=>a.map(()=>new Path2D())), hl=TCOL.map(()=>new Path2D());
+  for(const tr of trees){ if(!tr.alive||!inView(tr.x,tr.y,16)) continue; const k=tr.k||0, r=tr.r, s=tr.s, x=tr.x, y=tr.y;
+    if(k===6){ if(!md) reeds(rd,cat,x,y,r,s); continue; }
+    crownSh(sh,k,x,y,r,s,md);
+    if(U&&k!==5){ const r2=r*1.2, o=TSH[k]*1.9+(k===3?r*2:0), x2=x+SHX*o, y2=y+SHY*o; sh2.moveTo(x2+r2,y2); sh2.arc(x2,y2,r2,0,7); }
+    const P=cr[k][k===0?(s<.4?0:s<.75?1:2):(s*TCOL[k].length)|0];
+    if(lo||md&&k!==1&&k!==4){ const z=r*(k===3?.56:1); P.moveTo(x+z,y); P.arc(x,y,z,0,7); if(!lo){ const hx=x-r*.3, hy=y-r*.32, q=hl[k]; q.moveTo(hx+r*.5,hy); q.arc(hx,hy,r*.5,0,7); } continue; }
+    crown(P,k,x,y,r,s); crownLit(hl[k],k,x,y,r,s); if(md) continue;
+    if(U&&k!==1&&k!==4) crown(rim,k,x+.5,y+.8,r,s);
+    if(U&&k===0){ const qx=x-r*.42, qy=y-r*.46; sp.moveTo(qx+r*.2,qy); sp.arc(qx,qy,r*.2,0,7); }
+    if(k===5&&s>.72&&cam.z>1) for(let i=0;i<4;i++){ const a=s*40+i*1.7, fx=x+Math.cos(a)*r*.5, fy=y+Math.sin(a)*r*.5; fl.moveTo(fx+.5,fy); fl.arc(fx,fy,.5,0,7); } }
+  if(U){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.fill(sh2); ctx.fillStyle="rgba(30,50,20,.18)"; ctx.fill(sh); ctx.fillStyle="rgba(34,64,26,.55)"; ctx.fill(rim); }
+  else { ctx.fillStyle="rgba(30,50,20,.22)"; ctx.fill(sh); }
+  ctx.lineCap="round"; ctx.strokeStyle=dk("#6f8c3e",.7); ctx.lineWidth=.55; ctx.stroke(rd); ctx.fillStyle=dk("#6b4a2e",.7); ctx.fill(cat); ctx.lineCap="butt";
+  cr.forEach((a,k)=>a.forEach((P,i)=>{ ctx.fillStyle=dk(TCOL[k][i],.75); ctx.fill(P); }));
+  hl.forEach((P,k)=>{ if(TLIT[k]){ ctx.fillStyle="rgba("+TLIT[k]+","+.55*dm+")"; ctx.fill(P); } });
+  ctx.fillStyle=dk("#fbe9f0",.6); ctx.fill(fl);
   if(U){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; ctx.fill(sp); }
 }
 // the ground and trees only change when the camera zooms or something gets built, so keep a picture of them
@@ -4942,23 +5109,25 @@ function drawTerrain(){
 }
 let wavePat=null;
 function makeWaves(){ const c=document.createElement("canvas"); c.width=c.height=256; const g=c.getContext("2d");
-  g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=2; g.lineCap="round";
-  for(let i=0;i<26;i++){ const x=Math.random()*256, y=Math.random()*256, L=12+Math.random()*18;
-    for(const ox of [-256,0,256]) for(const oy of [-256,0,256]){ const X=x+ox, Y=y+oy; g.beginPath(); g.moveTo(X,Y); g.quadraticCurveTo(X+L/4,Y-3.5,X+L/2,Y); g.quadraticCurveTo(X+L*.75,Y+3.5,X+L,Y); g.stroke(); } }
+  g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=1.6; g.lineCap="round";
+  for(let i=0;i<26;i++){ const x=Math.random()*256, y=Math.random()*256, L=9+Math.random()*16, A=1.4+L*.09;
+    for(const ox of [-256,0,256]) for(const oy of [-256,0,256]){ const X=x+ox, Y=y+oy; g.beginPath(); g.moveTo(X,Y); g.quadraticCurveTo(X+L/4,Y-A,X+L/2,Y); g.quadraticCurveTo(X+L*.75,Y+A,X+L,Y); g.stroke(); } }
   wavePat=ctx.createPattern(c,"repeat"); }
-// ripples drifting over the water and foam lapping at the shore
+// ripples drifting over the water and the water lapping at the shore. In the 3D view's picture they keep still (the
+// 3D water has waves of its own), so its squares still match where they meet
 function drawWater(){
   const T=terrain; if(!wavePat) makeWaves();
-  const now=performance.now()/1000;
+  const now=rec3d?0:performance.now()/1000;
   ctx.save(); ctx.clip(T.water,"evenodd");
-  for(const [sp,dir,al,sc,ph] of [[5,.35,.42,.5,0],[3.5,2.6,.3,.36,2]]){
-    const ox=Math.cos(dir)*now*sp, oy=Math.sin(dir)*now*sp+Math.sin(now*.9+ph)*1.5;
-    ctx.save(); ctx.globalAlpha=al*(.7+.3*Math.sin(now*1.1+ph))*(dark?.35:1); ctx.translate(ox,oy); ctx.scale(sc,sc); ctx.fillStyle=wavePat;
+  for(const [sp,dir,al,sc,ph] of [[4,.35,.3,.5,0],[2.6,2.6,.22,.34,2]]){
+    const ox=Math.cos(dir)*now*sp, oy=Math.sin(dir)*now*sp+Math.sin(now*.7+ph)*1.2;
+    ctx.save(); ctx.globalAlpha=al*(.7+.3*Math.sin(now*.9+ph))*(dark?.3:1); ctx.translate(ox,oy); ctx.scale(sc,sc); ctx.fillStyle=wavePat;
     ctx.fillRect((view.x0-ox)/sc-4,(view.y0-oy)/sc-4,(view.x1-view.x0)/sc+8,(view.y1-view.y0)/sc+8); ctx.restore(); }
-  if(ultra){
-    // the sky reflected in the water, brighter towards the sun, and the sun glinting off the ripples
+  // the sky reflected in the water, brighter towards the sun, and the sun glinting off the ripples. Not in the 3D
+  // view's picture: it's in squares, and the 3D water shows the sky itself
+  if(ultra&&!rec3d){
     const g=ctx.createLinearGradient(view.x0,view.y0,view.x1,view.y1);
-    g.addColorStop(0,"rgba(255,255,255,"+(dark?.07:.26)+")"); g.addColorStop(.45,"rgba(255,255,255,"+(dark?.02:.06)+")"); g.addColorStop(1,"rgba(30,60,140,.12)");
+    g.addColorStop(0,"rgba(255,255,255,"+(dark?.06:.22)+")"); g.addColorStop(.45,"rgba(255,255,255,"+(dark?.02:.05)+")"); g.addColorStop(1,"rgba(10,50,110,.12)");
     ctx.fillStyle=g; ctx.fillRect(view.x0,view.y0,view.x1-view.x0,view.y1-view.y0);
     ctx.fillStyle="#fff";
     for(const q of decor().glints){ if(!inView(q.x,q.y,4)) continue; const a=Math.pow(Math.max(0,Math.sin(now*1.6+q.p)),8); if(a<.04) continue;
@@ -4967,9 +5136,11 @@ function drawWater(){
     ctx.globalAlpha=1;
   }
   ctx.restore();
-  ctx.lineCap="round";
-  ctx.strokeStyle=dark?"rgba(190,210,240,.3)":"rgba(255,255,255,.6)"; ctx.lineWidth=1.5; ctx.setLineDash([6,9]); ctx.lineDashOffset=-now*4; ctx.stroke(T.water);
-  ctx.strokeStyle=dark?"rgba(190,210,240,.15)":"rgba(255,255,255,.3)"; ctx.lineWidth=1; ctx.setLineDash([3,12]); ctx.lineDashOffset=now*3; ctx.stroke(T.water2);
+  // a soft line of foam that comes and goes along the shore, the lapping water breaking up over it
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.strokeStyle=dark?"rgba(170,200,225,"+(.14+.06*Math.sin(now*.8))+")":"rgba(255,255,255,"+(.36+.14*Math.sin(now*.8))+")"; ctx.lineWidth=1.3; ctx.stroke(T.water);
+  ctx.strokeStyle=dark?"rgba(190,210,240,.22)":"rgba(255,255,255,.55)"; ctx.lineWidth=1.1; ctx.setLineDash([5,11]); ctx.lineDashOffset=-now*3; ctx.stroke(T.water);
+  ctx.strokeStyle=dark?"rgba(190,210,240,.1)":"rgba(255,255,255,.22)"; ctx.lineWidth=.9; ctx.setLineDash([3,14]); ctx.lineDashOffset=now*2; ctx.stroke(T.deep[0]);
   ctx.setLineDash([]); ctx.lineDashOffset=0; ctx.lineCap="butt";
 }
 
@@ -5168,14 +5339,16 @@ function flatRoof(w,d,col,x,y){
   for(let i=1;i<4;i++){ const xx=x0+2.4+i*w*.42/4; ctx.moveTo(xx,y0+2.4); ctx.lineTo(xx,y0+2.4+d*.36); ctx.moveTo(xx+w*.46,y0+2.4); ctx.lineTo(xx+w*.46,y0+2.4+d*.36); } ctx.stroke();
   ctx.fillStyle=col; ctx.fillRect(x0+1.1,y0+d-3.2,w-2.2,2.1);
 }
+// a tree in a garden or a park: its kind and colour go by where it stands, so it's the same one in 2D and 3D
 function tree(x,y,r){
   if(rec3d){ rec3d.trees.push(x,y,r); return; }
-  if(ultra){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.beginPath(); ctx.arc(x+SHX*6,y+SHY*6,r*1.2,0,7); ctx.fill(); ctx.fillStyle="rgba(30,50,20,.15)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill();
-    ctx.fillStyle="rgba(38,72,28,.6)"; ctx.beginPath(); ctx.arc(x,y+.4,r+.7,0,7); ctx.fill(); }
-  else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill(); }
-  const dm=dark?.45:1;
-  ctx.fillStyle=dk("#57973e",.75); ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,"+.55*dm+")"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill();
-  if(ultra){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; ctx.beginPath(); ctx.arc(x-r*.42,y-r*.46,r*.2,0,7); ctx.fill(); } }
+  const s=hash(x*10|0,y*10|0), k=gardenKind(s), v=hash(y*10|0,x*10|0), dm=dark?.45:1, f=P=>{ ctx.beginPath(); P(); ctx.fill(); };
+  if(ultra){ ctx.fillStyle="rgba(30,50,20,.08)"; f(()=>{ const o=TSH[k]*1.5+(k===3?r*2:0); ctx.arc(x+SHX*o,y+SHY*o,r*1.2,0,7); }); }
+  ctx.fillStyle=ultra?"rgba(30,50,20,.16)":"rgba(30,50,20,.2)"; f(()=>crownSh(ctx,k,x,y,r,v,false));
+  if(ultra&&k!==1&&k!==4){ ctx.fillStyle="rgba(34,64,26,.55)"; f(()=>crown(ctx,k,x+.4,y+.6,r,v)); }
+  ctx.fillStyle=dk(TCOL[k][(v*TCOL[k].length)|0],.75); f(()=>crown(ctx,k,x,y,r,v));
+  ctx.fillStyle="rgba("+TLIT[k]+","+.55*dm+")"; f(()=>crownLit(ctx,k,x,y,r,v));
+  if(ultra&&k===0){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; f(()=>ctx.arc(x-r*.42,y-r*.46,r*.2,0,7)); } }
 const easeBack=x=>1+2.7*Math.pow(x-1,3)+1.7*Math.pow(x-1,2);
 const growth=(b,dur)=>rec3d?1:.6+.4*easeBack(clamp((animT-b.grow)/dur,0,1));
 function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") (b.lot?drawLotApts:drawApts)(b); else if(b.type==="town") drawTown(b); else if(b.type==="mixed") drawMixed(b); else drawHouse(b); }
@@ -6039,6 +6212,20 @@ function v3init(T){
   const DTEX=mobile?512:1024, dcv=mkCv(DTEX);
   const dtex=new T.CanvasTexture(dcv); dtex.colorSpace=T.SRGBColorSpace; dtex.anisotropy=aniso; dtex.flipY=false;
   mats.ground=new T.MeshStandardMaterial({map:front.tex,roughness:.93});
+  // water: wherever the picture is water-blue (the lakes and rivers, and the pools in the gardens, but not a bridge or
+  // anything else drawn over them) the ground turns smooth and shiny, small waves run across it and catch the sun,
+  // and the sky shows in it, more so the flatter you look across it
+  const wU={wt:{value:0},wsky:{value:new T.Color(0xcfe0ee)}};
+  mats.ground.onBeforeCompile=sh=>{ sh.uniforms.wt=wU.wt; sh.uniforms.wsky=wU.wsky;
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vWp;").replace("#include <fog_vertex>","#include <fog_vertex>\nvWp=(modelMatrix*vec4(transformed,1.)).xyz;");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWp; uniform float wt; uniform vec3 wsky; float wat=0.;")
+      .replace("#include <map_fragment>","#include <map_fragment>\n{ vec3 c=sqrt(max(diffuseColor.rgb,0.)); wat=smoothstep(.025,.07,c.b-max(c.r,c.g))*smoothstep(.2,.3,(c.b-min(c.r,c.g))/(c.b+.001)); }")
+      .replace("#include <roughnessmap_fragment>","#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.16,wat);")
+      .replace("#include <normal_fragment_maps>",`#include <normal_fragment_maps>
+if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2(-.06,.13)*cos(dot(p,vec2(-.06,.13))+wt*1.1)
+  +vec2(.19,-.15)*.6*cos(dot(p,vec2(.19,-.15))+wt*2.1)+vec2(-.23,-.29)*.4*cos(dot(p,vec2(-.23,-.29))+wt*2.7);
+  normal=normalize(normal-wat*.8*(viewMatrix*vec4(g.x,0.,g.y,0.)).xyz); }`)
+      .replace(/#include <(opaque|output)_fragment>/,m=>"outgoingLight=mix(outgoingLight,wsky,wat*.6*pow(1.-clamp(dot(normal,normalize(vViewPosition)),0.,1.),3.));\n"+m); };
   mats.roof=new T.MeshStandardMaterial({map:front.tex,roughness:.8});
   mats.dyn=new T.MeshBasicMaterial({map:dtex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4,fog:false});
   mats.focus=new T.MeshBasicMaterial({map:dtex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6,fog:false});
@@ -6054,18 +6241,12 @@ function v3init(T){
 
   // ----- the ground under the pictures, raised where the hills are -----
   let hgrid=null, hw=0, hh=0; const HS=8;
+  // the mountains' own heights from the map (see genMap), so the ridges and peaks the picture shows stand up
   function heights(){
-    hw=Math.ceil((MW+600)/HS); hh=Math.ceil((MH+600)/HS);
-    const c=document.createElement("canvas"); c.width=hw; c.height=hh; const g=c.getContext("2d");
-    g.setTransform(1/HS,0,0,1/HS,-TX0/HS,-TY0/HS); g.globalCompositeOperation="lighter";
-    terrain.hills.forEach(p=>{ g.fillStyle="rgb(40,40,40)"; g.fill(p,"evenodd"); });
-    const d=g.getImageData(0,0,hw,hh).data, a=new Float32Array(hw*hh); for(let i=0;i<a.length;i++) a[i]=d[i*4]/40;
-    const blur=(src,r)=>{ const o=new Float32Array(src.length), o2=new Float32Array(src.length);
-      for(let y=0;y<hh;y++) for(let x=0;x<hw;x++){ let s=0,n=0; for(let k=-r;k<=r;k++){ const xx=x+k; if(xx<0||xx>=hw) continue; s+=src[y*hw+xx]; n++; } o[y*hw+x]=s/n; }
-      for(let y=0;y<hh;y++) for(let x=0;x<hw;x++){ let s=0,n=0; for(let k=-r;k<=r;k++){ const yy=y+k; if(yy<0||yy>=hh) continue; s+=o[yy*hw+x]; n++; } o2[y*hw+x]=s/n; }
-      return o2; };
-    const b=blur(blur(a,3),2); hgrid=new Float32Array(b.length);
-    for(let i=0;i<b.length;i++) hgrid[i]=a[i]>0?Math.max(0,b[i]-.18)*15:0;
+    hw=Math.ceil((MW+600)/HS); hh=Math.ceil((MH+600)/HS); hgrid=new Float32Array(hw*hh);
+    const M=terrain.mt, H=M.H, w=M.w, z=k=>H[k]>0?H[k]:0;
+    for(let j=0;j<hh;j++) for(let i=0;i<hw;i++){ const gx=Math.min((i+.5)*HS/M.R,w-1.001), gy=Math.min((j+.5)*HS/M.R,M.h-1.001), a=gx|0, b=gy|0, fx=gx-a, fy=gy-b, k=b*w+a;
+      hgrid[j*hw+i]=((z(k)*(1-fx)+z(k+1)*fx)*(1-fy)+(z(k+w)*(1-fx)+z(k+w+1)*fx)*fy)*MTK; }
   }
   const hAt=(x,y)=>{ if(!hgrid) return 0; const gx=(x-TX0)/HS-.5, gy=(y-TY0)/HS-.5, x0=Math.floor(gx), y0=Math.floor(gy); if(x0<0||y0<0||x0>=hw-1||y0>=hh-1) return 0;
     const fx=gx-x0, fy=gy-y0, i=y0*hw+x0; return (hgrid[i]*(1-fx)+hgrid[i+1]*fx)*(1-fy)+(hgrid[i+hw]*(1-fx)+hgrid[i+hw+1]*fx)*fy; };
@@ -6340,53 +6521,74 @@ function v3init(T){
     craneI.count=n; craneI.instanceMatrix.needsUpdate=true; if(craneI.instanceColor) craneI.instanceColor.needsUpdate=true;
   }
 
-  // ----- trees: a crown on a trunk, or a pine -----
+  // ----- trees and plants: a crown on a trunk, a pine or a fir, a birch, a poplar, bushes and reeds -----
   // shapes made of a few parts, each merged into one to stamp out many times
   function mergeG(parts){ const pos=[], nor=[];
     for(const [g,x,y,z] of parts){ const q=g.toNonIndexed(); q.translate(x,y,z); q.computeVertexNormals();
       for(const v of q.attributes.position.array) pos.push(v); for(const v of q.attributes.normal.array) nor.push(v); q.dispose(); g.dispose(); }
     const out=new T.BufferGeometry(); out.setAttribute("position",new T.Float32BufferAttribute(pos,3)); out.setAttribute("normal",new T.Float32BufferAttribute(nor,3)); return out; }
-  // a crown in lumps rather than one ball, and a pine in three tiers
-  const crownG=mergeG([[new T.IcosahedronGeometry(.8,1),0,.1,0],[new T.IcosahedronGeometry(.56,0),.44,-.12,.2],[new T.IcosahedronGeometry(.5,0),-.4,-.16,-.22],[new T.IcosahedronGeometry(.46,0),.06,-.22,-.44]]);
+  // a crown in lumps rather than one ball, a pine in three tiers and a fir in four narrower ones, a birch's loose
+  // crown, a poplar's tall one, a low bush and a clump of reeds
+  const ico=(r,d,sy)=>new T.IcosahedronGeometry(r,d).scale(1,sy||1,1);
+  const crownG=mergeG([[ico(.8,1),0,.1,0],[ico(.56,0),.44,-.12,.2],[ico(.5,0),-.4,-.16,-.22],[ico(.46,0),.06,-.22,-.44]]);
   const pineG=mergeG([[new T.ConeGeometry(1,.56,7),0,-.22,0],[new T.ConeGeometry(.76,.5,7),0,.06,0],[new T.ConeGeometry(.5,.44,7),0,.3,0]]), trunkG=new T.CylinderGeometry(.16,.22,1,6);
+  const firG=mergeG([[new T.ConeGeometry(.9,.4,8),0,-.3,0],[new T.ConeGeometry(.72,.38,8),0,-.08,0],[new T.ConeGeometry(.54,.36,8),0,.13,0],[new T.ConeGeometry(.34,.36,8),0,.33,0]]);
+  const birchG=mergeG([[ico(.5,0),0,.15,0],[ico(.42,0),.36,-.05,.12],[ico(.4,0),-.32,-.1,-.16],[ico(.36,0),.05,-.2,.38],[ico(.34,0),-.08,.44,.04]]);
+  const poplarG=mergeG([[ico(.6,1,1.9),0,0,0],[ico(.36,0),.2,-.4,.12],[ico(.32,0),-.16,.32,-.1]]);
+  const bushG=mergeG([[ico(.62,0,.75),0,0,0],[ico(.48,0,.8),.45,-.1,.15],[ico(.45,0,.8),-.38,-.1,-.25]]);
+  const reedG=mergeG([0,1,2,3,4,5,6].map(i=>{ const a=i*2.4, d=.12+.12*(i%3); return [new T.ConeGeometry(.07,1,3).rotateZ(Math.cos(a)*.3).rotateX(Math.sin(a)*.3),Math.cos(a)*d,.5,Math.sin(a)*d]; }));
   const leafMat=new T.MeshStandardMaterial({color:0xffffff,roughness:.85,flatShading:true});
-  const TCAP=6000, crownI=new T.InstancedMesh(crownG,leafMat,TCAP), pineI=new T.InstancedMesh(pineG,leafMat,TCAP), trunkI=new T.InstancedMesh(trunkG,new T.MeshStandardMaterial({color:0x7a5a3c,roughness:.9}),TCAP*2);
-  for(const m of [crownI,pineI,trunkI]){ m.count=0; m.frustumCulled=false; m.castShadow=true; m.receiveShadow=m!==trunkI; scene.add(m); }
-  crownI.setColorAt(0,new T.Color(1,1,1)); pineI.setColorAt(0,new T.Color(1,1,1));
+  // one stamp for each kind (blossom and copper beeches use the broadleaf's), and the trunks, brown or a birch's white
+  const KG=[crownG,pineG,birchG,poplarG,firG,bushG,reedG], KCAP=[6000,3000,3000,1500,3000,4000,3000];
+  const KI=KG.map((g,i)=>new T.InstancedMesh(g,leafMat,KCAP[i])), trunkI=new T.InstancedMesh(trunkG,new T.MeshStandardMaterial({color:0xffffff,roughness:.9}),14000);
+  for(const m of [...KI,trunkI]){ m.count=0; m.frustumCulled=false; m.castShadow=m!==KI[6]; m.receiveShadow=m!==trunkI; m.setColorAt(0,new T.Color(1,1,1)); scene.add(m); }
   let treeKey="";
-  const LEAF=["#5d9c41","#4d8a37","#6aa84a","#57973e","#649f45"];
+  const LEAF=[["#5d9c41","#4d8a37","#6aa84a","#57973e","#649f45"],["#3e7a3c","#356f37"],["#9ac75c","#8cbc54"],["#5a963d","#4f8a37"],["#2e6446","#2a5a40"],["#4a8537","#56923f","#3f7a33"],["#86a04c","#7a9644"],["#f2b8cb","#f7cdd9"],["#9c5741","#8a4a38"]];
   function treesSet(list){
     let key=list.length+":"; for(let i=0;i<list.length;i+=Math.max(4,(list.length>>5)&~3)) key+=Math.round(list[i])+","+Math.round(list[i+1])+";";
     if(key===treeKey) return; treeKey=key;
-    let nc=0, np=0, nt=0; const cm=crownI.instanceMatrix.array, pm=pineI.instanceMatrix.array, tmm=trunkI.instanceMatrix.array;
-    for(let i=0;i<list.length;i+=4){ const x=list[i], y=list[i+1], r=list[i+2], g0=hAt(x,y), s=hash(x*10|0,y*10|0);
-      if(list[i+3]===1){ if(np>=TCAP) continue; const h=r*3.4; setM(pm,np,x,g0+r*.9+h/2,y,s*6,r*1.05,h,r*1.05); setC(pineI,np,s<.5?"#3e7a3c":"#356f37"); np++;
-        if(nt<TCAP*2){ setM(tmm,nt,x,g0+r*.5,y,0,r*.8,r*1.1,r*.8); nt++; } continue; }
-      if(nc>=TCAP) continue; const cr=r*1.08; setM(cm,nc,x,g0+r*1.25+cr*.9,y,s*6,cr,cr*1.12,cr); setC(crownI,nc,LEAF[(s*LEAF.length)|0]); nc++;
-      if(nt<TCAP*2){ setM(tmm,nt,x,g0+r*.75,y,0,r,r*1.6,r); nt++; } }
-    crownI.count=nc; pineI.count=np; trunkI.count=nt;
-    for(const m of [crownI,pineI,trunkI]){ m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
+    const n=KI.map(()=>0), tmm=trunkI.instanceMatrix.array; let nt=0;
+    for(let i=0;i<list.length;i+=4){ const x=list[i], y=list[i+1], r=list[i+2], g0=hAt(x,y), s=hash(x*10|0,y*10|0), k=list[i+3]<0?gardenKind(s):list[i+3], q=k>6?0:k;
+      if(n[q]>=KCAP[q]) continue; const m=KI[q], a=m.instanceMatrix.array, j=n[q]++, C=LEAF[k]; setC(m,j,C[(hash(y*10|0,x*10|0)*C.length)|0]);
+      // where the trunk goes, how tall and wide, and its colour
+      let th=0, tw=r, ty=0, tc="#7a5a3c";
+      if(q===0){ const cr=r*1.08; setM(a,j,x,g0+r*1.25+cr*.9,y,s*6,cr,cr*1.12,cr); th=r*1.6; ty=g0+r*.75; }
+      else if(q===1){ const h=r*3.4; setM(a,j,x,g0+r*.9+h/2,y,s*6,r*1.05,h,r*1.05); th=r*1.1; tw=r*.8; ty=g0+r*.5; }
+      else if(q===4){ const h=r*4.2; setM(a,j,x,g0+r*.7+h/2,y,s*6,r*.92,h,r*.92); th=r*1; tw=r*.75; ty=g0+r*.45; }
+      else if(q===2){ setM(a,j,x,g0+r*1.95,y,s*6,r*.95,r*1.1,r*.95); th=r*2.2; tw=r*.62; ty=g0+r*1.05; tc="#ebe7de"; }
+      else if(q===3){ setM(a,j,x,g0+r*.7+r*1.95,y,s*6,r*.72,r*1.7,r*.72); th=r*1.2; tw=r*.7; ty=g0+r*.55; }
+      else if(q===5) setM(a,j,x,g0+r*.3,y,s*6,r*.95,r*.95,r*.95);
+      else setM(a,j,x,g0-.1,y,s*6,r*.85,r*1.35,r*.85);
+      if(th&&nt<14000){ setM(tmm,nt,x,ty,y,0,tw,th,tw); setC(trunkI,nt,tc); nt++; } }
+    KI.forEach((m,i)=>{ m.count=n[i]; }); trunkI.count=nt;
+    for(const m of [...KI,trunkI]){ m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
   }
 
   // ----- street lights (Ultra): posts along the roads, and pools of warm light on the road at night -----
-  const LCAP=3000, poleMat=new T.MeshStandardMaterial({color:0x6c6f75,roughness:.55}), lampMat=new T.MeshBasicMaterial({color:0xd9dbe0});
+  const LCAP=4000, poleMat=new T.MeshStandardMaterial({color:0x6c6f75,roughness:.55}), lampMat=new T.MeshBasicMaterial({color:0xd9dbe0});
   const poleI=new T.InstancedMesh(new T.CylinderGeometry(.24,.32,1,6).translate(0,.5,0),poleMat,LCAP), armI=new T.InstancedMesh(new T.BoxGeometry(1,1,1).translate(.5,0,0),poleMat,LCAP), lampI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),lampMat,LCAP);
-  const poolTex=tex(128,128,(g,w,h)=>{ const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); gr.addColorStop(0,"rgba(255,214,150,.85)"); gr.addColorStop(.35,"rgba(255,190,120,.32)"); gr.addColorStop(1,"rgba(255,170,90,0)"); g.fillStyle=gr; g.fillRect(0,0,w,h); });
+  const poolTex=tex(128,128,(g,w,h)=>{ const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); gr.addColorStop(0,"rgba(255,226,170,1)"); gr.addColorStop(.3,"rgba(255,200,130,.45)"); gr.addColorStop(.65,"rgba(255,180,105,.12)"); gr.addColorStop(1,"rgba(255,170,90,0)"); g.fillStyle=gr; g.fillRect(0,0,w,h); });
   const poolMat=new T.MeshBasicMaterial({map:poolTex,transparent:true,blending:T.AdditiveBlending,depthWrite:false,fog:false,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-8});
   const poolI=new T.InstancedMesh(new T.PlaneGeometry(1,1).rotateX(-Math.PI/2),poolMat,LCAP);
   for(const m of [poleI,armI,lampI,poolI]){ m.count=0; m.frustumCulled=false; scene.add(m); } poleI.castShadow=armI.castShadow=true; poolI.renderOrder=1;
+  // the glow round each lamp, as one cloud of points
+  const glowTex=tex(64,64,(g,w,h)=>{ const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); gr.addColorStop(0,"rgba(255,250,236,1)"); gr.addColorStop(.14,"rgba(255,230,180,.85)"); gr.addColorStop(.4,"rgba(255,200,130,.22)"); gr.addColorStop(1,"rgba(255,180,100,0)"); g.fillStyle=gr; g.fillRect(0,0,w,h); });
+  const glowG=new T.BufferGeometry(); glowG.setAttribute("position",new T.BufferAttribute(new Float32Array(LCAP*3),3)); glowG.setDrawRange(0,0);
+  const glowM=new T.PointsMaterial({map:glowTex,size:26,transparent:true,depthWrite:false,blending:T.AdditiveBlending,fog:false}), glowP=new T.Points(glowG,glowM);
+  glowP.frustumCulled=false; glowP.renderOrder=4; scene.add(glowP);
   let lampKey3=null, lampReg=null;
   function streetLights(nk){
-    const on=ultra; for(const m of [poleI,armI,lampI]) m.visible=on; poolI.visible=on&&nk>.08;
+    const on=ultra; for(const m of [poleI,armI,lampI]) m.visible=on; poolI.visible=glowP.visible=on&&nk>.08;
     if(!on) return;
-    lampMat.color.set(nk>.12?"#fff1c8":"#d9dbe0"); poolMat.opacity=clamp((nk-.08)*2,0,1);
+    lampMat.color.set(nk>.12?"#fff6dc":"#d9dbe0"); poolMat.opacity=glowM.opacity=clamp((nk-.08)*2.2,0,1);
     const L=lamps(); if(L===lampKey3&&lampReg===reg) return; lampKey3=L; lampReg=reg;
-    let n=0; const pm=poleI.instanceMatrix.array, am=armI.instanceMatrix.array, hm=lampI.instanceMatrix.array, om=poolI.instanceMatrix.array;
+    let n=0; const pm=poleI.instanceMatrix.array, am=armI.instanceMatrix.array, hm=lampI.instanceMatrix.array, om=poolI.instanceMatrix.array, gp=glowG.attributes.position.array;
     for(const l of L){ if(n>=LCAP) break; if(reg&&(l.x<reg.x0-20||l.y<reg.y0-20||l.x>reg.x0+reg.S+20||l.y>reg.y0+reg.S+20)) continue;
-      if(l.hwy){ setM(pm,n,l.x,0,l.y,0,1,13,1); setM(am,n,l.x,13,l.y,0,0,0,0); setM(hm,n,l.x,13.2,l.y,0,2.2,.6,2.2); setM(om,n,l.x,.35,l.y,0,22,1,22); n++; continue; }
+      if(l.hwy){ setM(pm,n,l.x,0,l.y,0,1,13,1); setM(am,n,l.x,13,l.y,0,0,0,0); setM(hm,n,l.x,13.2,l.y,0,2.2,.6,2.2); setM(om,n,l.x,.35,l.y,0,30,1,30); gp.set([l.x,12.6,l.y],n*3); n++; continue; }
       const a=Math.atan2(l.ay,l.ax), hx=l.x+l.ax*3.4, hy=l.y+l.ay*3.4;
-      setM(pm,n,l.x,0,l.y,0,1,11,1); setM(am,n,l.x,10.8,l.y,a,3.6,.32,.32); setM(hm,n,hx,10.6,hy,a,1.8,.5,1.2); setM(om,n,hx,.35,hy,0,17,1,17); n++; }
+      setM(pm,n,l.x,0,l.y,0,1,11,1); setM(am,n,l.x,10.8,l.y,a,3.6,.32,.32); setM(hm,n,hx,10.6,hy,a,1.8,.5,1.2); setM(om,n,hx,.35,hy,0,25,1,25); gp.set([hx,10.1,hy],n*3); n++; }
     for(const m of [poleI,armI,lampI,poolI]){ m.count=n; m.instanceMatrix.needsUpdate=true; }
+    glowG.setDrawRange(0,n); glowG.attributes.position.needsUpdate=true;
   }
 
   // ----- ghosts: where a new building will go, as a see-through block -----
@@ -6423,6 +6625,8 @@ function v3init(T){
     dist=vh/(2*cam.z*Math.tan(camera.fov*Math.PI/360));
     const cp=Math.cos(v3pitch), sp=Math.sin(v3pitch); tgt.set(cam.x,0,cam.y);
     camera.position.set(cam.x+Math.sin(v3yaw)*cp*dist,sp*dist,cam.y+Math.cos(v3yaw)*cp*dist);
+    // never down inside a mountain, close up and looking low across one
+    const gh=hAt(camera.position.x,camera.position.z)+14; if(camera.position.y<gh) camera.position.y=gh;
     camera.near=Math.max(1,dist*.02); camera.far=dist*9; camera.lookAt(tgt); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
   }
   function pick(sx,sy){ ndc.set(sx/vw*2-1,-(sy/vh*2-1)); ray.setFromCamera(ndc,camera); const o=ray.ray.origin, d=ray.ray.direction;
@@ -6486,8 +6690,8 @@ function v3init(T){
   // parked cars and trees from all the cells, and the wild trees on the land under the picture
   function gather(){
     const P=[], tl=[], M=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
-    for(const tr of trees) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.pine?1:0);
-    for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],0);
+    for(const tr of trees) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.k);
+    for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],-1);
       for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } } }
     parkedList=P; treesSet(tl); modelsSet(M);
   }
@@ -6666,6 +6870,7 @@ function v3init(T){
     if(rainK>0){ top.lerp(C("#9aa3ad"),rainK*.6); hor.lerp(C("#c3c8cc"),rainK*.6); }
     if(dark){ top.lerp(C("#141b2b"),.75); hor.lerp(C("#2a3242"),.8); }
     const key=top.getHexString()+hor.getHexString(); if(key!==skyKey3){ skyKey3=key; cv3.style.background="linear-gradient(#"+top.getHexString()+",#"+hor.getHexString()+" 58%)"; }
+    wU.wsky.value.copy(hor).lerp(top,.45);
     scene.fog.color.copy(hor); scene.fog.near=dist*(1.6-rainK*.6); scene.fog.far=dist*(3.6-rainK*1.4);
     const day=1-nk;
     sun.intensity=(2.6*day+.15)*(1-rainK*.55); sun.color.set(nk>.5?"#9db4ff":dk>.05?"#ffc89a":"#fff1dc");
@@ -6693,7 +6898,7 @@ function v3init(T){
     const rebuilt=batchDirty; if(batchDirty) rebuildBatches();
     decks();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
-    sky(nk,dk);
+    sky(nk,dk); wU.wt.value=now/1000;
     ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
     // the shadows follow the camera; when it's still they're drawn every other frame for the moving cars
     const ck=camera.position.x.toFixed(1)+camera.position.y.toFixed(1)+camera.position.z.toFixed(1);
@@ -6702,7 +6907,7 @@ function v3init(T){
   }
   return {R,sync,pick,project,render,hAt,
     top:b=>{ const e=bcache.get(b); return e?e.top:0; },
-    stats:()=>({blds:bcache.size,batches:Object.keys(batches).length,trees:crownI.count+pineI.count,cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
+    stats:()=>({blds:bcache.size,batches:Object.keys(batches).length,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
     dbg:()=>{ const nd=need(); return {nd,core:core(front,nd),ox:front.ox,oy:front.oy,S:front.S,CW:front.CW,todo:front.todo.length,cov:covers(front,core(front,nd))}; }};
 }
 
