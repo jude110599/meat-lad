@@ -4942,8 +4942,10 @@ function mtPic(){
   const rgb=s=>{ const n=parseInt(s.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }, al=rgb(B.alp), rk=B.rock.map(rgb), mb=rgb(B.base);
   const ca=.64, sa=.77, tn=1.2;                 // the sun 50 degrees up
   const hz=(i,j)=>Math.max(0,H[clamp(j,0,h-1)*w+clamp(i,0,w-1)]);
-  for(let j=1;j<h-1;j++) for(let i=1;i<w-1;i++){ const k=j*w+i, e=H[k], e0=Math.max(e,0);
-    let occ=0; for(let s=2;s<=24;s+=s<8?2:4){ const q=hz(Math.round(i+LDX*s),Math.round(j+LDY*s)); if(q>e0) occ=Math.max(occ,clamp(((q-e0)*Z-s*tn)*.4,0,1)); }
+  for(let j=1;j<h-1;j++) for(let i=1;i<w-1;i++){ const k=j*w+i, e=H[k]; if(e===-1) continue;   // far below the hills: nothing to paint
+    const e0=Math.max(e,0);
+    let occ=0; for(let s=2;s<=10;s+=2){   // no peak is tall enough to throw a shadow further
+      const q=hz(Math.round(i+LDX*s),Math.round(j+LDY*s)); if(q>e0) occ=Math.max(occ,clamp(((q-e0)*Z-s*tn)*.4,0,1)); }
     if(e<-.012){ if(occ>0) d[k*4+3]=Math.round(occ*(dark?54:28)); continue; }
     const gx=(hz(i+1,j)-hz(i-1,j))*Z/2, gy=(hz(i,j+1)-hz(i,j-1))*Z/2, sl=Math.hypot(gx,gy), x=TX0+i*R, y=TY0+j*R;
     const lt=clamp((-gx*LDX*ca-gy*LDY*ca+sa)/(Math.sqrt(gx*gx+gy*gy+1)*sa),.6,1.16)*(1-.28*occ);
@@ -4971,7 +4973,7 @@ function drawFacets(){
       let n0=uy*wz-uz*wy, n1=uz*wx-ux*wz, n2=ux*wy-uy*wx; if(n2<0){ n0=-n0; n1=-n1; n2=-n2; } const nl=Math.hypot(n0,n1,n2)||1;
       const cx=(vx[a]+vx[b]+vx[c])/3, cy=(vy[a]+vy[b]+vy[c])/3, m=(ha+hb2+hc)/3, sl=Math.hypot(n0,n1)/n2;
       // the shadow of the land between here and the sun
-      let occ=0; for(let s=8;s<=96;s+=s<32?8:16){ const q=hb(cx+LDX*s,cy+LDY*s); if(q>m) occ=Math.max(occ,clamp(((q-m)*Z-s*1.2)*.12,0,1)); }
+      let occ=0; for(let s=8;s<=48;s+=s<32?8:16){ const q=hb(cx+LDX*s,cy+LDY*s); if(q>m) occ=Math.max(occ,clamp(((q-m)*Z-s*1.2)*.12,0,1)); }
       const lt=clamp((n0*LDX*ca+n1*LDY*ca+n2*sa)/(nl*sa),.5,1.2)*(1-.28*occ);
       const zone=m<.035?4:m<.2+(fbm(cx/40+3,cy/40+1,2)-.5)*.16&&sl<1.1?0:m<.42?1:m<.75?2:3, mot=Math.min(2,fbm(cx/16+7,cy/16+5,2)*3|0), sh=clamp(Math.round((lt-.42)/.055),0,15);
       const key=zone*100+mot*20+sh, q=Math.floor(cx/FCQ)+","+Math.floor(cy/FCQ); let Q=G.get(q); if(!Q) G.set(q,Q=new Map()); let P=Q.get(key); if(!P) Q.set(key,P=new Path2D()); K.add(key);
