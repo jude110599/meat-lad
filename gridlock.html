@@ -92,6 +92,13 @@ body:not(.touch) .tool[data-tool="pan"]{display:none}
 #buildBar .dm{width:4px;height:16px;border-radius:2px;background:rgba(0,0,0,.1);display:flex;align-items:flex-end;overflow:hidden}
 #buildBar .dm s{display:block;width:100%;height:0;background:#2f9e55;transition:height .6s}
 #buildBar .zs{display:none}
+#buildBar .cnt{display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:9px;background:#faf9f6;border:1.5px solid #dcd9d1;font-size:11.5px;font-weight:700;color:var(--soft)}
+#buildBar .cnt input{width:130px;accent-color:#2f9e55}
+#buildBar .cnt small{font-size:10px;font-weight:600;opacity:.7}
+#buildBar .cnt b{min-width:22px;text-align:right;font-size:12px;color:var(--ink)}
+@media (max-width:440px){#buildBar .cnt input{width:84px}#buildBar .cnt{padding:0 5px;gap:4px}}
+body.dark #buildBar .cnt{background:#2b2f36;border-color:#40454f}
+#buildBar .zcap{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);opacity:.8;padding:0 1px 0 4px;white-space:nowrap}
 #buildBar .br{flex-basis:100%;height:0}
 #buildBar button.chip{height:28px;font-size:11.5px;border:1.5px solid #dcd9d1;background:#faf9f6}
 #buildBar button.chip.go{background:#2f9e55;border-color:#2f9e55;color:#fff;font-weight:700}
@@ -99,7 +106,7 @@ body:not(.touch) .tool[data-tool="pan"]{display:none}
 #buildBar button.poor{opacity:.45}
 #buildBar .st{font-size:11.5px;font-weight:600;color:var(--soft);display:flex;align-items:center;gap:8px;padding:0 4px;white-space:nowrap}
 #buildBar .st .low{color:var(--bad)}
-@media (max-width:440px){#buildBar .zl{display:none}#buildBar .zs{display:inline}}
+@media (max-width:440px){#buildBar .zl,#buildBar .zcap{display:none}#buildBar .zs{display:inline}}
 #scoreN.neg{color:#d0392b}
 @media (max-width:480px){ body.city #popPill{display:flex} body.city #weekPill{display:none} body.city #scoreL{display:none} }
 #buildBar .none{font-size:12.5px;color:var(--soft);padding:8px 10px;white-space:nowrap}
@@ -422,7 +429,7 @@ body.dark .ov{background:rgba(14,15,18,.74)}
     <div class="gfx"><span>Theme<small>Dark mode turns the map and the menus dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 7.2</div>
+    <div class="small">Version 7.4</div>
     <button class="lnk" data-log>What's new</button>
   </div>
 </div>
@@ -437,7 +444,7 @@ body.dark .ov{background:rgba(14,15,18,.74)}
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the map and the menus dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 7.2</div>
+    <div class="small">Version 7.4</div>
     <button class="lnk" data-log>What's new</button>
   </div>
 </div>
@@ -564,6 +571,13 @@ const MAKERS=new Set(["factory","plant"]);
 const isHome=b=>!!BT[b.type].home;
 const capOf=(b,k)=>(b.cap||BT[b.type].cap)[k]||0;
 const PINC={cust:"#3d7fe0",work:"#8a60d0",goods:"#a8743a",raw:"#5f6670",parts:"#1f8f83"};
+// the City builder's houses: real roofing (asphalt shingles, slate, clay tiles, weathered wood), nothing bright
+const HOUSE_ROOFS=["#5d6066","#6e7178","#4a4f57","#7a5b4c","#8e5a44","#a65f45","#b7714f","#6b6159","#58636e","#8a8279"];
+// and its businesses: grey membrane, gravel, ribbed metal and glass, with a splash of colour on the awnings
+const REAL_COLS={shop:["#c9c5bc","#b9b5ab","#d2ccc0","#aeb2b6"],mall:["#d0ccc3","#c2c0ba"],office:["#8e9ba8","#9aa4ad","#7f8c98","#a6a29a","#8b9590"],
+  factory:["#9ea3a8","#8f979d","#a6a49c","#879093"],warehouse:["#b5b1a6","#a8adb0","#bfb8a6"],plant:["#a2b0ae","#aab4b8"],datacenter:["#b6bcc2","#a9b0b6"]};
+const AWNINGS=["#c9493b","#2f6fae","#2f8a57","#d08a1f","#7a4b8c"];
+function realPal(type){ const c=pick(REAL_COLS[type]); return {col:c,dark:shade(c,-42),light:shade(c,30),awn:pick(AWNINGS)}; }
 const BIGHOUSE_COLS=["#3c8a3e","#347c3b","#45914a","#2f7a48"], APT_COLS=["#2f6e3d","#2b6438","#376f42","#2d6a4a"];
 
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -598,6 +612,8 @@ function projSeg(px,py,ax,ay,bx,by){ const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy||1e-
   const x=ax+dx*t,y=ay+dy*t; return {t,x,y,d:Math.hypot(px-x,py-y)}; }
 // how far a road centreline a→c passes from a building's footprint (0 if it runs through it)
 function footD(b,a,c){
+  // a beach: whether the road runs over the sand
+  if(b.sand){ const n=Math.max(1,Math.ceil(Math.hypot(c.x-a.x,c.y-a.y)/3)); for(let i=0;i<=n;i++) if(inSand(b,a.x+(c.x-a.x)*i/n,a.y+(c.y-a.y)*i/n,4)) return 0; return 99; }
   const fx=Math.cos(b.ang), fy=Math.sin(b.ang);
   const loc=(p)=>{ const dx=p.x-b.x, dy=p.y-b.y; return {u:-dx*fy+dy*fx,v:dx*fx+dy*fy}; };
   const A=loc(a), C=loc(c), hu=b.w/2+(b.big?5:0), hv=b.d/2, du=C.u-A.u, dv=C.v-A.v;
@@ -609,6 +625,28 @@ function footD(b,a,c){
   for(const k of [[hu,hv],[hu,-hv],[-hu,hv],[-hu,-hv]]) m=Math.min(m,projSeg(k[0],k[1],A.u,A.v,C.u,C.v).d);
   return m;
 }
+// a building's footprint as it's drawn, for what it bumps into: its walls, a house's garage wing and the pool out back
+function footRect(b){
+  if(b.type!=="house"||!(b.big||b.pool||b.shed||b.ell)) return {x:b.x,y:b.y,ang:b.ang,w:b.w,d:b.d};
+  const u0=-b.w/2-(b.big?9.6:0), u1=b.w/2, v0=-b.d/2-(b.pool||b.shed?12:b.ell?4:0), v1=b.d/2, u=(u0+u1)/2, v=(v0+v1)/2, fx=Math.cos(b.ang), fy=Math.sin(b.ang);
+  return {x:b.x+fy*u+fx*v,y:b.y-fx*u+fy*v,ang:b.ang,w:u1-u0,d:v1-v0};
+}
+// do two footprints overlap, with a gap of pad kept between them
+function rectHit(A,B,pad){
+  const P=rectPoly(A.x,A.y,A.ang,A.w+2*pad,A.d+2*pad), Q=rectPoly(B.x,B.y,B.ang,B.w,B.d);
+  for(const a of [A.ang,A.ang+Math.PI/2,B.ang,B.ang+Math.PI/2]){ const nx=Math.cos(a), ny=Math.sin(a); let p0=1e9, p1=-1e9, q0=1e9, q1=-1e9;
+    for(const p of P){ const v=p.x*nx+p.y*ny; if(v<p0) p0=v; if(v>p1) p1=v; }
+    for(const q of Q){ const v=q.x*nx+q.y*ny; if(v<q0) q0=v; if(v>q1) q1=v; }
+    if(p1<=q0||q1<=p0) return false; }
+  return true; }
+// is a point inside a footprint, or within pad of it
+function inRect(F,x,y,pad){ const fx=Math.cos(F.ang), fy=Math.sin(F.ang), dx=x-F.x, dy=y-F.y;
+  return Math.abs(dx*fy-dy*fx)<F.w/2+pad&&Math.abs(dx*fx+dy*fy)<F.d/2+pad; }
+// does a building's footprint (or a beach's sand) overlap footprint F
+const bldHit=(b,F,pad)=>b.sand?sandHit(b,F,pad):rectHit(F,footRect(b),pad);
+// the trees a new building stands on come down; the ones round its edge stay
+function clearTrees(b){ const F=b.sand?null:footRect(b);
+  for(const tr of treesIn(b.x-b.r-10,b.y-b.r-10,b.x+b.r+10,b.y+b.r+10)) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r&&(F?inRect(F,tr.x,tr.y,tr.r*.6):inSand(b,tr.x,tr.y,tr.r*.6))) fell(tr); }
 function segInter(p1,p2,p3,p4){ const d1x=p2.x-p1.x,d1y=p2.y-p1.y,d2x=p4.x-p3.x,d2y=p4.y-p3.y, den=d1x*d2y-d1y*d2x;
   if(Math.abs(den)<1e-9)return null; const t=((p3.x-p1.x)*d2y-(p3.y-p1.y)*d2x)/den, u=((p3.x-p1.x)*d1y-(p3.y-p1.y)*d1x)/den;
   if(t<=1e-6||t>=1-1e-6||u<=1e-6||u>=1-1e-6)return null; return {t,u,x:p1.x+d1x*t,y:p1.y+d1y*t}; }
@@ -625,13 +663,16 @@ function mapSize(big){ MW=big?6400:2600; MH=big?4480:1820; MAPK=MW*MH/(2000*1400
 mapSize(false);
 const WATER=.37, HILL=.62;
 const sst=(a,b,x)=>{ const u=clamp((x-a)/(b-a),0,1); return u*u*(3-2*u); };
+// the land is all green: a meadow, drier and lusher patches on it (sand and grass), the darker floor of the woods, wet
+// grass and a muddy edge where it meets the water, and the mountains going up from alpine grass to bare rock (low,
+// middle and high), with no snow
 const BIOMES=[
-  {base:"#ebe9e1",sand:["#efe6cf","#e8dbbb"],beach:"#eee4c9",grass:["#d6e7b4","#c6de9c"],sandT:.64,grassT:.55,hills:3,
-   hill:["#d3d1c9","#acaaa4","#9a9892","#888680","#76746f","#6c6a64","#b4b2ac","#f3f4f1"],lite:["","#c3c1bb","#b1afa9","#9f9d97","#8d8b85","#7f7d77","#c9c7c1","#ffffff"]},
-  {base:"#ece9df",sand:["#eee2c4","#e6d3a8"],beach:"#ede0bf",grass:["#d9e6b6","#cddfa2"],sandT:.55,grassT:.62,hills:4,
-   hill:["#d6c6a4","#ad9161","#9b7f51","#887044","#755f37","#6a5532","#b8a68a","#f1ede4"],lite:["","#c1a878","#b09466","#9d8357","#8a714a","#7c6741","#cbbba0","#ffffff"]},
-  {base:"#eaebe2",sand:["#efe8d2","#e9dfc2"],beach:"#ede6cd",grass:["#d0e6ab","#bfdb92"],sandT:.7,grassT:.54,hills:2,
-   hill:["#cdd3bf","#a6ad98","#959c87","#848b77","#737a67","#676d5c","#b0b5a8","#f2f4ef"],lite:["","#b9c0aa","#a8af9a","#979e89","#868d79","#787e6c","#c5cabd","#ffffff"]}
+  {base:"#97c46c",sand:["#a3c86f","#aecb75"],grass:["#8cbd63","#81b55b"],wood:"#699a4a",lush:"#7db45b",mud:"#7f8156",sandT:.64,grassT:.55,hills:3,
+   alp:"#89aa62",rock:["#7d786c","#8e8a80","#a09d95"]},
+  {base:"#9dc56b",sand:["#aac970","#b5cc76"],grass:["#91bf62","#86b75a"],wood:"#6e9b49",lush:"#81b45a",mud:"#857f55",sandT:.55,grassT:.62,hills:4,
+   alp:"#93ab5f",rock:["#83705a","#95836c","#a69780"]},
+  {base:"#8fc36b",sand:["#9bc76f","#a6ca74"],grass:["#84be63","#79b65b"],wood:"#64994b",lush:"#75b15b",mud:"#7c835c",sandT:.7,grassT:.54,hills:2,
+   alp:"#84ad67",rock:["#767b72","#888d85","#9b9f98"]}
 ];
 function makeNoise(){
   const P=new Uint8Array(512), V=new Float32Array(256);
@@ -698,10 +739,11 @@ function loopTo(P,p){ const n=p.length>>1;
 function inBox(P,x0,y0,x1,y1){ const q=new Path2D();
   for(const o of P.loops) if(o.x1>=x0&&o.y1>=y0&&o.x0<=x1&&o.y0<=y1){ if(!o.P){ o.P=new Path2D(); loopTo(o.P,o.p); } q.addPath(o.P); }
   return q; }
+// Everything else reads (and anything drawn once and kept, like the meadow's flowers, is kept on) the map's own
 function terrIn(x0,y0,x1,y1){
-  const T=terrain, sub=v=>v instanceof Path2D?(v.loops?inBox(v,x0,y0,x1,y1):v):Array.isArray(v)&&v[0] instanceof Path2D?v.map(sub):v, o={};
-  for(const k in T) o[k]=sub(T[k]);
-  return o; }
+  const T=terrain, sub=v=>v instanceof Path2D?(v.loops?inBox(v,x0,y0,x1,y1):v):Array.isArray(v)&&v[0] instanceof Path2D?v.map(sub):v, o=Object.create(null);
+  for(const k in T){ const v=sub(T[k]); if(v!==T[k]) o[k]=v; }
+  return new Proxy(T,{get:(t,k)=>k in o?o[k]:t[k]}); }
 function genMap(){
   const fbm=makeNoise(), cx=MW/2, cy=MH/2, N=TNX*TNY; let rivV=false;
   biome=pick(BIOMES);
@@ -763,9 +805,9 @@ function genMap(){
   terrain={
     sand:[contourPath(Sf,biome.sandT),contourPath(Sf,biome.sandT+.05)],
     grass:[contourPath(Gf,biome.grassT),contourPath(Gf,biome.grassT+.05)],
-    beach:contourPath(Wf,.2), water:contourPath(Wf,WATER), water2:contourPath(Wf,.6), water3:contourPath(Wf,1.05),
-    hills:[HILL-.035,HILL,HILL+.05,HILL+.1,HILL+.16,HILL+.26,HILL+.44,HILL+.52].map(v=>contourPath(Hf,v)),
-    F:{W:Wf,H:Hf,G:Gf}
+    // the shore, then the water getting deeper out from it a step at a time
+    water:contourPath(Wf,WATER), deep:[.45,.58,.76,1].map(v=>contourPath(Wf,v)),
+    F:{W:Wf,H:Hf,G:Gf}, fbm
   };
   // woods: a few big stands of trees out from the middle, with darker ground under them
   const Ff=new Float32Array(N), woods=Math.round((4+(Math.random()*3|0))*MAPK*.7);
@@ -788,7 +830,47 @@ function genMap(){
     if(Math.random()>p) continue;
     trees.push({x,y,r:fo>.42?rnd(6,10):rnd(4.5,8.5),alive:true,s:fo>.42?Math.random()*.75:Math.random(),pine:h>HILL-.11&&Math.random()<.6});
   }
+  // From here on the land only gets its looks, from a fixed scatter (hash) rather than the game's own dice, so the
+  // game plays out just as it would have.
+  // What kind each tree is (TK): pines and firs at the foot of the hills, the woods mostly broadleaf with firs and
+  // birches among them, birches by the water, and a mix out on the meadows
+  for(const tr of trees){ const s=hash(tr.x*10|0,tr.y*10|0), fo=at(Ff,tr.x,tr.y);
+    tr.k=tr.pine?(s<.55?1:4):fo>.42?(s<.62?0:s<.84?4:2):at(Wf,tr.x,tr.y)>.12?(s<.45?2:s<.6?3:0):s<.56?0:s<.74?2:s<.88?3:4; }
+  // the woods filled in, so they read as woods rather than as a park
+  for(let i=0;i<2600*MAPK;i++){ const x=hash(i,91)*MW, y=hash(i,92)*MH, fo=at(Ff,x,y), s=hash(i,93);
+    if(fo<.5||at(Hf,x,y)>HILL-.04||at(Wf,x,y)>.2||isWater(x,y)||isHill(x,y)||Math.hypot(x-cx,y-cy)<150) continue;
+    trees.push({x,y,r:6+hash(i,94)*4,alive:true,s:s*.75,pine:false,k:s<.6?0:s<.85?4:2}); }
+  // bushes round the edges of the woods and dotted over the grass, and stands of reeds along the shore
+  for(let i=0;i<9000*MAPK;i++){ const x=10+hash(i,81)*(MW-20), y=10+hash(i,82)*(MH-20), fo=at(Ff,x,y), r=hash(i,83);
+    if(at(Wf,x,y)>.22||at(Hf,x,y)>HILL-.04||isWater(x,y)||isHill(x,y)||Math.hypot(x-cx,y-cy)<150) continue;
+    if(r<(fo>.3&&fo<.55?.4:fo>=.55?.08:at(Gf,x,y)>biome.grassT?.08:.04)) trees.push({x,y,r:2.4+hash(i,84)*2.4,alive:true,s:hash(i,85),pine:false,k:5}); }
+  for(let i=0;i<90000*MAPK;i++){ const x=10+hash(i,86)*(MW-20), y=10+hash(i,87)*(MH-20), w=at(Wf,x,y);
+    if(w<WATER-.1||w>WATER+.06||hash(i,88)>.5||fbm(x/45+9,y/45+4,1)<.42||at(Hf,x,y)>HILL-.1) continue;
+    trees.push({x,y,r:2.2+hash(i,89)*1.8,alive:true,s:hash(i,90),pine:false,k:6}); }
+  // the mountains as they look: above the hill line the land climbs in ridges to rocky peaks (a ridge wherever the
+  // noise crosses its middle). Below the line it's how far below. Where you can build still goes by the hill line
+  const MR=4, mw=Math.ceil((MW+600)/MR)+1, mh=Math.ceil((MH+600)/MR)+1, Mh=new Float32Array(mw*mh).fill(-1);
+  const Hb=(x,y)=>{ const gx=clamp((x-TX0)/TG,0,TNX-1.001), gy=clamp((y-TY0)/TG,0,TNY-1.001), i=gx|0, j=gy|0, fx=gx-i, fy=gy-j, k=j*TNX+i;
+    return (Hf[k]*(1-fx)+Hf[k+1]*fx)*(1-fy)+(Hf[k+TNX]*(1-fx)+Hf[k+TNX+1]*fx)*fy; };
+  for(let j=0;j<mh;j++) for(let i=0;i<mw;i++){ const x=TX0+i*MR, y=TY0+j*MR, e=Hb(x,y)-HILL; if(e<-.06) continue;
+    if(e<=0){ Mh[j*mw+i]=e; continue; }
+    let c=0, a=1, f=1/220; for(let o=0;o<4;o++){ const n=1-Math.abs(2*fbm(x*f+o*7.3+40,y*f+o*3.1+70,1)-1); c+=n*n*a; a*=.45; f*=2.2; } c/=1.69;
+    Mh[j*mw+i]=Math.pow(e,.85)*(.5+.8*c)+.6*Math.pow(e,1.5)*c*c; }
+  terrain.mt={R:MR,w:mw,h:mh,H:Mh};
   tver++;
+}
+// how wet a spot is, smoothly: the field the shores are traced from, WATER and up being water
+function wetAt(x,y){ const F=terrain.F.W, i=(x-TX0)/TG, j=(y-TY0)/TG, i0=clamp(Math.floor(i),0,TNX-2), j0=clamp(Math.floor(j),0,TNY-2), u=clamp(i-i0,0,1), v=clamp(j-j0,0,1), k=j0*TNX+i0;
+  return F[k]*(1-u)*(1-v)+F[k+1]*u*(1-v)+F[k+TNX]*(1-u)*v+F[k+TNX+1]*u*v; }
+// the nearest point on the shore of a lake or river within R, and the way inland from it
+function shoreAt(w,R){
+  const wet0=wetAt(w.x,w.y)>WATER, flip=(x,y)=>(wetAt(x,y)>WATER)!==wet0; let best=null, bd=R;
+  for(let k=0;k<32;k++){ const cx=Math.cos(k*Math.PI/16), cy=Math.sin(k*Math.PI/16);
+    for(let r=2;r<bd;r+=3) if(flip(w.x+cx*r,w.y+cy*r)){ let lo=r-3, hi=r; for(let q=0;q<5;q++){ const m=(lo+hi)/2; if(flip(w.x+cx*m,w.y+cy*m)) hi=m; else lo=m; }
+      if(hi<bd){ bd=hi; best={x:w.x+cx*hi,y:w.y+cy*hi}; } break; } }
+  if(!best) return null;
+  const e=3, gx=wetAt(best.x+e,best.y)-wetAt(best.x-e,best.y), gy=wetAt(best.x,best.y+e)-wetAt(best.x,best.y-e), gl=Math.hypot(gx,gy)||1;
+  return {x:best.x,y:best.y,nx:-gx/gl,ny:-gy/gl};
 }
 function isWater(x,y){ if(x<0||y<0||x>=MW||y>=MH)return false; return waterGrid[Math.floor(y/WG)*Math.ceil(MW/WG)+Math.floor(x/WG)]===1; }
 function isHill(x,y){ if(x<0||y<0||x>=MW||y>=MH)return false; return hillGrid[Math.floor(y/WG)*Math.ceil(MW/WG)+Math.floor(x/WG)]===1; }
@@ -1756,9 +1838,10 @@ function placeWhy(x,y,r,type,ignore,ang){
     for(const f of [0,T.d/2-3]) for(const q of [-T.w/2+3,0,T.w/2-3]){ const px=x+ca*f-sa*q, py=y+sa*f+ca*q; if(isHill(px,py)||(f>0&&isWater(px,py))) return "land"; } }
   else if(isWater(x,y)||isHill(x,y)) return "land";
   else for(let k=0;k<8;k++){ const a=k*Math.PI/4, px=x+Math.cos(a)*r*.8, py=y+Math.sin(a)*r*.8; if(isWater(px,py)||isHill(px,py)) return "land"; }
-  if(SHORE.has(type)&&ang!==undefined){ const bk=BT[type].d/2+12, bx=x-Math.cos(ang)*bk, by=y-Math.sin(ang)*bk; if(!isWater(bx,by)) return "nowater"; }
-  for(const b of blds) if(b!==ignore&&Math.hypot(b.x-x,b.y-y)<b.r+r+2) return "bld";
+  if(SHORE.has(type)&&ang!==undefined){ const bk=BT[type].d/2+12, ca=Math.cos(ang), sa=Math.sin(ang), wet=k=>isWater(x-ca*k,y-sa*k)||!!terrain&&wetAt(x-ca*k,y-sa*k)>WATER;
+    if(!wet(bk)&&!wet(bk+8)) return "nowater"; }
   const T=BT[type], fp=ang===undefined?null:{x,y,ang,w:T.w,d:T.d};
+  for(const b of blds) if(b!==ignore&&Math.hypot(b.x-x,b.y-y)<b.r+r+(b.pool||b.shed?14:2)&&(fp?bldHit(b,fp,2):Math.hypot(b.x-x,b.y-y)<b.r+r+2)) return "bld";
   for(const s of segs.values()){ const A=nodes.get(s.a),B=nodes.get(s.b); if(fp?footD(fp,A,B)<segHW(s)+3:projSeg(x,y,A.x,A.y,B.x,B.y).d<segHW(s)+r*.8) return "road"; }
   // nobody wants to live in the factory smoke, or right beside a highway
   if(BT[type].home){
@@ -1772,14 +1855,14 @@ function placeWhy(x,y,r,type,ignore,ang){
 const canPlace=(x,y,r,type,ignore)=>!placeWhy(x,y,r,type,ignore);
 function addBld(b){
   blds.push(b);
-  for(const tr of treesIn(b.x-b.r-10,b.y-b.r-10,b.x+b.r+10,b.y+b.r+10)) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r) fell(tr);
+  clearTrees(b);
   const nCars=b.nCars!==undefined?b.nCars:b.type==="house"?(b.big?2:1):b.type==="bighouse"?4:b.type==="apts"?10+(Math.random()*6|0):0;
   for(let i=0;i<nCars;i++){ const c=newCar(b,false); c.cool=rnd(.5,3+i*.6); b.cars.push(c); cars.push(c); }
   if(b.type==="factory"||b.type==="warehouse"||b.type==="plant"){ for(let i=0;i<(b.type==="plant"?2:3);i++){ const c=newCar(b,true); b.cars.push(c); cars.push(c); } }
   if(SVC[b.type]&&SVC[b.type].cars) for(let i=0;i<SVC[b.type].cars;i++){ const c=svcCar(b,b.type); b.cars.push(c); cars.push(c); }
   // its drive is part of the road picture, drawn again once before the next frame however many go up
   b.acc=findAccess(b); if(b.acc) roadLate=true; tver++;
-  effects.push({k:"ring",x:b.x,y:b.y,c:BT[b.type].col,t:0,life:b.type==="house"?.6:1.3,r:b.r});
+  if(!b.sand) effects.push({k:"ring",x:b.x,y:b.y,c:BT[b.type].col,t:0,life:b.type==="house"?.6:1.3,r:b.r});
   return b;
 }
 const homes=()=>blds.filter(isHome);
@@ -2158,6 +2241,9 @@ const SIZE=type=>BT[type];
 // where a building would go if you let go here: it snaps beside the nearest road, facing it
 function ghostAt(type,w,ignore){
   const H=type==="house", T=SIZE(type), R=snapR();
+  // a pump or a marina goes on the nearest shore, its back to the water, whichever way the shore runs
+  if(SHORE.has(type)&&terrain){ const S=shoreAt(w,90+R); if(S){ const off=T.d/2+4, x=S.x+S.nx*off, y=S.y+S.ny*off, ang=Math.atan2(S.ny,S.nx), why=placeWhy(x,y,T.r,type,ignore,ang);
+    return {type,x,y,ang,r:T.r,w:T.w,d:T.d,snapped:true,ok:!why,why}; } }
   let best=null, bd=1e9;
   for(const sg of segs.values()){ if(sg.over) continue; const A=nodes.get(sg.a), B=nodes.get(sg.b), p=projSeg(w.x,w.y,A.x,A.y,B.x,B.y);
     if(!sg.hwy&&p.d<segHW(sg)+T.d/2+14+R&&p.d<bd){ bd=p.d; best={sg,p}; } }
@@ -2194,7 +2280,9 @@ function placeGhost(g){
 }
 function afterPlace(type){
   if(PLACE_HINT[type]) setHint(PLACE_HINT[type],4);
-  if(SVC[type]&&city) setHint(SVC[type].done.replace(" built."," is going up."),5);
+  if(SVC[type]&&city){ const b=blds[blds.length-1];
+    // on the shore it may be a way from any road: say so, as nobody can get there until one reaches its front
+    setHint(b&&b.type===type&&!b.acc?"The "+SVC[type].name.toLowerCase()+" is going up. Run a road up to its front so people can get there.":SVC[type].done.replace(" built."," is going up."),5); }
   if(tray[type]<=0&&!SVC[type]) placeSel=TYPES.find(q=>tray[q]>0)||null;
   if(city&&!placeSel&&!zoneSel) zoneSel="res";
   updateUI();
@@ -2222,15 +2310,14 @@ function lineAt(type,path){
 // the building under a point, if any
 function bldUnder(w,pad){
   let best=null, bd=1e9;
-  for(const b of blds){ const th=b.ang-Math.PI/2, c=Math.cos(th), s=Math.sin(th), dx=w.x-b.x, dy=w.y-b.y;
-    const lx=dx*c+dy*s, ly=-dx*s+dy*c, p=pad||0;
-    if(Math.abs(lx)<b.w/2+p+(b.big?9:0)&&Math.abs(ly)<b.d/2+p){ const d=Math.hypot(dx,dy); if(d<bd){ bd=d; best=b; } } }
+  for(const b of blds){ const d=Math.hypot(w.x-b.x,w.y-b.y); if(d>b.r+(pad||0)+14||d>=bd) continue;
+    if(b.sand?inSand(b,w.x,w.y,pad||0):inRect(footRect(b),w.x,w.y,pad||0)){ bd=d; best=b; } }
   return best;
 }
 function moveBld(b,g){
   b.x=g.x; b.y=g.y; b.ang=g.ang; b.fx=b.f0x=Math.cos(g.ang); b.fy=b.f0y=Math.sin(g.ang);
   b.door={x:b.x+b.fx*b.d/2,y:b.y+b.fy*b.d/2}; b.born=t-.15; b.grow=animT-.15; b.roof=null;
-  for(const tr of treesIn(b.x-b.r-10,b.y-b.r-10,b.x+b.r+10,b.y+b.r+10)) if(tr.alive&&Math.hypot(tr.x-b.x,tr.y-b.y)<b.r+tr.r) fell(tr);
+  clearTrees(b);
   b.acc=findAccess(b);
   for(const c of b.cars) if(c.state==="home"){ c.x=b.door.x; c.y=b.door.y; }
   // anyone on their way there finds the new way in
@@ -2248,7 +2335,7 @@ function deleteBld(b,force){
   for(const c of cars){ if(c.purpose&&c.purpose.d===b){ c.purpose=null; if(c.state==="drive") reanchor(c); }
     else if(c.purpose&&c.purpose.lot===b){ c.purpose.lot=null; if(c.state==="drive") reanchor(c); }
     if(c.at===b) c.at=null; if(c.walk===b) c.walk=null; }
-  effects.push({k:"puff",x:b.x,y:b.y,t:0,life:.8,big:b.r});
+  effects.push({k:"puff",x:b.x,y:b.y,t:0,life:.8,big:Math.min(b.r,40)});
   buildRoadCache(); tver++; updateUI();
   return true;
 }
@@ -2291,7 +2378,7 @@ function craneAt(b){
   return {x:p.x,y:p.y,a:a0+Math.sin(t*.3+b.id)*.8,L,hook:L*(.5+.3*Math.sin(t*.45+b.id*2)),f:clamp((workK(b)-.32)/.51,0,1)};
 }
 const SITE_L={dirt:"#c9ad84",edge:"#a88a61",track:"rgba(112,86,54,.32)",slab:"#d4d0c7",slabE:"#a6a196",post:"#7f7a70",ply:"#e2cfa6",wood:"#dcb47c",woodE:"#a5793f",scaf:"#8f969d",board:"#c99e62",peg:"#e2742a"};
-function drawBld(b){ if(b.cons) drawSite(b); else if(isHome(b)) drawHome(b); else drawDest(b); }
+function drawBld(b){ if(rec3d) rec3d.cur=b; if(b.cons) drawSite(b); else if(isHome(b)) drawHome(b); else drawDest(b); }
 function drawSite(b){
   const W=b.cons, k=workK(b), st=workStage(b), fp=footprint(b), B=siteBox(b), wood=PITCH3.has(b.type), m=3.5, th=b.ang-Math.PI/2;
   const local=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); };
@@ -2496,17 +2583,19 @@ function levelUp(){
 // itself: homes turn up when there are jobs and shops to go to, and shops, offices and industry turn up when there
 // are people. Roads, roundabouts, lights and bridges cost money, and the town pays taxes at the end of every month.
 // A business nobody can get to closes down and its lot waits to grow again, instead of the game ending.
-let city=false, zoneSel="res", lots=[], lotId=1, zoneGhosts=null, zpts=null, zKey="", zT=0, zMs=0, viewZ=0, cityD={res:0,dense:0,com:0,off:0,ind:0,mixed:0};
+let city=false, zoneSel="res", lots=[], lotId=1, zoneGhosts=null, zpts=null, zKey="", zT=0, zMs=0, viewZ=0, cityD={res:0,dense:0,high:0,com:0,off:0,ind:0,mixed:0};
 let closedN=0, closeHintT=-99, growT=0, monthT=0, month=1, monthTrips=0, lastIn=0, lastOut=0, people=0, mallsGiven=0, cityTip=0, compKey=-1, comp=new Map(), wantT={}, stuckT={};
 const ZONES={
-  res:  {name:"Homes",     foot:"house",    col:"#6fbf4f",tip:"Homes: tap the corners of some land, then the first corner again, and it fills with plots. Or drag along a road for a row. A house grows on each one when people want to move in, set back down a long drive on a deep plot."},
-  dense:{name:"Apartments",foot:"apts",     col:"#2f6e3d",tip:"Apartments: rows of townhouses, and now and then an apartment block once the town is big and busy. Lots of cars."},
+  res:  {name:"Low residential",   short:"Low",   foot:"house",col:"#6fbf4f",tip:"Low residential: houses. Tap the corners of some land, then the first corner again, and it fills with plots: the Houses bar sets how many. Or drag along a road for a row. A house grows on each one when people want to move in."},
+  dense:{name:"Medium residential",short:"Medium",foot:"apts", col:"#2f8a4a",tip:"Medium residential: apartment blocks four to seven floors high, each with its own car park. Zone a big area and the bar sets how many blocks. Lots of cars."},
+  high: {name:"High residential",  short:"High",  foot:"apts", col:"#1b5a44",tip:"High residential: tower blocks and big apartment buildings up to thirty floors. They come once the town has 150 people or so, and they bring a lot of cars."},
   com:  {name:"Shops",     foot:"shop",     col:"#3d7fe0",tip:"Shops: they open when there are enough people nearby to buy things. A big plot gets a shopping center, or a hotel once tourists come. Shops need parking."},
   off:  {name:"Offices",   foot:"office",   col:"#8a60d0",tip:"Offices: jobs for the town. They open as more people move in. Big plots can get a tower."},
   ind:  {name:"Industry",  foot:"warehouse",col:"#ee8a35",tip:"Industry: factories, warehouses, assembly plants and data centers. Factories are smoky, so keep homes away."},
   mixed:{name:"Mixed",     foot:"mixed",    col:"#d0607f",tip:"Mixed: shops on the ground floor and flats above, like a main street. People live here and customers come too, so it needs parking nearby."}
 };
-const ZKEYS=Object.keys(ZONES);
+ZONES.beach={name:"Beach",col:"#e8c66a",svc:true,tip:"Beach: tap the corners of a stretch of shore, then the first corner again, or drag along the water's edge. The sand fills the land along the water inside, so a beach can run right round a lake."};
+const ZKEYS=Object.keys(ZONES).filter(k=>!ZONES[k].svc), HOMEZ=new Set(["res","dense","high","mixed"]);
 const PRICE={round:250,light:200,bridge:400};
 const MONTH=30, CITY_START=15000, TAX_HOME=2.2, TAX_TRIP=1.6, UPKEEP=.018, MALL_AT=[150,350,650,1000];
 // taxes and budgets, set in the Finance panel. Taxes on homes and on businesses go from 0 to 20%: low ones bring
@@ -2536,9 +2625,9 @@ function buy(k,n){ n=n||1; if(!city||res.road<PRICE[k]*n) return false; res.road
 // and small ones. A plot follows the road, so plots on a bend fan out, and where a plot runs into a side road, the
 // water or another plot it's cut to fit, which gives corner plots all sorts of shapes. Plots on both sides of a
 // block meet in the middle. Whatever grows on a plot is sized to fit the biggest rectangle inside it.
-const PLOT={res:{w:24,d:32,mw:13,md:13},dense:{w:42,d:44,mw:22,md:20},com:{w:46,d:48,mw:26,md:26},off:{w:40,d:44,mw:24,md:24},ind:{w:62,d:60,mw:40,md:34},mixed:{w:34,d:34,mw:20,md:20}};
+const PLOT={res:{w:24,d:32,mw:13,md:13},dense:{w:42,d:44,mw:22,md:20},high:{w:58,d:58,mw:38,md:36},com:{w:46,d:48,mw:26,md:26},off:{w:40,d:44,mw:24,md:24},ind:{w:62,d:60,mw:40,md:34},mixed:{w:34,d:34,mw:20,md:20}};
 const PSIZE={S:.72,M:1,L:1.5}, SETBACK=3;
-let plotSplit="even", plotSize="M", plotSide="one";
+let plotSplit="even", plotSize="M", plotSide="one", plotN=null;
 const polyArea=P=>{ let a=0; for(let i=0;i<P.length;i++){ const p=P[i], q=P[(i+1)%P.length]; a+=p.x*q.y-q.x*p.y; } return a/2; };
 const polyMid=P=>{ let x=0, y=0; for(const p of P){ x+=p.x; y+=p.y; } return {x:x/P.length,y:y/P.length}; };
 // the part of a convex polygon where nx*x+ny*y >= c
@@ -2623,6 +2712,10 @@ function cutWidths(L,W){
   while(left>W*.55){ const r=Math.random(), w=Math.min(left,W*(r<.3?.62:r<.62?1:r<.86?1.6:2.3)); out.push(w); left-=w; }
   if(left>0&&out.length) out[out.length-1]+=left;
   return out; }
+// a stretch of road cut into n plots: all the same, or a random mix of big and small
+function splitN(L,n){ if(n<1) return [];
+  if(plotSplit==="even") return Array(n).fill(L/n);
+  const k=Array.from({length:n},()=>.6+Math.random()), t=k.reduce((a,b)=>a+b,0); return k.map(q=>q*L/t); }
 // the biggest rectangle that fits squarely inside a plot, facing its road: where the building goes
 function plotSite(P,ux,uy,nx,ny,kind){
   const o=P[0], U=P.map(p=>({u:(p.x-o.x)*ux+(p.y-o.y)*uy,v:(p.x-o.x)*nx+(p.y-o.y)*ny}));
@@ -2700,21 +2793,29 @@ function areaRuns(area,kind){
 // the plots a drag would make, cut to fit around the roads, the water and the plots already there: along a road for
 // a drag beside one, or filling an area drawn round some land
 function zoneAt(kind,path,closed){
+  if(kind==="beach"){ const out=[]; out.ext=[]; out.sand=path.length?beachAt(path,closed):null; return out; }
   const Z=PLOT[kind], W=Z.w*PSIZE[plotSize], out=[]; if(!path.length) return out;
   const others=lots.map(L=>({x:L.x,y:L.y,r:L.r,poly:L.poly,L})), ext=[]; out.ext=[];
-  for(const b of blds) if(!b.lot) others.push({x:b.x,y:b.y,r:b.r+4,poly:rectPoly(b.x,b.y,b.ang,b.w+4,b.d+4)});
+  for(const b of blds) if(!b.lot&&!b.sand) others.push({x:b.x,y:b.y,r:b.r+4,poly:rectPoly(b.x,b.y,b.ang,b.w+4,b.d+4)});
+  const sands=blds.filter(b=>b.sand);
   // a tap, or a drag too short to mean a row, makes one plot centred where you pressed
   let pl=0; for(let i=1;i<path.length;i++) pl+=Math.hypot(path[i].x-path[i-1].x,path[i].y-path[i-1].y);
   const area=(closed&&path.length>=3&&Math.abs(polyArea(path))>=250)||isArea(path)?path:null, tap=!area&&pl<10; if(tap) path=[path[path.length-1]];
+  const RS=[];
   for(const R0 of area?areaRuns(area,kind):frontage(path,kind)) for(const R of tap?[R0]:freeRuns(R0,others,area?Z.mw:W*.55,ext)){
     let P=R.pts;
     if(tap){ const m=P[0]; P=R.pts=[-1,1].map(k=>({x:m.x+m.ux*k*W/2,y:m.y+m.uy*k*W/2,nx:m.nx,ny:m.ny,ux:m.ux,uy:m.uy})); }
     P[0].a=0; for(let i=1;i<P.length;i++) P[i].a=P[i-1].a+Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);
-    const len=P[P.length-1].a, widths=tap?[len]:area?(len<W*1.6?(len>=Z.mw?[len]:[]):cutWidths(len,W)):cutWidths(len,W);
+    R.len=P[P.length-1].a; RS.push(R); }
+  // in an area the Houses bar sets how many plots it's cut into, shared out along its roads by length: at least one
+  // on each stretch of road, and none narrower than a house (or a block, or a shop) needs
+  const mn=Math.max(Z.mw,Z.w*.66), cap=area?240:60;
+  const cut=N=>{ const res=[]; RS.forEach((R,ri)=>{
+    const len=R.len, widths=tap?[len]:N?splitN(len,N[ri]):area?(len<W*1.6?(len>=Z.mw?[len]:[]):cutWidths(len,W)):cutWidths(len,W);
     let s;
     const left=len-widths.reduce((a,b)=>a+b,0); s=left/2;
     for(const w of widths){
-      if(out.length>=(area?160:60)) break;
+      if(res.length>=cap) break;
       const A=runAt(R,s), B=runAt(R,s+w);
       let d0, d1;
       // in an area the plot goes back as far as the area does: a ray at each side and three across, under one straight back edge
@@ -2736,18 +2837,34 @@ function zoneAt(kind,path,closed){
         Q=clipHalf(Q,nx,ny,SA.x*nx+SA.y*ny+hw); if(Q.length<3) break; }
       if(Q.length<3) continue;
       const qm=polyMid(Q); let qr=0; for(const p of Q) qr=Math.max(qr,Math.hypot(p.x-qm.x,p.y-qm.y));
-      for(const O of others.concat(out)){ if(Math.hypot(O.x-qm.x,O.y-qm.y)>O.r+qr) continue; Q=sepClip(Q,O.poly); if(Q.length<3) break; }
+      for(const O of others.concat(res)){ if(Math.hypot(O.x-qm.x,O.y-qm.y)>O.r+qr) continue; Q=sepClip(Q,O.poly); if(Q.length<3) break; }
       if(Q.length<3||Math.abs(polyArea(Q))<Z.mw*Z.md) continue;
       if(Q.some(p=>isWater(p.x,p.y)||isHill(p.x,p.y)||p.x<8||p.y<8||p.x>MW-8||p.y>MH-8)) continue;
+      if(sands.some(b=>Math.hypot(b.x-qm.x,b.y-qm.y)<b.r+qr&&sandPoly(b,Q))) continue;
       let ux=B.x-A.x, uy=B.y-A.y; const ul=Math.hypot(ux,uy)||1; ux/=ul; uy/=ul;
       let nx=(A.nx+B.nx)/2, ny=(A.ny+B.ny)/2; const nl=Math.hypot(nx,ny)||1; nx/=nl; ny/=nl;
       // the way along has to be square to the way in
       const dt=ux*nx+uy*ny; ux-=nx*dt; uy-=ny*dt; const l2=Math.hypot(ux,uy)||1; ux/=l2; uy/=l2;
       const site=plotSite(Q,ux,uy,nx,ny,kind); if(!site) continue;
-      const cap=Z.d*PSIZE[plotSize]*1.5; if(kind!=="res"&&site.d>cap){ const k=(site.d-cap)/2; site.x-=nx*k; site.y-=ny*k; site.d=cap; }
+      const dcap=Z.d*PSIZE[plotSize]*1.5; if(kind!=="res"&&site.d>dcap){ const k=(site.d-dcap)/2; site.x-=nx*k; site.y-=ny*k; site.d=dcap; }
       const c=polyMid(Q); let r=0; for(const p of Q) r=Math.max(r,Math.hypot(p.x-c.x,p.y-c.y));
-      out.push({kind,poly:Q,x:c.x,y:c.y,r,site,ang:site.ang,w:site.w,d:site.d,size:plotSize}); }
-  }
+      res.push({kind,poly:Q,x:c.x,y:c.y,r,site,ang:site.ang,w:site.w,d:site.d,size:plotSize}); }
+  }); return res; };
+  // the Houses bar runs from the fewest plots the land can be cut into to the most, counted by cutting it both ways,
+  // and a number in between is found by asking for about that many and nudging till it comes out right
+  let res;
+  if(area&&RS.length){ const lo=RS.map(R=>R.len>=Z.mw?1:0), hi=RS.map((R,i)=>Math.max(lo[i],Math.floor(R.len/mn))), sum=a=>a.reduce((p,q)=>p+q,0),
+      share=t=>{ const n=lo.slice(); let left=t-sum(n); while(left>0){ let bi=-1, bv=0; RS.forEach((R,i)=>{ if(n[i]<hi[i]&&R.len/(n[i]+1)>bv){ bv=R.len/(n[i]+1); bi=i; } }); if(bi<0) break; n[bi]++; left--; } return n; },
+      t0=sum(lo), t1=Math.max(t0,Math.min(cap,sum(hi))), A=cut(lo), B=t1>t0?cut(share(t1)):A, nb=Math.max(A.length,B.length), na=Math.min(nb,Math.max(1,A.length));
+    if(plotN===null) res=cut(null);
+    else { const v=clamp(plotN,na,nb);
+      if(v<=A.length) res=A; else if(v>=nb) res=B;
+      else { let t=Math.round(t0+(v-na)*(t1-t0)/Math.max(1,nb-na)), best=null;
+        for(let k=0;k<5;k++){ const r=cut(share(clamp(t,t0,t1))); if(!best||Math.abs(r.length-v)<Math.abs(best.length-v)) best=r; if(r.length===v) break; t+=v-r.length; }
+        res=best; } }
+    out.meta={min:na,max:nb,n:res.length}; }
+  else res=cut(null);
+  for(const q of res) out.push(q);
   // a stretch too short for a plot of its own, beside one already there: that plot takes it in, so no gap is left
   const grown=new Map();
   for(const e of ext) for(const O of e.O){ if(!O.L) continue;
@@ -2839,11 +2956,36 @@ function lotSnap(h,tol){ let cn=null, cd=tol, ed=null, dd=tol;
       const q=projSeg(h.x,h.y,a.x,a.y,b.x,b.y); if(q.d<dd){ dd=q.d; ed={p:{x:q.x,y:q.y},corner:false,segs:[[a,b]]}; } } }
   return cn||ed;
 }
+// a corner near a road goes onto the edge of the pavement, where plots along the road start: onto the corner of the
+// block where two roads' edges meet, where a guide crosses the edge, or else straight across onto the edge
+function edgeSnap(h,tol,guides){
+  const E=[];
+  for(const s of nearSegs([h],60+tol)){ if(s.over||s.hwy) continue; const A=nodes.get(s.a), B=nodes.get(s.b), q=projSeg(h.x,h.y,A.x,A.y,B.x,B.y), off=segHW(s)+SETBACK;
+    const sd=((h.x-q.x)*-s.uy+(h.y-q.y)*s.ux)>=0?1:-1, n={x:-s.uy*sd,y:s.ux*sd}, o={x:A.x+n.x*off,y:A.y+n.y*off}, d={x:s.ux,y:s.uy};
+    const along=(h.x-o.x)*d.x+(h.y-o.y)*d.y, out=(h.x-o.x)*n.x+(h.y-o.y)*n.y;
+    if(out>tol||out<-2*off||along<-off-tol||along>s.len+off+tol) continue;
+    E.push({o,d,along,out:Math.abs(out),len:s.len,s}); }
+  if(!E.length) return null;
+  E.sort((a,b)=>a.out-b.out);
+  const seg=e=>[{x:e.o.x-e.d.x*8,y:e.o.y-e.d.y*8},{x:e.o.x+e.d.x*(e.len+8),y:e.o.y+e.d.y*(e.len+8)}];
+  // the corner of a block: two roads' edges crossing
+  let best=null, bd=tol*2;
+  for(let i=0;i<E.length;i++) for(let j=i+1;j<E.length;j++){ const a=E[i], b=E[j]; if(a.s===b.s||Math.abs(a.d.x*b.d.y-a.d.y*b.d.x)<.3) continue;
+    const X=lineInter(a.o,a.d,b.o,b.d); if(X&&D(X,h)<bd){ bd=D(X,h); best={p:{x:X.x,y:X.y},corner:true,segs:[seg(a),seg(b)],road:true}; } }
+  if(best) return best;
+  const e=E[0];
+  // where a guide crosses the edge
+  for(const g of guides||[]){ const X=lineInter(g.o,g.d,e.o,e.d); if(X&&D(X,h)<tol*1.5) return {p:{x:X.x,y:X.y},corner:false,segs:[seg(e)],road:true,g}; }
+  const a=clamp(e.along,-SETBACK,e.len+SETBACK);
+  return {p:{x:e.o.x+e.d.x*a,y:e.o.y+e.d.y*a},corner:false,segs:[seg(e)],road:true};
+}
 function zoneSnap(h){
   const P=zpts||[], n=P.length, L=P[n-1], tol=18/Math.max(.35,zoomNow()), out={p:h,lines:[],hit:[],ang:null,rb:null,road:false,lot:null};
+  // a beach's corners go wherever they're put: the sand finds the shore by itself
+  if(zoneSel==="beach") return out;
   const free=shiftDown&&!isTouch, ls=free?null:lotSnap(h,tol);
   // a corner near a plot already zoned goes onto its corner, or onto its side
-  if(!n){ if(ls){ out.p=ls.p; out.lot=ls; } return out; }
+  if(!n){ if(ls){ out.p=ls.p; out.lot=ls; } else if(!free){ const e=edgeSnap(h,tol); if(e){ out.p=e.p; out.edge=e; } } return out; }
   let rb=null;
   if(n>=2) rb=unitV(L,P[n-2]);
   else { rb=roadDirAt(L,90);
@@ -2862,6 +3004,9 @@ function zoneSnap(h){
     if(fl&&ff){ const X=lineInter(fl.o,fl.d,ff.o,ff.d); if(X){ out.p={x:X.x,y:X.y}; out.hit=[fl,ff]; } }
     if(!out.hit.length&&fl){ out.p=on(fl); out.hit=[fl]; }
     else if(!out.hit.length&&ff){ out.p=on(ff); out.hit=[ff]; }
+    // the edge of a road beats the guides alone, and takes the point where a guide crosses it
+    const e=edgeSnap(h,tol,out.hit.length?out.hit:ok);
+    if(e){ out.p=e.p; out.edge=e; out.hit=e.g?[e.g]:[]; }
     // a plot's corner beats the guides; on a plot's side it goes where a guide crosses the side, if one is near
     if(ls&&D(ls.p,L)>=1){ out.lot=ls;
       if(ls.corner){ out.p=ls.p; out.hit=out.hit.filter(g=>Math.abs((ls.p.x-g.o.x)*g.d.y-(ls.p.y-g.o.y)*g.d.x)<.5); }
@@ -2879,16 +3024,19 @@ function zoneSnap(h){
 function zoneTick(){
   if(!zpts) return;
   if(!city||tool!=="build"||!zoneSel){ zpts=null; zoneGhosts=null; updateUI(); return; }
-  const z=zonePrev(hoverW), key=zoneSel+plotSplit+plotSize+plotSide+lots.length+"|"+z.P.map(p=>Math.round(p.x)+","+Math.round(p.y)).join(";");
+  const z=zonePrev(hoverW), key=zoneSel+plotSplit+plotSize+plotSide+plotN+lots.length+"|"+z.P.map(p=>Math.round(p.x)+","+Math.round(p.y)).join(";");
   if(key===zKey&&zoneGhosts) return;
   const now=performance.now(); if(now-zT<Math.max(40,zMs*3)) return;
-  zKey=key; zT=now; zoneGhosts=zoneAt(zoneSel,z.P,z.closed); zMs=performance.now()-now;
+  const m0=metaKey(); zKey=key; zT=now; zoneGhosts=zoneAt(zoneSel,z.P,z.closed); zMs=performance.now()-now;
+  if(metaKey()!==m0) updateUI();
+  else{ const cb=zoneGhosts.meta&&document.querySelector("#buildBar .cnt b"); if(cb) cb.textContent=zoneGhosts.meta.n; }
 }
+const metaKey=()=>zoneGhosts&&zoneGhosts.meta&&zpts&&zpts.length>=3?zoneGhosts.meta.min+"-"+zoneGhosts.meta.max:"";
 function zoneHint(){ const n=zpts?zpts.length:0;
-  setHint(n===1?"Now tap the next corner. It snaps square or straight along the road, and onto plots already zoned. Tap this one again for a single plot.":n===2?"Tap the next corner, or Done for a row of plots along the road between these two.":"Keep tapping corners, then tap the first one again"+(isTouch?" or Done":" (or press Enter)")+" to zone it.",30); }
+  setHint(n===1?"Now tap the next corner. It snaps square or straight along the road, and onto plots already zoned. Tap this one again for a single plot.":n===2?"Tap the next corner, or Done for a row of plots along the road between these two.":"Keep tapping corners, then tap the first one again"+(isTouch?" or Done":" (or press Enter)")+" to zone it. The "+(zoneSel==="res"?"Houses":"Plots")+" bar sets how many plots.",30); }
 function zoneTap(p){
   const r=zoneSnapR();
-  if(!zpts){ zRaw=p; zpts=[zoneSnap(p).p]; zKey=""; zoneHint(); updateUI(); return; }
+  if(!zpts){ zRaw=p; zpts=[zoneSnap(p).p]; zKey=""; plotN=null; zoneHint(); updateUI(); return; }
   if(zpts.length>=3&&D(p,zpts[0])<r) return zoneDone();
   if(D(p,zpts[zpts.length-1])<r) return zoneDone();
   p=zoneSnap(p).p;
@@ -2898,13 +3046,14 @@ function zoneTap(p){
 function zoneDone(){
   const P=zpts&&zpts.length===1&&zRaw?[zRaw]:zpts; zpts=null; zoneGhosts=null; zKey=""; updateUI();
   if(!P||!zoneSel) return;
-  const closed=P.length>=3, gs=zoneAt(zoneSel,closed?P:P.slice(),closed);
+  const closed=P.length>=3, gs=zoneAt(zoneSel,closed?P:P.slice(),closed); plotN=null;
   zoneMade(gs,P,closed);
 }
 function zoneUndo(){ if(!zpts) return; zpts.pop(); zKey="";
   if(!zpts.length){ zpts=null; zoneGhosts=null; setHint("Corners cleared. Tap the corners of the land you want.",2.5); } else zoneHint(); updateUI(); }
-function zoneCancel(){ if(!zpts) return; zpts=null; zoneGhosts=null; zKey=""; setHint("Zoning cancelled.",2); updateUI(); }
+function zoneCancel(){ if(!zpts) return; zpts=null; zoneGhosts=null; zKey=""; plotN=null; setHint("Zoning cancelled.",2); updateUI(); }
 function zoneMade(gs,path,closed){
+  if(gs.sand!==undefined) return beachMade(gs.sand);
   const ex=gs.ext||[]; for(const e of ex) growLot(e.L,e.poly);
   if(!gs.length&&ex.length){ setHint(ex.length>1?"The gaps went to the plots beside them.":"That gap went to the plot beside it.",3); tver++; return; }
   if(gs.length){ addLots(gs); const nm=ZONES[zoneSel].name; setHint(gs.length>1?"Marked out "+gs.length+" plots for "+nm+". Something grows on each one when the town wants it.":"Marked out a plot for "+nm+". Tap the corners of some land to fill it, or drag along a road for a row.",3.5); }
@@ -2935,7 +3084,7 @@ function mergePlan(sel){
   Q=roadClip(Q,nearBoxes(Q,80));
   const m0=polyMid(Q); let r0=0; for(const p of Q) r0=Math.max(r0,Math.hypot(p.x-m0.x,p.y-m0.y));
   for(const O of lots){ if(Q.length<3) break; if(sel.includes(O)||Math.hypot(O.x-m0.x,O.y-m0.y)>O.r+r0) continue; Q=sepClip(Q,O.poly); }
-  for(const b of blds){ if(Q.length<3) break; if(b.lot||Math.hypot(b.x-m0.x,b.y-m0.y)>b.r+r0+4) continue; Q=sepClip(Q,rectPoly(b.x,b.y,b.ang,b.w+4,b.d+4)); }
+  for(const b of blds){ if(Q.length<3) break; if(b.lot||b.sand||Math.hypot(b.x-m0.x,b.y-m0.y)>b.r+r0+4) continue; Q=sepClip(Q,rectPoly(b.x,b.y,b.ang,b.w+4,b.d+4)); }
   if(Q.length<3) return {why:"There's no room to make one plot there."};
   // it faces the road the first plot picked faces, and takes its zone
   const L0=sel[0], kind=L0.kind, nx=-Math.cos(L0.site.ang), ny=-Math.sin(L0.site.ang), site=plotSite(Q,-ny,nx,nx,ny,kind);
@@ -2994,7 +3143,7 @@ function removeLot(L){ const i=lots.indexOf(L); if(i>=0) lots.splice(i,1); effec
 // a new road over a plot, or a building put down on it, clears it
 function pruneLots(){ if(!city) return;
   lots=lots.filter(L=>{ if(L.b&&!blds.includes(L.b)) L.b=null; if(L.b) return true;
-    if(blds.some(b=>!b.lot&&Math.hypot(b.x-L.x,b.y-L.y)<b.r+L.r&&sepClip(L.poly,rectPoly(b.x,b.y,b.ang,b.w,b.d))!==L.poly)) return false;
+    if(blds.some(b=>!b.lot&&Math.hypot(b.x-L.x,b.y-L.y)<b.r+L.r&&(b.sand?sandPoly(b,L.poly):sepClip(L.poly,rectPoly(b.x,b.y,b.ang,b.w,b.d))!==L.poly))) return false;
     for(const s of nearSegs(L.poly,40)){ if(polySegD(L.poly,nodes.get(s.a),nodes.get(s.b))<segHW(s)-.5) return false; }
     return true; }); }
 // can a plot be reached from a road: a stand-in building in the plot's place asks the same question a real one would
@@ -3012,7 +3161,7 @@ const compOf=acc=>{ const s=acc&&segs.get(acc.seg); return s?comp.get(s.a):null;
 
 // how keen the town has to be on a kind before anything grows there (the bars beside the zones start from here), and
 // how many buildings can start going up at once
-const GROW_AT={res:.1,dense:.2,mixed:.25,com:.25,off:.25,ind:.25}, GROW_MAX=4;
+const GROW_AT={res:.1,dense:.15,high:.3,mixed:.2,com:.2,off:.2,ind:.2}, GROW_MAX=6;
 // what the town wants next, in buildings' worth: people come for jobs and shops, and shops and jobs follow people
 function cityDemand(){
   let R=0, Rc=0, nC=0, nO=0, nI=0, nH=0, hk=0;
@@ -3022,15 +3171,17 @@ function cityDemand(){
   people=R-Rc;
   const u=R/12, nD=nC+nO+nI+hk;
   // a happy town draws people in; a miserable one puts them off
-  cityD.res=(12*nD+12-R)/10+(R>20?(happyAvg-55)/20:0)+taxPull(taxR);
-  cityD.dense=cityD.res/(R<50?2:4);
+  cityD.res=(14*nD+30-R)/8+(R>20?(happyAvg-55)/20:0)+taxPull(taxR);
+  // flats as soon as the town gets going, and towers once it's a city
+  cityD.dense=R<20?cityD.res*.35:cityD.res*.75;
+  cityD.high=R<150?-1:cityD.res*.5+Math.min(1.5,(R-150)/300);
   // shops follow people, and hotels follow the tourists the beaches, marinas and big parks bring in
   const bp=bizPull(taxB);
-  cityD.com=.42*u+.7-nC+(R>=40?Math.max(0,tourism-nH)*.8:0)+bp;
-  cityD.off=.3*u+.2-nO+bp;
-  cityD.ind=.28*u-.15-nI+bp;
-  // a main street of shops with flats above, once the town is big enough for one
-  cityD.mixed=R<30?-1:cityD.res*.45+Math.max(0,cityD.com)*.3;
+  cityD.com=.8*u+2-nC+(R>=40?Math.max(0,tourism-nH)*.8:0)+bp;
+  cityD.off=.62*u+1.6-nO+bp;
+  cityD.ind=.55*u+1.4-nI+bp;
+  // a main street of shops with flats above
+  cityD.mixed=R<20?-1:cityD.res*.5+Math.max(0,cityD.com)*.5;
   const L=1+Math.min(19,Math.floor(R/30)); if(L!==level){ level=L; topOutside(); }
 }
 function topOutside(){ if(!outside) return; const top=(tr,n)=>{ while(outside.cars.filter(c=>c.truck===tr).length<n){ const c=newCar(outside,tr); outside.cars.push(c); cars.push(c); } };
@@ -3046,13 +3197,12 @@ function indType(L){
   if(k==="factory"&&lotBlocked(L,"factory")) k=nW?"plant":"warehouse";
   return k;
 }
-// what grows on a plot, from what it's zoned for and how big it is. Apartment blocks are kept for a big, busy town:
-// before that the Apartments zone grows rows of townhouses
+// what grows on a plot, from what it's zoned for and how big it is: the Medium and High residential zones grow
+// apartment blocks and tower blocks
 function lotType(L){
   const S=L.site, k=L.kind;
   if(k==="res") return "house";
-  if(k==="dense"){ let nA=0, nT=0; for(const b of blds){ if(b.type==="apts") nA++; else if(b.type==="town") nT++; }
-    return S.w>=32&&S.d>=30&&(people>=60||nT>=2)&&nA<(nT+1)*1.2&&Math.random()<.6?"apts":"town"; }
+  if(k==="dense"||k==="high") return "apts";
   if(k==="mixed") return "mixed";
   if(k==="com"){ let nH=0; for(const b of blds) if(b.type==="hotel") nH++;
     // tourists bring hotels, on the bigger plots
@@ -3071,6 +3221,9 @@ function lotBlocked(L,type){
   if(type==="factory") for(const h of blds) if(isHome(h)&&Math.hypot(h.x-S.x,h.y-S.y)<POLL+h.r*.4) return true;
   return false;
 }
+// the flat roofs of grown apartment blocks: grey felt, gravel and weathered brick, nothing bright
+const BLOCK_COLS=["#8a8f96","#9c8f80","#7d8580","#a39486","#8e7b6e","#737d86"];
+const TOWER_COLS=["#8c9aa6","#a49c90","#7f8f8a","#9aa3ad","#b0a48f"];
 const TOWN_COLS=["#b9604a","#8f6f5a","#6d7f8f","#a8835a","#7b8f5e","#9a5a5a"];
 // a building made to fit its plot
 function makeLotBld(L,type){
@@ -3085,15 +3238,23 @@ function makeLotBld(L,type){
     const back=S.d>=60, off=back?-(S.d/2-hd/2-(b.pool?16:9)):S.d/2-fy-hd/2;
     b.w=hw; b.d=hd; b.x=S.x+b.fx*off; b.y=S.y+b.fy*off; b.big=S.w>=hw+17&&Math.random()<.75;
     if(back) b.front={x:S.x+b.fx*S.d/2,y:S.y+b.fy*S.d/2};
+    // no two alike: real roofing, one storey or two, some L-shaped with a wing out the back, solar panels, a shed or a
+    // patio in the garden, and only the odd flat-roofed modern one
+    b.col=pick(HOUSE_ROOFS); if(b.v===3&&Math.random()<.6) b.v=Math.random()<.5?0:1;
+    b.storeys=b.v!==3&&Math.random()<.4?2:1; b.ell=b.v!==3&&hw>=17&&hd>=13.5&&Math.random()<.42; b.solar=b.v!==3&&Math.random()<.22;
+    const yard=back?(b.pool?16:9):S.d-hd-fy; b.shed=!b.pool&&yard>=13&&Math.random()<.5; b.patio=!b.pool&&yard>=9&&Math.random()<.65;
   }
   else if(type==="town"){ b.units=clamp(Math.floor(S.w/8.5),2,8); b.cols=[pick(TOWN_COLS),pick(TOWN_COLS)]; b.nCars=b.units; }
-  else if(type==="apts"){ b.floors=4+(Math.random()*4|0); b.nCars=clamp(Math.round(S.w*S.d*b.floors/1400),6,18); }
+  else if(type==="apts"&&L.kind==="high"){ b.tower=true; b.floors=12+(Math.random()*19|0); b.style=S.w>=70&&Math.random()<.5?"twin":S.w>S.d*1.5&&Math.random()<.6?"slab":"point";
+    b.col=pick(TOWER_COLS); b.nCars=clamp(Math.round(S.w*S.d*b.floors/2800),14,36); }
+  else if(type==="apts"){ b.col=pick(BLOCK_COLS); b.floors=4+(Math.random()*4|0); b.nCars=clamp(Math.round(S.w*S.d*b.floors/1400),6,18); }
   else if(type==="office"){ b.tall=S.w*S.d>1500&&Math.random()<.6; b.floors=b.tall?9+(Math.random()*9|0):2+(Math.random()*2|0);
     b.style=b.tall?(S.w>=52&&Math.random()<.45?"twin":Math.random()<.35?"ltower":"tower"):(S.w*S.d>2200&&Math.random()<.55?"campus":Math.random()<.5?"glass":"block");
     b.bays=Math.max(3,Math.floor((S.w-6)/3.4)); }
   else if(type==="mixed"){ b.floors=3+(Math.random()*3|0); b.nCars=clamp(Math.round(S.w*S.d*b.floors/3000),2,9); b.bays=clamp(Math.floor((S.w-8)/12),1,3); }
   else if(type==="hotel"){ b.floors=8+(Math.random()*10|0); b.bays=Math.max(3,Math.floor(Math.max(16,(S.w-6)*.42)/3.4)); }
   else if(type==="datacenter") b.bays=Math.max(3,Math.floor(S.w*.45/3.4));
+  if(REAL_COLS[type]) b.pal=realPal(type);
   else if(type==="center") b.bays=centerBays(S.w,S.d);
   else if(type!=="shop"&&!T.home) b.bays=clamp(Math.round(S.w*S.d/250),6,20);
   b.r=Math.hypot(b.w+(b.big?18:0),b.d)/2;
@@ -3132,7 +3293,7 @@ function yardTrees(L,b){
 function lotWhy(L,sup,homes){
   if(!lotAccess(L)) return "road";
   if(sup){ const c=compOf(L.acc); if((sup.pow.get(c)||0)<3) return "pow"; if((sup.wat.get(c)||0)<3) return "wat"; }
-  if(!(L.kind==="res"||L.kind==="dense"||L.kind==="mixed")&&!homes.has(compOf(L.acc))) return "homes";
+  if(!HOMEZ.has(L.kind)&&!homes.has(compOf(L.acc))) return "homes";
   if(L.kind==="res"&&lotBlocked(L,"house")) return "smoke";
   return null;
 }
@@ -3177,7 +3338,7 @@ function finCalc(trips,hap,pk){
   for(const n of nodeList) road+=n.type==="light"?6:n.type==="round"?3:0;
   out.roads=road*budget.roads;
   let biz=0, nB=0, nS={}; for(const b of blds){ const S=SVC[b.type];
-    if(S){ const k=SVC_BUD[b.type]; if(k){ out[k]+=S.up*budget[k]; nS[k]=(nS[k]||0)+1; } else { out.parking+=S.up; nS.parking=(nS.parking||0)+1; } }
+    if(S){ const k=SVC_BUD[b.type]; if(k){ out[k]+=(b.up||S.up)*budget[k]; nS[k]=(nS[k]||0)+1; } else { out.parking+=S.up; nS.parking=(nS.parking||0)+1; } }
     else if(!isHome(b)||b.type==="mixed"){ biz+=CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1); nB++; } }
   // businesses pay on what they make and on every trip their customers and workers make
   const inc={homes:TAX_HOME*people*(.5+hap/100)*taxR/9, biz:(biz+TAX_TRIP*trips)*taxB/9, park:nS.parking?(pk||0)*parkFee*(1-parkTurn(parkFee))*3:0};
@@ -3251,7 +3412,7 @@ function cityTick(dt){
   monthT+=dt; if(monthT>=MONTH){ monthT-=MONTH; cityMonth(); }
   svcTick(dt);
   growT-=dt;
-  if(growT<=0){ growT=2; tourism=0; for(const b of blds) if(SVC[b.type]&&SVC[b.type].tour&&b.acc) tourism+=SVC[b.type].tour;
+  if(growT<=0){ growT=2; tourism=0; for(const b of blds) if(SVC[b.type]&&SVC[b.type].tour&&b.acc) tourism+=b.tour||SVC[b.type].tour;
     const sup=cityUtils(); cityCover(); cityHappy(); cityDemand(); cityGrow(sup);
     for(const b of blds.filter(q=>q.dry>150)) closeDown(b,"dry");
     // business taxes far too high: now and then one gives up
@@ -3265,7 +3426,7 @@ function cityTick(dt){
 // a few nudges while the town gets going, and when people want something there's no land zoned for
 function cityTips(dt){
   if(hintT>0) return;
-  if(cityTip===0&&firstRoad&&!lots.length){ cityTip=1; setHint("Now zone some land. Tap Zone, pick Homes, then tap the corners of some land beside a road and the first corner again.",6); flashTool("nBuild"); return; }
+  if(cityTip===0&&firstRoad&&!lots.length){ cityTip=1; setHint("Now zone some land. Tap Zone, pick Low residential, then tap the corners of some land beside a road and the first corner again.",6); flashTool("nBuild"); return; }
   // power and water first: nothing grows without them
   const P=utilStat.pow, W=utilStat.wat;
   if(lots.length&&(!P[1]||!W[1])&&t-utilHintT>30){ utilHintT=t; flashTool("icUtil");
@@ -3280,7 +3441,7 @@ function cityTips(dt){
       setHint("The town wants more "+nm+", but the "+nm+" plots can't grow: "+(why==="road"?"they can't be reached from a road. Zone right beside one.":why==="pow"?"no power reaches them. Build a power plant or solar farm joined to them by road.":why==="wat"?"no water reaches them. Build a water tower joined to them by road.":why==="homes"?"no homes are joined to them by road, so nobody would come. Join their road up to the town.":"they're too close to factory smoke or a busy road."),6); return; }
     const want=cityD[k]>(k==="res"?1:1.2)&&!lots.some(L=>L.kind===k&&!L.b);
     wantT[k]=want?(wantT[k]||0)+dt:0;
-    if(wantT[k]>25){ wantT[k]=-60; setHint(k==="res"?"People want to move in. Zone more Homes beside a road.":k==="dense"?"The town could use some Apartments.":k==="mixed"?"The town could use a main street: zone some Mixed, with shops downstairs and flats upstairs.":"The town wants more "+ZONES[k].name+". Zone some land for them.",5); return; } }
+    if(wantT[k]>25){ wantT[k]=-60; setHint(k==="res"?"People want to move in. Zone more Low residential beside a road.":k==="dense"?"The town could use some Medium residential: apartment blocks.":k==="high"?"The town is ready for High residential: tower blocks.":k==="mixed"?"The town could use a main street: zone some Mixed, with shops downstairs and flats upstairs.":"The town wants more "+ZONES[k].name+". Zone some land for them.",5); return; } }
 }
 // a business that waited too long closes down; its lot grows something again later
 function closeDown(d,why){
@@ -3293,7 +3454,7 @@ function closeDown(d,why){
 // the little bars beside each zone that say how keen the town is
 function demandBars(){ if(!city) return; document.querySelectorAll("#buildBar [data-z] s").forEach(s=>{ const k=s.parentNode.parentNode.dataset.z, v=(cityD[k]||0)-(GROW_AT[k]||0); s.style.height=clamp(v/1.8,0,1)*100+"%"; }); }
 // plots: an empty one shows its zone colour; one with a building on it is a garden, a forecourt or a yard
-const YARD={res:["#a3cf75","#7aa858"],dense:["#a7d07c","#7aa95a"],com:["#dcd9d1","#c3bfb5"],off:["#e2ded5","#c8c3b8"],ind:["#d3cec2","#a9a397"],mixed:["#dcd6cb","#c6bfb2"]};
+const YARD={res:["#a3cf75","#7aa858"],dense:["#a7d07c","#7aa95a"],high:["#a2cc78","#77a657"],com:["#a9cf7e","#86ad62"],off:["#acd182","#88ae66"],ind:["#b2c88c","#8fa56c"],mixed:["#aacd80","#87ab64"]};
 const polyPath=P=>{ ctx.beginPath(); P.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); };
 function drawLots(){
   if(!lots.length) return;
@@ -3301,7 +3462,9 @@ function drawLots(){
   for(const L of lots){ if(!inView(L.x,L.y,L.r)) continue;
     polyPath(L.poly);
     if(L.b){ const Y=YARD[L.kind]; ctx.fillStyle=dk(Y[0]); ctx.fill();
-      ctx.strokeStyle=show?ZONES[L.kind].col:dk(Y[1]); ctx.lineWidth=L.kind==="res"||L.kind==="dense"?1.4:.9; if(L.kind==="ind") ctx.setLineDash([2,1.5]); ctx.stroke(); ctx.setLineDash([]);
+      // a hedge round each house's garden
+      if(!show&&L.kind==="res"&&LOD){ ctx.strokeStyle=dk("#4b7a37"); ctx.lineWidth=2.3; ctx.stroke(); ctx.strokeStyle=dk("#5f9446"); ctx.lineWidth=1.1; ctx.stroke(); }
+      else { ctx.strokeStyle=show?ZONES[L.kind].col:dk(Y[1]); ctx.lineWidth=L.kind==="res"||L.kind==="dense"||L.kind==="high"?1.4:.9; if(L.kind==="ind") ctx.setLineDash([2,1.5]); ctx.stroke(); ctx.setLineDash([]); }
       if(LOD&&L.trees) for(const tr of L.trees) tree(tr.x,tr.y,tr.r);
       const b=L.b; if(b.front&&b.acc){ ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(b.door.x,b.door.y); ctx.lineTo(b.acc.ex,b.acc.ey);
         ctx.strokeStyle=KC; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle=rdc("drive"); ctx.lineWidth=6.4; ctx.stroke(); }
@@ -3316,12 +3479,13 @@ function drawZoneGhosts(){
   if(drag&&drag.mode==="zone"&&drag.area&&zoneSel){ polyPath(drag.path); ctx.globalAlpha=.13; ctx.fillStyle=ZONES[zoneSel].col; ctx.fill(); ctx.globalAlpha=.9;
     ctx.strokeStyle=ZONES[zoneSel].col; ctx.lineWidth=2/Math.max(.4,cam.z); ctx.setLineDash([6/cam.z,4/cam.z]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
   const gs=zoneGhosts;
+  if(gs&&gs.sand) drawSandPrev(gs.sand);
   if(gs) for(const g of gs){ polyPath(g.poly); ctx.globalAlpha=.5; ctx.fillStyle=ZONES[g.kind].col; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.3; ctx.stroke(); }
   // a plot already there that takes in the gap beside it
   if(gs&&gs.ext) for(const e of gs.ext){ polyPath(e.poly); ctx.globalAlpha=.35; ctx.fillStyle=ZONES[e.L.kind].col; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle="#fff"; ctx.lineWidth=1.3; ctx.setLineDash([3,2]); ctx.stroke(); ctx.setLineDash([]); }
   // the corners go on top of the plots they make
   if(zpts&&zoneSel) drawCorners();
-  else if(hoverW&&!drag&&zoneSel&&!bldUnder(hoverW,2)){ const z=zoneSnap(hoverW), col=ZONES[zoneSel].col; if(z.lot) drawLotSnap(z.lot,col,zoneK()); cornerDot(z.p,col,false,z.lot?.95:.75); }
+  else if(hoverW&&!drag&&zoneSel&&!bldUnder(hoverW,2)){ const z=zoneSnap(hoverW), col=ZONES[zoneSel].col, sn=z.lot||z.edge; if(sn) drawLotSnap(sn,col,zoneK()); cornerDot(z.p,col,false,sn?.95:.75); }
   if(!gs||!gs.length) return;
   if(drag&&drag.mode==="zone"||zpts){ const last=gs[gs.length-1]; pill(last.x,last.y-last.r,gs.length+" plot"+(gs.length>1?"s":"")+" · "+ZONES[last.kind].name,"rgba(36,38,43,.85)",-10,11,{x:last.x,y:last.y}); }
 }
@@ -3345,7 +3509,7 @@ function drawCorners(){
   // the first corner is the one to tap to finish: a ring round it once there are enough sides
   if(P.length>=3){ ctx.strokeStyle=shut?"#fff":col; ctx.globalAlpha=shut?1:.7; ctx.lineWidth=(shut?3:2)*k; ctx.beginPath(); ctx.arc(P[0].x,P[0].y,zoneSnapR()*.75,0,7); ctx.stroke(); ctx.globalAlpha=1; }
   P.forEach((p,i)=>cornerDot(p,col,i===0));
-  if(hv&&!shut&&Q.length>P.length){ const z=zoneSnap(hv); if(z.lot) drawLotSnap(z.lot,col,k); drawGuides(z,col,k); cornerDot(Q[Q.length-1],col,false,.6); }
+  if(hv&&!shut&&Q.length>P.length){ const z=zoneSnap(hv), sn=z.lot||z.edge; if(sn) drawLotSnap(sn,col,k); drawGuides(z,col,k); cornerDot(Q[Q.length-1],col,false,.6); }
   // on a phone there's no pointer: the angle at the corner before the last one
   else if(!hv){ const on=lotSnap(P[P.length-1],.5); if(on) drawLotSnap(on,col,k); drawGuides(zoneSnap(P[P.length-1]),col,k,true);
     if(P.length>=3){ const a=P[P.length-3], c=P[P.length-2], d=P[P.length-1], u=unitV(c,a), v=unitV(c,d), g=Math.acos(clamp(u.x*v.x+u.y*v.y,-1,1))*180/Math.PI;
@@ -3409,7 +3573,7 @@ const SVC={
   park:  {name:"Park",short:"Park",cost:400,up:5,R:270,fun:6,tab:"parks",done:"Park built. Homes inside the circle are happier.",tip:"Park: trees, a pond and paths. Homes nearby are happier."},
   bigpark:{name:"Big park",short:"Big park",cost:1200,up:12,R:430,fun:9,tour:1,tab:"parks",done:"Big park built. Homes inside the circle are happier, and it draws a few tourists.",tip:"Big park: a lake, a bandstand and a playground. Homes for a long way round are happier, and it draws tourists."},
   plaza: {name:"Plaza",short:"Plaza",cost:250,up:3,R:190,fun:4,tab:"parks",done:"Plaza built. Homes inside the circle are happier.",tip:"Plaza: a paved square with a fountain and benches. Good between shops and flats."},
-  beach: {name:"Beach",short:"Beach",cost:600,up:6,R:480,fun:8,tour:1,tab:"parks",done:"Beach built. Homes inside the circle love it, and it draws tourists.",tip:"Beach: it has to go right on the shore of a lake or river, with its back to the water. Homes nearby love it, and it draws tourists."},
+  beach: {name:"Beach",short:"Beach",cost:300,up:6,R:480,fun:8,tour:1,tab:"parks",done:"Beach built. Homes near it love it, and it draws tourists.",tip:"Beach: draw it along the shore of a lake or river, as long as you like. Homes nearby love it, and it draws tourists: the longer the beach, the more."},
   marina:{name:"Marina",short:"Marina",cost:1500,up:15,R:440,fun:7,tour:2,tab:"parks",done:"Marina built. It draws lots of tourists, who fill the hotels.",tip:"Marina: jetties and boats out on the water, so it has to go on the shore. It draws lots of tourists, and they fill the hotels."},
   depot: {name:"Road depot",short:"Roads",cost:900,up:25,R:600,cars:2,done:"Road depot built. Its trucks fix worn roads inside the blue circle.",tip:"Road depot: its trucks fix roads nearby that traffic has worn out. Worn roads are slow."}
 };
@@ -3425,7 +3589,7 @@ let cityTab="zones", firstFire=false, firstSick=false, firstWorn=false, utilStat
 function useOf(b){
   const k=b.k||1;
   switch(b.type){
-    case "house": return 1; case "bighouse": return 2; case "town": return b.units*.7; case "apts": return b.lot?Math.max(5,b.floors*1.6):7;
+    case "house": return 1; case "bighouse": return 2; case "town": return b.units*.7; case "apts": return b.lot?Math.max(5,b.floors*(b.tower?2.2:1.6)):7;
     case "shop": return 2*k; case "center": return 6*k; case "mall": return 9; case "office": return (b.tall?6:3)*k;
     case "factory": return 6*k; case "warehouse": return 3*k; case "plant": return 5*k;
     case "hotel": return (b.floors||10)*.9; case "mixed": return (b.floors||4)*1.5; case "datacenter": return 16*k;
@@ -3548,7 +3712,7 @@ const wornK=s=>city&&s.cond!==undefined?.6+.4*s.cond:1;
 // which services reach each building, worked out every couple of seconds rather than every step
 function cityCover(){
   const st=blds.filter(s=>SVC[s.type]&&SVC[s.type].R&&s.acc).map(s=>({s,R:svcR(s.type),bit:1<<SKEYS.indexOf(s.type)}));
-  for(const b of blds){ let m=0; for(const q of st) if(Math.hypot(q.s.x-b.x,q.s.y-b.y)<q.R) m|=q.bit; b.cov=m; }
+  for(const b of blds){ let m=0; for(const q of st) if((q.s.sand?svcD(q.s,b.x,b.y):Math.hypot(q.s.x-b.x,q.s.y-b.y))<q.R) m|=q.bit; b.cov=m; }
 }
 const hasCov=(b,kind)=>!!((b.cov||0)&(1<<SKEYS.indexOf(kind)));
 
@@ -3661,17 +3825,16 @@ function drawLotWhy(L){ const k=L.why; if(!k||L.b) return;
 }
 function drawProblems(b){ if(b.cons) return;
   const P=[];
-  if(b.noPow) P.push("pow"); if(b.noWat) P.push("wat"); if(b.noPark&&t-b.noPark<25) P.push("park"); if(b.sick) P.push("sick"); if((b.crime||0)>.6) P.push("crime");
+  if(b.noPow) P.push("pow"); if(b.noWat) P.push("wat"); if(b.noPark&&t-b.noPark<25) P.push("park"); if(b.sick) P.push("sick");
   if(!P.length) return;
   const s=Math.max(1,1.4/cam.z), y=b.y-b.r-(b.pins&&KINDS.some(k=>b.pins[k]>0)?18:6)*s;
   P.forEach((k,i)=>{ const x=b.x+(i-(P.length-1)/2)*9*s;
-    ctx.fillStyle=k==="sick"?"#ffffff":k==="crime"?"#3a3d44":k==="park"?"#2f6fd0":"#c0392b"; ctx.beginPath(); ctx.arc(x,y,4*s,0,7); ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=.8*s; ctx.stroke();
+    ctx.fillStyle=k==="sick"?"#ffffff":k==="park"?"#2f6fd0":"#c0392b"; ctx.beginPath(); ctx.arc(x,y,4*s,0,7); ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=.8*s; ctx.stroke();
     ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
     if(k==="pow"){ ctx.fillStyle="#ffd83a"; ctx.beginPath(); ctx.moveTo(.6,-3); ctx.lineTo(-1.8,.4); ctx.lineTo(-.1,.4); ctx.lineTo(-.7,3); ctx.lineTo(1.8,-.6); ctx.lineTo(.1,-.6); ctx.closePath(); ctx.fill(); }
     else if(k==="wat"){ ctx.fillStyle="#8fd3ff"; ctx.beginPath(); ctx.moveTo(0,-2.8); ctx.quadraticCurveTo(2.4,.4,0,2.6); ctx.quadraticCurveTo(-2.4,.4,0,-2.8); ctx.fill(); }
     else if(k==="sick"){ ctx.fillStyle="#e2493a"; ctx.fillRect(-.8,-2.6,1.6,5.2); ctx.fillRect(-2.6,-.8,5.2,1.6); }
     else if(k==="park"){ ctx.fillStyle="#fff"; ctx.font="800 5.6px "+FONT; ctx.textAlign="center"; ctx.fillText("P",.1,2); }
-    else { ctx.fillStyle="#f4f4f2"; ctx.fillRect(-2.8,-1.3,5.6,2.4); ctx.fillStyle="#3a3d44"; ctx.fillRect(-1.9,-.6,1.3,1); ctx.fillRect(.6,-.6,1.3,1); }
     ctx.restore(); });
 }
 // worn roads: cracks and potholes, more of them the worse the road gets
@@ -3743,6 +3906,155 @@ function centerBays(w,d){
   return n;
 }
 const towerFloors=b=>b.floors||8;
+
+// ---------- beaches drawn along the shore ----------
+// A beach is drawn like a zone: tap the corners round a stretch of shore, or drag along the water's edge. The sand
+// fills the land along the water inside, up to BEACH_D back from the edge and round the roads, buildings and hills
+// already there. It's worked out on a fine grid and traced into a smooth outline, so it follows the shore exactly
+// and can run right round a lake.
+const BEACH_D=46, BEACH_R=50;
+// the outlines where V crosses 0 on a grid (nx by ny, G apart from x0,y0), each point marked if it's against the water
+function traceLoops(V,nx,ny,x0,y0,G,wet){
+  const link=new Map(), val=(i,j)=>(i<=0||j<=0||i>=nx-1||j>=ny-1)?-1:V[j*nx+i];
+  const add=(a,b)=>{ let l=link.get(a); if(!l) link.set(a,l=[]); l.push(b); l=link.get(b); if(!l) link.set(b,l=[]); l.push(a); };
+  for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){
+    const a=val(i,j), b=val(i+1,j), c=val(i+1,j+1), d=val(i,j+1), code=(a>0?8:0)|(b>0?4:0)|(c>0?2:0)|(d>0?1:0);
+    if(code===0||code===15) continue;
+    const T=(j*nx+i)*2, R=(j*nx+i+1)*2+1, B=((j+1)*nx+i)*2, L=(j*nx+i)*2+1;
+    switch(code){ case 1: case 14: add(L,B); break; case 2: case 13: add(B,R); break; case 3: case 12: add(L,R); break; case 4: case 11: add(T,R); break;
+      case 6: case 9: add(T,B); break; case 7: case 8: add(L,T); break;
+      case 5: if((a+b+c+d)/4>0){ add(L,T); add(B,R); } else { add(T,R); add(L,B); } break;
+      case 10: if((a+b+c+d)/4>0){ add(T,R); add(L,B); } else { add(L,T); add(B,R); } break; } }
+  const pt=id=>{ const k=id>>1, i=k%nx, j=(k/nx)|0, i1=id&1?i:i+1, j1=id&1?j+1:j, f0=val(i,j), f1=val(i1,j1); let u=-f0/(f1-f0); if(!(u>=0&&u<=1)) u=.5;
+    const out=f0>0?j1*nx+i1:j*nx+i; return {x:x0+(i+(i1-i)*u)*G,y:y0+(j+(j1-j)*u)*G,w:!!wet[out]}; };
+  const loops=[], seen=new Set();
+  for(const st of link.keys()){ if(seen.has(st)) continue; const loop=[]; let prev=-1, cur=st;
+    while(cur!==undefined&&!seen.has(cur)){ seen.add(cur); loop.push(pt(cur)); const nb=link.get(cur), nx2=nb[0]!==prev?nb[0]:nb[1]; prev=cur; cur=nx2; }
+    if(loop.length>=3) loops.push(loop); }
+  return loops;
+}
+// the sand a drawn path would make: corners round the shore (closed) or a drag along it, as a grid, outlines and spots
+function beachAt(path,closed){
+  if(!terrain||!path.length) return null;
+  const area=closed&&path.length>=3||isArea(path)?path:null;
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of path){ x0=Math.min(x0,p.x); y0=Math.min(y0,p.y); x1=Math.max(x1,p.x); y1=Math.max(y1,p.y); }
+  const m=(area?0:BEACH_R)+BEACH_D+8; x0=Math.max(6,x0-m); y0=Math.max(6,y0-m); x1=Math.min(MW-6,x1+m); y1=Math.min(MH-6,y1+m);
+  if(x1-x0<10||y1-y0<10) return null;
+  // a long shore gets a coarser grid, so it never takes long to work out
+  const G=Math.max(3,Math.sqrt((x1-x0)*(y1-y0)/90000)), nx=Math.ceil((x1-x0)/G)+1, ny=Math.ceil((y1-y0)/G)+1, N=nx*ny;
+  const V=new Float32Array(N), dw=new Float32Array(N), wet=new Uint8Array(N), X=i=>x0+i*G, Y=j=>y0+j*G;
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ const k=j*nx+i, w=wetAt(X(i),Y(j)); V[k]=(WATER-w)*90; if(w>WATER){ wet[k]=1; dw[k]=0; } else dw[k]=1e9; }
+  // how far each spot is from the water, counted across the land
+  const dg=G*Math.SQRT2;
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ const k=j*nx+i; let d=dw[k]; if(i) d=Math.min(d,dw[k-1]+G); if(j){ d=Math.min(d,dw[k-nx]+G); if(i) d=Math.min(d,dw[k-nx-1]+dg); if(i<nx-1) d=Math.min(d,dw[k-nx+1]+dg); } dw[k]=d; }
+  for(let j=ny-1;j>=0;j--) for(let i=nx-1;i>=0;i--){ const k=j*nx+i; let d=dw[k]; if(i<nx-1) d=Math.min(d,dw[k+1]+G); if(j<ny-1){ d=Math.min(d,dw[k+nx]+G); if(i<nx-1) d=Math.min(d,dw[k+nx+1]+dg); if(i) d=Math.min(d,dw[k+nx-1]+dg); } dw[k]=d; }
+  // inside the corners (or near the drag), back from the water, off the roads, buildings, plots in use and hills
+  const E=area||path, nE=area?E.length:Math.max(1,E.length-1);
+  const rd=new Float32Array(N).fill(1e9);
+  for(const s of nearSegs([{x:x0,y:y0},{x:x1,y:y1}],30)){ const A=nodes.get(s.a), B=nodes.get(s.b), hw=segHW(s)+2.5;
+    const i0=Math.max(0,Math.floor((Math.min(A.x,B.x)-hw-40-x0)/G)), i1=Math.min(nx-1,Math.ceil((Math.max(A.x,B.x)+hw+40-x0)/G)), j0=Math.max(0,Math.floor((Math.min(A.y,B.y)-hw-40-y0)/G)), j1=Math.min(ny-1,Math.ceil((Math.max(A.y,B.y)+hw+40-y0)/G));
+    for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const k=j*nx+i, d=projSeg(X(i),Y(j),A.x,A.y,B.x,B.y).d-hw; if(d<rd[k]) rd[k]=d; } }
+  const blk=new Uint8Array(N), mark=(P,pad)=>{ let a0=1e9,b0=1e9,a1=-1e9,b1=-1e9; for(const p of P){ a0=Math.min(a0,p.x); b0=Math.min(b0,p.y); a1=Math.max(a1,p.x); b1=Math.max(b1,p.y); }
+    for(let j=Math.max(0,Math.floor((b0-pad-y0)/G));j<=Math.min(ny-1,Math.ceil((b1+pad-y0)/G));j++) for(let i=Math.max(0,Math.floor((a0-pad-x0)/G));i<=Math.min(nx-1,Math.ceil((a1+pad-x0)/G));i++) if(inPoly(P,X(i),Y(j))) blk[j*nx+i]=1; };
+  for(const b of blds){ if(b.x<x0-b.r||b.x>x1+b.r||b.y<y0-b.r||b.y>y1+b.r) continue;
+    if(b.sand){ for(let j=0;j<ny;j++) for(let i=0;i<nx;i++) if(inSand(b,X(i),Y(j),2)) blk[j*nx+i]=1; }
+    else if(!b.lot){ const F=footRect(b); mark(rectPoly(F.x,F.y,F.ang,F.w+5,F.d+5),0); } }
+  for(const L of lots) if(L.b&&L.x>x0-L.r&&L.x<x1+L.r&&L.y>y0-L.r&&L.y<y1+L.r) mark(L.poly,0);
+  let n=0, sx=0, sy=0;
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ const k=j*nx+i, x=X(i), y=Y(j);
+    if(wet[k]) continue;
+    let e=1e9; for(let q=0;q<nE;q++){ const a=E[q], b=E[(q+1)%E.length]; e=Math.min(e,projSeg(x,y,a.x,a.y,b.x,b.y).d); }
+    const ins=area?(inPoly(area,x,y)?e:-e):BEACH_R-e;
+    let v=Math.min(V[k],BEACH_D-dw[k],ins,rd[k]); if(blk[k]||isHill(x,y)) v=Math.min(v,-1);
+    V[k]=v; if(v>0){ n++; sx+=x; sy+=y; } }
+  for(let k=0;k<N;k++) if(wet[k]) V[k]=-1;
+  const A=n*G*G;
+  if(A<500) return {why:dw.some(d=>d===0)?"There's no room for a beach there: the shore is taken, or too steep.":"A beach has to go on the shore of a lake or river. Tap round a stretch of shore, or drag along the water's edge.",A};
+  const loops=traceLoops(V,nx,ny,x0,y0,G,wet), path2=new Path2D(), edge=new Path2D();
+  for(const L of loops){ const c=L.length, md=(p,q)=>({x:(p.x+q.x)/2,y:(p.y+q.y)/2}), s0=md(L[c-1],L[0]); path2.moveTo(s0.x,s0.y);
+    for(let q=0;q<c;q++){ const e=md(L[q],L[(q+1)%c]); path2.quadraticCurveTo(L[q].x,L[q].y,e.x,e.y); }
+    path2.closePath();
+    // the stretches of outline along the water, for the wet sand and the surf
+    let on=false; for(let q=0;q<=c;q++){ const p=L[q%c]; if(p.w){ if(on) edge.lineTo(p.x,p.y); else { edge.moveTo(p.x,p.y); on=true; } } else on=false; } }
+  // spots to look things up by, and for the umbrellas, the lifeguards and the swimmers
+  const mask=new Uint8Array(N), pts=[], spots=[], swim=[]; let door=null, dd=36;
+  const step=Math.max(1,Math.round(40/G));
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ const k=j*nx+i; if(V[k]<=0) continue; mask[k]=1;
+    const x=X(i), y=Y(j);
+    if(i%step===0&&j%step===0) pts.push({x,y});
+    if(V[k]>4&&dw[k]>9&&dw[k]<BEACH_D-6&&hash(i*7+3,j*13+1)<G*G/240) spots.push({x,y,s:hash(i,j),u:dw[k]<20});
+    if(rd[k]<dd){ dd=rd[k]; door={x,y}; } }
+  for(const L of loops) for(let q=0;q<L.length;q+=Math.max(1,Math.round(14/G))) if(L[q].w){ const p=L[q], e=3, gx=wetAt(p.x+e,p.y)-wetAt(p.x-e,p.y), gy=wetAt(p.x,p.y+e)-wetAt(p.x,p.y-e), gl=Math.hypot(gx,gy)||1;
+    swim.push({x:p.x,y:p.y,nx:gx/gl,ny:gy/gl}); }
+  if(!pts.length) for(let k=0;k<N&&!pts.length;k++) if(mask[k]) pts.push({x:X(k%nx),y:Y((k/nx)|0)});
+  const cx=sx/n, cy=sy/n;
+  // the way in: from the sand nearest a road, facing it
+  let f={x:0,y:1};
+  if(door){ let best=null, bd=1e9; for(const s of nearSegs([door],60)){ if(s.over||s.hwy) continue; const A=nodes.get(s.a), B=nodes.get(s.b), q=projSeg(door.x,door.y,A.x,A.y,B.x,B.y); if(q.d<bd){ bd=q.d; best=q; } }
+    if(best) f=unitV(door,best); else door=null; }
+  let r=0; for(const L of loops) for(const p of L) r=Math.max(r,Math.hypot(p.x-cx,p.y-cy));
+  return {A,x0,y0,G,nx,ny,mask,loops,path:path2,edge,pts,spots,swim,door,f,x:cx,y:cy,r,w:x1-x0,d:y1-y0};
+}
+// what a beach costs, brings in and costs to keep, by how much sand there is
+const beachCost=S=>Math.round((150+S.A*.08)/10)*10, beachTour=S=>clamp(Math.round(S.A/9000),1,6), beachUp=S=>Math.round(2+S.A/1500);
+function inSand(b,x,y,pad){ const S=b.sand, at=(px,py)=>{ const i=Math.round((px-S.x0)/S.G), j=Math.round((py-S.y0)/S.G); return i>=0&&j>=0&&i<S.nx&&j<S.ny&&S.mask[j*S.nx+i]===1; };
+  if(at(x,y)) return true; if(!pad) return false;
+  for(let k=0;k<8;k++){ const a=k*Math.PI/4; if(at(x+Math.cos(a)*pad,y+Math.sin(a)*pad)) return true; } return false; }
+// does a footprint, or a plot, cover any of the sand
+function sandHit(b,F,pad){ const n=Math.max(2,Math.min(8,Math.ceil(Math.max(F.w,F.d)/b.sand.G/2)));
+  const fx=Math.cos(F.ang), fy=Math.sin(F.ang);
+  for(let i=0;i<=n;i++) for(let j=0;j<=n;j++){ const u=(i/n-.5)*(F.w+2*pad), v=(j/n-.5)*(F.d+2*pad); if(inSand(b,F.x+fy*u+fx*v,F.y-fx*u+fy*v,0)) return true; }
+  return false; }
+function sandPoly(b,Q){ const m=polyMid(Q); if(inSand(b,m.x,m.y,0)) return true;
+  for(let i=0;i<Q.length;i++){ const p=Q[i], q=Q[(i+1)%Q.length]; for(const f of [0,.25,.5,.75]) if(inSand(b,p.x+(q.x-p.x)*f,p.y+(q.y-p.y)*f,0)) return true; } return false; }
+// how far a service reaches from: anywhere along a beach, or the middle of anything else
+const svcD=(s,x,y)=>{ if(!s.sand) return Math.hypot(s.x-x,s.y-y); let m=1e9; for(const p of s.sand.pts){ const d=Math.hypot(p.x-x,p.y-y); if(d<m) m=d; } return m; };
+// lay the beach the preview showed, if the money's there
+function beachMade(S){
+  if(!S||S.why||!S.A){ setHint(S&&S.why||"A beach has to go on the shore of a lake or river. Tap round a stretch of shore, or drag along the water's edge.",4); return; }
+  const cost=beachCost(S); if(res.road<cost){ setHint("Not enough money for that beach. It costs "+money(cost)+": draw a shorter stretch, or wait for the taxes at the end of the month.",4.5); flashTool("nRoad"); return; }
+  const b=makeBld("beach",S.x,S.y,Math.atan2(S.f.y,S.f.x));
+  Object.assign(b,{sand:S,w:S.w,d:S.d,r:S.r,fx:S.f.x,fy:S.f.y,f0x:S.f.x,f0y:S.f.y,door:S.door||{x:S.x,y:S.y},up:beachUp(S),tour:beachTour(S)});
+  res.road-=cost; addBld(b); tver++; pruneLots(); cityUtils(); cityCover();
+  for(let i=0;i<Math.min(14,S.pts.length);i++){ const p=S.pts[Math.floor(i*S.pts.length/Math.min(14,S.pts.length))]; effects.push({k:"puff",x:p.x,y:p.y,t:0,life:.7+hash(b.id,i)*.4,big:8}); }
+  setHint(b.acc?"Beach laid for "+money(cost)+". Homes nearby love it, and it draws "+(b.tour>1?b.tour+" lots of":"some")+" tourists.":"Beach laid for "+money(cost)+". Run a road up to it so people can get there.",5);
+  updateUI();
+}
+// the preview while it's being drawn: the sand it would make, and what it costs
+function drawSandPrev(S){
+  if(!S) return;
+  if(S.why||!S.path){ return; }
+  ctx.globalAlpha=.8; ctx.fillStyle="#f1e2b6"; ctx.fill(S.path,"evenodd"); ctx.globalAlpha=1;
+  ctx.strokeStyle="#fff"; ctx.lineWidth=1.6/Math.max(.4,cam.z); ctx.setLineDash([5/cam.z,3.5/cam.z]); ctx.stroke(S.path); ctx.setLineDash([]);
+  pill(S.x,S.y-12,"Beach · "+money(beachCost(S))+(S.door?"":" · needs a road"),res.road<beachCost(S)?"rgba(192,57,43,.9)":"rgba(36,38,43,.85)",-10,11,{x:S.x,y:S.y});
+}
+// a beach on the map: dry sand, wet sand and surf along the water, umbrellas and towels, lifeguards, and swimmers
+function drawBeach(b){
+  const S=b.sand, k=clamp((animT-b.grow)/.8,0,1), now=performance.now()/1000;
+  if(!inView(S.x0+S.w/2,S.y0+S.d/2,Math.max(S.w,S.d)/2+10)) return;
+  ctx.globalAlpha=k; ctx.fillStyle=dk("#efdfae",.9); ctx.fill(S.path,"evenodd");
+  ctx.save(); ctx.clip(S.path,"evenodd"); ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.strokeStyle=dk("#dcc68f",.9); ctx.lineWidth=9; ctx.stroke(S.edge);
+  ctx.strokeStyle=dk("#d2ba80",.9); ctx.lineWidth=3.5; ctx.stroke(S.edge);
+  ctx.strokeStyle="rgba(255,255,255,"+(.55+.2*Math.sin(now*1.3+b.id))*k+")"; ctx.lineWidth=1.6; ctx.setLineDash([7,5]); ctx.lineDashOffset=-now*3; ctx.stroke(S.edge); ctx.setLineDash([]); ctx.lineDashOffset=0;
+  ctx.restore();
+  ctx.strokeStyle="rgba(160,138,90,.3)"; ctx.lineWidth=1; ctx.stroke(S.path);
+  const P3=rec3d&&rec3d.props;
+  if(LOD) for(const q of S.spots){ if(!inView(q.x,q.y,6)) continue; const i=Math.floor(q.s*997);
+    if(q.s<.06){ // a lifeguard's chair
+      if(P3){ P3.push({k:"box",x:q.x,y:q.y,z:0,a:0,w:3.2,d:3.2,h:5,col:"#f4f2ec"},{k:"box",x:q.x,y:q.y,z:5,a:0,w:3.6,d:3.6,h:.9,col:"#e2493a"}); continue; }
+      ctx.fillStyle="#fff"; ctx.fillRect(q.x-2,q.y-2,4,4); ctx.fillStyle="#e2493a"; ctx.fillRect(q.x-2,q.y-2,4,1.3); continue; }
+    ctx.fillStyle=TOWELS[i%TOWELS.length]; ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(q.s*6); ctx.fillRect(2.4,.6,2.4,4.4); ctx.restore();
+    if(q.s<.7&&P3){ P3.push({k:"umb",x:q.x,y:q.y,w:3.6,h:4.6,col:UMB[i%UMB.length]}); continue; }
+    if(q.s<.7){ ctx.fillStyle=UMB[i%UMB.length]; ctx.beginPath(); ctx.arc(q.x,q.y,3.6,0,7); ctx.fill(); ctx.fillStyle="rgba(255,255,255,.75)";
+      for(let a=0;a<4;a++){ ctx.beginPath(); ctx.moveTo(q.x,q.y); ctx.arc(q.x,q.y,3.6,a*Math.PI/2+q.s,a*Math.PI/2+q.s+.5); ctx.fill(); } } }
+  if(LOD&&cam.z>.6&&!rec3d) for(let i=0;i<S.swim.length;i++){ if(hash(b.id,i)>.35) continue; const q=S.swim[i], o=6+hash(i,b.id)*10, x=q.x+q.nx*o+Math.sin(now*.7+i)*1.5, y=q.y+q.ny*o+Math.cos(now*.6+i*2)*1.5;
+    if(!inView(x,y,3)||wetAt(x,y)<=WATER) continue;
+    ctx.fillStyle="rgba(255,255,255,.5)"; ctx.beginPath(); ctx.arc(x,y,1.8,0,7); ctx.fill(); ctx.fillStyle=SKIN[i%SKIN.length]; ctx.beginPath(); ctx.arc(x,y,.9,0,7); ctx.fill(); }
+  ctx.globalAlpha=1;
+  if(!b.acc&&animT-b.grow>1) needsRoad({x:b.door.x,y:b.door.y,r:2});
+}
+const UMB=["#e2493a","#3d7fe0","#f1c232","#4caf50","#d6457f","#ff8a3d"], TOWELS=["#3d7fe0","#e2493a","#f1c232","#ffffff","#2fa596","#d6457f"];
 
 // ---------- drawing: parking, parks and the waterfront ----------
 function drawLeisure(b){
@@ -3897,7 +4209,7 @@ function drawHotel(b){
 }
 // a data centre: a sealed white hall covered in cooling fans, generators in a fenced yard
 function drawDatacenter(b){
-  const T=BT.datacenter, sc=growth(b,.5), w=b.w, d=b.d, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
+  const T=b.pal||BT.datacenter, sc=growth(b,.5), w=b.w, d=b.d, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
   const pd=clamp(d*.24,12,16), park=carPark(b,sc,-w/2+3,d/2-pd,w*.45,pd-1,[(pd-11)/2],Math.max(3,Math.floor(w*.45/3.4)));
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   ctx.fillStyle="#d9d8d2"; ctx.fillRect(-w/2+1,-d/2+1,w-2,d-pd-1); ctx.strokeStyle="rgba(90,95,100,.55)"; ctx.lineWidth=.5; ctx.setLineDash([1.2,1]); ctx.strokeRect(-w/2+1,-d/2+1,w-2,d-2); ctx.setLineDash([]);
@@ -3927,8 +4239,8 @@ function drawParkWalkers(){
 }
 const LEIS=new Set(["parking","garage","park","bigpark","plaza","beach","marina"]);
 const FUNK=SKEYS.filter(k=>SVC[k].fun);
-const MIXED_COLS=["#b86a50","#a5765a","#8f6f8a","#b5835a","#7f8f9a"];
-const HOTEL_COLS=["#c99a2e","#b8614a","#4f7f9e","#3f8f86","#d9cdb4","#7d6aa0"];
+const MIXED_COLS=["#9c6a55","#a5765a","#8a8f96","#b5835a","#7f8f9a","#8e7b6e"];
+const HOTEL_COLS=["#b8614a","#4f7f9e","#d1c4aa","#8a8f96","#a39486","#6d7f8f"];
 
 // ---------- UI ----------
 let tool="road";
@@ -4016,13 +4328,17 @@ function updateUI(){
   $("nRoad").classList.toggle("zero",res.road<20); $("nRound").classList.toggle("zero",out("round")); $("nLight").classList.toggle("zero",out("light")); $("nBridge").classList.toggle("zero",out("bridge"));
   $("nBuild").textContent=trayCount(); $("nBuild").classList.toggle("zero",trayCount()<=0); $("nBuild").style.display=city&&!trayCount()?"none":"";
   $("buildLb").textContent=city?"Zone":"Build";
-  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide+cityTab+(zpts?"z"+zpts.length:"")+(mergeSel?"m"+mergeSel.length:"")+(lots.length>1?"L":""):"-");
+  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide+cityTab+(zpts?"z"+zpts.length+metaKey():"")+(mergeSel?"m"+mergeSel.length:"")+(lots.length>1?"L":""):"-");
   if(city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
     dockSel();
     if(cityTab!=="zones"){
-      for(const k of SKEYS.filter(q=>svcTab(q)===cityTab)){ const S=SVC[k], btn=document.createElement("button"); btn.className=placeSel===k?"sel":""; btn.dataset.s=k; btn.title=S.tip;
-        btn.innerHTML='<i style="background:'+BT[k].col+'"></i>'+S.short+'<b>'+kmoney(S.cost)+'</b>';
-        btn.onclick=()=>{ zoneSel=null; placeSel=k; updateUI(); setHint(S.tip+" Costs "+money(S.cost)+", then "+money(S.up)+" a month.",5); }; bb.appendChild(btn); }
+      const zc=(html,title,f,cl)=>{ const c=document.createElement("button"); c.className="chip"+(cl?" "+cl:""); c.innerHTML=html; c.title=title; c.onclick=f; bb.appendChild(c); };
+      if(zpts&&zoneSel==="beach"){ zc("&#10003; Done","Lay the beach round these corners (Enter)",zoneDone,"go"); zc("Undo","Take back the last corner (Backspace)",zoneUndo); zc("Cancel","Drop these corners (Esc)",zoneCancel);
+        const br0=document.createElement("div"); br0.className="br"; bb.appendChild(br0); }
+      for(const k of SKEYS.filter(q=>svcTab(q)===cityTab)){ const S=SVC[k], btn=document.createElement("button"), bch=k==="beach"; btn.className=(bch?zoneSel==="beach":placeSel===k)?"sel":""; btn.dataset.s=k; btn.title=S.tip;
+        btn.innerHTML='<i style="background:'+BT[k].col+'"></i>'+S.short+'<b>'+kmoney(S.cost)+(bch?"+":"")+'</b>';
+        btn.onclick=bch?()=>{ placeSel=null; zoneSel="beach"; ghost=null; updateUI(); setHint(ZONES.beach.tip+" From "+money(S.cost)+", more for a longer beach.",6); }
+          :()=>{ zoneSel=null; placeSel=k; updateUI(); setHint(S.tip+" Costs "+money(S.cost)+", then "+money(S.up)+" a month.",5); }; bb.appendChild(btn); }
       const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
       const st=document.createElement("span"); st.className="st"; st.id="svcSt"; bb.appendChild(st);
       placeHint(); }
@@ -4030,12 +4346,19 @@ function updateUI(){
     const zc=(html,title,f,cl)=>{ const c=document.createElement("button"); c.className="chip"+(cl?" "+cl:""); c.innerHTML=html; c.title=title; c.onclick=f; bb.appendChild(c); };
     if(zpts){
       zc("&#10003; Done","Zone the land inside the corners (Enter)",zoneDone,"go"); zc("Undo","Take back the last corner (Backspace)",zoneUndo); zc("Cancel","Drop these corners (Esc)",zoneCancel);
+      // the bar: shown once three corners are down, from the fewest plots the land can take to the most
+      const m=metaKey()&&zoneGhosts.meta;
+      if(m&&m.max>m.min){ const v=plotN===null?m.n:clamp(plotN,m.min,m.max), lb=document.createElement("label"); lb.className="cnt"; lb.title="How many plots to cut this land into";
+        lb.innerHTML='<span>'+(zoneSel==="res"?"Houses":"Plots")+'</span><small>'+m.min+'</small><input type="range" min="'+m.min+'" max="'+m.max+'" step="1" value="'+v+'" aria-label="How many plots"><small>'+m.max+'</small><b>'+m.n+'</b>';
+        const inp=lb.querySelector("input"), o=lb.querySelector("b"); inp.oninput=()=>{ plotN=+inp.value; o.textContent=inp.value; zKey=""; }; bb.appendChild(lb); }
       const br0=document.createElement("div"); br0.className="br"; bb.appendChild(br0); }
     if(mergeSel){
       zc("&#10003; Merge"+(mergeSel.length>=2?" "+mergeSel.length+" plots":""),"Make the picked plots one plot (Enter)",mergeGo,"go"+(mergeSel.length<2?" off":"")); zc("Cancel","Stop merging (Esc)",mergeCancel);
       const br0=document.createElement("div"); br0.className="br"; bb.appendChild(br0); }
     for(const k of ZKEYS){ const Z=ZONES[k], btn=document.createElement("button"); btn.className=zoneSel===k?"sel":""; btn.dataset.z=k; btn.title=Z.tip;
-      btn.innerHTML='<i style="background:'+Z.col+'"></i>'+(k==="mixed"?'Mixed':k==="dense"?'<span class="zl">Apartments</span><span class="zs">Apts</span>':k==="ind"?'<span class="zl">Industry</span><span class="zs">Ind.</span>':Z.name)+'<em class="dm"><s></s></em>';
+      // the three kinds of homes sit together under one label: Low, Medium and High residential
+      if(k==="res"){ const cp=document.createElement("span"); cp.className="zcap"; cp.textContent="Residential"; bb.appendChild(cp); }
+      btn.innerHTML='<i style="background:'+Z.col+'"></i>'+(k==="dense"?'<span class="zl">Medium</span><span class="zs">Med</span>':k==="ind"?'<span class="zl">Industry</span><span class="zs">Ind.</span>':Z.short||Z.name)+'<em class="dm"><s></s></em>';
       btn.onclick=()=>{ zoneSel=k; placeSel=null; updateUI(); setHint(Z.tip,3.5); }; bb.appendChild(btn); }
     // how plots are cut: the same size or a random mix, how big, and one side of the road or both
     const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
@@ -4193,7 +4516,7 @@ cv.addEventListener("pointerdown",e=>{ zoomGoal=null;
     // grab a building that's already there to move it
     const hb=bldUnder(w,2);
     if(city&&mergeSel){ ghost=null; drag.mode="mpick"; return; }
-    if(hb&&!(city&&hb.lot)&&!(city&&zpts)){ drag.mode="move"; moving={b:hb,ox:hb.x-w.x,oy:hb.y-w.y}; ghost=ghostAt(hb.type,{x:hb.x,y:hb.y},hb); cv.style.cursor="grabbing"; return; }
+    if(hb&&!(city&&hb.lot)&&!hb.sand&&!(city&&zpts)){ drag.mode="move"; moving={b:hb,ox:hb.x-w.x,oy:hb.y-w.y}; ghost=ghostAt(hb.type,{x:hb.x,y:hb.y},hb); cv.style.cursor="grabbing"; return; }
     // zoning: drag along a road and lots line up beside it
     if(city&&zoneSel){ ghost=null; if(zpts){ drag.mode="zpt"; return; } drag.mode="zone"; drag.path=[buildPt(e,w)]; drag.far=0; zoneGhosts=null; return; }
     if(!placeSel){ setHint(city?"Pick a zone or a service first.":"Nothing new to place right now. Drag a building to move it.",3); drag=null; return; }
@@ -4221,7 +4544,7 @@ cv.addEventListener("pointermove",e=>{
   const w=toWorld(e.clientX,e.clientY);
   hoverW=e.pointerType==="mouse"?w:null; shiftDown=e.shiftKey; v3dyn=true;
   if(pinch){ movePinch(); return; }
-  if(tool==="build"&&e.pointerType==="mouse"&&!drag){ const hb=bldUnder(w,2), mv=hb&&!(city&&hb.lot); cv.style.cursor=mv?"grab":"crosshair";
+  if(tool==="build"&&e.pointerType==="mouse"&&!drag){ const hb=bldUnder(w,2), mv=hb&&!(city&&hb.lot)&&!hb.sand; cv.style.cursor=mv?"grab":"crosshair";
     if(city&&zoneSel){ ghost=null; if(!zpts) zoneGhosts=null; } else ghost=placeSel&&!mv&&!lineMode?ghostAt(placeSel,w):null; }
   if(tool==="road"&&roadMode==="grid"&&(e.pointerType==="mouse"||drag)) gridCur=w;
   if(!drag) return;
@@ -4549,12 +4872,11 @@ const dk=(h,k)=>dark?darkC(h,k):h;
 let dkB=null, dkFor=null;
 function mapBiome(){ if(!dark||!biome) return biome; if(dkFor!==biome){ dkFor=biome; dkB={};
     for(const k in biome){ const v=biome[k]; dkB[k]=Array.isArray(v)?v.map(c=>c?darkC(c):c):typeof v==="string"&&v[0]==="#"?darkC(v):v; }
-    // the hills step down darker than the land, a clear step at a time, up to a pale grey top
-    const hd=c=>{ const n=parseInt(c.slice(1),16), l=((n>>16&255)+(n>>8&255)+(n&255))/765, v=Math.round(255*(.035+.3*Math.pow(l,1.7))), t=(n>>16&255)>(n&255)+20?6:0;
-      return "#"+[v+t,v+t/2,v].map(q=>clamp(q,0,255).toString(16).padStart(2,"0")).join(""); };
-    dkB.hill=biome.hill.map(hd); dkB.lite=biome.lite.map(c=>c?hd(c):c); }
+    // the bare rock stays a little lighter than the land round it, so the mountains still stand out at night
+    dkB.rock=biome.rock.map(c=>darkC(c,.72)); }
   return dkB; }
-const WATER_C=[["#b5c9f3","#a3bbef","#92adeb"],["#1c2c48","#192842","#16243c"]];
+// the water from the shallows at the shore out to the deep middle, by day and by night
+const WATER_C=[["#8ccbe0","#76bbe0","#62a8da","#5196d2","#4486c9"],["#1a3a4e","#183549","#163044","#142b3f","#13273a"]];
 function shade(hex,amt){ const n=parseInt(hex.slice(1),16); const f=v=>Math.round(clamp(v+amt,0,255)); return "rgb("+f(n>>16&255)+","+f(n>>8&255)+","+f(n&255)+")"; }
 const easeOut=x=>1-Math.pow(1-x,3);
 let view={x0:0,y0:0,x1:0,y1:0};
@@ -4710,17 +5032,21 @@ const lightSpr=rgb=>sprite("l"+rgb,64,(g,s)=>{ const r=g.createRadialGradient(s/
 const glowSpr=rgb=>sprite("g"+rgb,64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba("+rgb+",1)"); r.addColorStop(.18,"rgba("+rgb+",.55)"); r.addColorStop(.5,"rgba("+rgb+",.14)"); r.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
 const coneSpr=rgb=>sprite("c"+rgb,128,(g,s)=>{ for(let i=0;i<26;i++){ const u=i/25, x=3+u*(s-30), r=3+u*26, a=.2*(1-u*.85);
   const q=g.createRadialGradient(x,s/2,0,x,s/2,r); q.addColorStop(0,"rgba("+rgb+","+a+")"); q.addColorStop(1,"rgba("+rgb+",0)"); g.fillStyle=q; g.fillRect(x-r,s/2-r,2*r,2*r); } });
+// a street lamp lit up: a hot white middle in a warm halo
+const lampSpr=()=>sprite("lamp",64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba(255,250,236,1)"); r.addColorStop(.1,"rgba(255,236,196,.95)"); r.addColorStop(.28,"rgba(255,206,140,.42)"); r.addColorStop(.6,"rgba(255,186,110,.1)"); r.addColorStop(1,"rgba(255,180,100,0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
 const puffSpr=()=>sprite("puff",64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2); r.addColorStop(0,"rgba(255,255,255,.9)"); r.addColorStop(.55,"rgba(255,255,255,.45)"); r.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
 
-// street lights along every road, on alternate sides, and down the middle of a highway
+// street lights along every road: one every 34 along a street, on alternate sides, facing pairs along a wide road,
+// and down the middle of a highway
 function lamps(){
   if(lampKey===roadCache) return lampList; lampKey=roadCache; lampList=[];
   for(const s of segs.values()){
     if(s.over) continue;
-    const A=nodes.get(s.a), hw=segHW(s), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb; if(run<22) continue;
-    const step=s.hwy?80:58, k=Math.max(1,Math.round(run/step));
-    for(let i=0;i<k;i++){ const d=s.ta+run*(i+.5)/k, side=s.hwy?0:((i+s.id)%2?1:-1), o=s.hwy?0:side*(hw+2.2);
-      lampList.push({x:A.x+s.ux*d+nx*o,y:A.y+s.uy*d+ny*o,ax:-nx*side,ay:-ny*side,hwy:!!s.hwy}); }
+    const A=nodes.get(s.a), hw=segHW(s), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb; if(run<16) continue;
+    const two=!s.hwy&&totL(s)>=4, step=s.hwy?62:two?44:34, k=Math.max(1,Math.round(run/step));
+    for(let i=0;i<k;i++){ const d=s.ta+run*(i+.5)/k;
+      for(const side of s.hwy?[0]:two?[1,-1]:[(i+s.id)%2?1:-1]){ const o=side*(hw+2.2);
+        lampList.push({x:A.x+s.ux*d+nx*o,y:A.y+s.uy*d+ny*o,ax:-nx*side,ay:-ny*side,hwy:!!s.hwy}); } }
   }
   return lampList;
 }
@@ -4875,8 +5201,8 @@ function drawNight(){
   if(dark<.015&&on<.02) return;
   const lights=[], glows=[], cones=[];
   const Lt=(x,y,r,a,col)=>lights.push({x,y,r,a,col}), Gl=(x,y,r,a,col)=>glows.push({x,y,r,a,col});
-  for(const l of lamps()){ if(!inView(l.x,l.y,40)) continue; const hx=l.hwy?l.x:l.x+l.ax*3.4, hy=l.hwy?l.y:l.y+l.ay*3.4;
-    Lt(hx,hy,l.hwy?34:28,.95,"255,178,96"); Gl(hx,hy,7,.35,"255,190,110"); Gl(hx,hy,2.2,.95,"255,236,200"); }
+  for(const l of lamps()){ if(!inView(l.x,l.y,50)) continue; const hx=l.hwy?l.x:l.x+l.ax*3.4, hy=l.hwy?l.y:l.y+l.ay*3.4;
+    Lt(hx,hy,l.hwy?46:40,1,"255,198,130"); Gl(hx,hy,9,1,"lamp"); }
   for(const c of cars){ if(c.siren&&inView(c.x,c.y,60)){ const fl=performance.now()%420<210; Lt(c.x,c.y,26,.9,fl?"80,130,255":"255,50,40"); Gl(c.x,c.y,4,.9,fl?"120,170,255":"255,90,80"); }
     if(c.state!=="drive"||!inView(c.x,c.y,60)) continue;
     const ca=Math.cos(c.ang), sa=Math.sin(c.ang), fx=c.x+ca*c.len/2, fy=c.y+sa*c.len/2, rx=c.x-ca*c.len/2, ry=c.y-sa*c.len/2;
@@ -4918,55 +5244,191 @@ function drawNight(){
   // then the lamps and lights themselves glow on top
   if(on<.02) return;
   ctx.globalCompositeOperation="lighter";
-  for(const o of glows){ ctx.globalAlpha=Math.min(1,o.a*on); ctx.drawImage(glowSpr(o.col),o.x-o.r,o.y-o.r,2*o.r,2*o.r); }
+  for(const o of glows){ ctx.globalAlpha=Math.min(1,o.a*on); ctx.drawImage(o.col==="lamp"?lampSpr():glowSpr(o.col),o.x-o.r,o.y-o.r,2*o.r,2*o.r); }
   ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
 }
 
 function drawGround(){
-  const T=terrain, B=mapBiome(), W=MW+600, H=MH+600;
-  ctx.fillStyle=B.base; ctx.fillRect(TX0,TY0,W,H);
+  const T=terrain, B=mapBiome(), W=MW+600, H=MH+600, E=2400, wc=WATER_C[+dark];
+  // meadow right out past the edges, so the land never ends in a blank
+  ctx.fillStyle=B.base; ctx.fillRect(TX0-E,TY0-E,W+2*E,H+2*E);
   ctx.fillStyle=B.sand[0]; ctx.fill(T.sand[0],"evenodd"); ctx.fillStyle=B.sand[1]; ctx.fill(T.sand[1],"evenodd");
   ctx.fillStyle=B.grass[0]; ctx.fill(T.grass[0],"evenodd"); ctx.fillStyle=B.grass[1]; ctx.fill(T.grass[1],"evenodd");
-  ctx.fillStyle="rgba(78,120,48,.16)"; ctx.fill(T.woods,"evenodd");
-  ctx.fillStyle=B.beach; ctx.fill(T.beach,"evenodd");
-  if(ultra){ ctx.strokeStyle="rgba(130,105,60,.14)"; ctx.lineWidth=8; ctx.stroke(T.water); ctx.lineWidth=4; ctx.stroke(T.water); }
-  const wc=WATER_C[+dark]; ctx.fillStyle=wc[0]; ctx.fill(T.water,"evenodd"); ctx.fillStyle=wc[1]; ctx.fill(T.water2,"evenodd"); ctx.fillStyle=wc[2]; ctx.fill(T.water3,"evenodd");
-  // hills in steps, each one lit on top and throwing a shadow down the slope
-  T.hills.forEach((p,k)=>{
-    if(k&&ultra){ ctx.save(); ctx.translate(10,14); ctx.fillStyle=dark?"rgba(0,0,0,.12)":"rgba(40,35,25,.06)"; ctx.fill(p,"evenodd"); ctx.translate(-3,-4); ctx.fill(p,"evenodd"); ctx.restore(); }
-    if(k){ ctx.save(); ctx.translate(4,6); ctx.fillStyle=dark?"rgba(0,0,0,.42)":"rgba(40,35,25,.2)"; ctx.fill(p,"evenodd"); ctx.restore();
-      ctx.save(); ctx.translate(-1.2,-1.6); ctx.fillStyle=B.lite[k]; ctx.fill(p,"evenodd"); ctx.restore(); }
-    ctx.fillStyle=B.hill[k]; ctx.fill(p,"evenodd"); });
+  // the shady floor of the woods, its edge softened
+  ctx.lineJoin="round"; ctx.strokeStyle=ctx.fillStyle=B.wood; ctx.globalAlpha=.35; ctx.lineWidth=14; ctx.stroke(T.woods); ctx.globalAlpha=.75; ctx.fill(T.woods,"evenodd"); ctx.globalAlpha=1;
+  drawMeadow();
+  // wet grass where the land meets the water, then a thin muddy edge
+  ctx.strokeStyle=B.lush; ctx.globalAlpha=.6; ctx.lineWidth=26; ctx.stroke(T.water); ctx.globalAlpha=1;
+  ctx.strokeStyle=B.mud; ctx.lineWidth=5; ctx.stroke(T.water);
+  // the water, a deeper blue a step at a time out from the shore, each step blended into the one before
+  ctx.fillStyle=wc[0]; ctx.fill(T.water,"evenodd");
+  ctx.save(); ctx.clip(T.water,"evenodd");
+  T.deep.forEach((p,k)=>{ ctx.strokeStyle=ctx.fillStyle=wc[k+1]; ctx.globalAlpha=.45; ctx.lineWidth=16; ctx.stroke(p); ctx.globalAlpha=1; ctx.fill(p,"evenodd"); });
+  // the pale shallows right at the edge
+  ctx.strokeStyle=dark?"rgba(120,170,190,.18)":"rgba(225,245,240,.4)"; ctx.lineWidth=5; ctx.stroke(T.water);
+  ctx.restore();
+  // the mountains: their soft foot and shadows, then the faces of rock and grass, then the crags on the steep sides
+  const M=T.mt; ctx.drawImage(mtPic(),TX0-M.R/2,TY0-M.R/2,M.w*M.R,M.h*M.R);
+  drawFacets();
+  if(cam.z>.6) drawCrags();
   drawRocks();
   // beyond the edge of the map
-  ctx.fillStyle="rgba(70,66,56,.13)"; ctx.fillRect(TX0,TY0,W,-TY0); ctx.fillRect(TX0,MH,W,H-MH+TY0); ctx.fillRect(TX0,0,-TX0,MH); ctx.fillRect(MW,0,W-MW+TX0,MH);
-  ctx.strokeStyle="rgba(70,66,56,.2)"; ctx.lineWidth=1.5; ctx.strokeRect(0,0,MW,MH);
+  ctx.fillStyle="rgba(28,44,20,.14)"; ctx.fillRect(TX0-E,TY0-E,W+2*E,E-TY0); ctx.fillRect(TX0-E,MH,W+2*E,H-MH+TY0+E); ctx.fillRect(TX0-E,0,E-TX0,MH); ctx.fillRect(MW,0,W-MW+TX0+E,MH);
+  ctx.strokeStyle="rgba(28,44,20,.22)"; ctx.lineWidth=1.5; ctx.strokeRect(0,0,MW,MH);
 }
-// boulders round the foot of the hills and on the beaches
+// the mountains, painted once per map and theme into a picture with a pixel for each point of their height grid:
+// alpine grass on the low, gentle slopes and bare rock on the steep and high ones (lighter the higher it goes), lit
+// from the top left like everything else, with the ridges' shadows falling across the valleys and onto the grass
+// below. At the foot it turns to the meadow's own green, so the hills rise straight out of the grass
+const MTK=130, MTZ=70;                          // map units of height for one unit of the height field, in 3D and for the 2D shading
+function mtPic(){
+  const M=terrain.mt; if(M.pic&&M.dk===dark) return M.pic; M.dk=dark;
+  const B=mapBiome(), R=M.R, w=M.w, h=M.h, H=M.H, fbm=terrain.fbm, Z=MTZ/R;
+  const c=M.pic||document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d"), im=g.createImageData(w,h), d=im.data;
+  const rgb=s=>{ const n=parseInt(s.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }, al=rgb(B.alp), rk=B.rock.map(rgb), mb=rgb(B.base);
+  const ca=.64, sa=.77, tn=1.2;                 // the sun 50 degrees up
+  const hz=(i,j)=>Math.max(0,H[clamp(j,0,h-1)*w+clamp(i,0,w-1)]);
+  for(let j=1;j<h-1;j++) for(let i=1;i<w-1;i++){ const k=j*w+i, e=H[k]; if(e===-1) continue;   // far below the hills: nothing to paint
+    const e0=Math.max(e,0);
+    let occ=0; for(let s=2;s<=10;s+=2){   // no peak is tall enough to throw a shadow further
+      const q=hz(Math.round(i+LDX*s),Math.round(j+LDY*s)); if(q>e0) occ=Math.max(occ,clamp(((q-e0)*Z-s*tn)*.4,0,1)); }
+    if(e<-.012){ if(occ>0) d[k*4+3]=Math.round(occ*(dark?54:28)); continue; }
+    const gx=(hz(i+1,j)-hz(i-1,j))*Z/2, gy=(hz(i,j+1)-hz(i,j-1))*Z/2, sl=Math.hypot(gx,gy), x=TX0+i*R, y=TY0+j*R;
+    const lt=clamp((-gx*LDX*ca-gy*LDY*ca+sa)/(Math.sqrt(gx*gx+gy*gy+1)*sa),.6,1.16)*(1-.28*occ);
+    // grass up to about a fifth of the way, less of it where it's steep; then rock, lighter higher up, and mottled
+    const gr=clamp(clamp((.2-e0)*9+(fbm(x/40+3,y/40+1,2)-.5)*1.6,0,1)*clamp(1.8-sl,0,1),0,1);
+    const t=clamp((e0-.15)/.55,0,2), a=t<1?rk[0]:rk[1], b=t<1?rk[1]:rk[2], u=t<1?t:t-1, mot=.88+.24*fbm(x/14+7,y/14+5,2);
+    const fm=sst(-.004,.05,e); for(let q=0;q<3;q++) d[k*4+q]=clamp(((a[q]+(b[q]-a[q])*u)*mot*(1-gr)+al[q]*gr)*lt*fm+mb[q]*(1-fm),0,255);
+    d[k*4+3]=Math.round(255*sst(-.006,.001,e)); }
+  g.putImageData(im,0,0); return M.pic=c;
+}
+// Above the foot the mountains are cut into flat faces, a few metres across, each lit by which way it faces, so
+// the ridges and peaks stay sharp at any zoom. Faces are grouped by colour: what they are (grass, or rock low, middle
+// or high up, or the foot), a little mottling, and how much light they get. They are kept in squares of the map so
+// only those in view are drawn
+const FACE=14, FCQ=600;
+function drawFacets(){
+  const M=terrain.mt; if(!M.fac){ const R=M.R, w=M.w, h=M.h, H=M.H, fbm=terrain.fbm, F=FACE, nx=Math.ceil((MW+600)/F)+1, ny=Math.ceil((MH+600)/F)+1, Z=MTZ;
+    const hb=(x,y)=>{ const gx=clamp((x-TX0)/R,0,w-1.001), gy=clamp((y-TY0)/R,0,h-1.001), i=gx|0, j=gy|0, fx=gx-i, fy=gy-j, k=j*w+i, q=v=>v<-.06?-.06:v;
+      return (q(H[k])*(1-fx)+q(H[k+1])*fx)*(1-fy)+(q(H[k+w])*(1-fx)+q(H[k+w+1])*fx)*fy; };
+    const vx=new Float32Array(nx*ny), vy=new Float32Array(nx*ny), vh=new Float32Array(nx*ny);
+    for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ const k=j*nx+i, x=TX0+i*F+(hash(i,j*7+1)-.5)*.6*F, y=TY0+j*F+(hash(i+3,j*7+2)-.5)*.6*F; vx[k]=x; vy[k]=y; vh[k]=hb(x,y); }
+    const G=new Map(), K=new Set(), ca=.64, sa=.77;
+    const tri=(a,b,c)=>{ const ha=vh[a], hb2=vh[b], hc=vh[c]; if(ha<.002||hb2<.002||hc<.002) return;
+      const ux=vx[b]-vx[a], uy=vy[b]-vy[a], uz=(hb2-ha)*Z, wx=vx[c]-vx[a], wy=vy[c]-vy[a], wz=(hc-ha)*Z;
+      let n0=uy*wz-uz*wy, n1=uz*wx-ux*wz, n2=ux*wy-uy*wx; if(n2<0){ n0=-n0; n1=-n1; n2=-n2; } const nl=Math.hypot(n0,n1,n2)||1;
+      const cx=(vx[a]+vx[b]+vx[c])/3, cy=(vy[a]+vy[b]+vy[c])/3, m=(ha+hb2+hc)/3, sl=Math.hypot(n0,n1)/n2;
+      // the shadow of the land between here and the sun
+      let occ=0; for(let s=8;s<=48;s+=s<32?8:16){ const q=hb(cx+LDX*s,cy+LDY*s); if(q>m) occ=Math.max(occ,clamp(((q-m)*Z-s*1.2)*.12,0,1)); }
+      const lt=clamp((n0*LDX*ca+n1*LDY*ca+n2*sa)/(nl*sa),.5,1.2)*(1-.28*occ);
+      const zone=m<.035?4:m<.2+(fbm(cx/40+3,cy/40+1,2)-.5)*.16&&sl<1.1?0:m<.42?1:m<.75?2:3, mot=Math.min(2,fbm(cx/16+7,cy/16+5,2)*3|0), sh=clamp(Math.round((lt-.42)/.055),0,15);
+      const key=zone*100+mot*20+sh, q=Math.floor(cx/FCQ)+","+Math.floor(cy/FCQ); let Q=G.get(q); if(!Q) G.set(q,Q=new Map()); let P=Q.get(key); if(!P) Q.set(key,P=new Path2D()); K.add(key);
+      P.moveTo(vx[a],vy[a]); P.lineTo(vx[b],vy[b]); P.lineTo(vx[c],vy[c]); P.closePath(); };
+    for(let j=0;j<ny-1;j++) for(let i=0;i<nx-1;i++){ const a=j*nx+i, b=a+1, c=a+nx, d=c+1;
+      // split along whichever diagonal keeps closer to level, so the ridges and gullies run along the edges
+      if(Math.abs(vh[a]-vh[d])<Math.abs(vh[b]-vh[c])){ tri(a,b,d); tri(a,d,c); } else { tri(a,b,c); tri(b,d,c); } }
+    M.fac=G; M.fkeys=K; M.fcol={}; }
+  const B=mapBiome(), ck=dark?"d":"l"; let C=M.fcol[ck]; if(!C){ C=M.fcol[ck]={}; const base=[B.alp,...B.rock,B.base].map(c=>{ const n=parseInt(c.slice(1),16); return [n>>16&255,n>>8&255,n&255]; });
+    base[4]=base[4].map((v,i)=>(v+base[0][i])/2);  // the foot: halfway from the meadow to the alpine grass
+    for(const key of M.fkeys){ const z=Math.floor(key/100), mo=Math.floor(key%100/20), sh=key%20, k=(.92+mo*.06)*(.42+sh*.055);
+      C[key]="rgb("+base[z].map(v=>Math.round(clamp(v*k,0,255))).join(",")+")"; } }
+  ctx.lineJoin="round"; ctx.lineWidth=.8;
+  const m=FACE, x0=Math.floor((view.x0-m)/FCQ), x1=Math.floor((view.x1+m)/FCQ), y0=Math.floor((view.y0-m)/FCQ), y1=Math.floor((view.y1+m)/FCQ);
+  for(let j=y0;j<=y1;j++) for(let i=x0;i<=x1;i++){ const Q=M.fac.get(i+","+j); if(Q) for(const [key,P] of Q){ ctx.fillStyle=ctx.strokeStyle=C[key]; ctx.fill(P); ctx.stroke(P); } }
+}
+// ledges and cracks across the steep rock, dark below and catching the light above, and scree under them
+function drawCrags(){
+  const M=terrain.mt; if(!M.crag){ const R=M.R, w=M.w, h=M.h, H=M.H; M.crag=new Map();
+    for(let n=0;n<9000*MAPK;n++){ const x=TX0+hash(n,61)*(MW+600), y=TY0+hash(n,62)*(MH+600), i=Math.round((x-TX0)/R), j=Math.round((y-TY0)/R);
+      if(i<1||j<1||i>=w-1||j>=h-1) continue; const e=H[j*w+i]; if(e<.16) continue;
+      const q=Math.floor(x/FCQ)+","+Math.floor(y/FCQ); let C=M.crag.get(q); if(!C) M.crag.set(q,C={dkp:new Path2D(),ltp:new Path2D(),scr:new Path2D()}); const {dkp,ltp,scr}=C;
+      const gx=(H[j*w+i+1]-H[j*w+i-1])*MTZ/(2*R), gy=(H[(j+1)*w+i]-H[(j-1)*w+i])*MTZ/(2*R), sl=Math.hypot(gx,gy);
+      if(sl<.45){ if(hash(n,63)<.4){ const z=.5+hash(n,64)*.8; scr.moveTo(x+z,y); scr.arc(x,y,z,0,7); } continue; }
+      const L=2+hash(n,65)*3.5, tx=-gy/sl, ty=gx/sl, b=(hash(n,66)-.5)*.6;
+      dkp.moveTo(x-tx*L,y-ty*L); dkp.quadraticCurveTo(x+ty*b*L,y-tx*b*L,x+tx*L,y+ty*L);
+      ltp.moveTo(x-tx*L*.8+LDX,y-ty*L*.8+LDY); ltp.lineTo(x+tx*L*.6+LDX,y+ty*L*.6+LDY); } }
+  ctx.lineCap="round";
+  const x0=Math.floor((view.x0-8)/FCQ), x1=Math.floor((view.x1+8)/FCQ), y0=Math.floor((view.y0-8)/FCQ), y1=Math.floor((view.y1+8)/FCQ);
+  for(let j=y0;j<=y1;j++) for(let i=x0;i<=x1;i++){ const C=M.crag.get(i+","+j); if(!C) continue;
+    ctx.strokeStyle=dark?"rgba(0,0,0,.26)":"rgba(48,40,32,.2)"; ctx.lineWidth=1; ctx.stroke(C.dkp);
+    ctx.strokeStyle=dark?"rgba(200,200,190,.06)":"rgba(255,252,240,.14)"; ctx.lineWidth=.7; ctx.stroke(C.ltp);
+    ctx.fillStyle=dark?"rgba(150,150,140,.16)":"rgba(70,62,52,.2)"; ctx.fill(C.scr); }
+  ctx.lineCap="butt";
+}
+// patches of wild flowers on the grass, in squares of the map so only the ones in view are drawn
+const FLOWERS=["#ffffff","#f6d74a","#f29bb8","#b79cf0","#7fb2f0"], FPICK=[.36,.68,.82,.92,1], FCH=400;
+function drawMeadow(){
+  if(cam.z<1) return;
+  const T=terrain; if(!T.fl){ T.fl=new Map(); const F=T.F;
+    for(let i=0;i<1300*MAPK;i++){ const x=hash(i,41)*MW, y=hash(i,42)*MH, g=fieldAt(F.G,x,y);
+      if(fieldAt(F.W,x,y)>.2||fieldAt(F.H,x,y)>HILL-.05||fieldAt(F.F,x,y)>.4||g<biome.grassT-.08) continue;
+      const key=Math.floor(x/FCH)+","+Math.floor(y/FCH); let P=T.fl.get(key); if(!P) T.fl.set(key,P=FLOWERS.map(()=>new Path2D()));
+      const q=P[FPICK.findIndex(v=>hash(i,43)<v)], n=6+hash(i,44)*8, R=1.6+hash(i,45)*2.6;
+      for(let k=0;k<n;k++){ const a=hash(i,50+k)*6.28, d=Math.sqrt(hash(i,70+k))*R, fx=x+Math.cos(a)*d, fy=y+Math.sin(a)*d, z=.55+hash(i,90+k)*.4; q.moveTo(fx+z,fy); q.arc(fx,fy,z,0,7); } } }
+  const x0=Math.floor(view.x0/FCH), x1=Math.floor(view.x1/FCH), y0=Math.floor(view.y0/FCH), y1=Math.floor(view.y1/FCH);
+  for(let j=y0;j<=y1;j++) for(let i=x0;i<=x1;i++){ const P=T.fl.get(i+","+j); if(!P) continue; P.forEach((q,k)=>{ ctx.fillStyle=dk(FLOWERS[k],.85); ctx.fill(q); }); }
+}
+// boulders round the foot of the hills and by the water
 function drawRocks(){
   const sh=new Path2D(), body=new Path2D(), top=new Path2D();
   for(const r of terrain.rocks){ if(!inView(r.x,r.y,8)) continue;
     sh.moveTo(r.x+SHX*2+r.r,r.y+SHY*2); sh.ellipse(r.x+SHX*2,r.y+SHY*2,r.r,r.r*.75,r.a,0,7);
     body.moveTo(r.x+r.r,r.y); body.ellipse(r.x,r.y,r.r,r.r*.75,r.a,0,7);
     top.moveTo(r.x-r.r*.2+r.r*.5,r.y-r.r*.2); top.ellipse(r.x-r.r*.2,r.y-r.r*.2,r.r*.5,r.r*.38,r.a,0,7); }
-  ctx.fillStyle="rgba(40,35,25,.18)"; ctx.fill(sh); ctx.fillStyle=dk("#a4a199",.8); ctx.fill(body); ctx.fillStyle=dk("#cbc8c0",.8); ctx.fill(top);
+  ctx.fillStyle="rgba(30,40,22,.22)"; ctx.fill(sh); ctx.fillStyle=dk("#9c9a92",.8); ctx.fill(body); ctx.fillStyle=dk("#c6c3bb",.8); ctx.fill(top);
 }
+// Trees and plants of every kind (TK), seen from above: 0 broadleaf, 1 pine, 2 birch, 3 poplar, 4 fir, 5 bush, 6 reeds,
+// and in gardens 7 a tree in blossom and 8 a copper beech. Their colours, the light on their tops, and how far their
+// shadows fall (taller ones further)
+const TCOL=[["#5d9c41","#4d8a37","#6aa84a"],["#3e7a3c","#356f37"],["#95c45b","#88b953"],["#5a963d","#4f8a37"],["#2f6948","#295e41"],["#4a8537","#56923f","#3f7a33"],["#7f9b4a"],["#efb6c8","#f5c9d6"],["#9c5741","#8a4a38"]];
+const TLIT=["150,205,105","95,150,82","200,232,140","140,196,100","88,142,106","128,180,94","","255,240,245","214,142,112"], TSH=[4,6,3.5,0,7,1.6,0,4,4];
+const gardenKind=s=>s<.5?0:s<.63?2:s<.72?3:s<.84?7:s<.93?8:4;
+// a crown into path P: a broadleaf is lumpy, a pine or a fir a star of branches, a birch a loose cluster, a poplar a
+// tight knot, a bush a low clump
+function crown(P,k,x,y,r,s){
+  if(k===1||k===4){ const n=k===1?9:12, a0=s*6, ri=r*(k===1?.66:.5); P.moveTo(x+Math.cos(a0)*r,y+Math.sin(a0)*r);
+    for(let i=1;i<2*n;i++){ const a=a0+i*Math.PI/n, q=i%2?ri:r; P.lineTo(x+Math.cos(a)*q,y+Math.sin(a)*q); } P.closePath(); return; }
+  if(k===3){ P.moveTo(x+r*.56,y); P.arc(x,y,r*.56,0,7); return; }
+  const n=k===2?5:k===5?3:4, lr=k===2?.42:k===5?.55:.5, ld=k===2?.5:k===5?.42:.55, c=k===2?.48:k===5?.5:.78;
+  P.moveTo(x+r*c,y); P.arc(x,y,r*c,0,7);
+  for(let i=0;i<n;i++){ const a=s*6+i*6.283/n, px=x+Math.cos(a)*r*ld, py=y+Math.sin(a)*r*ld; P.moveTo(px+r*lr,py); P.arc(px,py,r*lr,0,7); }
+}
+// the sunlit side of a crown
+function crownLit(P,k,x,y,r,s){
+  if(k===1||k===4){ crown(P,k,x-r*.16,y-r*.2,r*.52,s+.3); return; }
+  const z=k===3?.3:k===2||k===5?.36:.55, hx=x-r*(k===3?.16:.3), hy=y-r*(k===3?.18:.32); P.moveTo(hx+r*z,hy); P.arc(hx,hy,r*z,0,7);
+}
+// a tree's shadow: a poplar's is long and thin
+function crownSh(P,k,x,y,r,s,lo){
+  if(k===3){ const a=Math.atan2(SHY,SHX), cx=x+SHX*r*1.9, cy=y+SHY*r*1.9; P.moveTo(cx+Math.cos(a)*r*2,cy+Math.sin(a)*r*2); P.ellipse(cx,cy,r*2,r*.5,a,0,7); return; }
+  const o=TSH[k], sx=x+SHX*o, sy=y+SHY*o; if(lo){ P.moveTo(sx+r,sy); P.arc(sx,sy,r,0,7); } else crown(P,k,sx,sy,r,s);
+}
+// a stand of reeds: blades fanning out from a clump, some with a brown head
+function reeds(P,H,x,y,r,s){
+  for(let i=0;i<7;i++){ const a=s*6+i*.9, L=r*(.6+hash(i,s*999|0)*.6), bx=x+Math.cos(a*2.3)*r*.3, by=y+Math.sin(a*2.3)*r*.3, ex=bx+Math.cos(a)*L, ey=by+Math.sin(a)*L;
+    P.moveTo(bx,by); P.lineTo(ex,ey); if(i%3===0){ H.moveTo(ex+.45,ey); H.ellipse(ex,ey,.45,.3,a,0,7); } }
+}
+// far out every tree is a plain round blob; a little closer the pines and firs get their stars and the crowns their
+// light; close up the crowns get their lumps, the reeds their blades and the bushes their flowers
 function drawTrees(){
-  const sh=new Path2D(), c0=new Path2D(), c1=new Path2D(), c2=new Path2D(), pn=new Path2D(), hl=new Path2D(), U=ultra, sh2=new Path2D(), rim=new Path2D(), mid=new Path2D(), sp=new Path2D();
-  for(const tr of trees){ if(!tr.alive||!inView(tr.x,tr.y,14)) continue; const r=tr.r, sx=tr.x+SHX*4, sy=tr.y+SHY*4;
-    sh.moveTo(sx+r,sy); sh.arc(sx,sy,r,0,7);
-    const P=tr.pine?pn:tr.s<.4?c0:tr.s<.75?c1:c2; P.moveTo(tr.x+r,tr.y); P.arc(tr.x,tr.y,r,0,7);
-    const hx=tr.x-r*.3, hy=tr.y-r*.32; hl.moveTo(hx+r*.55,hy); hl.arc(hx,hy,r*.55,0,7);
-    if(U){ const r2=r*1.22, x2=tr.x+SHX*7.5, y2=tr.y+SHY*7.5; sh2.moveTo(x2+r2,y2); sh2.arc(x2,y2,r2,0,7);
-      rim.moveTo(tr.x+r+.8,tr.y+.5); rim.arc(tr.x,tr.y+.5,r+.8,0,7);
-      const mx=tr.x-r*.14, my=tr.y-r*.17; mid.moveTo(mx+r*.8,my); mid.arc(mx,my,r*.8,0,7);
-      const qx=tr.x-r*.42, qy=tr.y-r*.46; sp.moveTo(qx+r*.2,qy); sp.arc(qx,qy,r*.2,0,7); } }
-  if(U){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.fill(sh2); ctx.fillStyle="rgba(30,50,20,.17)"; ctx.fill(sh); ctx.fillStyle="rgba(38,72,28,.6)"; ctx.fill(rim); }
-  else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.fill(sh); }
-  ctx.fillStyle=dk("#5d9c41",.75); ctx.fill(c0); ctx.fillStyle=dk("#4d8a37",.75); ctx.fill(c1); ctx.fillStyle=dk("#6aa84a",.75); ctx.fill(c2); ctx.fillStyle=dk("#3e7a3c",.75); ctx.fill(pn);
-  const dm=dark?.45:1;
-  if(U){ ctx.fillStyle="rgba(125,185,85,"+.32*dm+")"; ctx.fill(mid); }
-  ctx.fillStyle="rgba(150,205,105,"+.55*dm+")"; ctx.fill(hl);
+  const U=ultra, lo=cam.z<.45, md=cam.z<.85, dm=dark?.45:1, sh=new Path2D(), sh2=new Path2D(), rim=new Path2D(), sp=new Path2D(), rd=new Path2D(), cat=new Path2D(), fl=new Path2D();
+  const cr=TCOL.map(a=>a.map(()=>new Path2D())), hl=TCOL.map(()=>new Path2D());
+  for(const tr of trees){ if(!tr.alive||!inView(tr.x,tr.y,16)) continue; const k=tr.k||0, r=tr.r, s=tr.s, x=tr.x, y=tr.y;
+    if(k===6){ if(!md) reeds(rd,cat,x,y,r,s); continue; }
+    crownSh(sh,k,x,y,r,s,md);
+    if(U&&k!==5){ const r2=r*1.2, o=TSH[k]*1.9+(k===3?r*2:0), x2=x+SHX*o, y2=y+SHY*o; sh2.moveTo(x2+r2,y2); sh2.arc(x2,y2,r2,0,7); }
+    const P=cr[k][k===0?(s<.4?0:s<.75?1:2):(s*TCOL[k].length)|0];
+    if(lo||md&&k!==1&&k!==4){ const z=r*(k===3?.56:1); P.moveTo(x+z,y); P.arc(x,y,z,0,7); if(!lo){ const hx=x-r*.3, hy=y-r*.32, q=hl[k]; q.moveTo(hx+r*.5,hy); q.arc(hx,hy,r*.5,0,7); } continue; }
+    crown(P,k,x,y,r,s); crownLit(hl[k],k,x,y,r,s); if(md) continue;
+    if(U&&k!==1&&k!==4) crown(rim,k,x+.5,y+.8,r,s);
+    if(U&&k===0){ const qx=x-r*.42, qy=y-r*.46; sp.moveTo(qx+r*.2,qy); sp.arc(qx,qy,r*.2,0,7); }
+    if(k===5&&s>.72&&cam.z>1) for(let i=0;i<4;i++){ const a=s*40+i*1.7, fx=x+Math.cos(a)*r*.5, fy=y+Math.sin(a)*r*.5; fl.moveTo(fx+.5,fy); fl.arc(fx,fy,.5,0,7); } }
+  if(U){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.fill(sh2); ctx.fillStyle="rgba(30,50,20,.18)"; ctx.fill(sh); ctx.fillStyle="rgba(34,64,26,.55)"; ctx.fill(rim); }
+  else { ctx.fillStyle="rgba(30,50,20,.22)"; ctx.fill(sh); }
+  ctx.lineCap="round"; ctx.strokeStyle=dk("#6f8c3e",.7); ctx.lineWidth=.55; ctx.stroke(rd); ctx.fillStyle=dk("#6b4a2e",.7); ctx.fill(cat); ctx.lineCap="butt";
+  cr.forEach((a,k)=>a.forEach((P,i)=>{ ctx.fillStyle=dk(TCOL[k][i],.75); ctx.fill(P); }));
+  hl.forEach((P,k)=>{ if(TLIT[k]){ ctx.fillStyle="rgba("+TLIT[k]+","+.55*dm+")"; ctx.fill(P); } });
+  ctx.fillStyle=dk("#fbe9f0",.6); ctx.fill(fl);
   if(U){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; ctx.fill(sp); }
 }
 // The ground, the woods and the wild trees only change when something is built over them, so they're kept as
@@ -4994,7 +5456,7 @@ function paintTile(L,i,j){
   try{ ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=dk("#d9d7cf"); ctx.fillRect(0,0,TPX+2*TGU,TPX+2*TGU);
     ctx.setTransform(p,0,0,p,TGU-x0*p,TGU-y0*p);
     // just the outlines near the tile (the hills' shadows and the shore's edge reach a little way past theirs)
-    terrain=terrIn(view.x0-20,view.y0-20,view.x1+20,view.y1+20); trees=treesIn(view.x0-16,view.y0-16,view.x1+16,view.y1+16);
+    terrain=terrIn(view.x0-20,view.y0-20,view.x1+20,view.y1+20); trees=treesIn(view.x0-24,view.y0-24,view.x1+24,view.y1+24);
     drawGround(); if(ultra&&cam.z>.45) drawDecor(); drawTrees(); }
   finally{ ctx=sv.ctx; view=sv.view; cam.z=sv.z; terrain=sv.terrain; trees=sv.trees; }
   t.ok=true; t.stale=false; t.used=tframe;
@@ -5011,15 +5473,17 @@ function drawTerrain(){
   const key=ultra+","+dark+","+dpr;
   if(key!==tkey||terrain!==tterr){ for(const t of tiles.values()) tpool.push(t.cv); tiles.clear(); tkey=key; tterr=terrain; tcost={}; tbase=tlev(dpr*minZoom()); tfresh=true; }
   tframe++;
-  const k=dpr*cam.z, ox=dpr*vw/2-k*cam.x, oy=dpr*vh/2-k*cam.y, xm=MW-TX0, ym=MH-TY0, L=clamp(tlev(k),tbase,tlev(dpr*4.5)), W=TPX/tsc(L);
-  const X0=Math.max(view.x0,TX0), Y0=Math.max(view.y0,TY0), X1=Math.min(view.x1,xm), Y1=Math.min(view.y1,ym);
+  // the pictures reach as far as the view ever can: right out past the map's edges when it's zoomed all the way out
+  const mz=minZoom(), gx0=Math.min(TX0,MW/2-vw/(2*mz)-20), gy0=Math.min(TY0,MH/2-vh/(2*mz)-20), gx1=MW-gx0, gy1=MH-gy0;
+  const k=dpr*cam.z, ox=dpr*vw/2-k*cam.x, oy=dpr*vh/2-k*cam.y, L=clamp(tlev(k),tbase,tlev(dpr*4.5)), W=TPX/tsc(L);
+  const X0=Math.max(view.x0,gx0), Y0=Math.max(view.y0,gy0), X1=Math.min(view.x1,gx1), Y1=Math.min(view.y1,gy1);
   const i0=Math.floor((X0-TX0)/W), j0=Math.floor((Y0-TY0)/W), i1=Math.ceil((X1-TX0)/W)-1, j1=Math.ceil((Y1-TY0)/W)-1, show=[], miss=[], old=[];
   for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const t=tiles.get(tid(L,i,j)); if(t&&t.ok){ show.push(t); if(t.stale) old.push(t); } else miss.push({L,i,j}); }
   const t0=performance.now(), d2=q=>{ const W2=TPX/tsc(q.L), dx=TX0+(q.i+.5)*W2-cam.x, dy=TY0+(q.j+.5)*W2-cam.y; return dx*dx+dy*dy; };
   // a new map, or the look changed: the view is drawn sharp at once
   if(tfresh){ tfresh=false; for(const q of miss) paintTile(L,q.i,q.j); for(const q of miss) show.push(tiles.get(tid(L,q.i,q.j))); miss.length=0; }
   ctx.setTransform(1,0,0,1,0,0);
-  if(dark&&(view.x0<TX0||view.y0<TY0||view.x1>xm||view.y1>ym)){ ctx.fillStyle=dk("#d9d7cf"); ctx.fillRect(0,0,cv.width,cv.height); }
+  if(dark&&(view.x0<gx0||view.y0<gy0||view.x1>gx1||view.y1>gy1)){ ctx.fillStyle=dk("#d9d7cf"); ctx.fillRect(0,0,cv.width,cv.height); }
   // stand-ins for what's missing: a sharper picture left from before a zoom out, else the nearest blurrier one
   const work=[];
   if(miss.length){ const fb=new Set(), o=[], WB=TPX/tsc(tbase);
@@ -5036,9 +5500,10 @@ function drawTerrain(){
   // it costs); what's out of date in view (now and then whatever it costs); then the ring of tiles round the view
   miss.forEach((q,n)=>work.push({L,i:q.i,j:q.j,must:!n&&!work.length}));
   old.sort((a,b)=>d2(a)-d2(b)).forEach((q,n)=>work.push({L,i:q.i,j:q.j,must:!n&&!work.length&&t0-tstaleAt>250,stale:true}));
-  for(let j=j0-1;j<=j1+1;j++) for(let i=i0-1;i<=i1+1;i++){ if(j>=j0&&j<=j1&&i>=i0&&i<=i1||TX0+i*W>=xm||TY0+j*W>=ym||i<0||j<0) continue; const t=tiles.get(tid(L,i,j)); if(!t||!t.ok||t.stale) work.push({L,i,j}); }
+  for(let j=j0-1;j<=j1+1;j++) for(let i=i0-1;i<=i1+1;i++){ if(j>=j0&&j<=j1&&i>=i0&&i<=i1||TX0+i*W>=gx1||TY0+j*W>=gy1||TX0+(i+1)*W<=gx0||TY0+(j+1)*W<=gy0) continue; const t=tiles.get(tid(L,i,j)); if(!t||!t.ok||t.stale) work.push({L,i,j}); }
   // and, with nothing else to do, the whole-map picture, for the next zoom out
-  if(!work.length){ const WB=TPX/tsc(tbase); for(let j=0;TY0+j*WB<ym&&!work.length;j++) for(let i=0;TX0+i*WB<xm;i++){ const t=tiles.get(tid(tbase,i,j)); if(!t||!t.ok){ work.push({L:tbase,i,j,idle:true}); break; } } }
+  const WB=TPX/tsc(tbase), bi0=Math.floor((gx0-TX0)/WB), bj0=Math.floor((gy0-TY0)/WB), nb=(Math.ceil((gx1-TX0)/WB)-bi0)*(Math.ceil((gy1-TY0)/WB)-bj0);
+  if(!work.length){ for(let j=bj0;TY0+j*WB<gy1&&!work.length;j++) for(let i=bi0;TX0+i*WB<gx1;i++){ const t=tiles.get(tid(tbase,i,j)); if(!t||!t.ok){ work.push({L:tbase,i,j,idle:true}); break; } } }
   const bud=isTouch?6:4;
   for(const q of work){ const est=tcost[q.L]===undefined?2:tcost[q.L];
     if(!q.must&&performance.now()-t0+est>(q.idle?2*bud:bud)) break;
@@ -5046,7 +5511,7 @@ function drawTerrain(){
     // a tile drawn just now that's in view goes on the screen this frame too
     if(q.L===L&&q.i>=i0&&q.i<=i1&&q.j>=j0&&q.j<=j1) blit(tiles.get(tid(L,q.i,q.j)),k,ox,oy); }
   // the tiles not seen for longest go when there are too many
-  const cap=Math.round(1.6*(i1-i0+3)*(j1-j0+3))+Math.ceil(MW/(TPX/tsc(tbase))+2)*Math.ceil(MH/(TPX/tsc(tbase))+2);
+  const cap=Math.round(1.6*(i1-i0+3)*(j1-j0+3))+nb;
   if(tiles.size>cap){ const ev=[...tiles.values()].filter(t=>t.used<tframe&&t.L!==tbase).sort((a,b)=>a.used-b.used);
     for(const t of ev.slice(0,tiles.size-cap)){ tiles.delete(tid(t.L,t.i,t.j)); tpool.push(t.cv); } }
 }
@@ -5057,23 +5522,25 @@ function nearView(){ const q=512, x0=Math.floor(view.x0/q)*q, y0=Math.floor(view
   return nvT; }
 let wavePat=null;
 function makeWaves(){ const c=document.createElement("canvas"); c.width=c.height=256; const g=c.getContext("2d");
-  g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=2; g.lineCap="round";
-  for(let i=0;i<26;i++){ const x=Math.random()*256, y=Math.random()*256, L=12+Math.random()*18;
-    for(const ox of [-256,0,256]) for(const oy of [-256,0,256]){ const X=x+ox, Y=y+oy; g.beginPath(); g.moveTo(X,Y); g.quadraticCurveTo(X+L/4,Y-3.5,X+L/2,Y); g.quadraticCurveTo(X+L*.75,Y+3.5,X+L,Y); g.stroke(); } }
+  g.strokeStyle="rgba(255,255,255,.8)"; g.lineWidth=1.6; g.lineCap="round";
+  for(let i=0;i<26;i++){ const x=Math.random()*256, y=Math.random()*256, L=9+Math.random()*16, A=1.4+L*.09;
+    for(const ox of [-256,0,256]) for(const oy of [-256,0,256]){ const X=x+ox, Y=y+oy; g.beginPath(); g.moveTo(X,Y); g.quadraticCurveTo(X+L/4,Y-A,X+L/2,Y); g.quadraticCurveTo(X+L*.75,Y+A,X+L,Y); g.stroke(); } }
   wavePat=ctx.createPattern(c,"repeat"); }
-// ripples drifting over the water and foam lapping at the shore
+// ripples drifting over the water and the water lapping at the shore. In the 3D view's picture they keep still (the
+// 3D water has waves of its own), so its squares still match where they meet
 function drawWater(){
   const T=terrain; if(!wavePat) makeWaves();
-  const now=performance.now()/1000;
+  const now=rec3d?0:performance.now()/1000;
   ctx.save(); ctx.clip(T.water,"evenodd");
-  for(const [sp,dir,al,sc,ph] of [[5,.35,.42,.5,0],[3.5,2.6,.3,.36,2]]){
-    const ox=Math.cos(dir)*now*sp, oy=Math.sin(dir)*now*sp+Math.sin(now*.9+ph)*1.5;
-    ctx.save(); ctx.globalAlpha=al*(.7+.3*Math.sin(now*1.1+ph))*(dark?.35:1); ctx.translate(ox,oy); ctx.scale(sc,sc); ctx.fillStyle=wavePat;
+  for(const [sp,dir,al,sc,ph] of [[4,.35,.3,.5,0],[2.6,2.6,.22,.34,2]]){
+    const ox=Math.cos(dir)*now*sp, oy=Math.sin(dir)*now*sp+Math.sin(now*.7+ph)*1.2;
+    ctx.save(); ctx.globalAlpha=al*(.7+.3*Math.sin(now*.9+ph))*(dark?.3:1); ctx.translate(ox,oy); ctx.scale(sc,sc); ctx.fillStyle=wavePat;
     ctx.fillRect((view.x0-ox)/sc-4,(view.y0-oy)/sc-4,(view.x1-view.x0)/sc+8,(view.y1-view.y0)/sc+8); ctx.restore(); }
-  if(ultra){
-    // the sky reflected in the water, brighter towards the sun, and the sun glinting off the ripples
+  // the sky reflected in the water, brighter towards the sun, and the sun glinting off the ripples. Not in the 3D
+  // view's picture: it's in squares, and the 3D water shows the sky itself
+  if(ultra&&!rec3d){
     const g=ctx.createLinearGradient(view.x0,view.y0,view.x1,view.y1);
-    g.addColorStop(0,"rgba(255,255,255,"+(dark?.07:.26)+")"); g.addColorStop(.45,"rgba(255,255,255,"+(dark?.02:.06)+")"); g.addColorStop(1,"rgba(30,60,140,.12)");
+    g.addColorStop(0,"rgba(255,255,255,"+(dark?.06:.22)+")"); g.addColorStop(.45,"rgba(255,255,255,"+(dark?.02:.05)+")"); g.addColorStop(1,"rgba(10,50,110,.12)");
     ctx.fillStyle=g; ctx.fillRect(view.x0,view.y0,view.x1-view.x0,view.y1-view.y0);
     ctx.fillStyle="#fff";
     for(const q of decor().glints){ if(!inView(q.x,q.y,4)) continue; const a=Math.pow(Math.max(0,Math.sin(now*1.6+q.p)),8); if(a<.04) continue;
@@ -5082,9 +5549,11 @@ function drawWater(){
     ctx.globalAlpha=1;
   }
   ctx.restore();
-  ctx.lineCap="round";
-  ctx.strokeStyle=dark?"rgba(190,210,240,.3)":"rgba(255,255,255,.6)"; ctx.lineWidth=1.5; ctx.setLineDash([6,9]); ctx.lineDashOffset=-now*4; ctx.stroke(T.water);
-  ctx.strokeStyle=dark?"rgba(190,210,240,.15)":"rgba(255,255,255,.3)"; ctx.lineWidth=1; ctx.setLineDash([3,12]); ctx.lineDashOffset=now*3; ctx.stroke(T.water2);
+  // a soft line of foam that comes and goes along the shore, the lapping water breaking up over it
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.strokeStyle=dark?"rgba(170,200,225,"+(.14+.06*Math.sin(now*.8))+")":"rgba(255,255,255,"+(.36+.14*Math.sin(now*.8))+")"; ctx.lineWidth=1.3; ctx.stroke(T.water);
+  ctx.strokeStyle=dark?"rgba(190,210,240,.22)":"rgba(255,255,255,.55)"; ctx.lineWidth=1.1; ctx.setLineDash([5,11]); ctx.lineDashOffset=-now*3; ctx.stroke(T.water);
+  ctx.strokeStyle=dark?"rgba(190,210,240,.1)":"rgba(255,255,255,.22)"; ctx.lineWidth=.9; ctx.setLineDash([3,14]); ctx.lineDashOffset=now*2; ctx.stroke(T.deep[0]);
   ctx.setLineDash([]); ctx.lineDashOffset=0; ctx.lineCap="butt";
 }
 
@@ -5222,9 +5691,9 @@ function hull(P){
   up.pop(); lo.pop(); return lo.concat(up);
 }
 // a building's shadow: its footprint swept down-right by its height
-function bodyShadow(b,sc,h,rects){
+function bodyShadow(b,sc,h,rects,flat){
   // the 3D view keeps the outline and height to raise real walls from, and the sun casts the real shadow
-  if(rec3d){ let a=rec3d.boxes.get(b); if(!a) rec3d.boxes.set(b,a=[]); a.push({sc,h,rects:rects.map(r=>r.slice())}); return; }
+  if(rec3d){ let a=rec3d.boxes.get(b); if(!a) rec3d.boxes.set(b,a=[]); a.push({sc,h,rects:rects.map(r=>r.slice()),flat:!!flat}); return; }
   if(!ultra){ shadowHull(b,sc,h,rects,"rgba(30,36,22,.25)",0); return; }
   // Ultra: a soft penumbra, a darker core near the walls, and a dark line where the walls meet the ground
   shadowHull(b,sc,h*1.3,rects,"rgba(30,36,22,.07)",1.4);
@@ -5283,33 +5752,59 @@ function flatRoof(w,d,col,x,y){
   for(let i=1;i<4;i++){ const xx=x0+2.4+i*w*.42/4; ctx.moveTo(xx,y0+2.4); ctx.lineTo(xx,y0+2.4+d*.36); ctx.moveTo(xx+w*.46,y0+2.4); ctx.lineTo(xx+w*.46,y0+2.4+d*.36); } ctx.stroke();
   ctx.fillStyle=col; ctx.fillRect(x0+1.1,y0+d-3.2,w-2.2,2.1);
 }
+// a tree in a garden or a park: its kind and colour go by where it stands, so it's the same one in 2D and 3D
 function tree(x,y,r){
   if(rec3d){ rec3d.trees.push(x,y,r); return; }
-  if(ultra){ ctx.fillStyle="rgba(30,50,20,.08)"; ctx.beginPath(); ctx.arc(x+SHX*6,y+SHY*6,r*1.2,0,7); ctx.fill(); ctx.fillStyle="rgba(30,50,20,.15)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill();
-    ctx.fillStyle="rgba(38,72,28,.6)"; ctx.beginPath(); ctx.arc(x,y+.4,r+.7,0,7); ctx.fill(); }
-  else { ctx.fillStyle="rgba(30,50,20,.2)"; ctx.beginPath(); ctx.arc(x+SHX*3,y+SHY*3,r,0,7); ctx.fill(); }
-  const dm=dark?.45:1;
-  ctx.fillStyle=dk("#57973e",.75); ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill(); ctx.fillStyle="rgba(150,205,105,"+.55*dm+")"; ctx.beginPath(); ctx.arc(x-r*.3,y-r*.32,r*.55,0,7); ctx.fill();
-  if(ultra){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; ctx.beginPath(); ctx.arc(x-r*.42,y-r*.46,r*.2,0,7); ctx.fill(); } }
+  const s=hash(x*10|0,y*10|0), k=gardenKind(s), v=hash(y*10|0,x*10|0), dm=dark?.45:1, f=P=>{ ctx.beginPath(); P(); ctx.fill(); };
+  if(ultra){ ctx.fillStyle="rgba(30,50,20,.08)"; f(()=>{ const o=TSH[k]*1.5+(k===3?r*2:0); ctx.arc(x+SHX*o,y+SHY*o,r*1.2,0,7); }); }
+  ctx.fillStyle=ultra?"rgba(30,50,20,.16)":"rgba(30,50,20,.2)"; f(()=>crownSh(ctx,k,x,y,r,v,false));
+  if(ultra&&k!==1&&k!==4){ ctx.fillStyle="rgba(34,64,26,.55)"; f(()=>crown(ctx,k,x+.4,y+.6,r,v)); }
+  ctx.fillStyle=dk(TCOL[k][(v*TCOL[k].length)|0],.75); f(()=>crown(ctx,k,x,y,r,v));
+  ctx.fillStyle="rgba("+TLIT[k]+","+.55*dm+")"; f(()=>crownLit(ctx,k,x,y,r,v));
+  if(ultra&&k===0){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; f(()=>ctx.arc(x-r*.42,y-r*.46,r*.2,0,7)); } }
 const easeBack=x=>1+2.7*Math.pow(x-1,3)+1.7*Math.pow(x-1,2);
 const growth=(b,dur)=>rec3d?1:.6+.4*easeBack(clamp((animT-b.grow)/dur,0,1));
 function drawHome(b){ if(b.type==="bighouse") drawBigHouse(b); else if(b.type==="apts") (b.lot?drawLotApts:drawApts)(b); else if(b.type==="town") drawTown(b); else if(b.type==="mixed") drawMixed(b); else drawHouse(b); }
 function drawHouse(b){
-  const sc=growth(b,.35), w=b.w, d=b.d, v=b.v;
-  const rects=[[-w/2,-d/2,w,d]]; if(b.big) rects.push([-w/2-9,-1,9,d/2+1]);
+  const sc=growth(b,.35), w=b.w, d=b.d, v=b.v, P=housePlan(b), main=P.rects[0];
   if(b.lot) houseGrounds(b,sc);
-  bodyShadow(b,sc,v===3?6:5,rects);
+  bodyShadow(b,sc,(v===3?6:5)*(b.storeys===2?1.45:1),P.rects.concat(b.big?[[-w/2-9,-1,9,d/2+1]]:[]));
+  if(P.shed) bodyShadow(b,sc,2.6,[P.shed],true);
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   if(b.big){ ctx.fillStyle=shade(b.col,-55); ctx.fillRect(-w/2-9.6,-1.6,10,d/2+2.2); ctx.fillStyle=shade(b.col,-16); ctx.fillRect(-w/2-9,-1,9,d/2+1);
     ctx.fillStyle=shade(b.col,-30); ctx.fillRect(-w/2-9,d/2-1.2,9,1.2); }
-  if(v===1) gableRoof(b,w,d,b.col); else if(v===3) flatRoof(w,d,b.col); else hipRoof(b,w,d,b.col);
-  if(v!==3){ ctx.fillStyle=shade(b.col,-70); ctx.fillRect(w/4,-d/4-1.6,3,3); ctx.fillStyle="#8a7f76"; ctx.fillRect(w/4+.5,-d/4-1.1,2,2); }
+  const roof=(q,o)=>{ const rw=q[2], rd=q[3]+(o||0), x=q[0]+rw/2, y=q[1]+rd/2;
+    if(v===1) gableRoof(b,rw,rd,b.col,x,y); else if(v===3) flatRoof(rw,rd,b.col,x,y); else hipRoof(b,rw,rd,b.col,x,y); };
+  // an L: the wing goes in first, tucked under the front block's roof
+  if(P.rects[1]) roof(P.rects[1],1.6);
+  roof(main);
+  if(v!==3){ const cx=main[0]+main[2]*.75, cy=main[1]+main[3]*.25-1.6;
+    // solar panels on the back slope, clear of the chimney
+    if(b.solar&&main[2]>=main[3]){ const r=v===1?0:main[3]/2, px=main[0]+r*.6+.6, pw=(main[2]-2*r*.6-1.2)*.7, py=main[1]+main[3]*.08, ph=main[3]*.3;
+      ctx.fillStyle="#1f2a3d"; ctx.fillRect(px-.25,py-.25,pw+.5,ph+.5); ctx.fillStyle="#2c3c58"; ctx.fillRect(px,py,pw,ph);
+      ctx.strokeStyle="rgba(150,175,215,.55)"; ctx.lineWidth=.22; ctx.beginPath();
+      for(let i=1;i<Math.round(pw/1.7);i++){ const xx=px+i*pw/Math.round(pw/1.7); ctx.moveTo(xx,py); ctx.lineTo(xx,py+ph); } ctx.moveTo(px,py+ph/2); ctx.lineTo(px+pw,py+ph/2); ctx.stroke(); }
+    ctx.fillStyle=shade(b.col,-70); ctx.fillRect(cx,cy,3,3); ctx.fillStyle="#8a7f76"; ctx.fillRect(cx+.5,cy+.5,2,2); }
+  // the garden shed: a little gabled roof in weathered timber
+  if(P.shed){ const [x,y,ww,hh]=P.shed; ctx.fillStyle="#5e4a3a"; ctx.fillRect(x-.4,y-.4,ww+.8,hh+.8);
+    ctx.fillStyle=shade("#8a6e55",sunOn(b,0,-1)*30); ctx.fillRect(x,y,ww,hh/2); ctx.fillStyle=shade("#8a6e55",sunOn(b,0,1)*30); ctx.fillRect(x,y+hh/2,ww,hh/2); }
   ctx.restore();
   if(b.tree&&LOD){ const p=toMap(b,(b.flip?1:-1)*(w/2-2)*sc,(-d/2-6)*sc); tree(p.x,p.y,4.2*sc); }
   // the cars stand in the drive, nose in
   const dv=houseDrive(b);
   if(dv){ let i=0; for(const c of b.cars) if(c.state==="home"&&i<dv.pads.length){ const q=dv.pads[i++]; parked(c,q.x,q.y,q.a); } }
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// a house's plan on its own frame: one block, or an L with a wing going back on one side (inside the same footprint, so
+// it takes no more room), and where its shed stands in the back garden
+function housePlan(b){
+  const w=b.w, d=b.d, k=w+","+d+","+(b.ell?1:0)+(b.shed?1:0)+(b.flip?1:0);
+  if(b.plan&&b.plan.k===k) return b.plan;
+  // the wing reaches a little way past the back of the house, on the side away from the pool, the shed and the patio
+  const ws=b.flip?-1:1, dm=Math.round(d*.58*10)/10, ww=Math.min(w*.42,8);
+  const rects=b.ell?[[-w/2,d/2-dm,w,dm],[ws>0?w/2-ww:-w/2,-d/2-4,ww,d-dm+4]]:[[-w/2,-d/2,w,d]];
+  const shed=b.shed?[ws>0?-w/2+1:w/2-6,-d/2-10.5,5,4.2]:null;
+  return b.plan={k,rects,shed,ws};
 }
 // a house's drive: off to one side of the front door (in front of the garage wing, two cars wide, if it has one) and
 // straight out to the road, with room for the cars to stand in it nose in. A house set back on a deep plot keeps its long
@@ -5341,6 +5836,16 @@ function houseGrounds(b,sc){
     // and a path up to the front door
     const q=dv.path; if(q){ ctx.beginPath(); ctx.moveTo(q.x0,q.y0); ctx.lineTo(q.x1,q.y1); ctx.strokeStyle=dk("#ddd6c8",.9); ctx.lineWidth=2.4; ctx.stroke(); } }
   else if(!dv){ const a=Math.atan2(b.fy,b.fx); ctx.save(); ctx.translate(b.door.x,b.door.y); ctx.rotate(a); ctx.fillStyle=dk("#cfcbc1",.9); ctx.fillRect(-1,-2.4,10.5,4.8); ctx.restore(); }
+  // a paved patio out the back with a table, and a flower bed along the front on the side away from the drive
+  if(LOD&&(b.patio||!b.big)){ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+    const s=b.flip?1:-1, w=b.w, d=b.d;
+    // (on an L, in the corner between the front block and the wing)
+    if(b.patio){ const my=housePlan(b).rects[0][1], px=-housePlan(b).ws*w*(b.ell?.22:.12), pw=Math.min(b.ell?w*.48:11,w*.55); ctx.fillStyle=dk("#d8d2c4",.9); ctx.fillRect(px-pw/2,my-5.2,pw,5.2);
+      ctx.strokeStyle=dk("#c4bdae",.9); ctx.lineWidth=.25; ctx.beginPath(); for(let x=px-pw/2+1.8;x<px+pw/2;x+=1.8){ ctx.moveTo(x,my-5.2); ctx.lineTo(x,my); } ctx.stroke();
+      ctx.fillStyle="#f4f2ec"; ctx.beginPath(); ctx.arc(px+pw*.2,my-2.8,1.1,0,7); ctx.fill(); }
+    if(!b.big){ const ds=b.flip?1:-1, x0=ds>0?-w/2+1:1.6, x1=ds>0?-1.6:w/2-1; ctx.fillStyle=dk("#6f5a43",.9); ctx.fillRect(x0,d/2,x1-x0,1.5);
+      const FL=["#e8a33c","#d9534f","#f1e6f0","#c46fb0","#f2d04a"]; for(let x=x0+.6,i=0;x<x1-.4;x+=1.3,i++){ ctx.fillStyle=i%3===2?"#4f8a3a":FL[(b.id+i)%FL.length]; ctx.beginPath(); ctx.arc(x,d/2+.75,.55,0,7); ctx.fill(); } }
+    ctx.restore(); }
   if(!b.pool) return;
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   const px=(b.flip?1:-1)*b.w*.18, py=-b.d/2-8;
@@ -5376,6 +5881,7 @@ function drawTown(b){
 }
 // an apartment block grown on a plot: one long block, an L or a few towers, with the residents' car park out front
 function drawLotApts(b){
+  if(b.tower) return drawTower(b);
   const sc=growth(b,.5), w=b.w, d=b.d, col=b.col, edge=shade(col,-48), lite=shade(col,26), [lsx,lsy]=sunPlan(b), v=b.v%3, s=b.flip?-1:1;
   const pd=clamp(d*.34,13,25), by0=-d/2+3, bh=d-pd-6, bw=w-6;
   let blocks;
@@ -5389,6 +5895,41 @@ function drawLotApts(b){
     ctx.strokeStyle=lite; ctx.lineWidth=.6; ctx.strokeRect(x+2.6,y+2.6,ww-5.2,hh-5.2);
     ctx.fillStyle="rgba(255,255,255,.55)"; for(let xx=x+3;xx<x+ww-4;xx+=6) ctx.fillRect(xx,y+hh-2,3.6,1.3);
     if(ww>14&&hh>12){ rbox(x+ww*.2,y+hh*.28,Math.min(8,ww*.2),Math.min(6,hh*.24),lsx,lsy,1.8); rbox(x+ww*.62,y+hh*.3,Math.min(6,ww*.15),Math.min(5,hh*.2),lsx,lsy,1.4); } }
+  ctx.restore();
+  fillBays(b,sc,park,b.cars.filter(c=>c.state==="home"));
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// a tower block on its plot: one tall point tower, a long slab or two towers, on a low podium in a garden, with the
+// residents' car park out front
+function drawTower(b){
+  const sc=growth(b,.6), w=b.w, d=b.d, col=b.col, edge=shade(col,-52), lite=shade(col,30), [lsx,lsy]=sunPlan(b);
+  const pd=clamp(d*.3,14,24), y0=-d/2+3, ah=d-pd-7;
+  const park=carPark(b,sc,-w/2+3,d/2-pd,w-6,pd-1,pd>=24?[1.5,pd-12.5]:[(pd-11)/2],Math.max(3,Math.floor((w-6)/3.4)));
+  let T;
+  if(b.style==="twin"){ const g=9, tw=Math.min(ah*.78,(w-16-g)/2); T=[[-g/2-tw,y0+(ah-tw)/2,tw,tw],[g/2,y0+(ah-tw)/2+2,tw,tw-2]]; }
+  else if(b.style==="slab"){ const tw=w*.74, th=clamp(ah*.42,12,18); T=[[-tw/2,y0+(ah-th)/2,tw,th]]; }
+  else { const tw=clamp(Math.min(w*.48,ah*.72),18,34); T=[[-tw/2,y0+(ah-tw)/2,tw,tw]]; }
+  // the podium under the towers: a lobby and a floor of flats, a little wider than the tower
+  let px0=1e9, py0=1e9, px1=-1e9, py1=-1e9; for(const [x,y,ww,hh] of T){ px0=Math.min(px0,x); py0=Math.min(py0,y); px1=Math.max(px1,x+ww); py1=Math.max(py1,y+hh); }
+  const Pd=[Math.max(-w/2+5,px0-5),Math.max(y0+1,py0-4),0,0]; Pd[2]=Math.min(w/2-5,px1+5)-Pd[0]; Pd[3]=Math.min(y0+ah,py1+4)-Pd[1];
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+  ctx.fillStyle=dk("#9fcb76",.9); ctx.fillRect(-w/2+3,y0,w-6,ah+1);
+  ctx.strokeStyle=dk("#e4dccb",.9); ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(0,Pd[1]+Pd[3]); ctx.lineTo(0,d/2-pd); ctx.moveTo(-w/2+5,y0+ah*.82); ctx.lineTo(w/2-5,y0+ah*.82); ctx.stroke();
+  ctx.restore();
+  bodyShadow(b,sc,5,[Pd]);
+  bodyShadow(b,sc,b.floors*3,T);
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
+  roofBlock(Pd[0],Pd[1],Pd[2],Pd[3],dk("#d9d5cc",.9),dk("#a7a298",.9));
+  ctx.fillStyle=dk("#8fbf6a",.9); ctx.fillRect(Pd[0]+2,Pd[1]+2,Pd[2]-4,Math.max(0,py0-Pd[1]-3));
+  T.forEach(([x,y,ww,hh],i)=>{ roofBlock(x,y,ww,hh,col,edge);
+    ctx.strokeStyle=lite; ctx.lineWidth=.7; ctx.strokeRect(x+2.2,y+2.2,ww-4.4,hh-4.4);
+    // the balconies down each face show as a ribbon round the top
+    ctx.fillStyle="rgba(255,255,255,.5)"; for(let q=x+3;q<x+ww-3;q+=4.6){ ctx.fillRect(q,y+.4,2.6,1.1); ctx.fillRect(q,y+hh-1.5,2.6,1.1); }
+    rbox(x+ww*.18,y+hh*.22,Math.min(9,ww*.3),Math.min(7,hh*.26),lsx,lsy,2.2);
+    rbox(x+ww*.6,y+hh*.55,Math.min(6,ww*.2),Math.min(6,hh*.2),lsx,lsy,1.6,"#cfd6dc","#8f979e");
+    // the tallest point towers get a helipad
+    if(b.style==="point"&&b.floors>=24&&ww>=24){ const hx=x+ww*.62, hy=y+hh*.32, r=Math.min(ww,hh)*.16; ctx.fillStyle="#5d636b"; ctx.beginPath(); ctx.arc(hx,hy,r,0,7); ctx.fill();
+      ctx.strokeStyle="#f1c232"; ctx.lineWidth=.6; ctx.stroke(); ctx.fillStyle="#fff"; ctx.fillRect(hx-r*.42,hy-r*.45,r*.18,r*.9); ctx.fillRect(hx+r*.24,hy-r*.45,r*.18,r*.9); ctx.fillRect(hx-r*.3,hy-.3,r*.6,.6); } });
   ctx.restore();
   fillBays(b,sc,park,b.cars.filter(c=>c.state==="home"));
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
@@ -5420,7 +5961,7 @@ function drawCenter(b){
 // an office grown on a plot: a tower (or two, or an L) in its own plaza, a low block, a glass box, or a campus of
 // low wings round a garden; staff park out front
 function drawLotOffice(b){
-  const T=BT.office, sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
+  const T=b.pal||BT.office, sc=growth(b,.5), w=b.w, d=b.d, th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b), here=parkedAt.get(b)||[];
   const pd=clamp(d*.3,13,22), park=carPark(b,sc,-w/2+3,d/2-pd,w-6,pd-1,pd>=24?[1.5,pd-12.5]:[(pd-11)/2],Math.max(3,Math.floor((w-6)/3.4)));
   const glass=(x,y,ww,hh,col,dark,i)=>{ roofBlock(x,y,ww,hh,col,dark); ctx.fillStyle=shade(col,-12); ctx.fillRect(x+2.5,y+2.5,ww-5,hh-5); sheen(x+2.5,y+2.5,ww-5,hh-5,b.id+(i||0));
     ctx.strokeStyle="rgba(220,205,255,.55)"; ctx.lineWidth=.45; ctx.beginPath(); for(let q=x+4.5;q<x+ww-3;q+=4.2){ ctx.moveTo(q,y+2.5); ctx.lineTo(q,y+hh-2.5); } ctx.stroke(); };
@@ -5460,7 +6001,7 @@ function drawLotOffice(b){
     const bw=w-8, bh=d-pd-6, gl=b.style==="glass";
     bodyShadow(b,sc,b.floors*3.5,[[-bw/2,-d/2+3,bw,bh]]);
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
-    if(gl){ glass(-bw/2,-d/2+3,bw,bh,"#6f8fc9","#40588c"); ctx.fillStyle="#9fcf7a"; ctx.fillRect(-bw*.22,-d/2+3+bh*.3,bw*.44,bh*.4); ctx.fillStyle="#7fb85c"; ctx.beginPath(); ctx.arc(-bw*.1,-d/2+3+bh*.5,2,0,7); ctx.arc(bw*.08,-d/2+3+bh*.45,1.7,0,7); ctx.fill(); }
+    if(gl){ glass(-bw/2,-d/2+3,bw,bh,"#7d93a8","#4b5d70"); ctx.fillStyle="#9fcf7a"; ctx.fillRect(-bw*.22,-d/2+3+bh*.3,bw*.44,bh*.4); ctx.fillStyle="#7fb85c"; ctx.beginPath(); ctx.arc(-bw*.1,-d/2+3+bh*.5,2,0,7); ctx.arc(bw*.08,-d/2+3+bh*.45,1.7,0,7); ctx.fill(); }
     else { ctx.fillStyle=T.dark; roundRect(-bw/2,-d/2+3,bw,bh,1.5); ctx.fill(); ctx.fillStyle=T.col; ctx.fillRect(-bw/2+2,-d/2+5,bw-4,bh-4);
       ctx.strokeStyle=T.light; ctx.globalAlpha=.5; ctx.lineWidth=.8; ctx.strokeRect(-bw/2+4,-d/2+7,bw-8,bh-8); ctx.globalAlpha=1;
       ctx.fillStyle="rgba(215,235,255,.7)"; for(let x=-bw/2+7;x<bw/2-9;x+=11) ctx.fillRect(x,-d/2+8,6,bh-10); }
@@ -5487,7 +6028,14 @@ function fillBays(b,sc,bays,list){ if(!LOD) return; const n=Math.min(bays.length
   if(!b.bo||b.bo.length!==bays.length){ b.bo=bays.map((q,i)=>i); for(let i=b.bo.length-1;i>0;i--){ const j=Math.random()*(i+1)|0, x=b.bo[i]; b.bo[i]=b.bo[j]; b.bo[j]=x; } }
   for(let i=0;i<n;i++){ const q=bays[b.bo[i]], p=toMap(b,q.x*sc,q.y*sc); parked(list[i],p.x,p.y,b.ang+(b.bo[i]%2?0:Math.PI),q.bw?Math.max(2.6,q.bw*sc-.5):0); } }
 function roofBlock(x,y,w,h,col,edge){ ctx.fillStyle=edge; ctx.fillRect(x-.6,y-.6,w+1.2,h+1.2); ctx.fillStyle=col; ctx.fillRect(x+.8,y+.8,w-1.6,h-1.6); }
-const rbox=(x,y,w2,h2,lsx,lsy,hgt,col,edge)=>{ ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(x+lsx*hgt,y+lsy*hgt,w2,h2); ctx.fillStyle=edge||"#b9b7b0"; ctx.fillRect(x,y,w2,h2); ctx.fillStyle=col||"#ecebe6"; ctx.fillRect(x+.5,y+.5,w2-1,h2-1); };
+// in 3D a box on a roof stands up for real, on whichever part of the building it sits on
+function roofProp(b,x,y,w,h,hgt,col){
+  const recs=rec3d.boxes.get(b); if(!recs||!rec3d.props) return false; const cx=x+w/2, cy=y+h/2; let top=-1;
+  for(const r of recs) for(const q of r.rects) if(cx>=q[0]*r.sc&&cx<=(q[0]+q[2])*r.sc&&cy>=q[1]*r.sc&&cy<=(q[1]+q[3])*r.sc) top=Math.max(top,H3(r.h)*r.sc);
+  if(top<0) return false;
+  const p=toMap(b,cx,cy); rec3d.props.push({k:"box",x:p.x,y:p.y,gx:b.x,gy:b.y,z:top,a:b.ang-Math.PI/2,w,d:h,h:clamp(hgt*1.5,1.6,6),col:col||"#ecebe6"});
+  return true; }
+const rbox=(x,y,w2,h2,lsx,lsy,hgt,col,edge)=>{ if(rec3d&&rec3d.cur&&roofProp(rec3d.cur,x,y,w2,h2,hgt,col)) return; ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(x+lsx*hgt,y+lsy*hgt,w2,h2); ctx.fillStyle=edge||"#b9b7b0"; ctx.fillRect(x,y,w2,h2); ctx.fillStyle=col||"#ecebe6"; ctx.fillRect(x+.5,y+.5,w2-1,h2-1); };
 // the sun's direction on a building's own plan, for little rooftop shadows
 function sunPlan(b){ const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th); return [SHX*cs+SHY*sn,-SHX*sn+SHY*cs]; }
 function drawBigHouse(b){
@@ -5531,12 +6079,13 @@ function lot(b,sc,x0,y0,w,h,n,col){
   ctx.restore();
 }
 function drawDest(b){
+  if(b.sand) return drawBeach(b);
   if(isSvc(b)) return LEIS.has(b.type)?drawLeisure(b):drawSvc(b);
   if(b.type==="hotel") return drawHotel(b);
   if(b.type==="datacenter") return drawDatacenter(b);
   if(b.type==="center") return drawCenter(b);
   if(b.type==="office"&&b.lot) return drawLotOffice(b);
-  const T=DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
+  const T=b.pal||DEST[b.type], age=clamp((animT-b.grow)/.5,0,1), sc=.5+.5*easeOut(age), w=b.w, d=b.d;
   const th=b.ang-Math.PI/2, [lsx,lsy]=sunPlan(b);
   const here=parkedAt.get(b)||[];
   const stalls=(x0,w2,n,ly)=>{ if(!LOD) return; for(let i=0;i<Math.min(n,here.length);i++){ const p=toMap(b,(x0+2+(i+.5)*(w2-4)/n)*sc,ly*sc); parked(here[i],p.x,p.y,b.ang+Math.PI); } };
@@ -5570,13 +6119,13 @@ function drawDest(b){
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
     for(const [x,y,ww,hh] of rects){ ctx.fillStyle=T.dark; roundRect(x,y,ww,hh,1.5); ctx.fill(); ctx.fillStyle=T.col; ctx.fillRect(x+1.8,y+1.8,ww-3.6,hh-3.6); }
     if(v===1){ // a striped awning along the front
-      for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffffff":T.light; ctx.fillRect(-w/2+2+i*(w-4)/9,by-5,(w-4)/9,4.4); }
+      for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffffff":T.awn||T.light; ctx.fillRect(-w/2+2+i*(w-4)/9,by-5,(w-4)/9,4.4); }
       box(-w/2+6,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8); box(w/2-16,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8);
     } else {
       ctx.fillStyle=T.light; ctx.globalAlpha=.6; for(let i=0;i<(v===2?2:4);i++) ctx.fillRect(-w/2+5+i*12,-d/2+5,8,4.5); ctx.globalAlpha=1;
       for(let i=0;i<(v===2?2:4);i++) sheen(-w/2+5+i*12,-d/2+5,8,4.5,b.id,-w/2,w);
       box(-w/2+7,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); box(-w/2+16,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); if(v===0) box(w/2-13,-d/2+12,7,5,"#ecebe6","#b9b7b0",1.8);
-      ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=T.dark; ctx.fillRect(-7,by-2.6,14,2.6);
+      ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=T.awn||T.dark; ctx.fillRect(-7,by-2.6,14,2.6);
     }
     ctx.restore();
   } else if(b.type==="office"){
@@ -6005,6 +6554,8 @@ let dark=false;
 try{ const v=localStorage.getItem("gridlockTheme"); dark=v?v==="dark":matchMedia("(prefers-color-scheme: dark)").matches; }catch(e){}
 // what changed in each version, newest first, for the What's new list
 const CHANGES=[
+  ["7.4","Oct 19",["The ground is green everywhere now, with lusher and drier patches, wild flowers up close, and reeds along the shores.","Mountains are real: ridges and peaks of rock that stand up in 3D, with alpine grass low down.","Many more kinds of trees and plants: broadleaf, pine, fir, birch, poplar, bushes and reeds, with blossom and copper beech in gardens.","Water is a natural blue that deepens away from the shore, with gentle ripples and lapping foam, and in 3D it shines and moves.","More street lamps, closer together and in pairs on wide roads, and much brighter at night.","Houses look real: grey, slate, brown and clay-tile roofs, one or two storeys, some L-shaped, with solar panels, chimneys, garden sheds, patios, flower beds and hedges round the gardens.","Shops, offices, industry and mixed use have real roofing colours instead of bright blue, purple and orange, with coloured awnings on the shops.","In 3D, beach umbrellas, lifeguard chairs and the plant on rooftops now stand up for real."]],
+  ["7.3","Oct 17",["Homes now come in Low, Medium and High residential. Medium grows real apartment blocks instead of long rows of townhouses, and the new High zone grows tower blocks and skyscrapers once the town passes about 150 people.","When you tap out a zone, a Houses bar shows the fewest and the most plots that land can take. Slide it to pick exactly how many houses you want.","Zone corners snap onto the edge of the pavement and onto block corners, so plots line up with the road.","Beaches: pick Beach in Parks, then tap round a stretch of shore or drag along the water's edge, and the sand follows the shoreline. Bigger beaches cost more and bring more tourists.","Marinas and lakeside pumps snap onto the nearest shore, facing the water, wherever you put them down.","Buildings only take up the space they really use, so things can go right up to them.","Shops, offices, industry, mixed use and houses all want to grow a lot more, kept in step with each other.","Plot yards are green grass, apartment roofs are grey and brown instead of green, and the mask icon over homes is gone."]],
   ["7.2","Oct 17",["A new look: the top bar and toolbars are joined-up panels in a road-sign typeface, picked tools are marked in road-paint yellow, and prices are plain text.","How to play folds away on the start screen, so Play is right there.","Zooming is smoother: the mouse wheel glides, and the map doesn't redraw the ground every frame while you zoom.","Buildings pop up with a little bounce and a puff of dust, and the money flashes green or red when the month's money comes in.","3D trees have fuller, lumpier crowns, and pines grow in tiers."]],
   ["7.1","Oct 17",["Merge plots: in Zone, tap Merge plots, pick plots side by side and tap Merge to make them one bigger plot. If anything's built on them, it asks before clearing it.","Dark mode now darkens the map too: the land, hills, lakes and roads.","A What's new list, here."]],
   ["7.0","Oct 17",["Whatever the town wants gets built, up to four buildings at once, and they go up faster.","An empty plot that can't grow shows why: no power, no water, no road in, or no homes joined to it.","Gaps too small for a plot go to the plot beside them.","$15,000 to start, roads half price, more power and water from each plant, and taxes up to 13% are fine.","Parking fees in Finance, up to $5. About $3 is the sweet spot.","A smaller daycare, whole numbers for power and water, and no Move map button on a PC."]],
@@ -6155,6 +6706,21 @@ function v3init(T){
   const DTEX=mobile?512:1024, dcv=mkCv(DTEX);
   const dtex=new T.CanvasTexture(dcv); dtex.colorSpace=T.SRGBColorSpace; dtex.anisotropy=aniso; dtex.flipY=false;
   mats.ground=new T.MeshStandardMaterial({map:front.tex,roughness:.93});
+  // water: wherever the picture is water-blue (the lakes and rivers, and the pools in the gardens, but not a bridge or
+  // anything else drawn over them) the ground turns smooth and shiny, small waves run across it and catch the sun,
+  // and the sky shows in it, more so the flatter you look across it
+  const wU={wt:{value:0},ws:{value:1},wsky:{value:new T.Color(0xcfe0ee)}};
+  mats.ground.onBeforeCompile=sh=>{ sh.uniforms.wt=wU.wt; sh.uniforms.ws=wU.ws; sh.uniforms.wsky=wU.wsky;
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vWp;").replace("#include <fog_vertex>","#include <fog_vertex>\nvWp=(modelMatrix*vec4(transformed,1.)).xyz;");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWp; uniform float wt, ws; uniform vec3 wsky; float wat=0.;")
+      .replace("#include <map_fragment>","#include <map_fragment>\n{ vec3 c=sqrt(max(diffuseColor.rgb,0.)); wat=smoothstep(.025,.07,c.b-max(c.r,c.g))*smoothstep(.2,.3,(c.b-min(c.r,c.g))/(c.b+.001)); }")
+      .replace("#include <roughnessmap_fragment>","#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.16,wat);")
+      .replace("#include <lights_fragment_end>","#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(1.,ws,wat);")
+      .replace("#include <normal_fragment_maps>",`#include <normal_fragment_maps>
+if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2(-.06,.13)*cos(dot(p,vec2(-.06,.13))+wt*1.1)
+  +vec2(.19,-.15)*.6*cos(dot(p,vec2(.19,-.15))+wt*2.1)+vec2(-.23,-.29)*.4*cos(dot(p,vec2(-.23,-.29))+wt*2.7);
+  normal=normalize(normal-wat*.8*(viewMatrix*vec4(g.x,0.,g.y,0.)).xyz); }`)
+      .replace(/#include <(opaque|output)_fragment>/,m=>"outgoingLight=mix(outgoingLight,wsky,wat*.6*pow(1.-clamp(dot(normal,normalize(vViewPosition)),0.,1.),3.));\n"+m); };
   mats.roof=new T.MeshStandardMaterial({map:front.tex,roughness:.8});
   mats.dyn=new T.MeshBasicMaterial({map:dtex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4,fog:false});
   mats.focus=new T.MeshBasicMaterial({map:dtex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-6,fog:false});
@@ -6170,18 +6736,12 @@ function v3init(T){
 
   // ----- the ground under the pictures, raised where the hills are -----
   let hgrid=null, hw=0, hh=0; const HS=8;
+  // the mountains' own heights from the map (see genMap), so the ridges and peaks the picture shows stand up
   function heights(){
-    hw=Math.ceil((MW+600)/HS); hh=Math.ceil((MH+600)/HS);
-    const c=document.createElement("canvas"); c.width=hw; c.height=hh; const g=c.getContext("2d");
-    g.setTransform(1/HS,0,0,1/HS,-TX0/HS,-TY0/HS); g.globalCompositeOperation="lighter";
-    terrain.hills.forEach(p=>{ g.fillStyle="rgb(40,40,40)"; g.fill(p,"evenodd"); });
-    const d=g.getImageData(0,0,hw,hh).data, a=new Float32Array(hw*hh); for(let i=0;i<a.length;i++) a[i]=d[i*4]/40;
-    const blur=(src,r)=>{ const o=new Float32Array(src.length), o2=new Float32Array(src.length);
-      for(let y=0;y<hh;y++) for(let x=0;x<hw;x++){ let s=0,n=0; for(let k=-r;k<=r;k++){ const xx=x+k; if(xx<0||xx>=hw) continue; s+=src[y*hw+xx]; n++; } o[y*hw+x]=s/n; }
-      for(let y=0;y<hh;y++) for(let x=0;x<hw;x++){ let s=0,n=0; for(let k=-r;k<=r;k++){ const yy=y+k; if(yy<0||yy>=hh) continue; s+=o[yy*hw+x]; n++; } o2[y*hw+x]=s/n; }
-      return o2; };
-    const b=blur(blur(a,3),2); hgrid=new Float32Array(b.length);
-    for(let i=0;i<b.length;i++) hgrid[i]=a[i]>0?Math.max(0,b[i]-.18)*15:0;
+    hw=Math.ceil((MW+600)/HS); hh=Math.ceil((MH+600)/HS); hgrid=new Float32Array(hw*hh);
+    const M=terrain.mt, H=M.H, w=M.w, z=k=>H[k]>0?H[k]:0;
+    for(let j=0;j<hh;j++) for(let i=0;i<hw;i++){ const gx=Math.min((i+.5)*HS/M.R,w-1.001), gy=Math.min((j+.5)*HS/M.R,M.h-1.001), a=gx|0, b=gy|0, fx=gx-a, fy=gy-b, k=b*w+a;
+      hgrid[j*hw+i]=((z(k)*(1-fx)+z(k+1)*fx)*(1-fy)+(z(k+w)*(1-fx)+z(k+w+1)*fx)*fy)*MTK; }
   }
   const hAt=(x,y)=>{ if(!hgrid) return 0; const gx=(x-TX0)/HS-.5, gy=(y-TY0)/HS-.5, x0=Math.floor(gx), y0=Math.floor(gy); if(x0<0||y0<0||x0>=hw-1||y0>=hh-1) return 0;
     const fx=gx-x0, fy=gy-y0, i=y0*hw+x0; return (hgrid[i]*(1-fx)+hgrid[i+1]*fx)*(1-fy)+(hgrid[i+hw]*(1-fx)+hgrid[i+hw+1]*fx)*fy; };
@@ -6205,7 +6765,7 @@ function v3init(T){
   const bcache=new Map();   // building -> {key, parts:{material:{p,n,u,c}}, top}
   const batches={};
   let batchDirty=true;
-  const wallCols=["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6"];
+  const wallCols=["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6","#c98a6c","#b8735a","#cfd8dd","#d6ccb4","#c2c9b4","#9fb0bd"];
   // flats in render and brick colours
   const APT_WALLS=["#ece2d2","#e3cdb0","#d2a585","#efe7da","#c99478","#e6d8c0"];
   function wallTint(b){ const k=b.type, T0=BT[k];
@@ -6275,7 +6835,7 @@ function v3init(T){
       const M=(lx,ly,y)=>[b.x+(lx*cs-ly*sn)*sc, g0+y, b.y+(lx*sn+ly*cs)*sc];
       r.rects.forEach((q,qi)=>{
         const x0=q[0], y0=q[1], x1=q[0]+q[2], y1=q[1]+q[3];
-        const pitched=!b.cons&&PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
+        const pitched=!b.cons&&!r.flat&&PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
         const Hw=pitched?Math.max(6.4,H*.56):H; top=Math.max(top,pitched?Math.max(H,Hw+3):H);
         const corners=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]], cc=M((x0+x1)/2,(y0+y1)/2,0);
         const W=get("f:"+fk);
@@ -6307,7 +6867,10 @@ function v3init(T){
           if(hip){ const a=pt(le,D0,eave), bb=pt(le,D1,eave), c=pt(le-s*ins,Dm,Ht); triOut(Rf,a,bb,c,tu(0,0),tu(D1-D0,0),tu(half,half),ax*s,az*s,rc); }
           else { const lw=le-s*o, a=pt(lw,D0+o,Hw), bb=pt(lw,D1-o,Hw), c=pt(lw,Dm,Ht);
             triOut(W,a,bb,c,[0,Hw/V],[(D1-D0-2*o)/U,Hw/V],[(half-o)/U,Ht/V],ax*s,az*s,wall); } }
-        if(b.type==="house"&&qi===0){ const cx=x0+q[2]*.75+1.5, cy=y0+q[3]*.25-.1, k=1.15, c0=Hw-.5, c1=Ht+1.2;
+        // solar panels lying on the back slope, as in 2D
+        if(b.type==="house"&&b.solar&&qi===0&&along){ const f=dd=>eave+(Ht-eave)*(dd-D0)/(Dm-D0)+.14, k=.6, la=L0+ins*k+.9, lb=la+(L1-L0-2*ins*k-1.8)*.7, da=D0+(Dm-D0)*.2, db=D0+(Dm-D0)*k;
+          let Q=[pt(la,da,f(da)),pt(lb,da,f(da)),pt(lb,db,f(db)),pt(la,db,f(db))]; if(faceN(Q[0],Q[1],Q[2])[1]<0) Q.reverse(); quad(get("trim"),Q[0],Q[1],Q[2],Q[3],[0,0],[1,0],[1,1],[0,1],LC("#24314a")); }
+        if(b.type==="house"&&qi===0&&!r.flat){ const cx=x0+q[2]*.75+1.5, cy=y0+q[3]*.25-.1, k=1.15, c0=Hw-.5, c1=Ht+1.2;
           hexa(get("trim"),[M(cx-k,cy-k,c0),M(cx+k,cy-k,c0),M(cx+k,cy-k,c1),M(cx-k,cy-k,c1),M(cx-k,cy+k,c0),M(cx+k,cy+k,c0),M(cx+k,cy+k,c1),M(cx-k,cy+k,c1)],LC("#8a6a5a")); }
       }); }
     return {parts,top};
@@ -6440,6 +7003,25 @@ function v3init(T){
     for(const k in mdlI){ mdlI[k].count=n[k]; mdlI[k].instanceMatrix.needsUpdate=true; }
   }
 
+  // ----- small things that stand up: plant on the roofs, beach umbrellas and lifeguard chairs -----
+  const PCAP=4000, UCAP=1500, propI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),new T.MeshStandardMaterial({roughness:.7}),PCAP),
+    umbTopI=new T.InstancedMesh(new T.ConeGeometry(1,.36,10),new T.MeshStandardMaterial({roughness:.6,side:T.DoubleSide}),UCAP),
+    umbPoleI=new T.InstancedMesh(new T.CylinderGeometry(.07,.07,1,5),new T.MeshStandardMaterial({color:0xe8e4da,roughness:.6}),UCAP);
+  propI.setColorAt(0,new T.Color(1,1,1)); umbTopI.setColorAt(0,new T.Color(1,1,1));
+  for(const m of [propI,umbTopI,umbPoleI]){ m.count=0; m.frustumCulled=false; m.castShadow=true; m.receiveShadow=m===propI; scene.add(m); }
+  let propKey="";
+  function propsSet(list){
+    let key=list.length+":"; for(const q of list) key+=Math.round(q.x*2)+","+Math.round(q.y*2)+";";
+    if(key===propKey) return; propKey=key;
+    let n=0, u=0; const A=propI.instanceMatrix.array, U=umbTopI.instanceMatrix.array, V=umbPoleI.instanceMatrix.array;
+    for(const q of list){
+      if(q.k==="umb"){ if(u>=UCAP) continue; const g=hAt(q.x,q.y); setM(U,u,q.x,g+q.h,q.y,0,q.w,q.w,q.w); setC(umbTopI,u,q.col); setM(V,u,q.x,g+q.h/2,q.y,0,1,q.h,1); u++; }
+      else { if(n>=PCAP) continue; const g=q.gx!==undefined?hAt(q.gx,q.gy):hAt(q.x,q.y); setM(A,n,q.x,g+q.z+q.h/2,q.y,q.a,q.w,q.h,q.d); setC(propI,n,q.col); n++; } }
+    propI.count=n; umbTopI.count=umbPoleI.count=u;
+    for(const m of [propI,umbTopI,umbPoleI]) m.instanceMatrix.needsUpdate=true;
+    for(const m of [propI,umbTopI]) if(m.instanceColor) m.instanceColor.needsUpdate=true;
+  }
+
   // ----- tower cranes over the tall buildings going up -----
   const CRCAP=160, craneI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),new T.MeshStandardMaterial({roughness:.55}),CRCAP);
   craneI.setColorAt(0,new T.Color(1,1,1)); craneI.count=0; craneI.frustumCulled=false; craneI.castShadow=true; scene.add(craneI);
@@ -6456,53 +7038,74 @@ function v3init(T){
     craneI.count=n; craneI.instanceMatrix.needsUpdate=true; if(craneI.instanceColor) craneI.instanceColor.needsUpdate=true;
   }
 
-  // ----- trees: a crown on a trunk, or a pine -----
+  // ----- trees and plants: a crown on a trunk, a pine or a fir, a birch, a poplar, bushes and reeds -----
   // shapes made of a few parts, each merged into one to stamp out many times
   function mergeG(parts){ const pos=[], nor=[];
     for(const [g,x,y,z] of parts){ const q=g.toNonIndexed(); q.translate(x,y,z); q.computeVertexNormals();
       for(const v of q.attributes.position.array) pos.push(v); for(const v of q.attributes.normal.array) nor.push(v); q.dispose(); g.dispose(); }
     const out=new T.BufferGeometry(); out.setAttribute("position",new T.Float32BufferAttribute(pos,3)); out.setAttribute("normal",new T.Float32BufferAttribute(nor,3)); return out; }
-  // a crown in lumps rather than one ball, and a pine in three tiers
-  const crownG=mergeG([[new T.IcosahedronGeometry(.8,1),0,.1,0],[new T.IcosahedronGeometry(.56,0),.44,-.12,.2],[new T.IcosahedronGeometry(.5,0),-.4,-.16,-.22],[new T.IcosahedronGeometry(.46,0),.06,-.22,-.44]]);
+  // a crown in lumps rather than one ball, a pine in three tiers and a fir in four narrower ones, a birch's loose
+  // crown, a poplar's tall one, a low bush and a clump of reeds
+  const ico=(r,d,sy)=>new T.IcosahedronGeometry(r,d).scale(1,sy||1,1);
+  const crownG=mergeG([[ico(.8,1),0,.1,0],[ico(.56,0),.44,-.12,.2],[ico(.5,0),-.4,-.16,-.22],[ico(.46,0),.06,-.22,-.44]]);
   const pineG=mergeG([[new T.ConeGeometry(1,.56,7),0,-.22,0],[new T.ConeGeometry(.76,.5,7),0,.06,0],[new T.ConeGeometry(.5,.44,7),0,.3,0]]), trunkG=new T.CylinderGeometry(.16,.22,1,6);
+  const firG=mergeG([[new T.ConeGeometry(.9,.4,8),0,-.3,0],[new T.ConeGeometry(.72,.38,8),0,-.08,0],[new T.ConeGeometry(.54,.36,8),0,.13,0],[new T.ConeGeometry(.34,.36,8),0,.33,0]]);
+  const birchG=mergeG([[ico(.5,0),0,.15,0],[ico(.42,0),.36,-.05,.12],[ico(.4,0),-.32,-.1,-.16],[ico(.36,0),.05,-.2,.38],[ico(.34,0),-.08,.44,.04]]);
+  const poplarG=mergeG([[ico(.6,1,1.9),0,0,0],[ico(.36,0),.2,-.4,.12],[ico(.32,0),-.16,.32,-.1]]);
+  const bushG=mergeG([[ico(.62,0,.75),0,0,0],[ico(.48,0,.8),.45,-.1,.15],[ico(.45,0,.8),-.38,-.1,-.25]]);
+  const reedG=mergeG([0,1,2,3,4,5,6].map(i=>{ const a=i*2.4, d=.12+.12*(i%3); return [new T.ConeGeometry(.07,1,3).rotateZ(Math.cos(a)*.3).rotateX(Math.sin(a)*.3),Math.cos(a)*d,.5,Math.sin(a)*d]; }));
   const leafMat=new T.MeshStandardMaterial({color:0xffffff,roughness:.85,flatShading:true});
-  const TCAP=6000, crownI=new T.InstancedMesh(crownG,leafMat,TCAP), pineI=new T.InstancedMesh(pineG,leafMat,TCAP), trunkI=new T.InstancedMesh(trunkG,new T.MeshStandardMaterial({color:0x7a5a3c,roughness:.9}),TCAP*2);
-  for(const m of [crownI,pineI,trunkI]){ m.count=0; m.frustumCulled=false; m.castShadow=true; m.receiveShadow=m!==trunkI; scene.add(m); }
-  crownI.setColorAt(0,new T.Color(1,1,1)); pineI.setColorAt(0,new T.Color(1,1,1));
+  // one stamp for each kind (blossom and copper beeches use the broadleaf's), and the trunks, brown or a birch's white
+  const KG=[crownG,pineG,birchG,poplarG,firG,bushG,reedG], KCAP=[6000,3000,3000,1500,3000,4000,3000];
+  const KI=KG.map((g,i)=>new T.InstancedMesh(g,leafMat,KCAP[i])), trunkI=new T.InstancedMesh(trunkG,new T.MeshStandardMaterial({color:0xffffff,roughness:.9}),14000);
+  for(const m of [...KI,trunkI]){ m.count=0; m.frustumCulled=false; m.castShadow=m!==KI[6]; m.receiveShadow=m!==trunkI; m.setColorAt(0,new T.Color(1,1,1)); scene.add(m); }
   let treeKey="";
-  const LEAF=["#5d9c41","#4d8a37","#6aa84a","#57973e","#649f45"];
+  const LEAF=[["#5d9c41","#4d8a37","#6aa84a","#57973e","#649f45"],["#3e7a3c","#356f37"],["#9ac75c","#8cbc54"],["#5a963d","#4f8a37"],["#2e6446","#2a5a40"],["#4a8537","#56923f","#3f7a33"],["#86a04c","#7a9644"],["#f2b8cb","#f7cdd9"],["#9c5741","#8a4a38"]];
   function treesSet(list){
     let key=list.length+":"; for(let i=0;i<list.length;i+=Math.max(4,(list.length>>5)&~3)) key+=Math.round(list[i])+","+Math.round(list[i+1])+";";
     if(key===treeKey) return; treeKey=key;
-    let nc=0, np=0, nt=0; const cm=crownI.instanceMatrix.array, pm=pineI.instanceMatrix.array, tmm=trunkI.instanceMatrix.array;
-    for(let i=0;i<list.length;i+=4){ const x=list[i], y=list[i+1], r=list[i+2], g0=hAt(x,y), s=hash(x*10|0,y*10|0);
-      if(list[i+3]===1){ if(np>=TCAP) continue; const h=r*3.4; setM(pm,np,x,g0+r*.9+h/2,y,s*6,r*1.05,h,r*1.05); setC(pineI,np,s<.5?"#3e7a3c":"#356f37"); np++;
-        if(nt<TCAP*2){ setM(tmm,nt,x,g0+r*.5,y,0,r*.8,r*1.1,r*.8); nt++; } continue; }
-      if(nc>=TCAP) continue; const cr=r*1.08; setM(cm,nc,x,g0+r*1.25+cr*.9,y,s*6,cr,cr*1.12,cr); setC(crownI,nc,LEAF[(s*LEAF.length)|0]); nc++;
-      if(nt<TCAP*2){ setM(tmm,nt,x,g0+r*.75,y,0,r,r*1.6,r); nt++; } }
-    crownI.count=nc; pineI.count=np; trunkI.count=nt;
-    for(const m of [crownI,pineI,trunkI]){ m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
+    const n=KI.map(()=>0), tmm=trunkI.instanceMatrix.array; let nt=0;
+    for(let i=0;i<list.length;i+=4){ const x=list[i], y=list[i+1], r=list[i+2], g0=hAt(x,y), s=hash(x*10|0,y*10|0), k=list[i+3]<0?gardenKind(s):list[i+3], q=k>6?0:k;
+      if(n[q]>=KCAP[q]) continue; const m=KI[q], a=m.instanceMatrix.array, j=n[q]++, C=LEAF[k]; setC(m,j,C[(hash(y*10|0,x*10|0)*C.length)|0]);
+      // where the trunk goes, how tall and wide, and its colour
+      let th=0, tw=r, ty=0, tc="#7a5a3c";
+      if(q===0){ const cr=r*1.08; setM(a,j,x,g0+r*1.25+cr*.9,y,s*6,cr,cr*1.12,cr); th=r*1.6; ty=g0+r*.75; }
+      else if(q===1){ const h=r*3.4; setM(a,j,x,g0+r*.9+h/2,y,s*6,r*1.05,h,r*1.05); th=r*1.1; tw=r*.8; ty=g0+r*.5; }
+      else if(q===4){ const h=r*4.2; setM(a,j,x,g0+r*.7+h/2,y,s*6,r*.92,h,r*.92); th=r*1; tw=r*.75; ty=g0+r*.45; }
+      else if(q===2){ setM(a,j,x,g0+r*1.95,y,s*6,r*.95,r*1.1,r*.95); th=r*2.2; tw=r*.62; ty=g0+r*1.05; tc="#ebe7de"; }
+      else if(q===3){ setM(a,j,x,g0+r*.7+r*1.95,y,s*6,r*.72,r*1.7,r*.72); th=r*1.2; tw=r*.7; ty=g0+r*.55; }
+      else if(q===5) setM(a,j,x,g0+r*.3,y,s*6,r*.95,r*.95,r*.95);
+      else setM(a,j,x,g0-.1,y,s*6,r*.85,r*1.35,r*.85);
+      if(th&&nt<14000){ setM(tmm,nt,x,ty,y,0,tw,th,tw); setC(trunkI,nt,tc); nt++; } }
+    KI.forEach((m,i)=>{ m.count=n[i]; }); trunkI.count=nt;
+    for(const m of [...KI,trunkI]){ m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
   }
 
   // ----- street lights (Ultra): posts along the roads, and pools of warm light on the road at night -----
-  const LCAP=3000, poleMat=new T.MeshStandardMaterial({color:0x6c6f75,roughness:.55}), lampMat=new T.MeshBasicMaterial({color:0xd9dbe0});
+  const LCAP=4000, poleMat=new T.MeshStandardMaterial({color:0x6c6f75,roughness:.55}), lampMat=new T.MeshBasicMaterial({color:0xd9dbe0});
   const poleI=new T.InstancedMesh(new T.CylinderGeometry(.24,.32,1,6).translate(0,.5,0),poleMat,LCAP), armI=new T.InstancedMesh(new T.BoxGeometry(1,1,1).translate(.5,0,0),poleMat,LCAP), lampI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),lampMat,LCAP);
-  const poolTex=tex(128,128,(g,w,h)=>{ const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); gr.addColorStop(0,"rgba(255,214,150,.85)"); gr.addColorStop(.35,"rgba(255,190,120,.32)"); gr.addColorStop(1,"rgba(255,170,90,0)"); g.fillStyle=gr; g.fillRect(0,0,w,h); });
+  const poolTex=tex(128,128,(g,w,h)=>{ const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); gr.addColorStop(0,"rgba(255,226,170,1)"); gr.addColorStop(.3,"rgba(255,200,130,.45)"); gr.addColorStop(.65,"rgba(255,180,105,.12)"); gr.addColorStop(1,"rgba(255,170,90,0)"); g.fillStyle=gr; g.fillRect(0,0,w,h); });
   const poolMat=new T.MeshBasicMaterial({map:poolTex,transparent:true,blending:T.AdditiveBlending,depthWrite:false,fog:false,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-8});
   const poolI=new T.InstancedMesh(new T.PlaneGeometry(1,1).rotateX(-Math.PI/2),poolMat,LCAP);
   for(const m of [poleI,armI,lampI,poolI]){ m.count=0; m.frustumCulled=false; scene.add(m); } poleI.castShadow=armI.castShadow=true; poolI.renderOrder=1;
+  // the glow round each lamp, as one cloud of points
+  const glowTex=tex(64,64,(g,w,h)=>{ const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2); gr.addColorStop(0,"rgba(255,250,236,1)"); gr.addColorStop(.14,"rgba(255,230,180,.85)"); gr.addColorStop(.4,"rgba(255,200,130,.22)"); gr.addColorStop(1,"rgba(255,180,100,0)"); g.fillStyle=gr; g.fillRect(0,0,w,h); });
+  const glowG=new T.BufferGeometry(); glowG.setAttribute("position",new T.BufferAttribute(new Float32Array(LCAP*3),3)); glowG.setDrawRange(0,0);
+  const glowM=new T.PointsMaterial({map:glowTex,size:26,transparent:true,depthWrite:false,blending:T.AdditiveBlending,fog:false}), glowP=new T.Points(glowG,glowM);
+  glowP.frustumCulled=false; glowP.renderOrder=4; scene.add(glowP);
   let lampKey3=null, lampReg=null;
   function streetLights(nk){
-    const on=ultra; for(const m of [poleI,armI,lampI]) m.visible=on; poolI.visible=on&&nk>.08;
+    const on=ultra; for(const m of [poleI,armI,lampI]) m.visible=on; poolI.visible=glowP.visible=on&&nk>.08;
     if(!on) return;
-    lampMat.color.set(nk>.12?"#fff1c8":"#d9dbe0"); poolMat.opacity=clamp((nk-.08)*2,0,1);
+    lampMat.color.set(nk>.12?"#fff6dc":"#d9dbe0"); poolMat.opacity=glowM.opacity=clamp((nk-.08)*2.2,0,1);
     const L=lamps(); if(L===lampKey3&&lampReg===reg) return; lampKey3=L; lampReg=reg;
-    let n=0; const pm=poleI.instanceMatrix.array, am=armI.instanceMatrix.array, hm=lampI.instanceMatrix.array, om=poolI.instanceMatrix.array;
+    let n=0; const pm=poleI.instanceMatrix.array, am=armI.instanceMatrix.array, hm=lampI.instanceMatrix.array, om=poolI.instanceMatrix.array, gp=glowG.attributes.position.array;
     for(const l of L){ if(n>=LCAP) break; if(reg&&(l.x<reg.x0-20||l.y<reg.y0-20||l.x>reg.x0+reg.S+20||l.y>reg.y0+reg.S+20)) continue;
-      if(l.hwy){ setM(pm,n,l.x,0,l.y,0,1,13,1); setM(am,n,l.x,13,l.y,0,0,0,0); setM(hm,n,l.x,13.2,l.y,0,2.2,.6,2.2); setM(om,n,l.x,.35,l.y,0,22,1,22); n++; continue; }
+      if(l.hwy){ setM(pm,n,l.x,0,l.y,0,1,13,1); setM(am,n,l.x,13,l.y,0,0,0,0); setM(hm,n,l.x,13.2,l.y,0,2.2,.6,2.2); setM(om,n,l.x,.35,l.y,0,30,1,30); gp.set([l.x,12.6,l.y],n*3); n++; continue; }
       const a=Math.atan2(l.ay,l.ax), hx=l.x+l.ax*3.4, hy=l.y+l.ay*3.4;
-      setM(pm,n,l.x,0,l.y,0,1,11,1); setM(am,n,l.x,10.8,l.y,a,3.6,.32,.32); setM(hm,n,hx,10.6,hy,a,1.8,.5,1.2); setM(om,n,hx,.35,hy,0,17,1,17); n++; }
+      setM(pm,n,l.x,0,l.y,0,1,11,1); setM(am,n,l.x,10.8,l.y,a,3.6,.32,.32); setM(hm,n,hx,10.6,hy,a,1.8,.5,1.2); setM(om,n,hx,.35,hy,0,25,1,25); gp.set([hx,10.1,hy],n*3); n++; }
     for(const m of [poleI,armI,lampI,poolI]){ m.count=n; m.instanceMatrix.needsUpdate=true; }
+    glowG.setDrawRange(0,n); glowG.attributes.position.needsUpdate=true;
   }
 
   // ----- ghosts: where a new building will go, as a see-through block -----
@@ -6539,6 +7142,8 @@ function v3init(T){
     dist=vh/(2*cam.z*Math.tan(camera.fov*Math.PI/360));
     const cp=Math.cos(v3pitch), sp=Math.sin(v3pitch); tgt.set(cam.x,0,cam.y);
     camera.position.set(cam.x+Math.sin(v3yaw)*cp*dist,sp*dist,cam.y+Math.cos(v3yaw)*cp*dist);
+    // never down inside a mountain, close up and looking low across one
+    const gh=hAt(camera.position.x,camera.position.z)+14; if(camera.position.y<gh) camera.position.y=gh;
     camera.near=Math.max(1,dist*.02); camera.far=dist*9; camera.lookAt(tgt); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
   }
   function pick(sx,sy){ ndc.set(sx/vw*2-1,-(sy/vh*2-1)); ray.setFromCamera(ndc,camera); const o=ray.ray.origin, d=ray.ray.direction;
@@ -6571,7 +7176,7 @@ function v3init(T){
   function paintCell(L,cx,cy,sig){
     const key=cx+","+cy, CW=L.CW, x0=cx*CW, y0=cy*CW, sx=mod(cx,NC)*CPX, sy=mod(cy,NC)*CPX;
     let c=L.cells.get(key); if(!c) L.cells.set(key,c={cx,cy,sig:-1,rec:null,terr:false,at:0});
-    const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),parked:[],trees:[],models:[]};
+    const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),parked:[],trees:[],models:[],props:[]};
     const T0=terrain, t0=performance.now();
     pass2d(stage,CPX,x0,y0,CW,()=>{
       // just the outlines that reach the cell, and the grass tufts and flowers only where they'd show, as in 2D
@@ -6605,11 +7210,12 @@ function v3init(T){
   function drop(c){ if(c.rec) for(const b of c.rec.boxes.keys()){ const e=bcache.get(b); if(e&&e.cell===c){ bcache.delete(b); batchDirty=true; } } }
   // parked cars and trees from all the cells, and the wild trees on the land under the picture
   function gather(){
-    const P=[], tl=[], M=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
-    for(const tr of treesIn(x0,y0,x0+S,y0+S)) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.pine?1:0);
-    for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],0);
-      for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } } }
-    parkedList=P; treesSet(tl); modelsSet(M);
+    const P=[], tl=[], M=[], Q=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
+    for(const tr of treesIn(x0,y0,x0+S,y0+S)) if(tr.alive&&tr.x>x0&&tr.y>y0&&tr.x<x0+S&&tr.y<y0+S) tl.push(tr.x,tr.y,tr.r,tr.k);
+    for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],-1);
+      for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } }
+      for(const q of c.rec.props||[]){ const k="p"+q.k+Math.round(q.x*4)+","+Math.round(q.y*4)+","+Math.round(q.z||0); if(!seen.has(k)){ seen.add(k); Q.push(q); } } }
+    parkedList=P; treesSet(tl); modelsSet(M); propsSet(Q);
   }
   // a fingerprint of everything drawn in each cell of a layer, to tell which ones changed
   function cellSigs(L){
@@ -6725,6 +7331,7 @@ function v3init(T){
     const add=(x,y,r)=>{ if(x-r<x0) x0=x-r; if(y-r<y0) y0=y-r; if(x+r>x1) x1=x+r; if(y+r>y1) y1=y+r; };
     const seg=(s,m)=>{ for(const q of orientedChain(s)){ const A=nodes.get(q.s.a), B=nodes.get(q.s.b); if(A) add(A.x,A.y,m); if(B) add(B.x,B.y,m); } };
     if(tool==="build"){ if(zoneGhosts) for(const g of zoneGhosts) add(g.x,g.y,g.r+8);
+      const sp=zoneGhosts&&zoneGhosts.sand; if(sp&&sp.path) add(sp.x,sp.y,sp.r+20);
       if(mergeSel){ for(const L of mergeSel) add(L.x,L.y,L.r+8); const hl=hoverW&&!drag&&lotUnder(hoverW); if(hl) add(hl.x,hl.y,hl.r+8); const m=mergePrev(); if(m&&m.g) add(m.g.x,m.g.y,m.g.r+30); }
       // and the sides of a plot already zoned that a corner snaps onto
       const sides=q=>{ if(q) for(const [a,b] of q.segs){ add(a.x,a.y,10); add(b.x,b.y,10); } };
@@ -6753,7 +7360,7 @@ function v3init(T){
   function focus(){
     const now=performance.now(), r=v=>v?Math.round(v.x*2)+","+Math.round(v.y*2):"";
     const key=[tool,placeSel,zoneSel,roadMode,roadKind,laneSel,laneSide,r(hoverW),drag?drag.mode+(drag.raw?drag.raw.length+r(drag.raw[drag.raw.length-1]):"")+(drag.lane?r(drag.lane.w1):"")+(drag.path?drag.path.length:""):"",
-      ghost?r(ghost)+ghost.ok+ghost.ang+ghost.why:"",zoneGhosts?zoneGhosts.length+r(zoneGhosts[0])+r(zoneGhosts[zoneGhosts.length-1]):"",lineGhosts?lineGhosts.length+r(lineGhosts[lineGhosts.length-1]):"",
+      ghost?r(ghost)+ghost.ok+ghost.ang+ghost.why:"",zoneGhosts?zoneGhosts.length+r(zoneGhosts[0])+r(zoneGhosts[zoneGhosts.length-1])+(zoneGhosts.sand?r(zoneGhosts.sand)+zoneGhosts.sand.A:""):"",lineGhosts?lineGhosts.length+r(lineGhosts[lineGhosts.length-1]):"",
       grid?grid.pts.length+r(grid.pts[0])+r(grid.pts[1]):"",zpts?zpts.length+r(zpts[zpts.length-1])+(shiftDown?"s":""):"",mergeSel?"m"+mergeSel.map(L=>L.id).join("."):"",r(gridCur),tuneNode?tuneNode.id:"",moving?1:0,running&&!paused?1:0,cam.z.toFixed(2)].join("|");
     if(key===focKey) return;
     if(now-lastF<(mobile?45:20)) return;
@@ -6787,6 +7394,7 @@ function v3init(T){
     if(rainK>0){ top.lerp(C("#9aa3ad"),rainK*.6); hor.lerp(C("#c3c8cc"),rainK*.6); }
     if(dark){ top.lerp(C("#141b2b"),.75); hor.lerp(C("#2a3242"),.8); }
     const key=top.getHexString()+hor.getHexString(); if(key!==skyKey3){ skyKey3=key; cv3.style.background="linear-gradient(#"+top.getHexString()+",#"+hor.getHexString()+" 58%)"; }
+    wU.wsky.value.copy(hor).lerp(top,.45); wU.ws.value=dark?.3:1;   // less sun off it on the dark map, where it would glare
     scene.fog.color.copy(hor); scene.fog.near=dist*(1.6-rainK*.6); scene.fog.far=dist*(3.6-rainK*1.4);
     const day=1-nk;
     sun.intensity=(2.6*day+.15)*(1-rainK*.55); sun.color.set(nk>.5?"#9db4ff":dk>.05?"#ffc89a":"#fff1dc");
@@ -6814,7 +7422,7 @@ function v3init(T){
     const rebuilt=batchDirty; if(batchDirty) rebuildBatches();
     decks();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
-    sky(nk,dk);
+    sky(nk,dk); wU.wt.value=now/1000;
     ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
     // the shadows follow the camera; when it's still they're drawn every other frame for the moving cars
     const ck=camera.position.x.toFixed(1)+camera.position.y.toFixed(1)+camera.position.z.toFixed(1);
@@ -6823,7 +7431,7 @@ function v3init(T){
   }
   return {R,sync,pick,project,render,hAt,
     top:b=>{ const e=bcache.get(b); return e?e.top:0; },
-    stats:()=>({pc:pcN,pms:+pcMs.toFixed(1),blds:bcache.size,batches:Object.keys(batches).length,trees:crownI.count+pineI.count,cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
+    stats:()=>({pc:pcN,pms:+pcMs.toFixed(1),blds:bcache.size,batches:Object.keys(batches).length,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
     dbg:()=>{ const nd=need(); return {nd,core:core(front,nd),ox:front.ox,oy:front.oy,S:front.S,CW:front.CW,todo:front.todo.length,cov:covers(front,core(front,nd))}; }};
 }
 
@@ -6859,7 +7467,7 @@ function draw3d(){
 window.__gridlock={
   work:()=>({roads:works.map(w=>({len:Math.round(w.len),p:+clamp((animT-w.t0)/w.dur,0,1).toFixed(2),crew:crewAt(w)!==null})),sites:blds.filter(b=>b.cons).map(b=>({id:b.id,type:b.type,stage:workStage(b),h:b.cons.h,dur:+b.cons.dur.toFixed(1),crane:!!craneAt(b)}))}),
   state:()=>({score,t,homes:homes().length,dests:dests().length,driving:cars.filter(c=>c.state==="drive").length,cars:cars.length,res:Object.assign({},res),over,level,lvTrips,need:lvNeed(),nodes:nodes.size,segs:segs.size,blds:blds.length}),
-  blds:()=>blds.map(b=>({id:b.id,type:b.type,x:b.x,y:b.y,w:b.w,d:b.d,big:!!b.big,door:b.door,fx:b.fx,fy:b.fy,att:!!b.acc,acc:b.acc?b.acc.seg:null,pins:b.pins?Object.assign({},b.pins):null,over:b.over})),
+  blds:()=>blds.map(b=>({id:b.id,type:b.type,x:b.x,y:b.y,w:b.w,d:b.d,big:!!b.big,ell:!!b.ell,storeys:b.storeys||1,solar:!!b.solar,shed:!!b.shed,patio:!!b.patio,pool:!!b.pool,col:b.col,tower:!!b.tower,floors:b.floors||0,door:b.door,fx:b.fx,fy:b.fy,att:!!b.acc,acc:b.acc?b.acc.seg:null,pins:b.pins?Object.assign({},b.pins):null,over:b.over})),
   build:(pts,lanes,over,kind)=>{ lanes=lanes||1; const S=snapAt(pts[0].x,pts[0].y), last=pts[pts.length-1]; const pl=makePlan(S,pts,last,lanes,pts.length===2,over,kind); if(pl.ok) commitPlan(pl); return {ok:pl.ok,reason:pl.reason,cost:pl.cost,hit:pl.hitB?pl.hitB.type+pl.hitB.id:null,S:pl.S.kind,E:pl.E.kind}; },
   move:(id,x,y)=>{ const b=blds.find(q=>q.id===id); if(!b) return null; const g=ghostAt(b.type,{x,y},b); if(g.ok) moveBld(b,g); return {ok:g.ok,why:g.why,x:g.x,y:g.y}; },
   del:id=>{ const b=blds.find(q=>q.id===id); return b?deleteBld(b):null; },
@@ -6895,6 +7503,7 @@ window.__gridlock={
   growAs:(kind,type)=>{ let n=0; for(const L of lots) if(L.kind===kind&&!L.b&&lotAccess(L)&&growOn(L,type)) n++; return n; },
   tour:v=>{ if(v!==undefined) tourism=v; return tourism; },
   cash:v=>{ res.road=v; updateUI(); },
+  beach:(path,closed)=>{ const S=beachAt(path,!!closed), n=blds.length; beachMade(S); const b=blds.length>n?blds[blds.length-1]:null; return b?{ok:true,A:Math.round(S.A),acc:!!b.acc,tour:b.tour,cost:beachCost(S),loops:S.loops.length}:{ok:false,why:S&&S.why}; },
   svc:(type,x,y)=>{ zoneSel=null; placeSel=type; cityTab=svcTab(type); const g=ghostAt(type,{x,y}); if(!g.ok) return {ok:false,why:g.why}; const ok=placeGhost(g); if(ok) afterPlace(type); return {ok,x:Math.round(g.x),y:Math.round(g.y)}; },
   svcStat:()=>{ const n={}; for(const b of blds) if(isSvc(b)) n[b.type]=(n[b.type]||0)+1;
     return {svc:n,tourism,noPark:blds.filter(b=>b.noPark&&t-b.noPark<25).length,atLots:cars.filter(c=>c.state==="park"&&c.at&&PARKING.has(c.at.type)).length,walking:cars.filter(c=>c.walk).length,pow:utilStat.pow.map(Math.round),wat:utilStat.wat.map(Math.round),happy:Math.round(happyAvg),noPow:blds.filter(b=>b.noPow).length,noWat:blds.filter(b=>b.noWat).length,
@@ -6923,6 +7532,10 @@ window.__gridlock={
   tool:(k,m)=>{ if(k) setTool(k); if(m) setRoadMode(m); return tool; },
   tray:()=>Object.assign({},tray),
   give:o=>{ Object.assign(tray,o); updateUI(); },
+  shore:(x,y,R)=>{ const S=shoreAt({x,y},R||300); return S&&{x:S.x,y:S.y,nx:S.nx,ny:S.ny}; },
+  plotN:v=>{ if(v!==undefined) plotN=v; return plotN; },
+  zoneMeta:(kind,path)=>{ const gs=zoneAt(kind,path,true); return {n:gs.length,meta:gs.meta||null}; },
+  snap:(x,y,corners)=>{ const z0=zpts; zpts=corners||null; const z=zoneSnap({x,y}); zpts=z0; return {x:z.p.x,y:z.p.y,edge:!!z.edge,corner:!!(z.edge&&z.edge.corner),lot:!!z.lot}; },
   ghost:(type,x,y)=>{ const g=ghostAt(type,{x,y}); return {x:g.x,y:g.y,ok:g.ok,snapped:g.snapped,why:g.why}; },
   place:(type,x,y)=>placeAt(type,{x,y}),
   plan:(pts,lanes,over)=>{ const S=snapAt(pts[0].x,pts[0].y), pl=makePlan(S,pts,pts[pts.length-1],lanes||1,pts.length===2,over); return {ok:pl.ok,reason:pl.reason,hit:pl.hitB?pl.hitB.type+pl.hitB.id:null}; },
