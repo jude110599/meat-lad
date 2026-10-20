@@ -6217,12 +6217,13 @@ function v3init(T){
   // water: wherever the picture is water-blue (the lakes and rivers, and the pools in the gardens, but not a bridge or
   // anything else drawn over them) the ground turns smooth and shiny, small waves run across it and catch the sun,
   // and the sky shows in it, more so the flatter you look across it
-  const wU={wt:{value:0},wsky:{value:new T.Color(0xcfe0ee)}};
-  mats.ground.onBeforeCompile=sh=>{ sh.uniforms.wt=wU.wt; sh.uniforms.wsky=wU.wsky;
+  const wU={wt:{value:0},ws:{value:1},wsky:{value:new T.Color(0xcfe0ee)}};
+  mats.ground.onBeforeCompile=sh=>{ sh.uniforms.wt=wU.wt; sh.uniforms.ws=wU.ws; sh.uniforms.wsky=wU.wsky;
     sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vWp;").replace("#include <fog_vertex>","#include <fog_vertex>\nvWp=(modelMatrix*vec4(transformed,1.)).xyz;");
-    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWp; uniform float wt; uniform vec3 wsky; float wat=0.;")
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWp; uniform float wt, ws; uniform vec3 wsky; float wat=0.;")
       .replace("#include <map_fragment>","#include <map_fragment>\n{ vec3 c=sqrt(max(diffuseColor.rgb,0.)); wat=smoothstep(.025,.07,c.b-max(c.r,c.g))*smoothstep(.2,.3,(c.b-min(c.r,c.g))/(c.b+.001)); }")
       .replace("#include <roughnessmap_fragment>","#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.16,wat);")
+      .replace("#include <lights_fragment_end>","#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(1.,ws,wat);")
       .replace("#include <normal_fragment_maps>",`#include <normal_fragment_maps>
 if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2(-.06,.13)*cos(dot(p,vec2(-.06,.13))+wt*1.1)
   +vec2(.19,-.15)*.6*cos(dot(p,vec2(.19,-.15))+wt*2.1)+vec2(-.23,-.29)*.4*cos(dot(p,vec2(-.23,-.29))+wt*2.7);
@@ -6872,7 +6873,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     if(rainK>0){ top.lerp(C("#9aa3ad"),rainK*.6); hor.lerp(C("#c3c8cc"),rainK*.6); }
     if(dark){ top.lerp(C("#141b2b"),.75); hor.lerp(C("#2a3242"),.8); }
     const key=top.getHexString()+hor.getHexString(); if(key!==skyKey3){ skyKey3=key; cv3.style.background="linear-gradient(#"+top.getHexString()+",#"+hor.getHexString()+" 58%)"; }
-    wU.wsky.value.copy(hor).lerp(top,.45);
+    wU.wsky.value.copy(hor).lerp(top,.45); wU.ws.value=dark?.3:1;   // less sun off it on the dark map, where it would glare
     scene.fog.color.copy(hor); scene.fog.near=dist*(1.6-rainK*.6); scene.fog.far=dist*(3.6-rainK*1.4);
     const day=1-nk;
     sun.intensity=(2.6*day+.15)*(1-rainK*.55); sun.color.set(nk>.5?"#9db4ff":dk>.05?"#ffc89a":"#fff1dc");
