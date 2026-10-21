@@ -7269,7 +7269,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     g.fillStyle="#e2b43a"; for(let y=0;y<h;y+=64){ g.fillRect(w/2-1.5,y,3,36); } });
   mats.deck=new T.MeshStandardMaterial({map:deckTex,roughness:.9});
   mats.side=new T.MeshStandardMaterial({color:0xcfccc4,roughness:.9});
-  mats.ghost=new T.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.42,depthWrite:false,fog:false});
+  mats.ghost=new T.MeshLambertMaterial({color:0xffffff,emissive:0x303030,transparent:true,opacity:.45,depthWrite:false,fog:false});
 
   // ----- the ground under the pictures, raised where the hills are -----
   let hgrid=null, hw=0, hh=0; const HS=8;
@@ -7724,10 +7724,15 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
 
   // ----- ghosts: where a new building will go, as a see-through block -----
   const ghostI=new T.InstancedMesh(new T.BoxGeometry(1,1,1).translate(0,.5,0),mats.ghost,64); ghostI.count=0; ghostI.frustumCulled=false; ghostI.setColorAt(0,new T.Color(1,1,1)); ghostI.renderOrder=3; scene.add(ghostI);
+  // a single building being placed also gets a crisp outline, and the ghost breathes gently so it reads as not yet built
+  const ghostE=new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(1,1,1).translate(0,.5,0)),new T.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.9,depthWrite:false,fog:false}));
+  ghostE.matrixAutoUpdate=false; ghostE.visible=false; ghostE.renderOrder=4; scene.add(ghostE);
   function ghosts(){ let n=0; const gm=ghostI.instanceMatrix.array;
     const add=g=>{ if(n>=64||!g) return; const h=ghostH(g); setM(gm,n,g.x,hAt(g.x,g.y),g.y,g.ang-Math.PI/2,g.w,h,g.d); setC(ghostI,n,g.ok?"#58c27d":"#ff5a4a"); n++; };
     if(tool==="build"&&!zoneGhosts){ if(lineGhosts) lineGhosts.forEach(add); else if(ghost) add(ghost); }
     ghostI.count=n; ghostI.instanceMatrix.needsUpdate=true; if(ghostI.instanceColor) ghostI.instanceColor.needsUpdate=true;
+    ghostE.visible=n===1; if(n===1){ ghostE.matrix.fromArray(gm,0); ghostE.matrixWorldNeedsUpdate=true; ghostE.material.color.set(ghost&&!ghost.ok?"#ffd2cc":"#eafff0"); }
+    if(n) mats.ghost.opacity=.42+.08*Math.sin(performance.now()/260);
   }
 
   // ----- fire and smoke on burning buildings -----
