@@ -314,6 +314,10 @@ body.dark .ov{background:rgba(14,15,18,.74)}
 #scorePill b{display:inline-block} #scorePill.up b{animation:upTick .9s ease-out} #scorePill.down b{animation:downTick .9s ease-out}
 @keyframes upTick{20%{color:#2f9e55;transform:translateY(-2px)}}
 @keyframes downTick{20%{color:#d0392b;transform:translateY(2px)}}
+/* eight buttons along the bottom in the City builder, still in one row on a phone */
+@media (max-width:440px){body.city .tool{width:42px}}
+@media (max-width:374px){body.city .tool{width:39px}body.city #dock{gap:2px}}
+#buildBar button.chip.mini{min-width:28px;padding:0 7px;justify-content:center}
 </style>
 </head>
 <body>
@@ -398,6 +402,10 @@ body.dark .ov{background:rgba(14,15,18,.74)}
   <button class="tool cityonly" data-tool="build" data-tab="parks" title="Parks (0): parks, plazas, beaches and marinas">
     <svg id="icParks" viewBox="0 0 26 26"><circle cx="13" cy="10" r="6.5" fill="currentColor" opacity=".9"/><path d="M13 13v10M9 23h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
     Parks
+  </button>
+  <button class="tool cityonly" data-tool="build" data-tab="transit" title="Transport (U): bus depots, bus stops and bus lines">
+    <svg id="icTransit" viewBox="0 0 26 26"><rect x="5" y="3" width="16" height="17.5" rx="3.2" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M5.5 12h15" stroke="currentColor" stroke-width="2"/><circle cx="9.5" cy="16.2" r="1.5" fill="currentColor"/><circle cx="16.5" cy="16.2" r="1.5" fill="currentColor"/><path d="M8.5 20.5v2.6M17.5 20.5v2.6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <span class="lb">Transport</span><span class="ls">Transit</span>
   </button>
   <button class="tool" data-tool="erase" title="Erase roads and buildings (4)">
     <svg viewBox="0 0 26 26"><path d="M5 17l9-9 6 6-6 6H9z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linejoin="round"/><path d="M10 12l6 6M9 21h13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -558,6 +566,7 @@ const BT={
   school:  {svc:true,w:64,d:52,r:41,col:"#e0a23a",name:"elementary school",names:"elementary schools"},
   highschool:{svc:true,w:100,d:76,r:63,col:"#c98a3a",name:"high school",names:"high schools"},
   college: {svc:true,w:128,d:96,r:80,col:"#b07a4a",name:"college",names:"colleges"},
+  busdepot:{svc:true,w:72,d:52,r:45,col:"#3f6f8f",name:"bus depot",names:"bus depots"},
   daycare: {svc:true,w:24,d:22,r:17,col:"#e06aa6",name:"daycare",names:"daycares"},
   depot:   {svc:true,w:48,d:38,r:31,col:"#f08c1a",name:"road depot",names:"road depots"},
   parking: {svc:true,w:44,d:36,r:28,col:"#6d7f8f",name:"parking lot",names:"parking lots"},
@@ -964,6 +973,7 @@ function rebuildNet(){
       if(A.gd+s.len<B.gd){ B.gd=A.gd+s.len; ch=true; } if(B.gd+s.len<A.gd){ A.gd=B.gd+s.len; ch=true; } } }
   for(const b of blds) b.acc=findAccess(b);
   if(outside) outside.acc=outsideAccess();
+  transitNet();
   buildRoadCache();
 }
 function setupLight(n){
@@ -1706,9 +1716,9 @@ function arrival(sa,acc,onlyNode){
   const s=segs.get(acc.seg); if(!s) return {cost:Infinity};
   const v=spd(s);
   let cost=Infinity, via=null;
-  if(sa.seg===acc.seg){ const fwd=acc.t>=sa.t; if((!onlyNode||onlyNode===(fwd?s.b:s.a))&&(fwd?s.lf:s.lb)){ cost=Math.abs(acc.t-sa.t)*s.len/v; via=-1; } }
+  if(sa.seg===acc.seg){ const fwd=acc.t>=sa.t; if((!onlyNode||onlyNode===(fwd?s.b:s.a))&&(fwd?s.lf:s.lb)&&(acc.only===undefined||acc.only===(fwd?0:1))){ cost=Math.abs(acc.t-sa.t)*s.len/v; via=-1; } }
   // or come round to it: reach one of its ends along some road, then turn onto it
-  for(let e=0;e<2;e++){ const n=nodes.get(e?s.b:s.a), part=(e?1-acc.t:acc.t)*s.len/v, deg=n.segs.length; if(!dirL(s,n.id)) continue;
+  for(let e=0;e<2;e++){ const n=nodes.get(e?s.b:s.a), part=(e?1-acc.t:acc.t)*s.len/v, deg=n.segs.length; if(!dirL(s,n.id)) continue; if(acc.only!==undefined&&acc.only!==e) continue;
     for(const id of n.segs){ const sIn=segs.get(id); if(sIn===s&&deg>1) continue;
       const k=sIn.ix*2+(sIn.b===n.id?1:0), d=DIST[k]; if(d===Infinity) continue;
       const tt=turnType(n,sIn,s); if(deg>=3&&!moveOK(n,sIn,s,tt)) continue;
@@ -1978,7 +1988,7 @@ function dispatch(){
       const pl=planRoute({seg:h.acc.seg,t:h.acc.t},tg,null);
       if(!pl){ h.wait=2.5; continue; }
       c.purpose={d:pl.b,kind:pl.tg.kind}; pl.b.claimed[pl.tg.kind]++;
-      startDrive(c,h,pl);
+      if(!transitRide(c,h,pl.b)) startDrive(c,h,pl);
       if(h.type==="apts") h.wait=.6;     // a big block sends its cars out one after another, not all at once
       if(freePins(pl.b,pl.tg.kind)<=0){ const i=want.indexOf(pl.b); const k2=pl.tg.kind==="cust"?"work":"cust"; if(freePins(pl.b,k2)<=0&&i>=0) want.splice(i,1); if(!want.length) break; }
     }
@@ -2039,6 +2049,7 @@ function dispatch(){
 }
 function arrive(c){
   releaseAll(c);
+  if(c.bus) return busArrive(c);
   if(c.purpose&&c.purpose.svc) return svcArrive(c);
   if(c.purpose&&parkOrDivert(c)) return;
   if(c.purpose){
@@ -2084,7 +2095,8 @@ function updateCars(dt){
   const slow=[];
   carGrid.clear(); carsOn.clear(); qOn.clear();
   for(const n of nodeList) if(n.type==="light"){ n.near2=n.near; n.near=[]; }
-  for(const c of cars){ if(c.state!=="drive") continue; const key=Math.floor(c.x/HC)*4096+Math.floor(c.y/HC); let a=carGrid.get(key); if(!a){a=[];carGrid.set(key,a);} a.push(c);
+  for(const c of cars){ if(c.state!=="drive"){ if(c.bus&&c.state==="park"){ c.h=0; const k0=Math.floor(c.x/HC)*4096+Math.floor(c.y/HC); let a0=carGrid.get(k0); if(!a0){a0=[];carGrid.set(k0,a0);} a0.push(c); } continue; }
+    const key=Math.floor(c.x/HC)*4096+Math.floor(c.y/HC); let a=carGrid.get(key); if(!a){a=[];carGrid.set(key,a);} a.push(c);
     const rt=c.rt; while(c.leg<rt.legs.length-1&&c.s>rt.legs[c.leg].s1){ if(city) wearSeg(segs.get(rt.legs[c.leg].seg),c); c.leg++; } const lg=rt.legs[c.leg]; if(c.s>=lg.s0-1) carsOn.set(lg.seg,(carsOn.get(lg.seg)||0)+1);
     // how many are queued at each junction, for the route finder
     const nk=rt.ctrls[c.ci]; if(nk&&nk.junc&&c.v<4&&nk.s0-c.s<60){ const key2=nk.node*65536+nk.inSeg; qOn.set(key2,(qOn.get(key2)||0)+1); }
@@ -2092,7 +2104,7 @@ function updateCars(dt){
     const sg=segs.get(lg.seg); c.up=!!(sg&&sg.over); c.h=c.up?elevAt(sg,clamp(((c.x-nodes.get(sg.a).x)*sg.ux+(c.y-nodes.get(sg.a).y)*sg.uy)/sg.len,0,1)):0; }
   for(const c of cars){
     if(c.state==="home"){ c.cool-=dt; continue; }
-    if(c.state==="park"){ c.park-=dt; if(c.park<=0) goHome(c); continue; }
+    if(c.state==="park"){ c.park-=dt; if(c.park<=0){ if(c.bus) busGo(c); else goHome(c); } continue; }
     const rt=c.rt, lg=rt.legs[c.leg];
     let limitV=(c.s<=lg.s1?lg.v:30)*(c.siren?1.3:c.truck?.82:1), maxS=rt.len+5;
     c.ringNode=0;
@@ -2605,8 +2617,8 @@ const MONTH=30, CITY_START=15000, TAX_HOME=2.2, TAX_TRIP=1.6, UPKEEP=.018, MALL_
 // people and businesses in, high ones bring money in, and too high drives them away. Each service has a budget from
 // nothing to half as much again: less reaches less far and does less, more reaches further and does more
 let taxR=9, taxB=9, parkFee=2, parkWant=0, budget={}, finLog=[], finLast=null, hapTax=0, taxHintT=-99;
-const BUDK={roads:"Roads",pow:"Power",wat:"Water",fire:"Fire",police:"Police",health:"Health",edu:"Schools",parks:"Parks"};
-const SVC_BUD={power:"pow",solar:"pow",water:"wat",pump:"wat",fire:"fire",police:"police",clinic:"health",school:"edu",highschool:"edu",college:"edu",daycare:"edu",park:"parks",bigpark:"parks",plaza:"parks",beach:"parks",marina:"parks",depot:"roads"};
+const BUDK={roads:"Roads",pow:"Power",wat:"Water",fire:"Fire",police:"Police",health:"Health",edu:"Schools",parks:"Parks",transit:"Transport"};
+const SVC_BUD={power:"pow",solar:"pow",water:"wat",pump:"wat",fire:"fire",police:"police",clinic:"health",school:"edu",highschool:"edu",college:"edu",daycare:"edu",park:"parks",bigpark:"parks",plaza:"parks",beach:"parks",marina:"parks",depot:"roads",busdepot:"transit"};
 for(const k in BUDK) budget[k]=1;
 const budOf=type=>{ const k=SVC_BUD[type]; return k?budget[k]:1; };
 const reachK=b=>b<=0?0:.55+.45*Math.min(b,1.5);     // half the budget reaches .78 as far; half as much again, 1.22
@@ -3336,7 +3348,7 @@ function cityGrow(sup){
 }
 // the end of a month: taxes from everyone living here (more when they're happy), every business and every trip made,
 // less the upkeep of the roads, the junctions and the services
-function finCalc(trips,hap,pk){
+function finCalc(trips,hap,pk,rid){
   const out={}; for(const k in BUDK) out[k]=0; out.parking=0;
   let road=0; for(const s of segs.values()) road+=segUse(s)*UPKEEP*(s.hwy?1.5:1)*(s.over?2:1)*(s.fixed?Math.min(1,130/s.len):1);
   for(const n of nodeList) road+=n.type==="light"?6:n.type==="round"?3:0;
@@ -3344,8 +3356,9 @@ function finCalc(trips,hap,pk){
   let biz=0, nB=0, nS={}; for(const b of blds){ const S=SVC[b.type];
     if(S){ const k=SVC_BUD[b.type]; if(k){ out[k]+=(b.up||S.up)*budget[k]; nS[k]=(nS[k]||0)+1; } else { out.parking+=S.up; nS.parking=(nS.parking||0)+1; } }
     else if(!isHome(b)||b.type==="mixed"){ biz+=CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1); nB++; } }
+  out.transit+=transitOut()*budget.transit; if(lines.length) nS.transit=(nS.transit||0)+lines.length;
   // businesses pay on what they make and on every trip their customers and workers make
-  const inc={homes:TAX_HOME*people*(.5+hap/100)*taxR/9, biz:(biz+TAX_TRIP*trips)*taxB/9, park:nS.parking?(pk||0)*parkFee*(1-parkTurn(parkFee))*3:0};
+  const inc={homes:TAX_HOME*people*(.5+hap/100)*taxR/9, biz:(biz+TAX_TRIP*trips)*taxB/9, park:nS.parking?(pk||0)*parkFee*(1-parkTurn(parkFee))*3:0, fares:(rid===undefined?tStat.month:rid)*FARE};
   let tin=0, tout=0; for(const k in inc) tin+=inc[k]; for(const k in out) tout+=out[k];
   return {inc,out,tin,tout,nB,nS,road,trips,pk};
 }
@@ -3359,13 +3372,14 @@ function cityMonth(){
 // ---------- the Finance panel ----------
 let finOpen=false, finFromMenu=false, finRows=null;
 function finEst(){ const trips=monthT>4?monthTrips*MONTH/monthT:finLast?finLast.trips:monthTrips, pk=monthT>4?parkWant*MONTH/monthT:finLast?finLast.pk:parkWant;
-  return finCalc(trips,clamp(happyAvg+taxHappy(taxR)-hapTax,0,100),pk); }
+  return finCalc(trips,clamp(happyAvg+taxHappy(taxR)-hapTax,0,100),pk,ridersEst()); }
 function taxWord(r){ return r<=4?["ok","Very low: people flock in"]:r<=8?["ok","Low: people like it"]:r<=13?["ok","Fair: nobody minds"]:r<=15?["meh","High: people grumble"]:r<=17?["bad","Too high: few move in"]:["bad","Way too high: families move out"]; }
 function bizWord(r){ return r<=7?["ok","Low: businesses flock in"]:r<=13?["ok","Fair"]:r<=15?["meh","High: fewer businesses open"]:r<=17?["bad","Too high: businesses stay away"]:["bad","Way too high: businesses close"]; }
 // parking fees: people pay up to about $3 without minding; past that more and more of them drive off instead
 const parkTurn=f=>f<=3?f*.03:.09+(f-3)*.3;
 function parkWord(f,n){ if(!n) return ["","No parking lots yet"]; return f<=0?["ok","Free"]:f<=2?["ok","Cheap: everyone pays"]:f<=3?["ok","Just right: most people pay"]:f<=4?["meh","Pricey: some drive off"]:["bad","Too dear: lots of people drive off"]; }
 function budWord(k,v,n){
+  if(k==="transit") return transitWord(v,n);
   if(!n&&k!=="roads") return ["","None built yet"];
   if(v<=0) return ["bad",k==="roads"?"No upkeep: roads wear out fast":"Shut: it does nothing"];
   if(k==="pow"||k==="wat") return [v<.8?"meh":"ok","Making "+Math.round(outK(v)*100)+"% of full output"];
@@ -3414,7 +3428,7 @@ function finDraw(){
 }
 function cityTick(dt){
   monthT+=dt; if(monthT>=MONTH){ monthT-=MONTH; cityMonth(); }
-  svcTick(dt);
+  svcTick(dt); transitTick(dt);
   growT-=dt;
   if(growT<=0){ growT=2; tourism=0; for(const b of blds) if(SVC[b.type]&&SVC[b.type].tour&&b.acc) tourism+=b.tour||SVC[b.type].tour;
     const sup=cityUtils(); cityCover(); cityHappy(); cityDemand(); cityGrow(sup);
@@ -3437,7 +3451,7 @@ function cityTips(dt){
     setHint((!P[1]&&!W[1]?"Nothing grows without power and water. Tap Utilities and put a power plant and a water tower beside your roads.":!P[1]?"Nothing grows without power. Tap Utilities and build a power plant or a solar farm beside your roads.":"Nothing grows without water. Tap Utilities and build a water tower beside your roads.")+" They reach everything joined to them by road.",7); return; }
   if(people>0&&t-utilHintT>45&&(P[0]>P[1]*.92||W[0]>W[1]*.92)){ utilHintT=t; setHint(P[0]>P[1]*.92?"The town is running out of power. Build another power plant or a solar farm, or new homes will go without.":"The town is running out of water. Build another water tower, or a pump on the shore.",5); return; }
   if(cityTip===1&&people>0){ cityTip=2; setHint("People are moving in. They'll want shops and jobs too, so zone some Shops, Offices and Industry.",6); return; }
-  if(eduTips()) return;
+  if(eduTips()||transitTips()) return;
   for(const k of ZKEYS){
     // the town wants them and there are plots, but none of them can grow: say what's missing
     const em=cityD[k]>GROW_AT[k]?lots.filter(L=>L.kind===k&&!L.b&&t>=L.cool):[], why=em.length&&em.every(L=>L.why)?em[0].why:null;
@@ -3582,10 +3596,11 @@ const SVC={
   plaza: {name:"Plaza",short:"Plaza",cost:250,up:3,R:190,fun:4,tab:"parks",done:"Plaza built. Homes inside the circle are happier.",tip:"Plaza: a paved square with a fountain and benches. Good between shops and flats."},
   beach: {name:"Beach",short:"Beach",cost:300,up:6,R:480,fun:8,tour:1,tab:"parks",done:"Beach built. Homes near it love it, and it draws tourists.",tip:"Beach: draw it along the shore of a lake or river, as long as you like. Homes nearby love it, and it draws tourists: the longer the beach, the more."},
   marina:{name:"Marina",short:"Marina",cost:1500,up:15,R:440,fun:7,tour:2,tab:"parks",done:"Marina built. It draws lots of tourists, who fill the hotels.",tip:"Marina: jetties and boats out on the water, so it has to go on the shore. It draws lots of tourists, and they fill the hotels."},
-  depot: {name:"Road depot",short:"Roads",cost:1100,up:30,R:1000,cars:2,done:"Road depot built. Its trucks fix worn roads inside the blue circle.",tip:"Road depot: its trucks fix roads nearby that traffic has worn out. Worn roads are slow."}
+  depot: {name:"Road depot",short:"Roads",cost:1100,up:30,R:1000,cars:2,done:"Road depot built. Its trucks fix worn roads inside the blue circle.",tip:"Road depot: its trucks fix roads nearby that traffic has worn out. Worn roads are slow."},
+  busdepot:{name:"Bus depot",short:"Bus depot",cost:1800,up:25,tab:"transit",done:"Bus depot built. Now put bus stops beside your busy roads and join them up with Bus line.",tip:"Bus depot: home to the buses. Each bus line takes its buses from the nearest depot, up to 16 in each."}
 };
 const SKEYS=Object.keys(SVC);
-const SVC_COLS={parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",solar:"#3b5f93",water:"#5aa7d8",pump:"#3f8fc2",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#a8665a",highschool:"#a88f7f",college:"#b4a58c",daycare:"#e06aa6",depot:"#f08c1a"};
+const SVC_COLS={parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",solar:"#3b5f93",water:"#5aa7d8",pump:"#3f8fc2",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#a8665a",highschool:"#a88f7f",college:"#b4a58c",daycare:"#e06aa6",depot:"#f08c1a",busdepot:"#8e9aa3"};
 const VEH={fire:{len:16,wid:7,col:"#d62f22",cab:"#c02218",truck:true},police:{len:11.5,wid:6,col:"#f4f4f2",truck:false,doors:"#20305c"},clinic:{len:13,wid:6.6,col:"#f7f7f5",cab:"#f7f7f5",truck:true,stripe:"#e2493a"},
   school:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},highschool:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},depot:{len:14,wid:6.6,col:"#f08c1a",cab:"#e8e6df",truck:true}};
 const isSvc=b=>!!(BT[b.type]&&BT[b.type].svc), SMOKY=new Set(["factory","power"]);
@@ -3742,7 +3757,344 @@ function eduTips(){
   return false;
 }
 // everything the schools and transport keep track of, back to nothing for a new game
-function civicReset(){ eduStat={any:0,hi:0}; eduTip=0; }
+function civicReset(){ eduStat={any:0,hi:0}; eduTip=0;
+  stops=[]; lines=[]; stopId=lineId=1; trv++; transitMode=null; linePend=null; transitT=0; transitTip=0; lineSel=null; tStat={month:0,last:0,m:1,total:0}; depK=-1; }
+
+// ---------- public transport: bus depots, bus stops, bus lines and the buses on them ----------
+// A bus stop sits at the kerb with a shelter on the pavement. A bus line runs round its stops in order and back to
+// the first. Its buses come out of the nearest bus depot, pull in at every stop in the kerb lane to let people off and
+// on (the traffic waits behind them), and carry on round. People who live near a stop, going somewhere near another
+// stop on the same line, often leave the car at home and take the bus: fewer cars on the roads, and nobody needs a
+// parking space. Each bus costs a little every month, and every rider pays a fare.
+const LINE_COLS=["#2f6fae","#b9473b","#2f8a57","#c4862c","#74508a","#2a8484","#a0583c","#56698a"];
+const STOP_COST=60, BUS_UP=14, FARE=2, WALKB=260, BUS_CAP=40, DEPOT_BUSES=16, RIDE_WAIT=150;
+let stops=[], lines=[], stopId=1, lineId=1, trv=0, transitMode=null, linePend=null, transitT=0, transitTip=0, lineSel=null, inNet=false;
+let tStat={month:0,last:0,m:1,total:0};
+// where a bus stop would go for a tap beside a road: at the kerb on the side tapped, well clear of the junctions
+function stopAt(w){
+  let best=null, bd=1e9;
+  for(const s of segs.values()){ if(s.hwy||s.over) continue; const A=nodes.get(s.a), B=nodes.get(s.b), p=projSeg(w.x,w.y,A.x,A.y,B.x,B.y);
+    if(p.d>segHW(s)+26||p.d>=bd) continue; bd=p.d; best={s,p}; }
+  if(!best) return {ok:false,why:"Put a bus stop beside a road. Not on a highway or an overpass."};
+  const s=best.s, p=best.p, lo=(s.ta+26)/s.len, hi=1-(s.tb+26)/s.len;
+  if(lo>hi) return {ok:false,why:"That bit of road is too short for a bus stop. Try further from the junctions."};
+  const side=((w.x-p.x)*(-s.uy)+(w.y-p.y)*s.ux)>=0?1:-1, g=stopGeo({seg:s.id,t:clamp(p.t,lo,hi),side});
+  for(const q of stops) if(q.kind==="bus"&&Math.hypot(q.x-g.x,q.y-g.y)<36) return {ok:false,why:"There's already a bus stop right there.",near:q};
+  g.ok=true; return g;
+}
+// the same, kept while the pointer stays put, so hovering costs nothing
+let hovStop={k:"",g:null};
+function stopAtHover(w){ const k=Math.round(w.x)+","+Math.round(w.y)+","+rver+","+trv; if(hovStop.k!==k){ hovStop.k=k; hovStop.g=stopAt(w); } return hovStop.g; }
+// a stop's place on its road: the kerb lane the buses stop in, the shelter on the pavement, and which way they go past
+function stopGeo(st){
+  const s=segs.get(st.seg), A=nodes.get(s.a), B=nodes.get(s.b), hw=segHW(s), x=A.x+(B.x-A.x)*st.t, y=A.y+(B.y-A.y)*st.t;
+  // buses go past with the stop on their right, unless the road only runs the other way
+  let fwd=st.side>0; if(fwd&&!s.lf) fwd=false; if(!fwd&&!s.lb) fwd=true;
+  const from=fwd?s.a:s.b, n=dirL(s,from), ux=fwd?s.ux:-s.ux, uy=fwd?s.uy:-s.uy, right=(st.side>0)===fwd, off=divOff(s,from)+((right?n-1:0)+.5)*LW;
+  const px=-s.uy*st.side, py=s.ux*st.side, door={x:x-uy*off,y:y+ux*off};
+  Object.assign(st,{x:x+px*(hw+3.5),y:y+py*(hw+3.5),px,py,ux,uy,ang:Math.atan2(uy,ux),hw,rx:x,ry:y,door,
+    acc:{seg:s.id,t:st.t,x,y,side:st.side,ex:x+px*hw,ey:y+py*hw,door,di:0,only:fwd?0:1}});
+  return st;
+}
+function addStop(g){ const st=stopGeo({id:stopId++,kind:"bus",seg:g.acc.seg,t:g.t,side:g.side,q:[]}); stops.push(st); trv++; res.road-=STOP_COST;
+  effects.push({k:"ring",x:st.x,y:st.y,c:"#2f6fae",t:0,life:1,r:8}); return st; }
+const stopNear=(w,r,kind)=>{ let b=null, bd=r; for(const s of stops){ if(kind&&s.kind!==kind) continue; const d=Math.hypot(s.x-w.x,s.y-w.y); if(d<bd){ bd=d; b=s; } } return b; };
+// a stop taken away: the people waiting there go home, lines left with one stop go too, and buses on their way
+// there head back to the depot
+function removeStop(st){
+  stops.splice(stops.indexOf(st),1); for(const r of st.q) rideLost(r); st.q=[]; st.acc=null; trv++;
+  if(linePend) linePend.stops=linePend.stops.filter(q=>q!==st);
+  for(const L of lines.slice()){ if(!L.stops.includes(st)) continue; L.stops=L.stops.filter(q=>q!==st); if(L.stops.length<2) removeLine(L); }
+  for(const c of allBuses()) if(c.purpose&&c.purpose.d===st){ c.purpose=null; if(c.state==="drive"){ if(inNet) c.lost=true; else reanchor(c); } }
+  effects.push({k:"puff",x:st.x,y:st.y,t:0,life:.6});
+}
+// after the roads change: each stop keeps to its road, moves onto the new piece when a road is split, or goes with the road
+function transitNet(){
+  if(!stops.length) return; inNet=true;
+  for(const st of stops.slice()){ if(st.kind!=="bus") continue;
+    let s=segs.get(st.seg);
+    if(!s||s.hwy||s.over){ s=null; let bd=8; for(const q of segs.values()){ if(q.hwy||q.over) continue; const A=nodes.get(q.a), B=nodes.get(q.b), p=projSeg(st.rx,st.ry,A.x,A.y,B.x,B.y); if(p.d<bd){ bd=p.d; s=q; st.t=p.t; } }
+      if(!s){ removeStop(st); continue; } st.seg=s.id; st.side=((st.x-st.rx)*(-s.uy)+(st.y-st.ry)*s.ux)>=0?1:-1; trv++; }
+    const lo=(s.ta+12)/s.len, hi=1-(s.tb+12)/s.len; st.t=lo>hi?.5:clamp(st.t,lo,hi); stopGeo(st); }
+  inNet=false;
+}
+// ----- lines -----
+function addLine(list,kind){
+  const used=new Set(lines.map(L=>L.col)), col=LINE_COLS.find(c=>!used.has(c))||LINE_COLS[lines.length%LINE_COLS.length];
+  const L={id:lineId++,kind:kind||"bus",col,stops:list.slice(),want:1,buses:[],riders:0,last:0,next:0,path:null,pk:""};
+  lines.push(L); trv++; L.want=kind==="metro"?2:clamp(Math.round(linePath(L).len/900),1,4); return L; }
+function removeLine(L){ lines.splice(lines.indexOf(L),1); trv++; if(lineSel===L) lineSel=null;
+  for(const c of L.buses){ c.line=null; c.retire=true; if(c.state==="home") dropBus(c); else if(c.state==="drive"&&c.purpose){ c.purpose=null; if(inNet) c.lost=true; else reanchor(c); } } L.buses=[]; }
+// how a bus gets from one stop to the next: on along the road the way it's facing if it can
+function busPlan(a,b){ const s=a.acc&&segs.get(a.acc.seg); if(!s||!b.acc) return null;
+  return planRoute({seg:s.id,t:a.acc.t},[{b}],a.acc.only===0?s.b:s.a)||planRoute({seg:s.id,t:a.acc.t},[{b}],null); }
+// the way round a line, along the lanes the buses drive in, worked out again when the roads or stops change
+function linePath(L){
+  const key=rver+":"+trv; if(L.pk===key&&L.path) return L.path; L.pk=key;
+  const P=[], gaps=[]; let len=0;
+  if(L.kind==="metro"){ for(let i=0;i<=L.stops.length;i++){ const s=L.stops[i%L.stops.length]; P.push({x:s.x,y:s.y,h:0}); } }
+  else for(let i=0;i<L.stops.length;i++){ const a=L.stops[i], b=L.stops[(i+1)%L.stops.length], pl=busPlan(a,b);
+    if(!pl){ gaps.push(i); continue; } legEndAcc=pl.acc; const rt=buildRoute({x:a.door.x,y:a.door.y},pl.legs,b.door);
+    for(const r of rt.legs){ const s=segs.get(r.seg), A=s&&nodes.get(s.a); for(let k=r.i0;k<=r.i1;k++){ const p=rt.pts[k]; P.push({x:p.x,y:p.y,h:s&&s.over?elevAt(s,clamp(((p.x-A.x)*s.ux+(p.y-A.y)*s.uy)/s.len,0,1)):0,br:k===r.i0&&r===rt.legs[0]}); } }
+    const e=rt.pts[rt.pts.length-1]; P.push({x:e.x,y:e.y,h:0}); }
+  for(let i=1;i<P.length;i++) if(!P[i].br) len+=Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);
+  return L.path={pts:P,len,gaps};
+}
+// ----- buses -----
+// the bus depots, looked up again only when the buildings change
+let depK=-1, depL=[];
+function depotList(){ if(depK!==tver){ depK=tver; depL=blds.filter(b=>b.type==="busdepot"); } return depL; }
+function allBuses(){ const out=[]; for(const d of depotList()) for(const c of d.cars) if(c.bus) out.push(c); return out; }
+function newBus(dep,L){ const c=newCar(dep,true); Object.assign(c,{bus:true,svc:"bus",len:24,wid:7.4,col:L.col,cab:L.col,line:L,load:[],cool:0,retire:false}); dep.cars.push(c); cars.push(c); L.buses.push(c); return c; }
+// a bus taken off the road altogether: its passengers' trips are lost
+function dropBus(c){ for(const r of c.load) rideLost(r); c.load=[]; const h=c.home; if(h&&h.cars){ const i=h.cars.indexOf(c); if(i>=0) h.cars.splice(i,1); } const j=cars.indexOf(c); if(j>=0) cars.splice(j,1); }
+// out of the depot to the stop on its line nearest the depot
+function busStart(c,L){
+  const dep=c.home; let first=null, bd=1e9; for(const s of L.stops){ const d=Math.hypot(s.x-dep.x,s.y-dep.y); if(d<bd&&s.acc){ bd=d; first=s; } }
+  const pl=first&&planRoute({seg:dep.acc.seg,t:dep.acc.t},[{b:first}],null);
+  if(!pl){ c.cool=6; return false; }
+  for(const r of c.load) rideLost(r); c.load=[];
+  c.purpose={d:first,kind:"line",svc:true}; startDrive(c,dep,pl); return true;
+}
+// a bus gets where it was going: at a stop, people for here get off, then those waiting get on if this line goes where
+// they're going. Back at the depot it parks up
+function busArrive(c){
+  const st=c.purpose&&c.purpose.d; c.purpose=null; c.rt=null;
+  if(!st){ c.state="home"; c.cool=1; c.at=null; for(const r of c.load) rideLost(r); c.load=[]; if(c.retire||!c.line) dropBus(c); return; }
+  const L=c.line; let n=0;
+  c.load=c.load.filter(r=>{ if(r.to!==st) return true; rideDone(r,L); n++; return false; });
+  if(L&&!c.retire&&stops.includes(st)) st.q=st.q.filter(r=>{ if(c.load.length>=BUS_CAP||!L.stops.includes(r.to)) return true; c.load.push(r); n++; return false; });
+  c.state="park"; c.at=st; c.atDi=0; c.park=3+Math.min(5,n*.12); c.v=0;
+}
+// done at a stop: on to the next one round the line, or back to the depot
+function busGo(c){
+  const L=c.line, st=c.at;
+  if(L&&!c.retire&&st&&st.acc&&budget.transit>0){ const i0=L.stops.indexOf(st), n=L.stops.length;
+    for(let k=1;k<=n;k++){ const nx=L.stops[(i0+k+n)%n]; if(nx===st) continue; const pl=busPlan(st,nx); if(pl){ c.purpose={d:nx,kind:"line",svc:true}; startDrive(c,st,pl,st.acc); return; } } }
+  busHome(c);
+}
+function busHome(c){ const st=c.at, h=c.home; c.purpose=null;
+  const pl=st&&st.acc&&h.acc&&busPlan(st,h); if(!pl){ c.state="home"; c.cool=2; return; } startDrive(c,st,pl,st.acc); }
+// the depot nearest a line with room for another bus
+function depotFor(L,deps){ let b=null, bd=1e9; const s0=L.stops[0];
+  for(const d of deps){ if(!d.acc||d.cons||d.cars.length>=DEPOT_BUSES) continue; const q=Math.hypot(d.x-s0.x,d.y-s0.y); if(q<bd){ bd=q; b=d; } } return b; }
+// how long apart the buses on a line set off, so they spread out round it
+const lineGap=L=>Math.max(5,(linePath(L).len/28+L.stops.length*6)/Math.max(1,L.want));
+function transitTick(dt){
+  if(month!==tStat.m){ tStat.last=tStat.month; tStat.month=0; tStat.m=month; for(const L of lines){ L.last=L.riders; L.riders=0; } }
+  metroTick(dt);
+  transitT-=dt; if(transitT>0) return; transitT=.5;
+  const deps=depotList();
+  for(const L of lines){ if(L.kind!=="bus") continue;
+    // buses whose depot has gone, went with it
+    L.buses=L.buses.filter(c=>{ if(deps.includes(c.home)) return true; for(const r of c.load) rideLost(r); c.load=[]; return false; });
+    const want=budget.transit>0?L.want:0;
+    while(L.buses.length<want){ const d=depotFor(L,deps); if(!d) break; newBus(d,L); }
+    while(L.buses.length>want){ const c=L.buses.find(q=>q.state==="home")||L.buses[L.buses.length-1]; L.buses.splice(L.buses.indexOf(c),1); c.retire=true; c.line=null; if(c.state==="home") dropBus(c); }
+    if(t>=L.next){ const c=L.buses.find(q=>q.state==="home"&&q.cool<=0&&q.home.acc); if(c&&busStart(c,L)) L.next=t+lineGap(L); }
+  }
+  // a bus whose stop went while the roads were changing finds its way back to the depot
+  for(const c of allBuses()) if(c.lost){ c.lost=false; if(c.state==="drive") reanchor(c); }
+  // people who've waited too long give up
+  for(const st of stops) if(st.q.length&&t-st.q[0].t0>RIDE_WAIT) st.q=st.q.filter(r=>{ if(t-r.t0<=RIDE_WAIT) return true; rideLost(r); return false; });
+}
+// ----- riders -----
+function nearStops(b){ if(b.nsK!==trv){ b.nsK=trv; b.ns=[]; for(const s of stops){ const d=Math.hypot(s.x-b.x,s.y-b.y); if(d<(s.kind==="metro"?WALKM:WALKB)) b.ns.push({s,d}); } } return b.ns; }
+const lineRuns=L=>L.kind==="metro"?L.buses.length>0:L.buses.length>0&&budget.transit>0;
+// someone setting off from home for a place near another stop on a running line may take the bus or the metro instead
+function transitRide(c,h,d){
+  if(!lines.length||!c.purpose||!d.pins) return false;
+  const A=nearStops(h); if(!A.length) return false; const B=nearStops(d); if(!B.length) return false;
+  let best=null;
+  for(const a of A) for(const b of B){ if(a.s===b.s||a.s.q.length>=(a.s.kind==="metro"?120:60)) continue; const w=a.d+b.d; if(best&&w>=best.w) continue;
+    const L=lines.find(q=>lineRuns(q)&&q.stops.includes(a.s)&&q.stops.includes(b.s)); if(L) best={a:a.s,b:b.s,w,L}; }
+  if(!best) return false;
+  // a short walk at both ends and most people leave the car at home; the metro is quicker, so even more do
+  const m=best.L.kind==="metro", p=(m?.85:.68)-.4*best.w/(2*(m?WALKM:WALKB));
+  if(Math.random()>p) return false;
+  best.a.q.push({d,kind:c.purpose.kind,to:best.b,t0:t}); c.purpose=null; c.cool=rnd(REST[0],REST[1]);
+  return true;
+}
+// a rider gets there: the same as a car arriving, but nobody has to park
+function rideDone(r,L){ const d=r.d, k=r.kind; tStat.month++; tStat.total++; if(L) L.riders++;
+  if(!d.pins||blds.indexOf(d)<0) return;
+  d.claimed[k]=Math.max(0,d.claimed[k]-1);
+  if(d.pins[k]>0){ d.pins[k]--; score++; lvTrips++; if(city) monthTrips++; effects.push({k:"plus",x:d.x,y:d.y-d.r-4,c:PINC[k],t:0,life:1});
+    if(k==="work"&&(d.type==="factory"||d.type==="plant")&&d.raw>=.5){ d.raw-=.5; d.stock=Math.min(5,d.stock+.75); } } }
+function rideLost(r){ const d=r.d; if(d&&d.claimed) d.claimed[r.kind]=Math.max(0,d.claimed[r.kind]-1); }
+// what a month of buses and the metro cost, and how many people ride
+const busCount=()=>lines.reduce((n,L)=>n+(L.kind==="bus"?L.buses.length:0),0);
+const transitOut=()=>busCount()*BUS_UP+metroOut();
+const ridersEst=()=>monthT>4?tStat.month*MONTH/monthT:tStat.last;
+function transitWord(v,n){ const nb=busCount(), nl=lines.length;
+  if(!n) return ["","None built yet"];
+  if(v<=0) return ["bad","Shut: the buses stay in the depot"];
+  if(!nl) return ["","No lines yet"];
+  return ["ok",nb+" bus"+(nb===1?"":"es")+" on "+nl+" line"+(nl>1?"s":"")+metroStatus()+". Fares about "+kmoney(ridersEst()*FARE)+" a month"]; }
+// a nudge once the traffic builds up and there's no bus yet
+function transitTips(){
+  if(transitTip<1&&people>=350&&!lines.length&&!depotList().length){ transitTip=1; flashTool("icTransit"); setHint("Busy roads? Tap Transport: build a bus depot, then draw a bus line along your streets. People near a stop leave the car at home.",7); return true; }
+  return false;
+}
+
+// ----- the Transport bar -----
+const TMODE_HINT={stop:"Bus stop: tap beside a road to put a stop at the kerb on that side. Buses pull in there.",
+  line:"Bus line: tap the bus stops in order, then the first one again to close the loop. Tapping a road with no stop puts one there."};
+function transitKey(){ return [transitMode,linePend?linePend.stops.map(s=>s.id).join("."):"",lines.map(L=>L.id+":"+L.want+":"+L.stops.length).join(","),lineSel?lineSel.id:"",metroKey()].join("|"); }
+function transitOff(){ if(transitMode||linePend||lineSel){ transitMode=null; linePend=null; lineSel=null; trv++; } }
+function setTMode(m){ placeSel=null; zoneSel=null; ghost=null; if(m!=="line"&&m!=="metro") linePend=null;
+  transitMode=transitMode===m?null:m; linePend=(m==="line"||m==="metro")&&transitMode?{stops:[],kind:m==="metro"?"metro":"bus"}:null; trv++; updateUI();
+  if(transitMode) setHint(TMODE_HINT[m]+(m==="stop"?" Costs "+money(STOP_COST)+".":""),5); }
+function transitBar(bb,zc){
+  const btn=(m,svg,txt,price)=>{ const b=document.createElement("button"); b.className=transitMode===m&&!placeSel?"sel":""; b.title=TMODE_HINT[m]||txt;
+    b.innerHTML=svg+txt+(price?"<b>"+price+"</b>":""); b.onclick=()=>setTMode(m); bb.appendChild(b); };
+  btn("stop",'<svg width="13" height="15" viewBox="0 0 13 15"><path d="M3 2v12" stroke="currentColor" stroke-width="1.6"/><rect x="3.6" y="1" width="8" height="6" rx="1.2" fill="#2f6fae"/></svg>',"Bus stop",kmoney(STOP_COST));
+  btn("line",'<svg width="18" height="13" viewBox="0 0 18 13"><path d="M2 10 7 3l5 6 4-5" stroke="#2f6fae" stroke-width="2" fill="none" stroke-linejoin="round"/><circle cx="2" cy="10" r="1.8" fill="currentColor"/><circle cx="7" cy="3" r="1.8" fill="currentColor"/><circle cx="12" cy="9" r="1.8" fill="currentColor"/><circle cx="16" cy="4" r="1.8" fill="currentColor"/></svg>',"Bus line");
+  metroBar(bb,btn);
+  if(linePend){ const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
+    zc("&#10003; Done","Finish the line, back round to the first stop (Enter)",lineDone,"go"+(linePend.stops.length<2?" off":"")); zc("Undo","Take back the last stop (Backspace)",lineUndo); zc("Cancel","Drop this line (Esc)",lineCancel); }
+  if(lines.length){ const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
+    for(const L of lines){ const m=L.kind==="metro", u=m?"train":"bus", us=m?"trains":"buses", nm=(m?"Metro ":"Line ")+L.id;
+      zc('<i style="background:'+L.col+'"></i>'+nm+' <b>'+L.want+" "+(L.want>1?us:u)+'</b>',"Show "+nm+" on the map",()=>{ lineSel=lineSel===L?null:L; if(lineSel) lookAtLine(L); trv++; updateUI(); },lineSel===L?"sel":"");
+      zc("&minus;","One "+u+" fewer on "+nm,()=>{ if(L.want>1){ L.want--; trv++; updateUI(); } },"mini");
+      zc("+","One more "+u+" on "+nm,()=>{ if(L.want<(m?8:10)){ L.want++; trv++; updateUI(); setHint(nm+" now has "+L.want+" "+us+". Each one costs "+money(m?METRO_UP:BUS_UP)+" a month.",3); } },"mini");
+      zc("&#10005;","Take "+nm+" away",()=>{ removeLine(L); updateUI(); setHint(nm+" is gone. Its "+(m?"stations":"stops")+" stay where they are.",3); },"mini"); } }
+}
+function lookAtLine(L){ let x=0, y=0; for(const s of L.stops){ x+=s.x; y+=s.y; } cam.x=x/L.stops.length; cam.y=y/L.stops.length; clampCam(); }
+function transitStatus(){ const nb=busCount(); return "<span>Riders "+Math.round(ridersEst())+" a month</span>"+(lines.length?"<span>"+nb+" bus"+(nb===1?"":"es")+metroStatus()+"</span>":""); }
+// a tap on the map while one of the Transport tools is picked
+function transitTap(w){
+  if(transitMode==="stop"){ const near=stopNear(w,Math.max(14,18/cam.z),"bus"); if(near){ setHint("There's a bus stop there already. Use Erase to take it away.",3); return; }
+    const g=stopAt(w); if(!g.ok){ setHint(g.why,3.5); return; } if(res.road<STOP_COST){ setHint(WHY.cash,3); flashTool("nRoad"); return; }
+    addStop(g); updateUI();
+    if(transitTip<5){ transitTip=5; setHint(depotList().length?"Bus stop built. Put a few more along your busy roads, then tap Bus line and tap them in order.":"Bus stop built. Put a few more along your busy roads, build a bus depot, then tap Bus line and tap the stops in order.",6); }
+    return; }
+  if(transitMode==="line"||transitMode==="metro") return lineTap(w);
+}
+function lineTap(w){
+  const P=linePend.stops, kind=linePend.kind; let st=stopNear(w,Math.max(kind==="metro"?40:24,30/cam.z),kind);
+  if(!st&&kind==="metro"){ setHint("Tap a metro station. Build them first, beside roads, with Metro station.",3.5); return; }
+  if(!st){ const g=stopAt(w); if(!g.ok){ if(!g.near){ setHint(g.why,3.5); return; } st=g.near; }
+    else { if(res.road<STOP_COST){ setHint(WHY.cash,3); flashTool("nRoad"); return; } st=addStop(g); } }
+  if(P.length>=2&&st===P[0]){ lineDone(); return; }
+  if(P.includes(st)){ setHint("That stop is on this line already. Tap the first stop to finish the loop.",3); return; }
+  P.push(st); trv++; updateUI();
+  const nm=kind==="metro"?"station":"stop";
+  setHint(P.length===1?"Now tap the next "+nm+" along the line.":"Tap the next "+nm+", or the first one again to finish the line.",4);
+}
+function lineDone(){
+  const P=linePend&&linePend.stops; if(!P||P.length<2){ setHint("A line needs at least two stops.",3); return; }
+  const kind=linePend.kind, L=addLine(P,kind); linePend=null; transitMode=null; lineSel=L; updateUI();
+  if(kind==="metro") return metroMade(L);
+  const g=L.path.gaps.length, dep=depotList().length;
+  setHint(g?"Line "+L.id+" is drawn, but buses can't get between some of its stops. Check the roads join up.":!dep?"Line "+L.id+" is drawn. Build a bus depot from this bar and its buses will start running.":"Line "+L.id+" is running with "+L.want+" bus"+(L.want>1?"es":"")+". Use + and - to change how many.",6);
+}
+function lineUndo(){ if(linePend&&linePend.stops.length){ linePend.stops.pop(); trv++; updateUI(); } }
+function lineCancel(){ linePend=null; transitMode=null; trv++; updateUI(); hideHint(); }
+// the Erase tool on a bus stop
+function eraseStop(w){ const st=stopNear(w,Math.max(10,14/cam.z),"bus"); if(!st) return false; removeStop(st); updateUI(); setHint("Bus stop taken away.",2); return true; }
+
+// ----- drawing the stops and lines -----
+// a box at a stop: along the road a, out towards the back of the pavement o (from the shelter's middle), w long,
+// d deep and h tall, standing z off the ground. In 3D a real block; in 2D its top and its shadow
+function sbox(st,a,o,w,d,h,col,z){ const x=st.x+st.ux*a+st.px*o, y=st.y+st.uy*a+st.py*o; z=z||0;
+  if(rec3d){ if(rec3d.props&&LOD) rec3d.props.push({k:"box",x,y,z,a:st.ang,w,d,h,col}); return; }
+  ctx.save(); ctx.translate(x,y); ctx.rotate(st.ang); ctx.fillStyle="rgba(30,36,22,.2)"; ctx.fillRect(-w/2+SHX*(h+z)/2.4,-d/2+SHY*(h+z)/2.4,w,d); ctx.fillStyle=col; ctx.fillRect(-w/2,-d/2,w,d); ctx.restore(); }
+// the stops: k=0 the yellow box painted in the kerb lane; k=1 the shelter (a glass back and sides, a roof, a bench
+// and the sign on its pole) and, in 2D, the people waiting
+function drawTransit(k){
+  if(!stops.length) return;
+  for(const st of stops){ if(st.kind!=="bus"||!inView(st.x,st.y,30)) continue;
+    if(k===0){ ctx.save(); ctx.translate(st.door.x,st.door.y); ctx.rotate(st.ang); ctx.strokeStyle="rgba(222,180,60,.9)"; ctx.lineWidth=.7; ctx.setLineDash([2.4,1.6]); ctx.strokeRect(-13,-3.2,26,6.4); ctx.setLineDash([]);
+      ctx.fillStyle="rgba(222,180,60,.85)"; ctx.font="700 3px "+FONT; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("BUS",0,.2); ctx.restore(); continue; }
+    if(LOD||rec3d){ sbox(st,1,1.4,7,.3,5.6,"#b3c8d2"); sbox(st,-3.6,1.35,2.4,.5,5.2,"#ddd2a6"); sbox(st,-4.6,0,.3,3,5.6,"#b3c8d2"); sbox(st,4.6,0,.3,3,5.6,"#b3c8d2");
+      for(const a of [-4.6,4.6]) sbox(st,a,1.5,.5,.5,5.8,"#5d666e");
+      sbox(st,0,.2,10.4,4.4,.5,"#62788a",5.8); sbox(st,0,-1.95,10.4,.3,.9,"#2f6fae",5.4); sbox(st,1,.6,6,1.1,1.1,"#7a5a3e");
+      sbox(st,6.6,-2.6,.4,.4,8,"#55595e"); sbox(st,6.6,-2.6,2.4,.35,2.4,"#2f6fae",6.4); sbox(st,6.6,-2.6,1.6,.4,.5,"#f2f0e8",7.5); }
+    else { ctx.fillStyle="#4d5a66"; ctx.save(); ctx.translate(st.x,st.y); ctx.rotate(st.ang); ctx.fillRect(-5,-2,10,4); ctx.restore(); }
+    if(!rec3d&&LOD) drawWaiting(st); }
+}
+// people waiting at a stop, a little queue along the pavement
+const PCOL=["#3d4f63","#7a3f3a","#4f6a4a","#6b5a7a","#8a7a5a","#2f3a46","#9a6a4a","#556070"];
+const waitAt=(st,i)=>{ const a=-3.6+i*1.5+(hash(st.id,i)-.5)*.5, o=-1.6-(i%2)*.9; return {x:st.x+st.ux*a+st.px*o,y:st.y+st.uy*a+st.py*o}; };
+function drawWaiting(st){ const n=Math.min(10,st.q.length);
+  for(let i=0;i<n;i++){ const {x,y}=waitAt(st,i);
+    ctx.fillStyle="rgba(30,36,22,.25)"; ctx.beginPath(); ctx.arc(x+.5,y+.6,.8,0,7); ctx.fill();
+    ctx.fillStyle=PCOL[(st.id+i)%PCOL.length]; ctx.beginPath(); ctx.arc(x,y,.8,0,7); ctx.fill(); ctx.fillStyle=SKIN[(i+st.id)%SKIN.length]; ctx.beginPath(); ctx.arc(x,y,.42,0,7); ctx.fill(); } }
+// the lines along the roads, stronger while the Transport bar is open; the line being drawn, dashed
+const tOpen=()=>city&&cityTab==="transit"&&tool==="build";
+function drawLines(){
+  if(!lines.length&&!linePend) return;
+  const open=tOpen(), zk=1/Math.min(1.6,Math.max(.6,cam.z));
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  for(const L of lines){ if(!open&&lineSel!==L) continue; const P=linePath(L).pts; if(P.length<2) continue; const met=L.kind==="metro";
+    ctx.strokeStyle=L.col; ctx.globalAlpha=.9; ctx.lineWidth=(open?2.6:1.5)*(lineSel===L?1.5:1)*(met?1.6:1)*zk;
+    if(met) ctx.setLineDash([7/cam.z,4/cam.z]);
+    ctx.beginPath(); P.forEach((p,i)=>(i&&!p.br)?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.globalAlpha=1;
+  if(linePend&&linePend.stops.length){ const S=linePend.stops; ctx.strokeStyle=linePend.kind==="metro"?"#74508a":"#2f6fae"; ctx.lineWidth=2.4*zk; ctx.setLineDash([5/cam.z,4/cam.z]);
+    ctx.beginPath(); S.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); if(hoverW&&!drag) ctx.lineTo(hoverW.x,hoverW.y); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.lineCap="butt"; ctx.lineJoin="miter";
+}
+// round markers over the stops while the Transport bar is open, so they're easy to find and tap; the line being
+// drawn numbers its stops in order, and a stop with people waiting says how many
+function stopBadge(st,s){ const pi=linePend?linePend.stops.indexOf(st):-1, met=st.kind==="metro", c=met?"#74508a":"#2f6fae";
+  ctx.save(); ctx.translate(st.x,st.y); ctx.scale(s,s);
+  ctx.fillStyle=pi>=0?c:"#fff"; ctx.strokeStyle=c; ctx.lineWidth=1.4; ctx.beginPath(); ctx.arc(0,0,5.2,0,7); ctx.fill(); ctx.stroke();
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  if(pi>=0){ ctx.fillStyle="#fff"; ctx.font="800 6.4px "+FONT; ctx.fillText(pi+1,0,.3); }
+  else if(met){ ctx.fillStyle=c; ctx.font="800 6px "+FONT; ctx.fillText("M",0,.4); }
+  else { ctx.fillStyle=c; roundRect(-2.6,-3,5.2,4.6,1); ctx.fill(); ctx.fillStyle="#fff"; ctx.fillRect(-1.8,-2.2,3.6,1.6); ctx.fillStyle=c; ctx.fillRect(-2,1.8,1.2,.9); ctx.fillRect(.8,1.8,1.2,.9); }
+  if(st.q.length){ ctx.fillStyle="rgba(30,36,22,.75)"; roundRect(-5,6.4,10,5.4,2.7); ctx.fill(); ctx.fillStyle="#fff"; ctx.font="700 4.4px "+FONT; ctx.fillText(st.q.length,0,9.2); }
+  ctx.restore(); }
+function drawStopBadges(){ if(!tOpen()) return; const s=Math.max(1,1.3/cam.z); for(const st of stops) if(inView(st.x,st.y,20)) stopBadge(st,s); }
+// in 3D the markers float over the stops, the same size on screen however far off
+function transitBadges(){ if(!tOpen()) return;
+  for(const st of stops){ const h=V3.hAt(st.x,st.y)+(st.kind==="metro"?18:12), p=V3.project(st.x,h,st.y); if(p.behind||p.x<-30||p.y<-30||p.x>vw+30||p.y>vh+30) continue;
+    const k=1.7; ctx.setTransform(dpr*k,0,0,dpr*k,dpr*(p.x-k*st.x),dpr*(p.y-k*st.y)); stopBadge(st,1); } }
+// where a stop would go under the pointer: a green shelter and the kerb box, or a ring round the stop it would pick
+function transitHover(){
+  if(!tOpen()||!transitMode||transitMode==="metro"||!hoverW) return;
+  const s=Math.max(1,1.3/cam.z), near=stopNear(hoverW,Math.max(24,30/cam.z),"bus");
+  if(near){ ctx.strokeStyle="rgba(47,111,174,.9)"; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc(near.x,near.y,8*s,0,7); ctx.stroke(); return; }
+  const g=stopAtHover(hoverW); if(!g.ok) return;
+  ctx.save(); ctx.translate(g.x,g.y); ctx.rotate(g.ang); ctx.fillStyle="rgba(88,194,125,.6)"; ctx.fillRect(-5,-2,10,4); ctx.restore();
+  ctx.save(); ctx.translate(g.door.x,g.door.y); ctx.rotate(g.ang); ctx.strokeStyle="rgba(88,194,125,.95)"; ctx.lineWidth=.9; ctx.strokeRect(-13,-3.2,26,6.4); ctx.restore(); }
+
+// ----- the bus depot -----
+// a garage for the buses under a curved roof, an office, a fuel island, and the buses lined up out front
+function drawDepot(b){
+  const sc=growth(b,.5), w=b.w, d=b.d, [lsx,lsy]=sunPlan(b), here=b.cars.filter(c=>c.state==="home");
+  const tr=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc); };
+  const G=(x,y,w2,d2,h,col,z)=>gbox(b,x,y,w2,d2,h,col,z), M=(k,x,y,z,a,sx,sy,sz)=>gm(b,k,x,y,z,a,sx,sy,sz);
+  tr(); ctx.fillStyle=dk("#cfcbc2",.9); roundRect(-w/2,-d/2,w,d,2.5); ctx.fill();
+  ctx.strokeStyle=dark?"rgba(255,255,255,.35)":"rgba(255,255,255,.85)"; ctx.lineWidth=.6; ctx.beginPath(); for(let i=0;i<=5;i++){ const x=-30+i*12; ctx.moveTo(x,4); ctx.lineTo(x,24); } ctx.stroke();
+  ctx.fillStyle=dk("#9fcd7a",.9); ctx.fillRect(-w/2,-d/2,3,d); ctx.fillRect(w/2-3,-d/2,3,d); ctx.restore();
+  bodyShadow(b,sc,8,[[-34,-25,46,26]]); bodyShadow(b,sc,6,[[14,-25,20,16]]);
+  tr(); roofBlock(-34,-25,46,26,"#a3a9ad","#6f757a"); roofBlock(14,-25,20,16,"#aaa69d","#77736b"); M("vault",-11,-12,H3(8),0,46,7,13);
+  rbox(18,-21,5,4,lsx,lsy,1.4); rbox(26,-21,4,3.4,lsx,lsy,1.2);
+  // the garage doors, the fuel island under its canopy, and the sign by the gate
+  for(const x of [-31,-19.5,-8]){ G(x-.6,.9,10.2,.4,11,"#4a5057"); G(x,1.1,9,.5,10,"#9aa2a8"); for(let k=1;k<5;k++) G(x,1.5,9,.15,.25,"#7b838a",k*2); }
+  G(17,-5,15,6,.5,"#e4e0d8",6.5); for(const [x,y] of [[17.5,-4.5],[31,-4.5],[17.5,.3],[31,.3]]) G(x,y,.5,.5,6.5,"#7d8288");
+  G(22,-3.2,2,2.4,2.4,"#b9473b"); G(26,-3.2,2,2.4,2.4,"#b9473b"); G(33,22,1,.6,4.5,"#55595e"); G(31.5,21.8,4,.5,2.4,"#2f6fae",4.5);
+  ctx.restore();
+  // the buses at home, in their bays (in 3D they stand there with the rest of the buses)
+  if(!rec3d&&LOD){ here.forEach((c,i)=>{ if(i<5){ const p=toMap(b,(-24+i*12)*sc,14*sc); drawBus({x:p.x,y:p.y,ang:b.ang,len:c.len,wid:c.wid,col:c.col}); } }); }
+  if(LOD){ const p=toMap(b,-36*sc,-22*sc), q=toMap(b,36*sc,-14*sc); tree(p.x,p.y,3.4*sc); tree(q.x,q.y,3*sc); }
+}
+// a bus seen from above: its colour down the sides, the white roof with the air conditioning, the glass all round
+function drawBus(c){
+  const L=c.len*.9, W=c.wid*.82;
+  ctx.save(); ctx.translate(c.x+SHX*2.6,c.y+SHY*2.6); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.2)"; roundRect(-L/2,-W/2,L,W,1.6); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.ang);
+  ctx.fillStyle=c.col; roundRect(-L/2,-W/2,L,W,1.4); ctx.fill();
+  ctx.fillStyle="rgba(30,40,54,.85)"; ctx.fillRect(-L/2+1.4,-W/2+.25,L-3.6,W-.5); ctx.fillRect(L/2-1.6,-W/2+.6,1.2,W-1.2);
+  ctx.fillStyle=shade(c.col,18); roundRect(-L/2+1,-W/2+.75,L-2.6,W-1.5,1); ctx.fill();
+  ctx.fillStyle="#cfd2d4"; ctx.fillRect(-L*.2,-W*.24,L*.3,W*.48); ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(-L/2+1,W/2-1.1,L-2.6,.35);
+  if(c.braking){ ctx.fillStyle="#ff3b2e"; ctx.fillRect(-L/2-.3,-W/2+.5,.9,1.1); ctx.fillRect(-L/2-.3,W/2-1.6,.9,1.1); }
+  ctx.restore(); }
+// (the metro comes later)
+const WALKM=420, METRO_UP=60; function metroTick(){} const metroKey=()=>"", metroOut=()=>0, metroStatus=()=>""; function metroBar(){} function metroMade(){}
 
 // ---------- drawing services ----------
 function drawSvc(b){
@@ -3805,6 +4157,8 @@ function drawSvc(b){
     vans(b.type==="fire"?[-w*.24,w*.04,w*.3]:[-w*.22,w*.18],d/2-apron/2,Math.PI/2);
   } else if(b.type==="school"||b.type==="highschool"||b.type==="college"){
     drawEdu(b);
+  } else if(b.type==="busdepot"){
+    drawDepot(b);
   } else if(b.type==="daycare"){
     tr(); ctx.fillStyle="#a5d77c"; ctx.fillRect(-w/2,-d/2,w,d-6); ctx.fillStyle="#d7d3ca"; ctx.fillRect(-w/2,d/2-6,w,6);
     ctx.fillStyle="#efd9a0"; ctx.beginPath(); ctx.arc(w/2-4.5,-d/2+4.5,3,0,7); ctx.fill();
@@ -4428,11 +4782,13 @@ function dockSel(){
 }
 const TAB_HINT={svc:"Services: fire stations, police, hospitals, schools, daycare, road depots and parking. Each one costs money to build and a little every month.",
   util:"Utilities: nothing grows without power and water. They reach everything joined to them by road.",
-  parks:"Parks: parks, plazas, beaches and marinas make the homes around them happier. Beaches and marinas go on the shore, and draw tourists who fill hotels."};
+  parks:"Parks: parks, plazas, beaches and marinas make the homes around them happier. Beaches and marinas go on the shore, and draw tourists who fill hotels.",
+  transit:"Transport: build a bus depot, put bus stops beside busy roads, then draw a bus line through them. People near a stop leave the car at home and take the bus."};
 const svcTab=k=>SVC[k].tab||(SVC[k].util?"util":"svc");
 // the Zone, Services, Utilities and Parks buttons each open their own bar in the City builder
 function openTab(k){
   if(!city){ setTool("build"); return; }
+  if(k!=="transit") transitOff();
   if(cityTab!==k){ cityTab=k; ghost=null; zoneGhosts=null; zpts=null; mergeSel=null;
     if(k!=="zones"){ zoneSel=null; if(!SVC[placeSel]||svcTab(placeSel)!==k) placeSel=null; }
     else { if(SVC[placeSel]) placeSel=null; if(!placeSel) zoneSel=zoneSel||"res"; } }
@@ -4449,7 +4805,7 @@ function setTool(k){
     setHint(zoneSel?ZONES[zoneSel].tip+" Erase clears a lot.":placeSel?(SVC[placeSel]?SVC[placeSel].tip:"Put the "+BT[placeSel].name+" down beside a good road."):TAB_HINT[cityTab]||"Pick one, then tap beside a road to build it.",4); }
   else if(k==="build"){ if(!placeSel||tray[placeSel]<=0) placeSel=TYPES.find(q=>tray[q]>0)||null; updateUI();
     setHint(placeSel?(isTouch?"Drag a new building to where you want it and let go. It snaps beside the nearest road. Drag one that's already there to move it.":"Click to put the building down. It snaps beside the nearest road. Drag one that's already there to move it."):"Nothing new to place right now. You can still drag buildings around to move them.",4); }
-  if(k!=="build"){ ghost=null; moving=null; lineGhosts=null; zoneGhosts=null; zpts=null; mergeSel=null; }
+  if(k!=="build"){ ghost=null; moving=null; lineGhosts=null; zoneGhosts=null; zpts=null; mergeSel=null; if(city) transitOff(); }
   if(k==="road") setHint(roadMode==="over"&&res&&res.bridge<=0&&!city?"No bridges left for an overpass. Pick bridges when the town levels up.":ROAD_HINT[roadMode==="draw"&&roadKind!=="two"?roadKind:roadMode],4);
   if(k==="erase") setHint(city?"Tap a road, a building or a zoned lot to clear it.":"Tap a road or a building to knock it down.",3);
   cv.style.cursor=k==="pan"?"grab":"crosshair";
@@ -4496,7 +4852,7 @@ function updateUI(){
   $("nRoad").classList.toggle("zero",res.road<20); $("nRound").classList.toggle("zero",out("round")); $("nLight").classList.toggle("zero",out("light")); $("nBridge").classList.toggle("zero",out("bridge"));
   $("nBuild").textContent=trayCount(); $("nBuild").classList.toggle("zero",trayCount()<=0); $("nBuild").style.display=city&&!trayCount()?"none":"";
   $("buildLb").textContent=city?"Zone":"Build";
-  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide+cityTab+(zpts?"z"+zpts.length+metaKey():"")+(mergeSel?"m"+mergeSel.length:"")+(lots.length>1?"L":""):"-");
+  const bb=$("buildBar"), key=TYPES.map(k=>tray[k]).join(",")+"|"+placeSel+"|"+lineMode+"|"+(city?zoneSel+plotSplit+plotSize+plotSide+cityTab+(zpts?"z"+zpts.length+metaKey():"")+(mergeSel?"m"+mergeSel.length:"")+(lots.length>1?"L":"")+(cityTab==="transit"?transitKey():""):"-");
   if(city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
     dockSel();
     if(cityTab!=="zones"){
@@ -4506,7 +4862,8 @@ function updateUI(){
       for(const k of SKEYS.filter(q=>svcTab(q)===cityTab)){ const S=SVC[k], btn=document.createElement("button"), bch=k==="beach"; btn.className=(bch?zoneSel==="beach":placeSel===k)?"sel":""; btn.dataset.s=k; btn.title=S.tip;
         btn.innerHTML='<i style="background:'+BT[k].col+'"></i>'+S.short+'<b>'+kmoney(S.cost)+(bch?"+":"")+'</b>';
         btn.onclick=bch?()=>{ placeSel=null; zoneSel="beach"; ghost=null; updateUI(); setHint(ZONES.beach.tip+" From "+money(S.cost)+", more for a longer beach.",6); }
-          :()=>{ zoneSel=null; placeSel=k; updateUI(); setHint(S.tip+" Costs "+money(S.cost)+", then "+money(S.up)+" a month.",5); }; bb.appendChild(btn); }
+          :()=>{ zoneSel=null; placeSel=k; transitMode=null; linePend=null; updateUI(); setHint(S.tip+" Costs "+money(S.cost)+", then "+money(S.up)+" a month.",5); }; bb.appendChild(btn); }
+      if(cityTab==="transit") transitBar(bb,zc);
       const br=document.createElement("div"); br.className="br"; bb.appendChild(br);
       const st=document.createElement("span"); st.className="st"; st.id="svcSt"; bb.appendChild(st);
       placeHint(); }
@@ -4542,7 +4899,7 @@ function updateUI(){
       btn.onclick=()=>{ zoneSel=null; placeSel=k; updateUI(); setHint("Put the "+BT[k].name+" down beside a good road.",3); }; bb.appendChild(btn); }
     demandBars(); placeHint(); } }
   // what's left of the power and water, and how happy people are
-  if(city&&cityTab!=="zones"){ const st=$("svcSt"); if(st&&cityTab==="parks") st.innerHTML=(people?"<span>Happy "+Math.round(happyAvg)+"%</span>":"")+"<span>Tourism "+tourism+"</span>"; else if(st&&cityTab==="util"){ const f=(nm,q)=>{ const [u,c]=utilStat[q]; return '<span class="'+(u>c*.92||!c?"low":"")+'">'+nm+" "+Math.round(u)+"/"+Math.round(c)+"</span>"; };
+  if(city&&cityTab!=="zones"){ const st=$("svcSt"); if(st&&cityTab==="parks") st.innerHTML=(people?"<span>Happy "+Math.round(happyAvg)+"%</span>":"")+"<span>Tourism "+tourism+"</span>"; else if(st&&cityTab==="transit") st.innerHTML=transitStatus(); else if(st&&cityTab==="util"){ const f=(nm,q)=>{ const [u,c]=utilStat[q]; return '<span class="'+(u>c*.92||!c?"low":"")+'">'+nm+" "+Math.round(u)+"/"+Math.round(c)+"</span>"; };
       st.innerHTML=f("Power","pow")+f("Water","wat"); } else if(st) st.innerHTML=people?"<span>Happy "+Math.round(happyAvg)+"%</span>"+(cityTab==="svc"?"<span>Schooling "+Math.round(eduStat.any*100)+"%</span>":""):"";
     bb.querySelectorAll("[data-s]").forEach(b=>b.classList.toggle("poor",res.road<SVC[b.dataset.s].cost)); }
   if(!city&&bb.dataset.key!==key){ bb.dataset.key=key; bb.innerHTML="";
@@ -4660,7 +5017,7 @@ cv.addEventListener("contextmenu",e=>e.preventDefault());
 function segUnder(w,pad){ let bs=null, bd=1e9; for(const s of segs.values()){ const A=nodes.get(s.a),B=nodes.get(s.b), p=projSeg(w.x,w.y,A.x,A.y,B.x,B.y); if(p.d<segHW(s)+pad&&p.d<bd){bd=p.d;bs=s;} } return bs; }
 function nodeUnder(w){ let bn=null, bd=Math.max(snapR(),26); for(const n of nodes.values()){ if(n.segs.length<3) continue; const d=Math.hypot(n.x-w.x,n.y-w.y); if(d<bd){bd=d;bn=n;} } return bn; }
 // tools that act on a tap: drag with them and you move the map instead
-const TAPPERS=new Set(["tune","round","light","lanes","zpt","mpick"]);
+const TAPPERS=new Set(["tune","round","light","lanes","zpt","mpick","tpick"]);
 cv.addEventListener("pointerdown",e=>{ zoomGoal=null;
   cv.setPointerCapture(e.pointerId);
   ptrs[e.pointerId]={x:e.clientX,y:e.clientY};
@@ -4682,6 +5039,8 @@ cv.addEventListener("pointerdown",e=>{ zoomGoal=null;
   if(mode==="erase"){ eraseAt(w,true); }
   if(mode==="build"){
     // grab a building that's already there to move it
+    // a Transport tool picked: the tap is for a stop or a line, not for moving a building
+    if(city&&cityTab==="transit"&&transitMode&&!placeSel){ ghost=null; drag.mode="tpick"; return; }
     const hb=bldUnder(w,2);
     if(city&&mergeSel){ ghost=null; drag.mode="mpick"; return; }
     if(hb&&!(city&&hb.lot)&&!hb.sand&&!(city&&zpts)){ drag.mode="move"; moving={b:hb,ox:hb.x-w.x,oy:hb.y-w.y}; ghost=ghostAt(hb.type,{x:hb.x,y:hb.y},hb); cv.style.cursor="grabbing"; return; }
@@ -4701,6 +5060,7 @@ function tapRoad(s,w){
 }
 function buildPt(e,w){ return e.pointerType==="mouse"?w:v3live()?toWorld(e.clientX,e.clientY-38):{x:w.x,y:w.y-38/cam.z}; }
 function eraseAt(w,first){
+  if(city&&first&&eraseStop(w)) return;
   if(first){ const b=bldUnder(w,1); if(b){ const L=b.lot; if(deleteBld(b)&&L&&city) removeLot(L); return; } }
   if(city){ const L=lotUnder(w); if(L){ if(L.b&&first) deleteBld(L.b,true); if(!L.b||!blds.includes(L.b)){ removeLot(L); return; } } }
   const n=nodeUnder(w);
@@ -4751,6 +5111,7 @@ function endPtr(e){
     ghost=(e.pointerType==="mouse"&&placeSel&&!lineMode)?ghostAt(placeSel,w):null;
     return;
   }
+  if(dr.mode==="tpick"){ if(transitMode) transitTap(w); return; }
   if(dr.mode==="zpt"){ if(zoneSel) zoneTap(w); return; }
   if(dr.mode==="mpick"){ if(mergeSel) mergeTap(w); return; }
   if(dr.mode==="zone"){
@@ -4897,8 +5258,9 @@ window.addEventListener("keydown",e=>{
   if($("ovAsk").classList.contains("show")){ if(e.key==="Escape") $("askNo").onclick(); else if(e.key==="Enter") $("askOk").onclick(); return; }
   if(mergeSel&&running&&!paused){ if(e.key==="Escape"){ mergeCancel(); return; } if(e.key==="Enter"){ mergeGo(); return; } }
   if(zpts&&running&&!paused){ if(e.key==="Escape"){ zoneCancel(); return; } if(e.key==="Enter"){ zoneDone(); return; } if(e.key==="Backspace"){ e.preventDefault(); zoneUndo(); return; } }
+  if(linePend&&city&&running&&!paused){ if(e.key==="Escape"){ lineCancel(); return; } if(e.key==="Enter"){ lineDone(); return; } if(e.key==="Backspace"){ e.preventDefault(); lineUndo(); return; } }
   if(e.key==="b"||e.key==="B"||e.key==="6") openTab("zones");
-  if(city){ if(e.key==="8") openTab("svc"); if(e.key==="9") openTab("util"); if(e.key==="0") openTab("parks"); }
+  if(city){ if(e.key==="8") openTab("svc"); if(e.key==="9") openTab("util"); if(e.key==="0") openTab("parks"); if(e.key==="u"||e.key==="U") openTab("transit"); }
   if(e.key==="v"||e.key==="V") setView3d(!v3on);
   if(v3live()){ if(e.key==="z"||e.key==="Z") v3turn(-Math.PI/6); if(e.key==="x"||e.key==="X") v3turn(Math.PI/6); if(e.key==="[") v3tiltBy(-.15); if(e.key==="]") v3tiltBy(.15); }
   if((e.key==="m"||e.key==="M")&&city){ if(finOpen) closeFin(); else if(!paused) openFin(false); return; }
@@ -5808,6 +6170,7 @@ function drawOverpasses(){
 const carDims=(c,wm)=>{ const m=wm||99; if(c.len<11) return [c.len,Math.min(c.wid,m)]; return c.truck?[c.len*.86,Math.min(c.wid*.78,m)]:[c.len*.84,Math.min(c.wid*.67,m)]; };
 const CARL=11*.84;
 function drawCar(c){
+  if(c.bus) return drawBus(c);
   const [L,W]=carDims(c,c.wm), h=c.h||0, so=1.3+h*12;
   // shadow first, always down and to the right; cars up on an overpass throw theirs further
   if(ultra){ ctx.save(); ctx.translate(c.x+SHX*so*1.8,c.y+SHY*so*1.8); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.08)"; roundRect(-L/2-1.2,-W/2-1.2,L+2.4,W+2.4,3.2); ctx.fill(); ctx.restore();
@@ -6596,6 +6959,7 @@ function drawHover(){
     if(b){ ctx.strokeStyle="rgba(226,73,58,.8)"; ctx.lineWidth=2.2; ctx.beginPath(); ctx.arc(b.x,b.y,b.r+4,0,7); ctx.stroke(); }
     else { const s=segUnder(hoverW,3); if(s){ const A=nodes.get(s.a),B=nodes.get(s.b); ctx.strokeStyle="rgba(226,73,58,.45)"; ctx.lineCap="round"; ctx.lineWidth=2*segHW(s)+4; ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.lineCap="butt"; } } }
   if(tool==="build"&&!ghost){ const b=bldUnder(hoverW,2); if(b){ ctx.strokeStyle="rgba(47,125,225,.8)"; ctx.lineWidth=2; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.arc(b.x,b.y,b.r+4,0,7); ctx.stroke(); ctx.setLineDash([]); } }
+  if(city) transitHover();
 }
 let LOD=true;
 function draw(){
@@ -6614,6 +6978,7 @@ function draw(){
   drawRoads();
   if(city) drawWear();
   drawWorks();
+  if(city){ drawTransit(0); drawLines(); }
   if(ultra) drawLamps();
   parkedAt.clear(); for(const c of cars) if(c.state==="park"&&c.at&&!c.svc){ let a=parkedAt.get(c.at); if(!a) parkedAt.set(c.at,a=[]); a.push(c); }
   for(const c of cars) if(c.state==="drive"&&!c.up&&inView(c.x,c.y,20)) drawCar(c);
@@ -6622,6 +6987,7 @@ function draw(){
   for(const b of blds) if(inView(b.x,b.y,b.r+30)){ if(moving&&moving.b===b) ctx.globalAlpha=.35; drawBld(b); ctx.globalAlpha=1; }
   // fire trucks, ambulances and police cars out on a call, stopped where they're needed
   for(const c of cars) if(c.svc&&c.state==="park"&&inView(c.x,c.y,20)) drawCar(c);
+  if(city) drawTransit(1);
   if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)){ drawHose(b); drawFire(b); }
   if(ultra){ drawWalkers(); drawSmoke(fdt); }
   if(city) drawParkWalkers();
@@ -6632,6 +6998,7 @@ function draw(){
   for(const b of blds) if((!isHome(b)||b.type==="mixed")&&!isSvc(b)&&inView(b.x,b.y,b.r+40)) drawPins(b);
   if(city) for(const b of blds) if(inView(b.x,b.y,b.r+40)) drawProblems(b);
   if(city) for(const L of lots) if(L.why&&!L.b&&inView(L.x,L.y,10)) drawLotWhy(L);
+  if(city) drawStopBadges();
   drawHover();
   if(drag&&drag.lane&&segs.has(drag.lane.seg.id)) laneHover(drag.lane.seg,drag.lane.w0,drag.lane.w1);
   drawPlan();
@@ -7133,7 +7500,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     let nc=0, nb=0, nh=0, nt=0, nr=0;
     const cm=carI.instanceMatrix.array, bm=boxI.instanceMatrix.array, km=cabI.instanceMatrix.array, hm=headI.instanceMatrix.array, tm=tailI.instanceMatrix.array, rm=barI.instanceMatrix.array, xm=trimI.instanceMatrix.array, ym=trkI.instanceMatrix.array;
     const lights=nk>.15, flash=performance.now()%420<210;
-    const put=(c,x,y,a,h,moving,wm)=>{ if(nc>=CAP||nb>=CAP) return; const [L,W]=carDims(c,wm), gy=h*OVH+hAt(x,y), ca=Math.cos(a), sa=Math.sin(a), HH=c.truck?TRKH:CARH;
+    const put=(c,x,y,a,h,moving,wm)=>{ if(c.bus||nc>=CAP||nb>=CAP) return; const [L,W]=carDims(c,wm), gy=h*OVH+hAt(x,y), ca=Math.cos(a), sa=Math.sin(a), HH=c.truck?TRKH:CARH;
       if(c.truck){ setM(bm,nb,x,gy,y,a,L,HH,W); setC(boxI,nb,c.col||"#f4f4f0"); setM(km,nb,x,gy,y,a,L,HH,W); setC(cabI,nb,c.cab||"#e2493a"); setM(ym,nb,x,gy,y,a,L,HH,W); nb++; }
       else { setM(cm,nc,x,gy,y,a,L,HH,W); setC(carI,nc,c.col||"#888"); setM(xm,nc,x,gy,y,a,L,HH,W); nc++; }
       if(c.svc&&nr<CAP-1){ const top=c.truck?HH*.76:HH*.92; setM(rm,nr,x+ca*L*(c.truck?.38:-.04),gy+top+.3,y+sa*L*(c.truck?.38:-.04),a,1.3,.7,W*.75); setC(barI,nr,c.siren?(flash?"#3d7fff":"#ff2a1c"):"#c8ced6"); nr++; }
@@ -7233,6 +7600,71 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const n={}; for(const k in civI) n[k]=0;
     for(const q of list){ const m=civI[q.k]; if(!m||n[q.k]>=CVCAP) continue; setM(m.instanceMatrix.array,n[q.k]++,q.x,hAt(q.gx,q.gy)+q.z-.05,q.y,q.a,q.sx,q.sy,q.sz); }
     for(const k in civI){ civI[k].count=n[k]; civI[k].instanceMatrix.needsUpdate=true; }
+  }
+
+  // ----- buses, the people waiting at the stops, and the bus lines drawn along the roads -----
+  // a bus (1 long, 1 tall and 1 wide, stretched to size): the body in its line's colour with a band of glass all round,
+  // a white roof with the air conditioning on it, two doors on the kerb side, lights, and the sign over the windscreen
+  const busG=G0(), busT=G0(), dgl=[.07,.09,.12], roofW=[.8,.81,.8], amber=[.95,.6,.16];
+  boxInto(busG,-.5,.5,.07,.44,-.48,.48,W1); boxInto(busG,-.5,.5,.84,.92,-.48,.48,W1);
+  for(const x of [-.5,.47]) boxInto(busG,x,x+.03,.44,.84,-.48,.48,W1);
+  for(const x of [-.27,-.05,.17]) for(const z of [-1,1]) boxInto(busG,x,x+.025,.44,.84,z<0?-.488:.478,z<0?-.478:.488,W1);
+  boxInto(busT,-.47,.47,.44,.84,-.474,.474,glass); boxInto(busT,.5,.507,.3,.83,-.43,.43,glass); boxInto(busT,-.507,-.5,.5,.8,-.4,.4,glass);
+  boxInto(busG,-.48,.48,.92,.945,-.46,.46,W1); boxInto(busT,-.22,.1,.945,1,-.3,.3,roofW);
+  boxInto(busT,.47,.506,.85,.915,-.38,.38,blk); boxInto(busT,.506,.509,.86,.905,-.3,.3,amber);
+  for(const x of [.31,-.06]) boxInto(busT,x,x+.1,.08,.84,.48,.493,dgl);
+  for(const x of [-.31,.32]){ loft(busT,ring(x,.135,.042,.135,.5),tyre); loft(busT,ring(x,.135,.024,.075,.508),hub); }
+  for(const z of [-1,1]){ boxInto(busT,.5,.51,.13,.21,z<0?-.44:.3,z<0?-.3:.44,lamp); boxInto(busT,-.51,-.5,.14,.25,z<0?-.46:.32,z<0?-.32:.46,tail); }
+  boxInto(busT,.5,.516,.04,.11,-.47,.47,blk); boxInto(busT,-.516,-.5,.04,.11,-.47,.47,blk);
+  const BCAP=256, busI=new T.InstancedMesh(geoOf(busG),carMat,BCAP), busTI=new T.InstancedMesh(geoOf(busT),trimMat,BCAP);
+  busI.setColorAt(0,new T.Color(1,1,1));
+  for(const m of [busI,busTI]){ m.instanceMatrix.setUsage(T.DynamicDrawUsage); m.count=0; m.frustumCulled=false; m.castShadow=true; scene.add(m); }
+  // a person standing at a stop: legs, a coat in their own colour, and a head
+  const PPCAP=600, pplI=new T.InstancedMesh(merged([[cyl(.52,.46,1.5,1.32,0,0,8),"#ffffff"],[bxg(.4,1.36,.34,0,0,-.21),"#565b63"],[bxg(.4,1.36,.34,0,0,.21),"#565b63"]]),new T.MeshStandardMaterial({vertexColors:true,roughness:.85}),PPCAP),
+    hdI=new T.InstancedMesh(new T.SphereGeometry(.38,8,6).translate(0,3.18,0),new T.MeshStandardMaterial({roughness:.7}),PPCAP);
+  for(const m of [pplI,hdI]){ m.setColorAt(0,new T.Color(1,1,1)); m.instanceMatrix.setUsage(T.DynamicDrawUsage); m.count=0; m.frustumCulled=false; m.castShadow=true; scene.add(m); }
+  // the lines: a coloured band along the lanes the buses use, over the roads and up onto the overpasses; the line
+  // being drawn is a dashed band straight from stop to stop that shows through everything
+  const lineMat=new T.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.85,depthWrite:false,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-12});
+  const pendMat=new T.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,depthWrite:false,depthTest:false,side:T.DoubleSide});
+  let lineMesh=null, pendMesh=null, lineK="", pendK="";
+  function band(P,C,pts,w,col,lift,dash){ const c=LC(col);
+    for(let i=1;i<pts.length;i++){ const a=pts[i-1], b=pts[i]; if(b.br) continue; const L=Math.hypot(b.x-a.x,b.y-a.y); if(L<.01) continue;
+      const n=Math.max(1,Math.ceil(L/(dash?5:14))), nx=-(b.y-a.y)/L*w/2, ny=(b.x-a.x)/L*w/2, ha=a.h||0, hb=b.h||0;
+      for(let k=0;k<n;k++){ if(dash&&k%3===2) continue; const u0=k/n, u1=(k+1)/n, x0=a.x+(b.x-a.x)*u0, y0=a.y+(b.y-a.y)*u0, x1=a.x+(b.x-a.x)*u1, y1=a.y+(b.y-a.y)*u1;
+        const e0=ha+(hb-ha)*u0, e1=ha+(hb-ha)*u1, h0=hAt(x0,y0)+lift+e0*OVH+(e0>0?1.4:0), h1=hAt(x1,y1)+lift+e1*OVH+(e1>0?1.4:0);
+        P.push(x0+nx,h0,y0+ny, x1+nx,h1,y1+ny, x1-nx,h1,y1-ny, x0+nx,h0,y0+ny, x1-nx,h1,y1-ny, x0-nx,h0,y0-ny);
+        for(let q=0;q<6;q++) C.push(c[0],c[1],c[2]); } } }
+  const bandMesh=(P,C,mat,ro)=>{ const g=new T.BufferGeometry(); g.setAttribute("position",new T.Float32BufferAttribute(P,3)); g.setAttribute("color",new T.Float32BufferAttribute(C,3));
+    const m=new T.Mesh(g,mat); m.frustumCulled=false; m.renderOrder=ro; scene.add(m); return m; };
+  const unband=m=>{ if(m){ scene.remove(m); m.geometry.dispose(); } return null; };
+  function transitFrame(){
+    // the buses: out on the road, stopped at a stop, or parked up in the bays in front of their depot
+    let n=0; const bm=busI.instanceMatrix.array, tm=busTI.instanceMatrix.array;
+    const put=(c,x,y,a,h)=>{ if(n>=BCAP) return; const L=c.len*.9, gy=h*OVH+hAt(x,y); setM(bm,n,x,gy,y,a,L,7,5.8); setC(busI,n,c.col); setM(tm,n,x,gy,y,a,L,7,5.8); n++; };
+    for(const d of depotList()){ let k=0; const sc=growth(d,.5);
+      for(const c of d.cars){ if(!c.bus) continue;
+        if(c.state==="home"){ if(k<5){ const p=toMap(d,(-24+k*12)*sc,14*sc); put(c,p.x,p.y,d.ang,0); } k++; }
+        else put(c,c.x,c.y,c.ang,c.state==="drive"?c.h||0:0); } }
+    busI.count=busTI.count=n; for(const m of [busI,busTI]) m.instanceMatrix.needsUpdate=true; busI.instanceColor.needsUpdate=true;
+    // the people waiting, up to ten at a stop, at the stops in the picture
+    let m=0; const pm=pplI.instanceMatrix.array, hm=hdI.instanceMatrix.array;
+    for(const st of stops){ if(!st.q.length||st.kind!=="bus"||(reg&&(st.x<reg.x0||st.y<reg.y0||st.x>reg.x0+reg.S||st.y>reg.y0+reg.S))) continue;
+      const k=Math.min(10,st.q.length), a=Math.atan2(-st.py,-st.px);
+      for(let i=0;i<k&&m<PPCAP;i++){ const p=waitAt(st,i), g=hAt(p.x,p.y), ai=a+(hash(st.id,i+9)-.5)*.9;
+        setM(pm,m,p.x,g,p.y,ai,1,1,1); setC(pplI,m,PCOL[(st.id+i)%PCOL.length]); setM(hm,m,p.x,g,p.y,ai,1,1,1); setC(hdI,m,SKIN[(i+st.id)%SKIN.length]); m++; } }
+    pplI.count=hdI.count=m; for(const q of [pplI,hdI]){ q.instanceMatrix.needsUpdate=true; q.instanceColor.needsUpdate=true; }
+    // the lines, worked out again only when they, the roads or the Transport bar change
+    const open=tOpen(); let key=open+":"+(lineSel?lineSel.id:"");
+    for(const L of lines){ if(open||lineSel===L){ linePath(L); key+="|"+L.id+L.col+L.pk; } }
+    if(key!==lineK){ lineK=key; lineMesh=unband(lineMesh); const P=[], C=[];
+      for(const L of lines) if(open||lineSel===L) band(P,C,L.path.pts,(open?3.4:2.4)*(lineSel===L?1.5:1)*(L.kind==="metro"?1.4:1),L.col,.8,L.kind==="metro");
+      if(P.length) lineMesh=bandMesh(P,C,lineMat,2.6); }
+    let pk="";
+    if(open&&linePend&&linePend.stops.length) pk=linePend.stops.map(s=>s.id).join(".")+(hoverW&&!drag?":"+Math.round(hoverW.x)+","+Math.round(hoverW.y):"");
+    if(pk!==pendK){ pendK=pk; pendMesh=unband(pendMesh);
+      if(pk){ const pts=linePend.stops.map(s=>({x:s.x,y:s.y})); if(hoverW&&!drag) pts.push({x:hoverW.x,y:hoverW.y}); const P=[], C=[];
+        band(P,C,pts,2.8,linePend.kind==="metro"?"#74508a":"#2f6fae",3,true); if(P.length) pendMesh=bandMesh(P,C,pendMat,5); } }
   }
 
   // ----- tower cranes over the tall buildings going up -----
@@ -7399,9 +7831,10 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
         L.terr.getContext("2d").drawImage(stage,sx,sy); c.terr=true; }
       else ctx.drawImage(L.terr,sx,sy,CPX,CPX,0,0,CPX,CPX);
       worldT(); rec3d=rc;
-      drawWater(); drawRoads(); if(city) drawWear(); drawWorks();
+      drawWater(); drawRoads(); if(city) drawWear(); drawWorks(); if(city) drawTransit(0);
       drawLots();
       for(const b of blds) if(inView(b.x,b.y,b.r+30)&&!(moving&&moving.b===b)) drawBld(b);
+      if(city) drawTransit(1);
       if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)) drawHose(b);
       drawOutside();
     });
@@ -7450,6 +7883,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     for(const q of nodes.values()){ const m=(q.trim||12)+24; add(q.x-m,q.y-m,q.x+m,q.y+m,q.id*43+(q.type==="light"?13:q.type==="round"?26:0)+q.segs.length*3); }
     for(const c of cars) if(c.state==="park"&&c.at&&!c.svc){ const b=c.at, m=(b.r||10)+12; add(b.x-m,b.y-m,b.x+m,b.y+m,c.len*3+(c.col?c.col.charCodeAt(1)*7+c.col.charCodeAt(3):0)+1); }
     if(outside){ const q=nodes.get(outside.node); if(q) add(q.x-60,q.y-60,q.x+60,q.y+60,outside.node*7+3); }
+    for(const st of stops) add(st.x-34,st.y-34,st.x+34,st.y+34,st.id*53+(st.kind==="metro"?7:3)+R4(st.x)*5+R4(st.y)*3);
     return sig;
   }
   // where a layer sits: which sharpness, and which cells, centred on what the view needs
@@ -7575,7 +8009,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const now=performance.now(), r=v=>v?Math.round(v.x*2)+","+Math.round(v.y*2):"";
     const key=[tool,placeSel,zoneSel,roadMode,roadKind,laneSel,laneSide,r(hoverW),drag?drag.mode+(drag.raw?drag.raw.length+r(drag.raw[drag.raw.length-1]):"")+(drag.lane?r(drag.lane.w1):"")+(drag.path?drag.path.length:""):"",
       ghost?r(ghost)+ghost.ok+ghost.ang+ghost.why:"",zoneGhosts?zoneGhosts.length+r(zoneGhosts[0])+r(zoneGhosts[zoneGhosts.length-1])+(zoneGhosts.sand?r(zoneGhosts.sand)+zoneGhosts.sand.A:""):"",lineGhosts?lineGhosts.length+r(lineGhosts[lineGhosts.length-1]):"",
-      grid?grid.pts.length+r(grid.pts[0])+r(grid.pts[1]):"",zpts?zpts.length+r(zpts[zpts.length-1])+(shiftDown?"s":""):"",mergeSel?"m"+mergeSel.map(L=>L.id).join("."):"",r(gridCur),tuneNode?tuneNode.id:"",moving?1:0,running&&!paused?1:0,cam.z.toFixed(2)].join("|");
+      grid?grid.pts.length+r(grid.pts[0])+r(grid.pts[1]):"",zpts?zpts.length+r(zpts[zpts.length-1])+(shiftDown?"s":""):"",mergeSel?"m"+mergeSel.map(L=>L.id).join("."):"",r(gridCur),tuneNode?tuneNode.id:"",moving?1:0,running&&!paused?1:0,cam.z.toFixed(2),city&&transitMode?transitMode+trv:""].join("|");
     if(key===focKey) return;
     if(now-lastF<(mobile?45:20)) return;
     focKey=key; lastF=now;
@@ -7637,7 +8071,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     decks();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
     sky(nk,dk); wU.wt.value=now/1000;
-    ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
+    ncars=carsFrame(nk); transitFrame(); cranes(); ghosts(); fires(); streetLights(nk);
     // the shadows follow the camera; when it's still they're drawn every other frame for the moving cars
     const ck=camera.position.x.toFixed(1)+camera.position.y.toFixed(1)+camera.position.z.toFixed(1);
     R.shadowMap.needsUpdate=rebuilt||painted>0||ck!==render.ck||(render.n=(render.n||0)+1)%(mobile?3:2)===0; render.ck=ck;
@@ -7663,6 +8097,7 @@ function v3overlay(){
   if(city) for(const L of lots){ if(!L.why||L.b||!at(L.x,L.y,V3.hAt(L.x,L.y)+2,L.x,L.y)) continue; drawLotWhy(L); }
   for(const e of effects){ if(e.k!=="plus") continue; const f=e.t/e.life; if(f>=1) continue; if(!at(e.x,e.y,10+V3.hAt(e.x,e.y),e.x,e.y)) continue;
     ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
+  if(city) transitBadges();
   // labels from the overlays: price of a road, why a ghost can't go there, how many plots
   if(v3tagList.length){ ctx.setTransform(dpr,0,0,dpr,0,0); cam.z=1;
     for(const g of v3tagList){ const p=V3.project(g.x,V3.hAt(g.x,g.y)+g.lift,g.y); if(p.behind||p.x<-80||p.y<-40||p.x>vw+80||p.y>vh+40) continue; pill(p.x,p.y,g.txt,g.bg,g.dy,g.fs); } }
@@ -7724,6 +8159,11 @@ window.__gridlock={
       fires:blds.filter(b=>b.fire).length,sick:blds.filter(b=>b.sick).length,crime:blds.filter(b=>(b.crime||0)>.6).length,out:cars.filter(c=>c.svc&&c.state!=="home").length,
       sirens:cars.filter(c=>c.siren).length,worn:[...segs.values()].filter(s=>s.cond!==undefined&&s.cond<.6).length,burnt:lots.filter(L=>L.burnt).length}; },
   civic:()=>({edu:{any:+eduStat.any.toFixed(2),hi:+eduStat.hi.toFixed(2)},dem:{off:+cityD.off.toFixed(2),ind:+cityD.ind.toFixed(2)}}),
+  transit:()=>({stops:stops.length,lines:lines.map(L=>({id:L.id,stops:L.stops.length,want:L.want,buses:L.buses.length,len:Math.round(linePath(L).len),gaps:L.path.gaps.length,riders:L.riders})),wait:stops.reduce((n,q)=>n+q.q.length,0),riders:tStat.total,month:tStat.month,
+    buses:allBuses().map(c=>({st:c.state,load:c.load.length,x:Math.round(c.x),y:Math.round(c.y),to:c.purpose&&c.purpose.d&&c.purpose.d.id}))}),
+  stop:(x,y)=>{ const g=stopAt({x,y}); if(!g.ok) return {ok:false,why:g.why}; const st=addStop(g); return {ok:true,id:st.id,x:Math.round(st.x),y:Math.round(st.y),dx:Math.round(st.door.x),dy:Math.round(st.door.y)}; },
+  line:ids=>{ const S=ids.map(i=>stops.find(q=>q.id===i)).filter(Boolean); if(S.length<2) return {ok:false}; const L=addLine(S,"bus"); return {ok:true,id:L.id,want:L.want,len:Math.round(L.path.len),gaps:L.path.gaps.length}; },
+  tmode:(m,tab)=>{ if(tab) openTab("transit"); if(m) setTMode(m); return {mode:transitMode,pend:linePend?linePend.stops.length:-1,tab:cityTab}; },
   ignite:i=>{ const hs=blds.filter(b=>!isSvc(b)&&!b.fire); const b=hs[i===undefined?0:i%hs.length]; if(b) b.fire={t0:t,truck:null}; return b&&b.type; },
   sicken:()=>{ const b=blds.find(b=>isHome(b)&&!b.sick); if(b) b.sick={t0:t,amb:null}; return !!b; },
   crime:v=>{ for(const b of blds) if(!isSvc(b)) b.crime=v; },
