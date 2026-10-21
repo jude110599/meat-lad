@@ -6963,6 +6963,250 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
       const m=new T.Matrix4(); for(let i=0;i<n;i++){ const h=pil[i*3+2]; m.makeScale(2.4,h,2.4); m.setPosition(pil[i*3],h/2,pil[i*3+1]); pillarMesh.setMatrixAt(i,m); } scene.add(pillarMesh); }
   }
 
+  // ----- the City's streets as real shapes -----
+  // The asphalt, the pavements with their kerbs, the junctions, zebra crossings, stop lines, arrows and manholes are
+  // built from the roads themselves rather than painted into the picture, so they stay sharp however close you look.
+  // The lines on the asphalt are worked out on the card from the lanes each way, so they're crisp at any distance too.
+  // Each road and junction is built once and kept until it changes, and they're merged into one mesh for each square
+  // of the map. A road still being laid is left to the picture, dirt and paver and all, until it's finished.
+  const RY=.06, PY=.12, KY=.42, CH=512;
+  const rdU={tN:{value:null},wc:{value:new T.Color()},yc:{value:new T.Color()},kc:{value:new T.Color()}};
+  rdU.tN.value=tex(256,256,(g,w,h)=>{ g.fillStyle="#808080"; g.fillRect(0,0,w,h);
+    for(let i=0;i<14000;i++){ const v=rnd3(i,33); g.fillStyle="rgba("+(v<.5?"0,0,0":"255,255,255")+","+(.06+rnd3(i,34)*.14)+")"; g.fillRect(rnd3(i,31)*w,rnd3(i,32)*h,1+rnd3(i,35)*2,1+rnd3(i,36)*2); } });
+  rdU.tN.value.colorSpace=T.NoColorSpace;
+  // kinds of surface (the road data's w): 0 plain, 1 a carriageway with its lines, 2 a zebra crossing, 3 white paint,
+  // 4 a manhole, 5 pavement with its kerb stones, 8 grass, 9 a pothole
+  const roadMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.9,flatShading:true,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2});
+  roadMat.onBeforeCompile=sh=>{ Object.assign(sh.uniforms,rdU);
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nattribute vec3 rd; varying vec3 vRd; varying vec2 vWq;")
+      .replace("#include <fog_vertex>","#include <fog_vertex>\nvRd=rd; vWq=transformed.xz;");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>",`#include <common>
+varying vec3 vRd; varying vec2 vWq; uniform sampler2D tN; uniform vec3 wc, yc, kc;
+float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)*clamp(2.*h/f,0.,1.); }`)
+      .replace("#include <color_fragment>",`#include <color_fragment>
+{ float cz=floor(vRd.z+.5), code=mod(cz,64.), kw=floor(cz/64.), kd=mod(kw,16.), mh=floor(kw/16.)*.25, u=vRd.x, v=vRd.y;
+  float nz=texture2D(tN,vWq*.09).r-.5, fu=max(fwidth(u),1e-4), fv=max(fwidth(v),1e-4);
+  vec3 c=diffuseColor.rgb*(1.+.2*nz);
+  if(kd>.5&&kd<1.5){
+    float lf=mod(code,4.), lb=mod(floor(code/4.),4.), hy=step(15.5,code), d0=(lb-lf)*3.5;
+    float ph=fract(v/11.)*11., dash=clamp(min(ph,5.-ph)/fv+.5,0.,1.); dash=mix(dash,.45,smoothstep(1.,4.,fv));
+    float w=0., y=0.;
+    if(lf>.5&&lb>.5&&hy<.5&&mh<.01){ if(lf<1.5&&lb<1.5) y=ln(u,d0,.55,fu); else y=max(ln(u,d0-1.1,.55,fu),ln(u,d0+1.1,.55,fu)); }
+    for(float k=1.;k<3.;k++){ if(k<lf) w=max(w,dash*ln(u,d0+mh+k*7.,.45,fu)); if(k<lb) w=max(w,dash*ln(u,d0-mh-k*7.,.45,fu)); }
+    if(hy>.5){ w=max(w,ln(u,d0+lf*7.-1.2,.4,fu)); w=max(w,ln(u,d0-lb*7.+1.2,.4,fu)); }
+    c=mix(c,yc,y); c=mix(c,wc,w);
+  } else if(kd>1.5&&kd<2.5){ float ph=abs(fract(u/2.7+.5)-.5)*2.7, z=clamp((.7-ph)/fu+.5,0.,1.); z=mix(z,.52,smoothstep(.6,2.,fu)); c=mix(c,wc,z);
+  } else if(kd>2.5&&kd<3.5){ c=wc*(1.+.08*nz);
+  } else if(kd>3.5&&kd<4.5){ float r=length(vRd.xy); if(r>1.62) discard;
+    float g=max(ln(u,-.7,.12,fu),max(ln(u,0.,.12,fu),ln(u,.7,.12,fu)))*step(r,1.25);
+    c*=1.-.32*max(clamp((r-1.3)/fu+.5,0.,1.),g);
+  } else if(kd>4.5&&kd<5.5){ float pv=abs(fract(v/2.6+.5)-.5)*2.6, j=clamp((.06-pv)/fv+.5,0.,1.)*clamp(.12/fv,0.,1.);
+    c*=1.-.13*j; c=mix(c,kc*(1.+.15*nz),clamp((.6-u)/fu+.5,0.,1.));
+  } else if(kd>7.5&&kd<8.5){ c=diffuseColor.rgb*(1.+.55*(texture2D(tN,vWq*.33).r-.5));
+  } else if(kd>8.5&&kd<9.5){ float r=length(vRd.xy); if(r>1.) discard; c*=.55+.3*r; }
+  diffuseColor.rgb=c; }`); };
+  const COL={};
+  function stCols(){ for(const k of ["as","side","kc","med","medT","bridge","hole"]) COL[k]=LC(rdc(k)); COL.face=LC(shade(rdc("side"),dark?6:-22)); COL.grass=LC(dk("#93c96a",.9));
+    COL.crack=LC(dark?"#26282c":"#56554f"); COL.slip=LC("#7cc35d"); COL.paint=LC("#ffffff"); COL.ring=LC(dark?"#787c84":"#bebbb2");
+    rdU.wc.value.set(rdc("lc")); rdU.yc.value.set(YC); rdU.kc.value.set(shade(rdc("side"),dark?10:-14)); }
+  // the pieces each mesh is made of: corners' positions, colours and road data (across, along, lanes and kind)
+  const RB=()=>({p:[],c:[],r:[]});
+  const rdz=(code,kind,mh)=>code+64*(kind+16*Math.round((mh||0)*4));
+  function tri(B,a,b,c,nx,ny,nz,col,ra,rb,rc){
+    const ex=b[0]-a[0], ey=b[1]-a[1], ez=b[2]-a[2], fx=c[0]-a[0], fy=c[1]-a[1], fz=c[2]-a[2];
+    if((ey*fz-ez*fy)*nx+(ez*fx-ex*fz)*ny+(ex*fy-ey*fx)*nz<0){ let t=b; b=c; c=t; t=rb; rb=rc; rc=t; }
+    B.p.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]); for(let i=0;i<3;i++) B.c.push(col[0],col[1],col[2]); B.r.push(ra[0],ra[1],ra[2],rb[0],rb[1],rb[2],rc[0],rc[1],rc[2]); }
+  // a flat triangle or four-sided piece lying dy above the ground; each corner is [x,y] on the map with its [u,v]
+  const g3=(q,dy)=>[q[0],hAt(q[0],q[1])+dy,q[1]];
+  function flat3(B,a,b,c,dy,col,z){ tri(B,g3(a,dy),g3(b,dy),g3(c,dy),0,1,0,col,[a[2]||0,a[3]||0,z],[b[2]||0,b[3]||0,z],[c[2]||0,c[3]||0,z]); }
+  function flat4(B,a,b,c,d,dy,col,z){ flat3(B,a,b,c,dy,col,z); flat3(B,a,c,d,dy,col,z); }
+  // a strip along points P (each {x,y,nx,ny,s}) from o0 to o1 across, its u the distance across and v along
+  function ribbon(B,P,o0,o1,dy,col,z){ for(let i=0;i<P.length-1;i++){ const a=P[i], b=P[i+1];
+    flat4(B,[a.x+a.nx*o0,a.y+a.ny*o0,o0,a.s],[a.x+a.nx*o1,a.y+a.ny*o1,o1,a.s],[b.x+b.nx*o1,b.y+b.ny*o1,o1,b.s],[b.x+b.nx*o0,b.y+b.ny*o0,o0,b.s],dy,col,z); } }
+  // an upright face along the ground from a to b (map points), from y0 to y1 above it, facing the way of (fx,fy)
+  function wall(B,a,b,y0,y1,fx,fy,col){ const ha=hAt(a.x,a.y), hb=hAt(b.x,b.y), z=[0,0,0];
+    const A0=[a.x,ha+y0,a.y], A1=[a.x,ha+y1,a.y], B0=[b.x,hb+y0,b.y], B1=[b.x,hb+y1,b.y];
+    tri(B,A0,B0,B1,fx,0,fy,col,z,z,z); tri(B,A0,B1,A1,fx,0,fy,col,z,z,z); }
+  // a pavement between its kerb line Pin and its outer edge Pout (as many points each): the paving on top, its kerb
+  // stones along Pin, and the kerb's face stepping down to the road
+  function band(B,Pin,Pout,col){ const z=rdz(0,5); let v=0;
+    for(let i=0;i<Pin.length-1;i++){ const a=Pin[i], b=Pin[i+1], c=Pout[i+1], d=Pout[i], l=Math.hypot(b.x-a.x,b.y-a.y);
+      flat4(B,[a.x,a.y,0,v],[b.x,b.y,0,v+l],[c.x,c.y,Math.hypot(c.x-b.x,c.y-b.y),v+l],[d.x,d.y,Math.hypot(d.x-a.x,d.y-a.y),v],KY,col,z);
+      let fx=-(b.y-a.y)/(l||1), fy=(b.x-a.x)/(l||1); if(fx*(d.x-a.x)+fy*(d.y-a.y)>0){ fx=-fx; fy=-fy; }
+      if(l>.01) wall(B,a,b,RY,KY,fx,fy,COL.face); v+=l; } }
+  const offP=(p,o)=>({x:p.x+p.nx*o,y:p.y+p.ny*o});
+  // points along a quadratic curve from a round c to b, with the way across at each
+  function quadPts(a,c,b,k,s0){ const P=[]; let s=s0||0, px=a.x, py=a.y;
+    for(let i=0;i<=k;i++){ const u=i/k, v=1-u, x=v*v*a.x+2*v*u*c.x+u*u*b.x, y=v*v*a.y+2*v*u*c.y+u*u*b.y; let tx=2*v*(c.x-a.x)+2*u*(b.x-c.x), ty=2*v*(c.y-a.y)+2*u*(b.y-c.y); const l=Math.hypot(tx,ty)||1;
+      s+=Math.hypot(x-px,y-py); px=x; py=y; P.push({x,y,nx:-ty/l,ny:tx/l,s}); } return P; }
+  // a lane arrow painted on the road, as laneGlyph draws it in 2D: shafts are thin strips and the heads triangles
+  function glyph3(B,x,y,ax,ay,set,col,z){
+    const pt=(u,v)=>[x+ax*u-ay*v,y+ay*u+ax*v];
+    const bar=(a,b)=>{ const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1, nx=-dy/l*.5, ny=dx/l*.5; flat4(B,[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny],PY,col,z); };
+    const head=(a,b,c)=>flat3(B,pt(a[0],a[1]),pt(b[0],b[1]),pt(c[0],c[1]),PY,col,z);
+    const hS=set.includes("S");
+    bar(pt(-6,0),pt(hS?1.4:-1.4,0)); if(hS) head([4.2,0],[1.2,-1.9],[1.2,1.9]);
+    for(const [on,g] of [[set.includes("L"),-1],[set.includes("R"),1]]) if(on){ let pr=pt(-1.8,0);
+      for(let i=1;i<=4;i++){ const u=i/4, v=1-u, q=pt(v*v*-1.8+2*v*u*.7+u*u*.7,u*u*1.7*g); bar(pr,q); pr=q; }
+      head([.7,4.6*g],[-1.2,1.7*g],[2.6,1.7*g]); }
+  }
+  // a box standing along the ground from a to b, w across and from y0 to y1 up: a highway's barrier or a bridge's wall
+  function rail(B,P,o,w,y0,y1,top,side){
+    ribbon(B,P,o-w/2,o+w/2,y1,top,0);
+    for(let i=0;i<P.length-1;i++) for(const sd of [-1,1]){ const a=offP(P[i],o+sd*w/2), b=offP(P[i+1],o+sd*w/2); wall(B,a,b,y0,y1,P[i].nx*sd,P[i].ny*sd,side); } }
+  // how worn a road looks, in steps
+  const wearB=s=>s.cond!==undefined&&s.cond<.62&&!s.hwy?Math.round((1-s.cond)*10):0;
+  // a road: its asphalt (plain by the junctions where the crossings are, lined in between), its pavements, a highway's
+  // barrier, a bridge's walls, the arrows down a one-way road, its manholes and its potholes and cracks
+  function segGeo(s,B){
+    const A=nodes.get(s.a), Z=nodes.get(s.b), W=walkable(s), hw=segHW(s), hc=W?hw-GUT:hw, d0=s.ta, d1=s.len-s.tb; if(d1-d0<.3) return;
+    const nx=-s.uy, ny=s.ux, at=d=>({x:A.x+s.ux*d,y:A.y+s.uy*d,nx,ny,s:d}), line=(a,b)=>{ const k=Math.max(1,Math.ceil((b-a)/30)), P=[]; for(let i=0;i<=k;i++) P.push(at(a+(b-a)*i/k)); return P; };
+    const ea=zebraAt(A)&&cwAt(s)?STOPR+.8:0, eb=zebraAt(Z)&&cwAt(s)?STOPR+.8:0, z=rdz(s.lf+4*s.lb+(s.hwy?16:0),1), z0=rdz(0,0);
+    if(d0+ea<d1-eb-.5){ if(ea) ribbon(B,line(d0,d0+ea),-hc,hc,RY,COL.as,z0); ribbon(B,line(d0+ea,d1-eb),-hc,hc,RY,COL.as,z); if(eb) ribbon(B,line(d1-eb,d1),-hc,hc,RY,COL.as,z0); }
+    else ribbon(B,line(d0,d1),-hc,hc,RY,COL.as,z0);
+    const P=line(d0,d1);
+    if(W) for(const sd of [-1,1]) band(B,P.map(p=>offP(p,hc*sd)),P.map(p=>offP(p,(hw+SWO)*sd)),COL.side);
+    if(s.hwy&&s.lf&&s.lb) rail(B,P,(s.lb-s.lf)*LW/2,1,RY,1.5,COL.medT,COL.med);
+    // walls along a bridge, where it's over the water
+    if(s.water){ let st=null; const L=W?hw+SWO:hw+.6;
+      for(let d=d0;d<=d1+.01;d+=6){ const p=at(Math.min(d,d1)), w=isWater(p.x,p.y)||isWater(p.x+nx*8,p.y+ny*8)||isWater(p.x-nx*8,p.y-ny*8);
+        if(w&&st===null) st=Math.max(d0,d-6); if(st!==null&&(!w||d+6>d1+.01)){ const e=w?d1:Math.min(d1,d+6); if(e-st>2) for(const sd of [-1,1]) rail(B,line(st,e),sd*(L-.35),.7,0,KY+1.3,COL.medT,COL.bridge); st=null; } } }
+    if(oneWay(s)){ const run=s.len-s.ta-s.tb, n=s.lf||s.lb, from=s.lf?s.a:s.b, u=travelDir(s,from), F=nodes.get(from), t0=s.lf?s.ta:s.tb;
+      for(let d=t0+22;d<t0+run-14;d+=70) for(let l=0;l<n;l++){ const o=divOff(s,from)+(l+.5)*LW; glyph3(B,F.x+u.x*d-u.y*o,F.y+u.y*d+u.x*o,u.x,u.y,"S",COL.paint,rdz(0,3)); } }
+    if(!s.hwy) for(const p of holesOf(s)) flat4(B,[p.x-s.ux*1.8-nx*1.8,p.y-s.uy*1.8-ny*1.8,-1.8,-1.8],[p.x+s.ux*1.8-nx*1.8,p.y+s.uy*1.8-ny*1.8,1.8,-1.8],[p.x+s.ux*1.8+nx*1.8,p.y+s.uy*1.8+ny*1.8,1.8,1.8],[p.x-s.ux*1.8+nx*1.8,p.y-s.uy*1.8+ny*1.8,-1.8,1.8],PY,COL.hole,rdz(0,4));
+    // a worn road: potholes and cracks, where drawWear puts them in 2D
+    if(wearB(s)){ const n=Math.round((1-s.cond)*s.len/9), h2=hc-2.5;
+      for(let i=0;i<n;i++){ const u=hash(s.id,i), v=hash(i,s.id)*2-1, x=A.x+(Z.x-A.x)*u-s.uy*v*h2, y=A.y+(Z.y-A.y)*u+s.ux*v*h2, r=.9+hash(s.id+i,7)*(s.cond<.4?2.2:1.2);
+        if(i%3===0){ const q=[[x-2.5,y-1],[x,y+.6],[x+1.6,y-.8],[x+3.4,y+.3]]; for(let k=0;k<3;k++){ const a=q[k], b=q[k+1], dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy), ox=-dy/l*.22, oy=dx/l*.22;
+            flat4(B,[a[0]+ox,a[1]+oy],[b[0]+ox,b[1]+oy],[b[0]-ox,b[1]-oy],[a[0]-ox,a[1]-oy],PY,COL.crack,rdz(0,0)); } }
+        else { const c=Math.cos(u*3), sn=Math.sin(u*3), rx=r, ry=r*.7, cr=(a,b)=>[x+c*a*rx-sn*b*ry,y+sn*a*rx+c*b*ry,a,b];
+          flat4(B,cr(-1,-1),cr(1,-1),cr(1,1),cr(-1,1),PY,COL.crack,rdz(0,9)); } } }
+  }
+  // a junction or a joint: the asphalt where the roads meet, the pavement round its corners, and its zebra crossings,
+  // stop lines and lane arrows; a bend where a road carries on round a corner; a roundabout; or a dead end's turning circle
+  function nodeGeo(n,B){
+    const deg=n.segs.length; if(!deg) return;
+    const arms=n.segs.map(id=>{ const s=segs.get(id), d=dirFrom(s,n.id), t=trimAt(s,n.id), W=walkable(s), hw=segHW(s);
+      return {s,d,t,W,hw,hc:W?hw-GUT:hw,a:Math.atan2(d.y,d.x),q:{x:n.x+d.x*t,y:n.y+d.y*t},l:{x:-d.y,y:d.x}}; }).sort((p,q)=>p.a-q.a);
+    const z0=rdz(0,0), m=arms.length;
+    if(arms.every(a=>a.s.over)) return;
+    if(deg===1){ const A=arms[0]; if(A.s.over||outside&&n.id===outside.node) return;
+      // a dead end: a round turning circle with the pavement curving round it
+      const a0=Math.atan2(A.l.y,A.l.x), P=[], k=12; for(let i=0;i<=k;i++){ const a=a0+Math.PI*i/k; P.push({x:Math.cos(a),y:Math.sin(a)}); }
+      for(let i=0;i<k;i++) flat3(B,[n.x,n.y],[n.x+P[i].x*A.hc,n.y+P[i].y*A.hc],[n.x+P[i+1].x*A.hc,n.y+P[i+1].y*A.hc],RY,COL.as,z0);
+      if(A.W) band(B,P.map(p=>({x:n.x+p.x*A.hc,y:n.y+p.y*A.hc})),P.map(p=>({x:n.x+p.x*(A.hw+SWO),y:n.y+p.y*(A.hw+SWO)})),COL.side);
+      return; }
+    const s1=arms[0].s, s2=arms[1%m].s;
+    if(deg===2&&n.type==="plain"&&(flowsOn(s1,n.id,s2)||s1.over||s2.over)){
+      if(s1.over&&s2.over) return;
+      // a bend: the road carries on round it with its lines and pavements
+      const d1=dirFrom(s1,n.id), d2=dirFrom(s2,n.id), t1=trimAt(s1,n.id), t2=trimAt(s2,n.id), q1={x:n.x+d1.x*t1,y:n.y+d1.y*t1}, q2={x:n.x+d2.x*t2,y:n.y+d2.y*t2};
+      const P=quadPts(q1,n,q2,10), W=walkable(s1)&&walkable(s2), hw=Math.max(segHW(s1),segHW(s2)), hc=W?hw-GUT:hw, fl=flowsOn(s1,n.id,s2);
+      ribbon(B,P,-hc,hc,RY,COL.as,fl?rdz(inL(s1,n.id)+4*dirL(s1,n.id)+(s1.hwy?16:0),1):z0);
+      if(W) for(const sd of [-1,1]) band(B,P.map(p=>offP(p,hc*sd)),P.map(p=>offP(p,(hw+SWO)*sd)),COL.side);
+      if(s1.hwy&&s2.hwy&&fl&&inL(s1,n.id)&&dirL(s1,n.id)) rail(B,P,(dirL(s1,n.id)-inL(s1,n.id))*LW/2,1,RY,1.5,COL.medT,COL.med);
+      return; }
+    if(n.type==="round"){
+      const R=ringR(n), Rin=R-LW/2-.5, Ro=R+LW/2+2, Rw=Ro+GUT+SWO, K=48;
+      // the ring of asphalt, the stub of each road up to it, and the island in the middle with its kerb and grass
+      for(let i=0;i<K;i++){ const a=i/K*Math.PI*2, b=(i+1)/K*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a), cb=Math.cos(b), sb=Math.sin(b);
+        flat4(B,[n.x+ca*Rin,n.y+sa*Rin],[n.x+cb*Rin,n.y+sb*Rin],[n.x+cb*Ro,n.y+sb*Ro],[n.x+ca*Ro,n.y+sa*Ro],RY,COL.as,z0);
+        flat4(B,[n.x+ca*(Rin-1.5),n.y+sa*(Rin-1.5)],[n.x+cb*(Rin-1.5),n.y+sb*(Rin-1.5)],[n.x+cb*Rin,n.y+sb*Rin],[n.x+ca*Rin,n.y+sa*Rin],KY,COL.kc,z0);
+        flat3(B,[n.x,n.y],[n.x+ca*(Rin-1.5),n.y+sa*(Rin-1.5)],[n.x+cb*(Rin-1.5),n.y+sb*(Rin-1.5)],KY+.04,COL.grass,rdz(0,8));
+        wall(B,{x:n.x+ca*Rin,y:n.y+sa*Rin},{x:n.x+cb*Rin,y:n.y+sb*Rin},RY,KY,(ca+cb)/2,(sa+sb)/2,COL.face); }
+      // the dashed line round the outside of the ring, where cars coming in give way
+      { const Rd=R+LW/2+.5, nd=Math.round(Math.PI*2*Rd/5);
+        for(let i=0;i<nd;i++){ const a=i/nd*Math.PI*2, b=a+2/Rd, ca=Math.cos(a), sa=Math.sin(a), cb=Math.cos(b), sb=Math.sin(b);
+          flat4(B,[n.x+ca*(Rd-.5),n.y+sa*(Rd-.5)],[n.x+cb*(Rd-.5),n.y+sb*(Rd-.5)],[n.x+cb*(Rd+.5),n.y+sb*(Rd+.5)],[n.x+ca*(Rd+.5),n.y+sa*(Rd+.5)],PY,COL.ring,z0); } }
+      const rr=(A,o,Rr)=>Math.sqrt(Math.max(0,Rr*Rr-o*o));
+      for(const A of arms){ if(A.s.over) continue; const r1=rr(A,A.hc,Ro)-.5; if(r1>=A.t) continue;
+        flat4(B,[A.q.x-A.l.x*A.hc,A.q.y-A.l.y*A.hc],[A.q.x+A.l.x*A.hc,A.q.y+A.l.y*A.hc],[n.x+A.d.x*r1+A.l.x*A.hc,n.y+A.d.y*r1+A.l.y*A.hc],[n.x+A.d.x*r1-A.l.x*A.hc,n.y+A.d.y*r1-A.l.y*A.hc],RY,COL.as,z0); }
+      if(n.hw) return;
+      // the pavement round the outside, from each road round to the next
+      for(let i=0;i<m;i++){ const A=arms[i], C=arms[(i+1)%m]; if(!A.W&&!C.W) continue;
+        const chain=(oA,oC,Rr)=>{ const ra=rr(A,oA,Rr), rc=rr(C,oC,Rr), pa={x:A.d.x*ra+A.l.x*oA,y:A.d.y*ra+A.l.y*oA}, pc={x:C.d.x*rc-C.l.x*oC,y:C.d.y*rc-C.l.y*oC};
+          const a0=Math.atan2(pa.y,pa.x); let da=Math.atan2(pc.y,pc.x)-a0; while(da<=0) da+=Math.PI*2;
+          const P=[{x:n.x+A.d.x*A.t+A.l.x*oA,y:n.y+A.d.y*A.t+A.l.y*oA}]; for(let k=0;k<=10;k++){ const a=a0+da*k/10; P.push({x:n.x+Math.cos(a)*Rr,y:n.y+Math.sin(a)*Rr}); }
+          P.push({x:n.x+C.d.x*C.t-C.l.x*oC,y:n.y+C.d.y*C.t-C.l.y*oC}); return P; };
+        band(B,chain(A.hc,C.hc,Ro),chain(A.hw+SWO,C.hw+SWO,Rw),COL.side); }
+      return; }
+    // the asphalt where the roads meet: each road's mouth, joined round to the next road by its kerb
+    const kerb=(A,C,oA,oC)=>{ const p1={x:A.q.x+A.l.x*oA,y:A.q.y+A.l.y*oA}, p2={x:C.q.x-C.l.x*oC,y:C.q.y-C.l.y*oC}, den=A.d.x*C.d.y-A.d.y*C.d.x, wx=p2.x-p1.x, wy=p2.y-p1.y;
+      if(Math.abs(den)>.05){ const sa=(wx*C.d.y-wy*C.d.x)/den, sb=(wx*A.d.y-wy*A.d.x)/den;
+        if(sa<=0&&sb<=0&&sa>-(A.t+2*A.hw+10)&&sb>-(C.t+2*C.hw+10)) return quadPts(p1,{x:p1.x+A.d.x*sa,y:p1.y+A.d.y*sa},p2,8); }
+      const P=[]; for(let k=0;k<=8;k++) P.push({x:p1.x+wx*k/8,y:p1.y+wy*k/8}); return P; };
+    const out=[];
+    for(let i=0;i<m;i++){ const A=arms[i], C=arms[(i+1)%m]; out.push({x:A.q.x-A.l.x*A.hc,y:A.q.y-A.l.y*A.hc}); for(const p of kerb(A,C,A.hc,C.hc).slice(0,-1)) out.push(p); }
+    for(let i=0;i<out.length;i++){ const a=out[i], b=out[(i+1)%out.length]; flat3(B,[n.x,n.y],[a.x,a.y],[b.x,b.y],RY,COL.as,z0); }
+    // a highway carrying on through where a ramp joins it keeps its lines and barrier
+    if(n.hw){ const hs=arms.filter(a=>a.s.hwy);
+      if(hs.length===2&&flowsOn(hs[0].s,n.id,hs[1].s)){ const a=hs[0], c=hs[1], P=quadPts(a.q,n,c.q,10), lf=inL(a.s,n.id), lb=dirL(a.s,n.id);
+        ribbon(B,P,-a.hw,a.hw,RY+.03,COL.as,rdz(lf+4*lb+16,1)); if(lf&&lb) rail(B,P,(lb-lf)*LW/2,1,RY,1.5,COL.medT,COL.med); }
+      return; }
+    // the pavement round each corner
+    for(let i=0;i<m;i++){ const A=arms[i], C=arms[(i+1)%m]; if(!A.W&&!C.W) continue; band(B,kerb(A,C,A.hc,C.hc),kerb(A,C,A.hw+SWO,C.hw+SWO),COL.side); }
+    if(deg<3) return;
+    // zebra crossings just past each road's mouth, the stop lines behind them, and the lane arrows behind those
+    for(const A of arms){ const s=A.s, d=A.d, tr=A.t, nl=inL(s,n.id), cw=zebraAt(n)&&cwAt(s);
+      if(cw){ const mz=Math.floor((2*A.hc-2.2)/2.7)+1, o0=-(mz-1)/2*2.7, e0=o0-.7, e1=-o0+.7, r0=tr+CW0, r1=tr+CW1, cr=(r,o)=>[n.x+d.x*r+A.l.x*o,n.y+d.y*r+A.l.y*o,o-o0,r];
+        flat4(B,cr(r0,e0),cr(r1,e0),cr(r1,e1),cr(r0,e1),PY,COL.as,rdz(0,2)); }
+      if(!nl||s.over||s.hwy) continue;
+      const sb=cw?STOPR:0, q={x:n.x+d.x*(tr+sb),y:n.y+d.y*(tr+sb)}, ax=-d.x, ay=-d.y, rx=-ay, ry=ax, dv=divOff(s,segOther(s,n.id));
+      { const o0=dv+1.2, o1=dv+nl*LW, sp=(o,e)=>[q.x+rx*o+d.x*e,q.y+ry*o+d.y*e]; flat4(B,sp(o0,-.8),sp(o1,-.8),sp(o1,.8),sp(o0,.8),PY,COL.paint,rdz(0,3)); }
+      if(s.len-s.ta-s.tb>46+sb){ const set=laneSet(n,s), sl=!!n.slip[s.id];
+        for(let l=0;l<nl;l++){ const o=dv+(l+.5)*LW, x=q.x+rx*o+d.x*10, y=q.y+ry*o+d.y*10;
+          if(sl&&l===nl-1&&set[l].includes("R")){ glyph3(B,x,y,ax,ay,"R",COL.slip,z0); if(set[l]!=="R") glyph3(B,x,y,ax,ay,set[l].replace("R",""),COL.paint,rdz(0,3)); }
+          else glyph3(B,x,y,ax,ay,set[l],COL.paint,rdz(0,3)); } } }
+  }
+  // the highway in from outside, carrying on past the edge of the map
+  function outGeo(B){ const n=nodes.get(outside.node); if(!n||!n.segs.length) return; const s=segs.get(n.segs[0]), f={x:outside.fx,y:outside.fy}, hw=segHW(s), P=[];
+    for(let i=0;i<=14;i++){ const d=-420*i/14; P.push({x:n.x+f.x*d,y:n.y+f.y*d,nx:-f.y,ny:f.x,s:d}); }
+    ribbon(B,P,-hw,hw,RY,COL.as,rdz(s.lf+4*s.lb+(s.hwy?16:0),1)); }
+  // what each road and junction was last built from, so only the ones that changed are built again
+  const segSig=(s,u)=>{ const A=nodes.get(s.a), Z=nodes.get(s.b); return [s.id,A.x,A.y,Z.x,Z.y,s.lf,s.lb,+s.hwy,+s.over,+s.fixed,+s.water,s.ta.toFixed(2),s.tb.toFixed(2),+walkable(s),+zebraAt(A),+zebraAt(Z),wearB(s),u?1:0].join(","); };
+  const nodeSig=n=>{ const k=[n.id,n.x,n.y,n.type,(n.trim||0).toFixed(2),+!!n.hw,outside&&outside.node===n.id?1:0];
+    for(const id of n.segs){ const s=segs.get(id); k.push(id,s.lf,s.lb,+s.hwy,+s.over,+s.fixed,s.ux.toFixed(4),s.uy.toFixed(4),s.ta.toFixed(2),s.tb.toFixed(2),s.len.toFixed(1),n.lc[id]||0,n.slip[id]?1:0,+walkable(s),s.a===n.id?1:0); } return k.join(","); };
+  const stEl=new Map(), stCh=new Map(); let stRC=null, stWK=null, stDk=null, stCK="", stCT=0, stVerts=0;
+  const chOf=(x,y)=>Math.floor(x/CH)+","+Math.floor(y/CH);
+  function stMerge(c){
+    c.dirty=false; let np=0; for(const e of c.els) if(e.a) np+=e.a.p.length;
+    if(c.mesh){ scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh=null; }
+    if(!np) return;
+    const P=new Float32Array(np), C=new Float32Array(np), R=new Float32Array(np); let o=0;
+    for(const e of c.els) if(e.a){ P.set(e.a.p,o); C.set(e.a.c,o); R.set(e.a.r,o); o+=e.a.p.length; }
+    const g=new T.BufferGeometry(); g.setAttribute("position",new T.BufferAttribute(P,3)); g.setAttribute("color",new T.BufferAttribute(C,3)); g.setAttribute("rd",new T.BufferAttribute(R,3)); g.computeBoundingSphere();
+    c.mesh=new T.Mesh(g,roadMat); c.mesh.receiveShadow=true; c.mesh.renderOrder=1; scene.add(c.mesh);
+  }
+  function streets3(){
+    if(!city||!roadCache){ for(const c of stCh.values()) if(c.mesh) c.mesh.visible=false; return; }
+    const now=performance.now();
+    // the potholes on worn roads are looked at every second or so
+    if(now-stCT>1000){ stCT=now; let k=""; for(const s of segs.values()){ const w=wearB(s); if(w) k+=s.id+":"+w+","; } if(k!==stCK){ stCK=k; stRC=null; } }
+    let wk=""; for(const w of works) wk+=w.id+",";
+    if(roadCache!==stRC||wk!==stWK||dark!==stDk){
+      if(dark!==stDk||!COL.as){ stDk=dark; stCols(); for(const e of stEl.values()) e.sig=""; }
+      stRC=roadCache; stWK=wk;
+      // the roads still being laid
+      const unp=new Set();
+      for(const w of works){ const ux=(w.bx-w.ax)/w.len, uy=(w.by-w.ay)/w.len, mx=(w.ax+w.bx)/2, my=(w.ay+w.by)/2;
+        for(const s of segs.values()){ if(unp.has(s.id)||Math.abs(s.ux*ux+s.uy*uy)<.95) continue; const A=nodes.get(s.a), Z=nodes.get(s.b);
+          if(projSeg(mx,my,A.x,A.y,Z.x,Z.y).d<2||projSeg(A.x+s.ux*s.len*.5,A.y+s.uy*s.len*.5,w.ax,w.ay,w.bx,w.by).d<2) unp.add(s.id); } }
+      const seen=new Set(), touch=k=>{ let c=stCh.get(k); if(!c) stCh.set(k,c={els:new Set(),mesh:null,dirty:false,x:+k.split(",")[0]*CH,y:+k.split(",")[1]*CH}); c.dirty=true; return c; };
+      const put=(key,sig,x,y,fn)=>{ seen.add(key); const e=stEl.get(key); if(e&&e.sig===sig) return;
+        const B=RB(); try{ fn(B); }catch(err){ console.error(err); }
+        const a=B.p.length?{p:new Float32Array(B.p),c:new Float32Array(B.c),r:new Float32Array(B.r)}:null, ck=chOf(x,y);
+        if(e){ const c0=touch(e.ck); c0.els.delete(e); }
+        const ne={sig,ck,a}; stEl.set(key,ne); touch(ck).els.add(ne); };
+      for(const s of segs.values()){ if(s.over) continue; const A=nodes.get(s.a), Z=nodes.get(s.b), u=unp.has(s.id); put("s"+s.id,segSig(s,u),(A.x+Z.x)/2,(A.y+Z.y)/2,B=>{ if(!u) segGeo(s,B); }); }
+      for(const n of nodes.values()){ const u=n.segs.some(id=>unp.has(id)); put("n"+n.id,nodeSig(n)+(u?"u":""),n.x,n.y,B=>{ if(!u) nodeGeo(n,B); }); }
+      if(outside){ const n=nodes.get(outside.node); if(n) put("out",n.id+","+n.x+","+n.y+","+n.segs.join("."),n.x,n.y,outGeo); }
+      for(const [k,e] of stEl) if(!seen.has(k)){ const c=stCh.get(e.ck); if(c){ c.els.delete(e); c.dirty=true; } stEl.delete(k); }
+      stVerts=0; for(const c of stCh.values()){ if(c.dirty) stMerge(c); if(c.mesh) stVerts+=c.mesh.geometry.attributes.position.count; }
+    }
+    // only the squares under the picture are drawn: past it there are no buildings either
+    const rg=reg; for(const c of stCh.values()) if(c.mesh) c.mesh.visible=!rg||(c.x+CH+40>rg.x0&&c.y+CH+40>rg.y0&&c.x-40<rg.x0+rg.S&&c.y-40<rg.y0+rg.S);
+  }
+
   // ----- cars, trucks and their lights, drawn in batches -----
   function boxInto(P,x0,x1,y0,y1,z0,z1,col){ const v=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
     for(const f of [[0,3,2,1],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,4,7,3]]) quad(P,v[f[0]],v[f[1]],v[f[2]],v[f[3]],[0,0],[1,0],[1,1],[0,1],col); }
@@ -7149,11 +7393,11 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     if(!on) return;
     lampMat.color.set(nk>.12?"#fff6dc":"#d9dbe0"); poolMat.opacity=glowM.opacity=clamp((nk-.08)*2.2,0,1);
     const L=lamps(); if(L===lampKey3&&lampReg===reg) return; lampKey3=L; lampReg=reg;
-    let n=0; const pm=poleI.instanceMatrix.array, am=armI.instanceMatrix.array, hm=lampI.instanceMatrix.array, om=poolI.instanceMatrix.array, gp=glowG.attributes.position.array;
+    let n=0; const pm=poleI.instanceMatrix.array, am=armI.instanceMatrix.array, hm=lampI.instanceMatrix.array, om=poolI.instanceMatrix.array, gp=glowG.attributes.position.array, py=city?KY+.08:.35;
     for(const l of L){ if(n>=LCAP) break; if(reg&&(l.x<reg.x0-20||l.y<reg.y0-20||l.x>reg.x0+reg.S+20||l.y>reg.y0+reg.S+20)) continue;
-      if(l.hwy){ setM(pm,n,l.x,0,l.y,0,1,13,1); setM(am,n,l.x,13,l.y,0,0,0,0); setM(hm,n,l.x,13.2,l.y,0,2.2,.6,2.2); setM(om,n,l.x,.35,l.y,0,30,1,30); gp.set([l.x,12.6,l.y],n*3); n++; continue; }
+      if(l.hwy){ setM(pm,n,l.x,0,l.y,0,1,13,1); setM(am,n,l.x,13,l.y,0,0,0,0); setM(hm,n,l.x,13.2,l.y,0,2.2,.6,2.2); setM(om,n,l.x,py,l.y,0,30,1,30); gp.set([l.x,12.6,l.y],n*3); n++; continue; }
       const a=Math.atan2(l.ay,l.ax), hx=l.x+l.ax*3.4, hy=l.y+l.ay*3.4;
-      setM(pm,n,l.x,0,l.y,0,1,11,1); setM(am,n,l.x,10.8,l.y,a,3.6,.32,.32); setM(hm,n,hx,10.6,hy,a,1.8,.5,1.2); setM(om,n,hx,.35,hy,0,25,1,25); gp.set([hx,10.1,hy],n*3); n++; }
+      setM(pm,n,l.x,0,l.y,0,1,11,1); setM(am,n,l.x,10.8,l.y,a,3.6,.32,.32); setM(hm,n,hx,10.6,hy,a,1.8,.5,1.2); setM(om,n,hx,py,hy,0,25,1,25); gp.set([hx,10.1,hy],n*3); n++; }
     for(const m of [poleI,armI,lampI,poolI]){ m.count=n; m.instanceMatrix.needsUpdate=true; }
     glowG.setDrawRange(0,n); glowG.attributes.position.needsUpdate=true;
   }
@@ -7429,7 +7673,9 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     f.tex.needsUpdate=true; if(mats.focus.map!==f.tex) mats.focus.map=f.tex;
     // a patch of ground under it, following the hills
     const N=side>700?48:24, pos=new Float32Array((N+1)*(N+1)*3), uv=new Float32Array((N+1)*(N+1)*2), idx=[];
-    for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){ const k=j*(N+1)+i, x=x0+side*i/N, y=y0+side*j/N; pos[k*3]=x; pos[k*3+1]=hAt(x,y)+.05; pos[k*3+2]=y; uv[k*2]=i/N; uv[k*2+1]=j/N; }
+    // (raised over the City's pavements, so road plans and highlights show over the streets)
+    const fy=city?KY+.12:.05;
+    for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){ const k=j*(N+1)+i, x=x0+side*i/N, y=y0+side*j/N; pos[k*3]=x; pos[k*3+1]=hAt(x,y)+fy; pos[k*3+2]=y; uv[k*2]=i/N; uv[k*2+1]=j/N; }
     for(let j=0;j<N;j++) for(let i=0;i<N;i++){ const a=j*(N+1)+i, b=a+1, c=a+N+1, d=c+1; idx.push(a,c,b,b,c,d); }
     const geo=new T.BufferGeometry(); geo.setAttribute("position",new T.BufferAttribute(pos,3)); geo.setAttribute("uv",new T.BufferAttribute(uv,2)); geo.setIndex(idx);
     if(fmesh){ fmesh.geometry.dispose(); fmesh.geometry=geo; } else { fmesh=new T.Mesh(geo,mats.focus); fmesh.renderOrder=2.5; fmesh.frustumCulled=false; scene.add(fmesh); }
@@ -7470,7 +7716,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     overlay();
     focus();
     const rebuilt=batchDirty; if(batchDirty) rebuildBatches();
-    decks();
+    decks(); streets3();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
     sky(nk,dk); wU.wt.value=now/1000;
     ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
