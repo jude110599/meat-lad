@@ -2360,7 +2360,7 @@ let fpCtx=null;
 function footprint(b){
   if(b.fp) return b.fp;
   if(!fpCtx){ const c=document.createElement("canvas"); c.width=c.height=2; fpCtx=c.getContext("2d"); }
-  const sv=ctx, sr=rec3d, sg=b.grow, sw=b.cons, rc={own:()=>true,boxes:new Map(),parked:[],trees:[]};
+  const sv=ctx, sr=rec3d, sg=b.grow, sw=b.cons, rc={own:()=>true,boxes:new Map(),det:new Map(),parked:[],trees:[]};
   ctx=fpCtx; rec3d=rc; b.grow=-1e9; b.cons=null;
   try{ if(isHome(b)) drawHome(b); else drawDest(b); } catch(e){} finally{ ctx=sv; rec3d=sr; b.grow=sg; b.cons=sw; }
   return b.fp=rc.boxes.get(b)||[];
@@ -5691,9 +5691,10 @@ function hull(P){
   up.pop(); lo.pop(); return lo.concat(up);
 }
 // a building's shadow: its footprint swept down-right by its height
-function bodyShadow(b,sc,h,rects,flat){
-  // the 3D view keeps the outline and height to raise real walls from, and the sun casts the real shadow
-  if(rec3d){ let a=rec3d.boxes.get(b); if(!a) rec3d.boxes.set(b,a=[]); a.push({sc,h,rects:rects.map(r=>r.slice()),flat:!!flat}); return; }
+function bodyShadow(b,sc,h,rects,flat,o){
+  // the 3D view keeps the outline and height to raise real walls from, and what the block is made of (o: see look3), and
+  // the sun casts the real shadow
+  if(rec3d){ let a=rec3d.boxes.get(b); if(!a) rec3d.boxes.set(b,a=[]); a.push({sc,h,rects:rects.map(r=>r.slice()),flat:!!flat,o:o||null}); return; }
   if(!ultra){ shadowHull(b,sc,h,rects,"rgba(30,36,22,.25)",0); return; }
   // Ultra: a soft penumbra, a darker core near the walls, and a dark line where the walls meet the ground
   shadowHull(b,sc,h*1.3,rects,"rgba(30,36,22,.07)",1.4);
@@ -6030,11 +6031,14 @@ function fillBays(b,sc,bays,list){ if(!LOD) return; const n=Math.min(bays.length
 function roofBlock(x,y,w,h,col,edge){ ctx.fillStyle=edge; ctx.fillRect(x-.6,y-.6,w+1.2,h+1.2); ctx.fillStyle=col; ctx.fillRect(x+.8,y+.8,w-1.6,h-1.6); }
 // in 3D a box on a roof stands up for real, on whichever part of the building it sits on
 function roofProp(b,x,y,w,h,hgt,col){
-  const recs=rec3d.boxes.get(b); if(!recs||!rec3d.props) return false; const cx=x+w/2, cy=y+h/2; let top=-1;
-  for(const r of recs) for(const q of r.rects) if(cx>=q[0]*r.sc&&cx<=(q[0]+q[2])*r.sc&&cy>=q[1]*r.sc&&cy<=(q[1]+q[3])*r.sc) top=Math.max(top,H3(r.h)*r.sc);
-  if(top<0) return false;
-  const p=toMap(b,cx,cy); rec3d.props.push({k:"box",x:p.x,y:p.y,gx:b.x,gy:b.y,z:top,a:b.ang-Math.PI/2,w,d:h,h:clamp(hgt*1.5,1.6,6),col:col||"#ecebe6"});
+  const recs=rec3d.boxes.get(b); if(!recs||!rec3d.det) return false; const cx=x+w/2, cy=y+h/2; let on=false;
+  for(const r of recs) for(const q of r.rects) if(cx>=q[0]*r.sc&&cx<=(q[0]+q[2])*r.sc&&cy>=q[1]*r.sc&&cy<=(q[1]+q[3])*r.sc) on=true;
+  if(!on) return false;
+  d3(b,{k:"plant",x,y,w,d:h,h:clamp(hgt*1.5,1.6,6),col:col||"#e3e2dc"});
   return true; }
+// in 3D, the parts of a building that stand out from its blocks: doors, porches, awnings, signs, chimneys and what's up on
+// the roof, each on the building's own plan (see detail in the 3D view)
+function d3(b,...q){ if(!rec3d||!rec3d.det) return; let a=rec3d.det.get(b); if(!a) rec3d.det.set(b,a=[]); for(const x of q) a.push(x); }
 const rbox=(x,y,w2,h2,lsx,lsy,hgt,col,edge)=>{ if(rec3d&&rec3d.cur&&roofProp(rec3d.cur,x,y,w2,h2,hgt,col)) return; ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(x+lsx*hgt,y+lsy*hgt,w2,h2); ctx.fillStyle=edge||"#b9b7b0"; ctx.fillRect(x,y,w2,h2); ctx.fillStyle=col||"#ecebe6"; ctx.fillRect(x+.5,y+.5,w2-1,h2-1); };
 // the sun's direction on a building's own plan, for little rooftop shadows
 function sunPlan(b){ const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th); return [SHX*cs+SHY*sn,-SHX*sn+SHY*cs]; }
@@ -6618,79 +6622,158 @@ function v3init(T){
     const t=new T.CanvasTexture(c); t.wrapS=t.wrapT=T.RepeatWrapping; t.anisotropy=aniso; t.colorSpace=T.SRGBColorSpace; return t; };
   const rnd3=(i,k)=>hash(i*31+7,k*17+3);
   const grain=(g,w,h,n,a,dark)=>{ for(let i=0;i<n;i++){ const x=rnd3(i,1)*w, y=rnd3(i,2)*h, r=1+rnd3(i,3)*2.5*w/1024; g.fillStyle=(rnd3(i,4)<.5||dark)?"rgba(0,0,0,"+a+")":"rgba(255,255,255,"+a+")"; g.fillRect(x,y,r,r); } };
-  // a facade four window bays across and four floors up (the bottom row meets the ground), and its lit-up night version
-  const NB=4;
-  function facade(kind,lit){
-    return tex(TS,TS,(g,w,h)=>{
-      const bw=w/NB, fh=h/NB;
-      if(!lit){ g.fillStyle="#f1efe9"; g.fillRect(0,0,w,h); grain(g,w,h,2600,.035); }
-      else { g.fillStyle="#000"; g.fillRect(0,0,w,h); }
-      for(let j=0;j<NB;j++) for(let i=0;i<NB;i++){ const x=i*bw, y=j*fh, on=rnd3(i+j*7+kind.length*13,9)<.55, warm=rnd3(i*3+j,kind.length)<.75;
-        const wl=on?(warm?"#ffd79a":"#e8f0ff"):"#000";
-        if(kind==="house"){ const ww=bw*.42, wh=fh*.46, wx=x+(bw-ww)/2, wy=y+fh*.24;
-          if(lit){ g.fillStyle=wl; g.fillRect(wx+3,wy+3,ww-6,wh-6); continue; }
-          g.fillStyle="#d9d4ca"; g.fillRect(x,y+fh-6,bw,6);
-          g.fillStyle="#fbfaf7"; g.fillRect(wx-5,wy-5,ww+10,wh+12); g.fillStyle="#4a5866"; g.fillRect(wx,wy,ww,wh);
-          const gr=g.createLinearGradient(wx,wy,wx+ww,wy+wh); gr.addColorStop(0,"rgba(190,215,240,.55)"); gr.addColorStop(.5,"rgba(120,150,180,.15)"); gr.addColorStop(1,"rgba(220,235,250,.35)"); g.fillStyle=gr; g.fillRect(wx,wy,ww,wh);
-          g.fillStyle="#fbfaf7"; g.fillRect(wx+ww/2-2,wy,4,wh); g.fillRect(wx,wy+wh/2-2,ww,4); g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(wx-6,wy+wh+7,ww+12,3);
-          if(j===NB-1&&i===1){ g.fillStyle="#7a4e33"; g.fillRect(x+bw*.36,y+fh*.3,bw*.28,fh*.7); g.fillStyle="#d8b14a"; g.fillRect(x+bw*.58,y+fh*.62,4,4); } }
-        else if(kind==="apts"){ const ww=bw*.62, wh=fh*.52, wx=x+(bw-ww)/2, wy=y+fh*.18;
-          if(lit){ g.fillStyle=wl; g.fillRect(wx+2,wy+2,ww-4,wh-4); continue; }
-          g.fillStyle="#3f4b57"; g.fillRect(wx,wy,ww,wh); g.fillStyle="rgba(180,205,230,.4)"; g.fillRect(wx,wy,ww*.45,wh);
-          g.fillStyle="#cfcac0"; g.fillRect(x+bw*.08,y+fh*.74,bw*.84,fh*.08); g.fillStyle="rgba(255,255,255,.6)"; g.fillRect(x+bw*.08,y+fh*.72,bw*.84,fh*.03);
-          g.strokeStyle="#8d8a83"; g.lineWidth=2; g.beginPath(); for(let k=0;k<=8;k++){ const xx=x+bw*.1+k*bw*.8/8; g.moveTo(xx,y+fh*.6); g.lineTo(xx,y+fh*.74); } g.moveTo(x+bw*.1,y+fh*.6); g.lineTo(x+bw*.9,y+fh*.6); g.stroke(); }
-        else if(kind==="office"){
-          if(lit){ g.fillStyle=on?(warm?"#fff1d0":"#dfeaff"):"#000"; g.fillRect(x+3,y+fh*.12,bw-6,fh*.72); continue; }
-          const gr=g.createLinearGradient(0,y,0,y+fh); gr.addColorStop(0,"#9fb8cf"); gr.addColorStop(.5,"#5f7d99"); gr.addColorStop(1,"#86a2bd"); g.fillStyle=gr; g.fillRect(x,y,bw,fh);
-          g.fillStyle="rgba(255,255,255,"+(.08+rnd3(i,j)*.14)+")"; g.beginPath(); g.moveTo(x,y+fh); g.lineTo(x+bw*.6,y); g.lineTo(x+bw,y); g.lineTo(x+bw*.4,y+fh); g.fill();
-          g.fillStyle="#d7dde2"; g.fillRect(x,y+fh*.86,bw,fh*.14); g.fillRect(x,y,4,fh); g.fillStyle="rgba(0,0,0,.25)"; g.fillRect(x+4,y,1.5,fh); }
-        else if(kind==="shop"){
-          if(j<NB-1){ if(!lit){ g.fillStyle="rgba(0,0,0,.05)"; g.fillRect(x,y+fh-3,bw,3); } continue; }
-          if(lit){ g.fillStyle=on?"#fff4dc":"#ffe6b8"; g.fillRect(x+6,y+fh*.32,bw-12,fh*.6); continue; }
-          const aw=["#e2493a","#3d7fe0","#2f9e55","#f1c232","#8a60d0"][i%5];
-          g.fillStyle="#3c4650"; g.fillRect(x+6,y+fh*.32,bw-12,fh*.68); g.fillStyle="rgba(210,230,250,.5)"; g.fillRect(x+6,y+fh*.32,(bw-12)*.5,fh*.68);
-          g.fillStyle="#e9e6de"; g.fillRect(x+bw/2-2,y+fh*.32,4,fh*.68);
-          for(let k=0;k<6;k++){ g.fillStyle=k%2?aw:"#fff"; g.fillRect(x+4+k*(bw-8)/6,y+fh*.16,(bw-8)/6,fh*.14); }
-          g.fillStyle="rgba(0,0,0,.25)"; g.fillRect(x+4,y+fh*.3,bw-8,4); }
-        else if(kind==="ind"){
-          if(lit){ if(j===NB-2&&on){ g.fillStyle="#ffe2a8"; g.fillRect(x+8,y+fh*.3,bw-16,fh*.22); } continue; }
-          g.fillStyle="#dcdad3"; g.fillRect(x,y,bw,fh);
-          for(let k=0;k<bw;k+=8){ g.fillStyle="rgba(0,0,0,.08)"; g.fillRect(x+k,y,3,fh); g.fillStyle="rgba(255,255,255,.35)"; g.fillRect(x+k+3,y,1.5,fh); }
-          if(j===NB-2){ g.fillStyle="#56636e"; g.fillRect(x+8,y+fh*.3,bw-16,fh*.22); g.fillStyle="rgba(200,225,250,.35)"; g.fillRect(x+8,y+fh*.3,(bw-16)*.4,fh*.22); }
-          if(j===NB-1&&i%2===0){ g.fillStyle="#9aa0a6"; g.fillRect(x+bw*.18,y+fh*.18,bw*.64,fh*.82); g.strokeStyle="rgba(0,0,0,.18)"; g.lineWidth=2; g.beginPath(); for(let k=0;k<12;k++){ g.moveTo(x+bw*.18,y+fh*.18+k*fh*.068); g.lineTo(x+bw*.82,y+fh*.18+k*fh*.068); } g.stroke(); }
-          if(j===0){ g.fillStyle="rgba(0,0,0,.12)"; g.fillRect(x,y,bw,5); } }
-        else if(kind==="civic"){ const ww=bw*.46, wh=fh*.6, wx=x+(bw-ww)/2, wy=y+fh*.16;
-          if(lit){ g.fillStyle=wl; g.fillRect(wx+2,wy+2,ww-4,wh-4); continue; }
-          g.fillStyle="#c9a487"; g.fillRect(x,y,bw,fh); for(let r=0;r<fh;r+=10){ g.fillStyle="rgba(255,255,255,.18)"; g.fillRect(x,y+r,bw,1.5); for(let q=((r/10)%2)*14;q<bw;q+=28){ g.fillStyle="rgba(0,0,0,.08)"; g.fillRect(x+q,y+r,1.5,10); } }
-          g.fillStyle="#f4f1ea"; g.fillRect(wx-5,wy-5,ww+10,wh+10); g.fillStyle="#46525d"; g.fillRect(wx,wy,ww,wh); g.fillStyle="rgba(190,215,240,.4)"; g.fillRect(wx,wy,ww*.4,wh); g.fillStyle="#f4f1ea"; g.fillRect(wx,wy+wh*.45,ww,3); }
-        else if(kind==="garage"){
-          if(lit){ g.fillStyle="#fff0cc"; g.fillRect(x,y+fh*.3,bw,fh*.42); continue; }
-          g.fillStyle="#d4d1c9"; g.fillRect(x,y,bw,fh); g.fillStyle="#3a3e44"; g.fillRect(x,y+fh*.3,bw,fh*.42); g.fillStyle="#bdb9b0"; g.fillRect(x+bw/2-5,y+fh*.3,10,fh*.42); }
-        else if(kind==="site"){
-          if(lit) continue;
-          // an open frame going up: dark floors between the slabs and columns, scaffold poles and boards in front
-          g.fillStyle="#6a645a"; g.fillRect(x,y,bw,fh); g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(x,y+fh*.5,bw,fh*.34);
-          g.fillStyle="#d6d2c9"; g.fillRect(x,y+fh*.84,bw,fh*.16); g.fillStyle="#c9c4ba"; g.fillRect(x,y,bw*.09,fh*.84);
-          g.strokeStyle="#a3a9b0"; g.lineWidth=w/220; g.beginPath(); g.moveTo(x+bw*.55,y); g.lineTo(x+bw*.55,y+fh); g.moveTo(x,y+fh*.42); g.lineTo(x+bw,y+fh*.42);
-          if((i+j)%2){ g.moveTo(x+bw*.09,y+fh*.84); g.lineTo(x+bw*.55,y+fh*.42); } g.stroke();
-          g.fillStyle="#c79a5c"; g.fillRect(x,y+fh*.4,bw,fh*.045); }
-      }
-      if(!lit) grain(g,w,h,1200,.05,true);
-    });
-  }
-  const FKIND={house:"house",bighouse:"house",town:"house",apts:"apts",mixed:"apts",hotel:"apts",office:"office",shop:"shop",center:"shop",mall:"shop",
-    factory:"ind",warehouse:"ind",plant:"ind",datacenter:"ind",power:"ind",solar:"ind",depot:"ind",pump:"ind",garage:"garage",parking:"garage"};
-  // how much wall one window bay and one floor of a facade cover, in map units
-  const FSIZE={house:[7,6.2],apts:[7,7.2],office:[6,6.6],shop:[10,10],ind:[11,9],civic:[8,7.4],garage:[11,6.4],site:[6,6.4]};
+  // ----- what the buildings are dressed in. Every wall, roof and fitting picture sits side by side in one big texture
+  // (an atlas), so all the buildings in a square of the map draw in one go. Each picture repeats across a wall or a roof
+  // by itself; where its mask says so it takes on the colour of the brick, paint or tiles it's used for, and the rest
+  // (glass, frames, signs) keeps its own colours. A smaller second atlas holds the same pictures lit up at night.
+  // Each is painted on a 1024 square: a wall is four window bays across and four floors up, the ground floor at the bottom
+  const NB=4, AC=8, AR=5, ATS=mobile?384:512, APF=1/40, TPS=[], TL={};
+  const tp=(name,fn)=>{ TL[name]=TPS.length; TPS.push(fn); };
+  const lit2=(i,j,s)=>[rnd3(i+j*7+s*13,9)<.55,rnd3(i*3+j,s)<.75];
+  const each4=f=>{ for(let j=0;j<NB;j++) for(let i=0;i<NB;i++) f(i,j,i*256,j*256); };
+  // a window with its frame and a cross bar, the glass catching the sky; m is 0 for the picture, 1 lit at night, 2 the mask
+  function win(g,m,x,y,ww,wh,i,j,s,fc,bars){
+    if(m===1){ const [on,warm]=lit2(i,j,s); if(on){ g.fillStyle=warm?"#ffd79a":"#e8f0ff"; g.fillRect(x+3,y+3,ww-6,wh-6); } return; }
+    if(m===2){ g.fillRect(x-7,y-7,ww+14,wh+15); return; }
+    g.fillStyle="rgba(0,0,0,.15)"; g.fillRect(x-9,y+wh+7,ww+18,6);
+    g.fillStyle=fc||"#f5f3ee"; g.fillRect(x-7,y-7,ww+14,wh+14);
+    g.fillStyle="#36414c"; g.fillRect(x,y,ww,wh);
+    const gr=g.createLinearGradient(x,y,x+ww*.7,y+wh); gr.addColorStop(0,"rgba(200,220,240,.62)"); gr.addColorStop(.55,"rgba(120,150,180,.1)"); gr.addColorStop(1,"rgba(210,228,246,.3)"); g.fillStyle=gr; g.fillRect(x,y,ww,wh);
+    g.fillStyle=fc||"#f5f3ee"; if(bars!==0){ g.fillRect(x+ww/2-3,y,6,wh); if(bars!==1) g.fillRect(x,y+wh*.38-3,ww,6); }
+    g.fillStyle="rgba(0,0,0,.12)"; g.fillRect(x,y,ww,5); }
+  // the walls of homes: plaster, brick, boards and stone, with a house's windows
+  const wallOf=(name,base,s,fc,bars)=>tp(name,(g,w,h,m)=>{ if(m===0){ base(g); grain(g,w,h,700,.025,true); }
+    each4((i,j,x,y)=>win(g,m,x+74,y+62,108,120,i,j,s,fc,bars)); });
+  const plaster=g=>{ g.fillStyle="#f2f0eb"; g.fillRect(0,0,1024,1024); grain(g,1024,1024,2400,.03); };
+  const bricks=(g,m,ht,lt)=>{ ht=ht||12; lt=lt||40;
+    if(m===2){ for(let y=0;y<1024;y+=ht){ g.fillRect(0,y+ht-2,1024,2); for(let x=((y/ht)%2)*lt/2-lt;x<1024;x+=lt) g.fillRect(x+lt-2,y,2,ht); } return; }
+    g.fillStyle="#e4e2dc"; g.fillRect(0,0,1024,1024);
+    for(let y=0,r=0;y<1024;y+=ht,r++) for(let x=(r%2)*lt/2-lt,k=0;x<1024;x+=lt,k++){ const v=196+rnd3(r*61+k,5)*44-(rnd3(k,r)<.08?30:0)|0; g.fillStyle="rgb("+v+","+v+","+v+")"; g.fillRect(x,y,lt-2,ht-2); } };
+  tp("white",(g,w,h,m)=>{ if(m===0){ g.fillStyle="#fff"; g.fillRect(0,0,w,h); } });
+  tp("render",(g,w,h,m)=>{ if(m===0) plaster(g); });
+  wallOf("house",plaster,1);
+  wallOf("brick",g=>bricks(g,0),2);
+  wallOf("siding",g=>{ g.fillStyle="#f4f2ee"; g.fillRect(0,0,1024,1024); for(let y=0;y<1024;y+=22){ g.fillStyle="rgba(0,0,0,.14)"; g.fillRect(0,y+19,1024,3); g.fillStyle="rgba(255,255,255,.5)"; g.fillRect(0,y,1024,3); g.fillStyle="rgba(0,0,0,.04)"; g.fillRect(0,y+10,1024,9); } },3);
+  wallOf("timber",g=>{ g.fillStyle="#ece6dc"; g.fillRect(0,0,1024,1024); for(let x=0,k=0;x<1024;x+=32,k++){ const v=rnd3(k,7)*.08; g.fillStyle="rgba(0,0,0,"+v+")"; g.fillRect(x,0,32,1024); g.fillStyle="rgba(0,0,0,.22)"; g.fillRect(x+28,0,5,1024); g.fillStyle="rgba(255,255,255,.35)"; g.fillRect(x,0,3,1024); } },4,"#3b3a37");
+  wallOf("stone",g=>{ g.fillStyle="#d9d6cf"; g.fillRect(0,0,1024,1024);
+    for(let y=0,r=0;y<1024;r++){ const hh=26+rnd3(r,3)*22|0; for(let x=-rnd3(r,4)*40,k=0;x<1024;k++){ const ww=36+rnd3(r*31+k,6)*60|0, v=200+rnd3(k*7+r,8)*46|0; g.fillStyle="rgb("+v+","+(v-3)+","+(v-8)+")"; g.beginPath(); g.moveTo(x+4,y+3); g.lineTo(x+ww-3,y+5); g.lineTo(x+ww-5,y+hh-3); g.lineTo(x+3,y+hh-4); g.closePath(); g.fill(); x+=ww; } y+=hh; } },5,"#f2efe8");
+  // flats: render or brick, a tall window and a balcony door to each bay
+  const flat=(name,base,s)=>tp(name,(g,w,h,m)=>{ if(m===0) base(g);
+    each4((i,j,x,y)=>{ win(g,m,x+40,y+46,70,150,i,j,s,"#f3f1ec",1); win(g,m,x+140,y+46,76,104,i*5,j,s+2,"#f3f1ec",1); }); });
+  flat("apts",plaster,6); flat("aptb",g=>bricks(g,0),7);
+  // offices: floor-to-ceiling glass between slim mullions, or ribbons of glass between concrete bands
+  tp("office",(g,w,h,m)=>{ each4((i,j,x,y)=>{
+    if(m===1){ const [on,warm]=lit2(i,j,8); if(on){ g.fillStyle=warm?"#fff1d0":"#dfeaff"; g.fillRect(x+4,y+30,248,190); } return; }
+    if(m===2){ g.fillRect(x+4,y+24,248,204); return; }
+    const gr=g.createLinearGradient(0,y,0,y+256); gr.addColorStop(0,"#a4bccf"); gr.addColorStop(.5,"#617f9b"); gr.addColorStop(1,"#87a3bd"); g.fillStyle=gr; g.fillRect(x,y,256,256);
+    g.fillStyle="rgba(255,255,255,"+(.07+rnd3(i,j)*.13)+")"; g.beginPath(); g.moveTo(x,y+256); g.lineTo(x+150,y); g.lineTo(x+256,y); g.lineTo(x+100,y+256); g.fill();
+    g.fillStyle="#d4dbe0"; g.fillRect(x,y+220,256,36); g.fillRect(x,y,5,256); g.fillRect(x+126,y,3,220); g.fillStyle="rgba(0,0,0,.22)"; g.fillRect(x+5,y,2,256); g.fillRect(x,y+220,256,3); }); });
+  tp("office2",(g,w,h,m)=>{ if(m===0){ g.fillStyle="#e9e6df"; g.fillRect(0,0,w,h); grain(g,w,h,1500,.03); }
+    each4((i,j,x,y)=>{ const y0=y+60, hh=120;
+      if(m===1){ const [on,warm]=lit2(i,j,9); if(on){ g.fillStyle=warm?"#fff1d0":"#dfeaff"; g.fillRect(x,y0+4,256,hh-8); } return; }
+      if(m===2){ g.fillRect(x,y0-4,256,hh+8); return; }
+      g.fillStyle="#3a4652"; g.fillRect(x,y0,256,hh); const gr=g.createLinearGradient(x,y0,x+256,y0+hh); gr.addColorStop(0,"rgba(190,212,232,.55)"); gr.addColorStop(1,"rgba(120,150,180,.1)"); g.fillStyle=gr; g.fillRect(x,y0,256,hh);
+      g.fillStyle="#c9ced2"; g.fillRect(x,y0-4,256,4); g.fillRect(x+126,y0,4,hh); g.fillRect(x,y0+hh,256,6); g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(x,y0+hh+6,256,4); }); });
+  // industry: ribbed metal cladding with a band of windows high up
+  tp("ind",(g,w,h,m)=>{ each4((i,j,x,y)=>{
+    if(m===1){ if(j===NB-2&&lit2(i,j,10)[0]){ g.fillStyle="#ffe2a8"; g.fillRect(x+16,y+76,224,56); } return; }
+    if(m===2){ if(j===NB-2) g.fillRect(x+10,y+70,236,68); return; }
+    g.fillStyle="#e2e0da"; g.fillRect(x,y,256,256);
+    for(let k=0;k<256;k+=16){ g.fillStyle="rgba(0,0,0,.09)"; g.fillRect(x+k,y,6,256); g.fillStyle="rgba(255,255,255,.4)"; g.fillRect(x+k+6,y,3,256); }
+    if(j===NB-2){ g.fillStyle="#cfd3d6"; g.fillRect(x+10,y+70,236,68); g.fillStyle="#4f5b66"; g.fillRect(x+16,y+76,224,56); g.fillStyle="rgba(200,225,250,.35)"; g.fillRect(x+16,y+76,90,56); g.fillStyle="#cfd3d6"; g.fillRect(x+126,y+76,4,56); }
+    if(j===0){ g.fillStyle="rgba(0,0,0,.14)"; g.fillRect(x,y,256,10); } }); });
+  // public buildings: warm brick with tall windows
+  tp("civic",(g,w,h,m)=>{ if(m===0) bricks(g,0,10,34); if(m===2) bricks(g,2,10,34);
+    each4((i,j,x,y)=>win(g,m,x+66,y+40,124,156,i,j,11,"#f4f1ea",2)); });
+  tp("garage",(g,w,h,m)=>{ each4((i,j,x,y)=>{
+    if(m===1){ g.fillStyle="#fff0cc"; g.fillRect(x,y+76,256,108); return; }
+    if(m===2){ g.fillRect(x,y+76,256,108); return; }
+    g.fillStyle="#d6d3cb"; g.fillRect(x,y,256,256); g.fillStyle="#2f3338"; g.fillRect(x,y+76,256,108); g.fillStyle="#4a4f56"; g.fillRect(x,y+150,256,34);
+    g.fillStyle="#c4c0b7"; g.fillRect(x+118,y+76,20,108); g.fillStyle="rgba(0,0,0,.2)"; g.fillRect(x,y+184,256,6); g.fillStyle="#8b9096"; g.fillRect(x,y+140,256,5); }); });
+  tp("site",(g,w,h,m)=>{ if(m) return; each4((i,j,x,y)=>{
+    g.fillStyle="#6a645a"; g.fillRect(x,y,256,256); g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(x,y+128,256,87);
+    g.fillStyle="#d6d2c9"; g.fillRect(x,y+215,256,41); g.fillStyle="#c9c4ba"; g.fillRect(x,y,23,215);
+    g.strokeStyle="#a3a9b0"; g.lineWidth=4.6; g.beginPath(); g.moveTo(x+141,y); g.lineTo(x+141,y+256); g.moveTo(x,y+108); g.lineTo(x+256,y+108);
+    if((i+j)%2){ g.moveTo(x+23,y+215); g.lineTo(x+141,y+108); } g.stroke(); g.fillStyle="#c79a5c"; g.fillRect(x,y+102,256,12); }); });
+  // roofs: clay tiles, slate, felt, gravel, ribbed metal, glass and solar panels
+  tp("tile",(g,w,h,m)=>{ if(m) return; g.fillStyle="#d8d8d8"; g.fillRect(0,0,w,h);
+    for(let j=0;j<10;j++) for(let i=0;i<9;i++){ const cw=1024/8, ch=1024/10, x=(i+(j%2)*.5)*cw, y=j*ch, v=196+rnd3(i,j)*50|0;
+      g.fillStyle="rgb("+v+","+v+","+v+")"; g.beginPath(); g.moveTo(x-cw/2+2,y); g.lineTo(x+cw/2-2,y); g.lineTo(x+cw/2-4,y+ch-4); g.quadraticCurveTo(x,y+ch+4,x-cw/2+4,y+ch-4); g.closePath(); g.fill();
+      g.fillStyle="rgba(0,0,0,.24)"; g.fillRect(x-cw/2,y+ch-6,cw,6); } grain(g,w,h,1200,.05); });
+  tp("slate",(g,w,h,m)=>{ if(m) return; g.fillStyle="#cfcfcf"; g.fillRect(0,0,w,h);
+    for(let j=0;j<16;j++) for(let i=-1;i<11;i++){ const cw=1024/10, ch=64, x=(i+(j%2)*.5)*cw, y=j*ch, v=184+rnd3(i*3,j)*56|0;
+      g.fillStyle="rgb("+v+","+v+","+(v+3)+")"; g.fillRect(x+2,y,cw-4,ch-3); g.fillStyle="rgba(0,0,0,.28)"; g.fillRect(x,y+ch-4,cw,4); g.fillRect(x,y,3,ch); } grain(g,w,h,1600,.05); });
+  tp("roofing",(g,w,h,m)=>{ if(m) return; g.fillStyle="#e6e5e1"; g.fillRect(0,0,w,h); grain(g,w,h,5000,.04);
+    for(let i=0;i<4;i++){ g.fillStyle="rgba(0,0,0,.07)"; g.fillRect(i*256,0,4,h); g.fillStyle="rgba(255,255,255,.3)"; g.fillRect(i*256+4,0,3,h); }
+    for(let i=0;i<10;i++){ const x=rnd3(i,31)*w, y=rnd3(i,32)*h, r=40+rnd3(i,33)*90, gr=g.createRadialGradient(x,y,0,x,y,r); gr.addColorStop(0,"rgba(80,75,65,.07)"); gr.addColorStop(1,"rgba(80,75,65,0)"); g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r); } });
+  tp("gravel",(g,w,h,m)=>{ if(m) return; g.fillStyle="#d9d7d2"; g.fillRect(0,0,w,h); for(let i=0;i<16000;i++){ const v=150+rnd3(i,41)*100|0, r=3+rnd3(i,42)*5; g.fillStyle="rgb("+v+","+v+","+(v-4)+")"; g.fillRect(rnd3(i,43)*w,rnd3(i,44)*h,r,r*.8); } });
+  tp("metal",(g,w,h,m)=>{ if(m) return; g.fillStyle="#e4e4e2"; g.fillRect(0,0,w,h);
+    for(let x=0;x<1024;x+=64){ g.fillStyle="rgba(255,255,255,.55)"; g.fillRect(x,0,6,h); g.fillStyle="rgba(0,0,0,.2)"; g.fillRect(x+6,0,5,h); g.fillStyle="rgba(0,0,0,.04)"; g.fillRect(x+11,0,26,h); } grain(g,w,h,1400,.03); });
+  tp("glass",(g,w,h,m)=>{ if(m===1){ g.fillStyle="#ffe8bf"; g.fillRect(0,0,w,h); return; } if(m) return;
+    const gr=g.createLinearGradient(0,0,0,h); gr.addColorStop(0,"#b9cfe0"); gr.addColorStop(.45,"#6f8ba5"); gr.addColorStop(1,"#4b6680"); g.fillStyle=gr; g.fillRect(0,0,w,h);
+    g.fillStyle="rgba(255,255,255,.12)"; g.beginPath(); g.moveTo(0,h); g.lineTo(w*.55,0); g.lineTo(w*.8,0); g.lineTo(w*.25,h); g.fill(); });
+  tp("solar",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#c9ccd0"; g.fillRect(0,0,w,h);
+    for(let j=0;j<10;j++) for(let i=0;i<6;i++){ const x=12+i*1000/6, y=12+j*1000/10; g.fillStyle="#1d2b44"; g.fillRect(x,y,1000/6-8,1000/10-8); g.fillStyle="rgba(120,150,200,.18)"; g.fillRect(x,y,1000/6-8,(1000/10-8)*.4); } });
+  // a garage's sectional door, and a roller shutter
+  tp("door",(g,w,h,m)=>{ if(m) return; g.fillStyle="#f0eeea"; g.fillRect(0,0,w,h); for(let y=0;y<1024;y+=256){ g.fillStyle="rgba(0,0,0,.2)"; g.fillRect(0,y,w,8); g.fillStyle="rgba(255,255,255,.6)"; g.fillRect(0,y+8,w,5);
+    for(let x=0;x<1024;x+=256){ g.fillStyle="rgba(0,0,0,.07)"; g.fillRect(x+30,y+50,196,150); g.fillStyle="rgba(255,255,255,.4)"; g.fillRect(x+30,y+196,196,6); } } });
+  tp("roller",(g,w,h,m)=>{ if(m) return; g.fillStyle="#ecebe7"; g.fillRect(0,0,w,h); for(let y=0;y<1024;y+=32){ g.fillStyle="rgba(0,0,0,.16)"; g.fillRect(0,y+26,w,6); g.fillStyle="rgba(255,255,255,.5)"; g.fillRect(0,y,w,4); } });
+  // the shop signs, one to a row, each in its own colours, and the names of the public buildings
+  const SIGNS=[["GROCER","#35603f","#f4efe2"],["CAFE","#4b372b","#f1e2c6"],["BAKERY","#7b3230","#f6ead6"],["PHARMACY","#f4f4f1","#2f7d50"],["HARDWARE","#b45b2c","#fbf3e8"],["RESTAURANT","#26282b","#d9b45e"],["SUPERMARKET","#25476d","#f4f6f8"],["FUEL","#f4f4f1","#bf3a2c"]];
+  const SIGNS2=[["FIRE STATION","#8f2a22","#f8f2ea"],["POLICE","#20335e","#f4f6fa"],["HOSPITAL","#f4f4f2","#b33a2e"],["SCHOOL","#2d4a63","#f6efe0"],["DAYCARE","#f2ede2","#7a4f8c"],["HOTEL","#2b2c30","#e2c27a"],["PARKING","#2f5f9e","#ffffff"],["SHOPS","#3a3d42","#f2f0ea"]];
+  const signTile=S=>(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } S.forEach(([t,bg,fg],r)=>{ const y=(7-r)*128;
+    if(m===1){ g.fillStyle="rgba(255,240,210,.18)"; g.fillRect(0,y,w,128); }
+    else { g.fillStyle=bg; g.fillRect(0,y,w,128); g.fillStyle="rgba(0,0,0,.18)"; g.fillRect(0,y+120,w,8); g.fillStyle="rgba(255,255,255,.14)"; g.fillRect(0,y,w,6); }
+    g.fillStyle=m===1?"#fff3d8":fg; let fs=78; g.font="700 "+fs+"px "+FONT; while(g.measureText(t).width>w*.86&&fs>30){ fs-=4; g.font="700 "+fs+"px "+FONT; }
+    g.textAlign="center"; g.textBaseline="middle"; g.fillText(t,w/2,y+66); }); };
+  tp("signs",signTile(SIGNS)); tp("signs2",signTile(SIGNS2));
+  tp("heli",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#4f555c"; g.fillRect(0,0,w,h); grain(g,w,h,1500,.05);
+    g.strokeStyle="#e8c341"; g.lineWidth=40; g.beginPath(); g.arc(512,512,400,0,7); g.stroke(); g.fillStyle="#f4f4f2"; g.fillRect(352,272,80,480); g.fillRect(592,272,80,480); g.fillRect(432,472,160,80); });
+  tp("grass",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#7da55a"; g.fillRect(0,0,w,h);
+    for(let i=0;i<6000;i++){ const c=["#6c9a4c","#8fb866","#5f8a45","#a3c47a","#b9a35a"][rnd3(i,51)*5|0]; g.fillStyle=c; const r=4+rnd3(i,52)*9; g.beginPath(); g.arc(rnd3(i,53)*w,rnd3(i,54)*h,r,0,7); g.fill(); } });
+  tp("conc",(g,w,h,m)=>{ if(m) return; g.fillStyle="#e9e7e2"; g.fillRect(0,0,w,h); grain(g,w,h,4000,.035); g.fillStyle="rgba(0,0,0,.08)"; for(let i=0;i<4;i++){ g.fillRect(i*256,0,3,h); g.fillRect(0,i*256,w,3); } });
+  tp("water",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#5fb7df"; g.fillRect(0,0,w,h); g.strokeStyle="rgba(255,255,255,.35)"; g.lineWidth=6;
+    for(let i=0;i<40;i++){ const x=rnd3(i,61)*w, y=rnd3(i,62)*h; g.beginPath(); g.moveTo(x,y); g.quadraticCurveTo(x+40,y-20,x+80,y+4); g.stroke(); } });
+  tp("fan",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#9aa1a8"; g.fillRect(0,0,w,h); g.fillStyle="#3b4148"; g.beginPath(); g.arc(512,512,440,0,7); g.fill();
+    g.strokeStyle="#aab0b6"; g.lineWidth=14; for(let r=110;r<440;r+=82){ g.beginPath(); g.arc(512,512,r,0,7); g.stroke(); } g.beginPath(); g.moveTo(72,512); g.lineTo(952,512); g.moveTo(512,72); g.lineTo(512,952); g.stroke(); g.fillStyle="#c9cdd1"; g.beginPath(); g.arc(512,512,70,0,7); g.fill(); });
+  tp("wood",(g,w,h,m)=>{ if(m) return; g.fillStyle="#efe9e0"; g.fillRect(0,0,w,h); for(let y=0,k=0;y<1024;y+=64,k++){ g.fillStyle="rgba(0,0,0,"+(.03+rnd3(k,71)*.07)+")"; g.fillRect(0,y,w,64); g.fillStyle="rgba(0,0,0,.25)"; g.fillRect(0,y+60,w,4); } grain(g,w,h,1600,.04,true); });
+  // a shop front: tall panes in slim dark frames over a low kick plate
+  tp("front",(g,w,h,m)=>{ for(let i=0;i<4;i++){ const x=i*256;
+    if(m===1){ g.fillStyle="#ffe6b8"; g.fillRect(x+12,0,232,860); continue; }
+    if(m===2){ g.fillRect(x,0,256,1024); continue; }
+    g.fillStyle="#2c3036"; g.fillRect(x,0,256,1024); const gr=g.createLinearGradient(x,0,x+256,900); gr.addColorStop(0,"#9fb7cb"); gr.addColorStop(.5,"#52677b"); gr.addColorStop(1,"#7f97ab"); g.fillStyle=gr; g.fillRect(x+12,12,232,848);
+    g.fillStyle="rgba(255,240,215,.16)"; g.fillRect(x+12,560,232,300); g.fillStyle="#3a3f46"; g.fillRect(x,860,256,164); g.fillStyle="rgba(255,255,255,.08)"; g.fillRect(x+12,12,232,6); } });
+  // awning canvas: broad stripes, every other one plain cream, the rest in the awning's own colour
+  tp("stripe",(g,w,h,m)=>{ for(let i=0;i<8;i++){ const x=i*128; if(m===2){ if(i%2) g.fillRect(x,0,128,h); continue; } if(m) continue; g.fillStyle=i%2?"#f3efe4":"#ffffff"; g.fillRect(x,0,128,h); }
+    if(m===0){ const gr=g.createLinearGradient(0,0,0,h); gr.addColorStop(0,"rgba(255,255,255,.12)"); gr.addColorStop(1,"rgba(0,0,0,.12)"); g.fillStyle=gr; g.fillRect(0,0,w,h); grain(g,w,h,900,.03,true); } });
+  // all of them laid out in the atlas, each with a margin of its own picture carried on round its edges so it repeats cleanly
+  function atlas(ts,m){ const pad=Math.round(ts*APF), c=ts-2*pad, A=mkCv2(ts*AC,ts*AR), g=A.getContext("2d"), tc=mkCv2(c,c), q=tc.getContext("2d"), mc=mkCv2(c,c), mk=mc.getContext("2d");
+    TPS.forEach((fn,i)=>{ if(!fn) return; q.setTransform(1,0,0,1,0,0); q.globalCompositeOperation="source-over"; q.globalAlpha=1; q.fillStyle=m===1?"#000":"#fff"; q.fillRect(0,0,c,c); q.scale(c/1024,c/1024);
+      q.save(); fn(q,1024,1024,m===1?1:0); q.restore();
+      // the mask: what keeps its own colour is set half see-through, and the shader tells the two apart
+      if(m!==1){ q.setTransform(1,0,0,1,0,0); mk.clearRect(0,0,c,c); mk.setTransform(c/1024,0,0,c/1024,0,0); mk.fillStyle="#000"; fn(mk,1024,1024,2); if(i===TL.brick||i===TL.aptb) bricks(mk,2); mk.setTransform(1,0,0,1,0,0);
+        q.globalCompositeOperation="destination-out"; q.globalAlpha=.5; q.drawImage(mc,0,0); q.globalCompositeOperation="source-over"; q.globalAlpha=1; }
+      q.setTransform(1,0,0,1,0,0); const x0=(i%AC)*ts, y0=(AR-1-(i/AC|0))*ts; g.save(); g.beginPath(); g.rect(x0,y0,ts,ts); g.clip();
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++) g.drawImage(tc,x0+pad+dx*c,y0+pad+dy*c); g.restore(); });
+    const t=new T.CanvasTexture(A); t.colorSpace=T.SRGBColorSpace; t.anisotropy=aniso; t.premultiplyAlpha=false; return t; }
+  function mkCv2(w,h){ const c=document.createElement("canvas"); c.width=w; c.height=h; return c; }
+  const atlasTex=atlas(ATS,0), atlasLit=atlas(ATS/2,1);
   const mats={};
-  for(const k of Object.keys(FSIZE))
-    mats["f:"+k]=new T.MeshStandardMaterial({map:facade(k),emissiveMap:facade(k,true),emissive:new T.Color(1,.86,.62),emissiveIntensity:0,vertexColors:true,roughness:k==="office"?.38:.85});
-  const tileTex=tex(TS/2,TS/2,(g,w,h)=>{ g.fillStyle="#d8d8d8"; g.fillRect(0,0,w,h); const rows=8, cols=8;
-    for(let j=0;j<rows;j++) for(let i=0;i<cols+1;i++){ const x=(i+(j%2)*.5)*w/cols, y=j*h/rows, v=200+rnd3(i,j)*45|0;
-      g.fillStyle="rgb("+v+","+v+","+v+")"; g.beginPath(); g.moveTo(x-w/cols/2+1,y); g.lineTo(x+w/cols/2-1,y); g.lineTo(x+w/cols/2-2,y+h/rows-2); g.quadraticCurveTo(x,y+h/rows+2,x-w/cols/2+2,y+h/rows-2); g.closePath(); g.fill();
-      g.fillStyle="rgba(0,0,0,.22)"; g.fillRect(x-w/cols/2,y+h/rows-3,w/cols,3); } grain(g,w,h,600,.05); });
-  mats.tile=new T.MeshStandardMaterial({map:tileTex,vertexColors:true,roughness:.8});
-  mats.trim=new T.MeshStandardMaterial({vertexColors:true,roughness:.7});
+  // how big one repeat of each picture is on a wall or a roof, in map units: a window bay across and a floor up
+  const FSIZE={house:[7,6.2],brick:[7,6.2],siding:[7,6.2],timber:[7,6.2],stone:[7,6.2],apts:[7,7.2],aptb:[7,7.2],office:[6,6.6],office2:[7,6.6],ind:[11,9],civic:[8,7.4],garage:[11,6.4],site:[6,6.4],render:[8,8],white:[8,8],conc:[10,10],wood:[6,6]};
+  // the buildings' one material: the atlas picked out by a tile number on each corner, tinted by the corner's colour where
+  // the picture's mask allows, and as shiny as the corner says (glass shines, brick doesn't)
+  const bMat=new T.MeshStandardMaterial({map:atlasTex,emissiveMap:atlasLit,emissive:new T.Color(1,.86,.62),emissiveIntensity:0,vertexColors:true,roughness:1,metalness:0});
+  bMat.onBeforeCompile=sh=>{ const K=(1-2*APF).toFixed(5), P=APF.toFixed(5), A=AC.toFixed(1), B=AR.toFixed(1);
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nattribute vec2 tile; varying vec2 vTile;").replace("#include <uv_vertex>","#include <uv_vertex>\nvTile=tile;");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec2 vTile; vec2 atUv, atDx, atDy;")
+      .replace("#include <map_fragment>",`{ float ti=floor(vTile.x+.5); vec2 cl=vec2(mod(ti,${A}),floor(ti/${A})), sc=vec2(${K})/vec2(${A},${B});
+  atUv=(cl+${P}+fract(vMapUv)*${K})/vec2(${A},${B}); atDx=dFdx(vMapUv)*sc; atDy=dFdy(vMapUv)*sc;
+  vec4 tx=textureGrad(map,atUv,atDx,atDy); diffuseColor.rgb*=tx.rgb*mix(vec3(1.),vColor,clamp(tx.a*2.-1.,0.,1.)); }`)
+      .replace("#include <color_fragment>","")
+      .replace("#include <roughnessmap_fragment>","float roughnessFactor=vTile.y;")
+      .replace("#include <emissivemap_fragment>","totalEmissiveRadiance*=textureGrad(emissiveMap,atUv,atDx,atDy).rgb;"); };
+  // tiles that don't take the windows' night glow get none: the lit atlas is black there
   // The map (ground, water, roads, plots and roofs) is painted by the 2D code into a big picture that lies on the
   // ground and on the flat roofs. The picture is cut into square cells laid out in a ring: when the view slides
   // along, only the cells coming into view are painted, into the slots of the ones going out; a cell is painted again
@@ -6762,14 +6845,16 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     reg={x0,y0,S}; dynKey="";
   }
 
-  // ----- buildings: walls from the shadow outlines, the 2D roof on top, tiled roofs on houses -----
-  const bcache=new Map();   // building -> {key, parts:{material:{p,n,u,c}}, top}
-  const batches={};
+  // ----- buildings: walls, roofs and everything on them, made from the blocks and details each building's 2D drawing
+  // records. The buildings standing in each cell of the picture are drawn as one mesh, made again only when one changes -----
+  const bcache=new Map();   // building -> {key, geo, top, cell}
+  const groups=new Map();   // a cell of the picture -> {set of its buildings, mesh, pic, dirty}
   let batchDirty=true;
   const wallCols=["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6","#c98a6c","#b8735a","#cfd8dd","#d6ccb4","#c2c9b4","#9fb0bd"];
   // flats in render and brick colours
   const APT_WALLS=["#ece2d2","#e3cdb0","#d2a585","#efe7da","#c99478","#e6d8c0"];
   function wallTint(b){ const k=b.type, T0=BT[k];
+    if(b.wc) return b.wc;
     if(k==="house"||k==="bighouse") return wallCols[b.id%wallCols.length];
     if(k==="town") return shade((b.cols&&b.cols[0])||"#b9604a",70);
     if(k==="apts") return APT_WALLS[b.id%APT_WALLS.length];
@@ -6779,7 +6864,8 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     if(k==="datacenter") return "#eef2f5";
     if(T0.svc) return shade(SVC_COLS[k]||T0.col,70);
     return shade(T0.col,70); }
-  function pushTri(P,a,b,c,n,ua,ub,uc,col){ P.p.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]); for(let i=0;i<3;i++){ P.n.push(n[0],n[1],n[2]); P.c.push(col[0],col[1],col[2]); } P.u.push(ua[0],ua[1],ub[0],ub[1],uc[0],uc[1]); }
+  function pushTri(P,a,b,c,n,ua,ub,uc,col){ P.p.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]); for(let i=0;i<3;i++){ P.n.push(n[0],n[1],n[2]); P.c.push(col[0],col[1],col[2]); } P.u.push(ua[0],ua[1],ub[0],ub[1],uc[0],uc[1]);
+    if(P.t) P.t.push(P.ti,P.ro,P.ti,P.ro,P.ti,P.ro); }
   function faceN(a,b,c){ const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2], vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2]; let x=uy*vz-uz*vy, y=uz*vx-ux*vz, z=ux*vy-uy*vx; const l=Math.hypot(x,y,z)||1; return [x/l,y/l,z/l]; }
   function quad(P,a,b,c,d,ua,ub,uc,ud,col){ const n=faceN(a,b,c); pushTri(P,a,b,c,n,ua,ub,uc,col); pushTri(P,a,c,d,n,ua,uc,ud,col); }
   // a triangle turned so it faces the way out (ox,oz), with its picture coordinates kept to their corners
@@ -6790,103 +6876,261 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     for(const f of faces||BOX6){ let a=v[f[0]], bb=v[f[1]], c=v[f[2]], d=v[f[3]]; const n=faceN(a,bb,c);
       if(n[0]*((a[0]+c[0])/2-cx)+n[1]*((a[1]+c[1])/2-cy)+n[2]*((a[2]+c[2])/2-cz)<0){ const x=a; a=c; c=x; }
       quad(P,a,bb,c,d,[0,0],[1,0],[1,1],[0,1],col); } }
-  // a box standing out from a wall: s along it, y up, o out from it. Its back, against the wall, is left off
-  function wbox(P,F,s0,s1,y0,y1,o0,o1,col,back){ const pt=(s,y,o)=>[F.x+F.tx*s+F.nx*o,y,F.z+F.tz*s+F.nz*o];
-    hexa(P,[pt(s0,y0,o0),pt(s1,y0,o0),pt(s1,y1,o0),pt(s0,y1,o0),pt(s0,y0,o1),pt(s1,y0,o1),pt(s1,y1,o1),pt(s0,y1,o1)],col,back?BOX6:BOX5); }
-  // a shop's awning: sloping out and down from above the window, with a flap along the front
-  function awning(P,F,s0,s1,y1,y0,out,col){ const pt=(s,y,o)=>[F.x+F.tx*s+F.nx*o,y,F.z+F.tz*s+F.nz*o];
-    const a=pt(s0,y1,0), b=pt(s1,y1,0), c=pt(s1,y0,out), d=pt(s0,y0,out), e=pt(s1,y0-.8,out), g=pt(s0,y0-.8,out), n=faceN(a,b,c), up=n[0]*F.nx+n[1]+n[2]*F.nz>0;
-    if(up){ quad(P,a,b,c,d,[0,0],[1,0],[1,1],[0,1],col); quad(P,a,d,c,b,[0,0],[1,0],[1,1],[0,1],col); }
-    else { quad(P,a,d,c,b,[0,0],[1,0],[1,1],[0,1],col); quad(P,a,b,c,d,[0,0],[1,0],[1,1],[0,1],col); }
-    const m=faceN(d,c,e); if(m[0]*F.nx+m[2]*F.nz>0) quad(P,d,c,e,g,[0,0],[1,0],[1,1],[0,1],col); else quad(P,d,g,e,c,[0,0],[1,0],[1,1],[0,1],col); }
-  const TRIM={frame:[.93,.92,.89],sill:[.78,.77,.74],rail:[.58,.66,.72],fin:[.8,.84,.88]}, AWN=["#e2493a","#3d7fe0","#2f9e55","#f1c232"].map(LC);
-  // what stands out of a wall, lined up with the windows painted on it: frames and sills round the windows of houses
-  // and civic buildings, balconies on the flats, fins and a ledge at every floor on office glass, awnings over the
-  // shops, and a parapet round a flat roof. det is the finer work, left off on phones
-  function wallBits(P,a0,b0,len,Hw,lo,gf,fk,bw,V,wall,g0,flat,det){
-    const tx=(b0[0]-a0[0])/len, tz=(b0[2]-a0[2])/len, F={x:a0[0],z:a0[2],tx,tz,nx:-tz,nz:tx}, nb=Math.floor(len/bw+.02), top=g0+Hw;
-    // how high up the wall a spot on its picture is, and a fraction of the way up one floor
-    const yv=gf?v=>g0+v*V:v=>lo+v*V*(Hw+.6)/Hw, yAt=(f,q)=>yv((f+q)/NB), nf=Math.ceil(Hw/V*NB)+1;
-    const wb=(s0,s1,y0,y1,o0,o1,col,back)=>wbox(P,F,s0,s1,y0,y1,o0,o1,col,back);
-    if(flat) wb(0,len,top,top+1.1,-.6,.02,wall.map(c=>c*.86),true);
-    if(gf){ const sw=FSIZE.shop[0], ys=q=>lo+(gf+.6)*q; for(let k=0;k<Math.floor(len/sw+.02);k++) awning(P,F,k*sw+.6,(k+1)*sw-.6,ys(.86),ys(.66),2.3,AWN[k%4]); }
-    if(fk==="house"||fk==="civic"){ if(!det) return;
-      const hw=fk==="house"?.21:.23, q0=fk==="house"?.3:.24, q1=fk==="house"?.76:.84, t=.32;
-      for(let f=0;f<nf;f++) for(let k=0;k<nb;k++){ if(fk==="house"&&f%NB===0&&k%NB===1) continue;      // the front door
-        const sc=(k+.5)*bw, s0=sc-hw*bw, s1=sc+hw*bw, y0=yAt(f,q0), y1=yAt(f,q1); if(y1+t>top-.2||y0<g0) continue;
-        wb(s0-t-.2,s1+t+.2,y0-.38,y0,0,.62,TRIM.sill); wb(s0-t,s1+t,y1,y1+t,0,.32,TRIM.frame);
-        wb(s0-t,s0,y0,y1,0,.26,TRIM.frame); wb(s1,s1+t,y0,y1,0,.26,TRIM.frame); } }
-    else if(fk==="apts"){ if(len<14) return; const slab=wall.map(c=>c*.9);
-      for(let f=0;f<nf;f++){ const yb=yAt(f,.18), yt=yAt(f,.42); if(yb<(gf?g0+gf+.5:g0+3)||yt>top-.4) continue;
-        for(let k=0;k<nb;k++){ const s0=k*bw+bw*.08, s1=(k+1)*bw-bw*.08;
-          wb(s0,s1,yb,yb+.4,0,1.9,slab); wb(s0,s1,yb+.4,yt,1.76,1.9,TRIM.rail);
-          if(det){ wb(s0,s0+.12,yb+.4,yt,0,1.76,TRIM.rail); wb(s1-.12,s1,yb+.4,yt,0,1.76,TRIM.rail); } } } }
-    else if(fk==="office"){ if(!det) return;
-      for(let k=1;k<nb;k++) wb(k*bw-.15,k*bw+.15,lo,top,0,.55,TRIM.fin);
-      for(let f=1;f<nf;f++){ const y=yAt(f,0); if(y>top-.5) break; wb(0,len,y-.15,y+.25,0,.32,TRIM.fin); } }
-    else if(fk==="shop"){ const y1=yAt(0,.86), y0=yAt(0,.66); if(y1>top-.2) return;
-      for(let k=0;k<nb;k++) awning(P,F,k*bw+.5,(k+1)*bw-.5,y1,y0,2.3,AWN[k%4]); }
+
+  // One building's shapes as they're made, on its own plan: x across, y out of its front towards the road, z up from the
+  // ground at its middle. ti and ro are the atlas picture and the shine of what's being made just now
+  function mkB(b){ const th=b.ang-Math.PI/2; return {p:[],n:[],u:[],c:[],t:[],ti:0,ro:.85,cs:Math.cos(th),sn:Math.sin(th),bx:b.x,by:b.y,g0:hAt(b.x,b.y),pic:null}; }
+  const wp=(B,x,y,z)=>[B.bx+x*B.cs-y*B.sn,B.g0+z,B.by+x*B.sn+y*B.cs];
+  const wd=(B,x,y,z)=>[x*B.cs-y*B.sn,z,x*B.sn+y*B.cs];
+  const mat=(B,m,ro)=>{ B.ti=TL[m]||0; B.ro=ro===undefined?.85:ro; };
+  const W0=[1,1,1], cMul=(c,k)=>[c[0]*k,c[1]*k,c[2]*k];
+  // a face from four corners on the plan, turned to look out along (ox,oy,oz)
+  function fq(B,a,b,c,d,ua,ub,uc,ud,col,ox,oy,oz){ const A=wp(B,a[0],a[1],a[2]), Q=wp(B,b[0],b[1],b[2]), C=wp(B,c[0],c[1],c[2]), E=wp(B,d[0],d[1],d[2]), o=wd(B,ox,oy,oz);
+    const ux=C[0]-A[0], uy=C[1]-A[1], uz=C[2]-A[2], vx=E[0]-Q[0], vy=E[1]-Q[1], vz=E[2]-Q[2], nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    if(nx*o[0]+ny*o[1]+nz*o[2]<0) quad(B,A,E,C,Q,ua,ud,uc,ub,col); else quad(B,A,Q,C,E,ua,ub,uc,ud,col); }
+  function ft(B,a,b,c,ua,ub,uc,col,ox,oy,oz){ const A=wp(B,a[0],a[1],a[2]), Q=wp(B,b[0],b[1],b[2]), C=wp(B,c[0],c[1],c[2]), o=wd(B,ox,oy,oz); let n=faceN(A,Q,C);
+    if(n[0]*o[0]+n[1]*o[1]+n[2]*o[2]<0) pushTri(B,A,C,Q,[-n[0],-n[1],-n[2]],ua,uc,ub,col); else pushTri(B,A,Q,C,n,ua,ub,uc,col); }
+  // a box on the plan: which faces (1 top, 2 front, 4 back, 8 right, 16 left, 32 bottom) and how many units one repeat of
+  // its picture covers (0: the picture once on each face)
+  function bx(B,x0,y0,x1,y1,z0,z1,col,un,fs){ fs=fs||31; const w=x1-x0, d=y1-y0, h=z1-z0, U=un?(a,c)=>[a/un,c/un]:(a,c)=>[a?.999:.001,c?.999:.001];
+    if(fs&1) fq(B,[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],U(0,0),U(w,0),U(w,d),U(0,d),col,0,0,1);
+    if(fs&2) fq(B,[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1],U(0,0),U(w,0),U(w,h),U(0,h),col,0,1,0);
+    if(fs&4) fq(B,[x1,y0,z0],[x0,y0,z0],[x0,y0,z1],[x1,y0,z1],U(0,0),U(w,0),U(w,h),U(0,h),col,0,-1,0);
+    if(fs&8) fq(B,[x1,y1,z0],[x1,y0,z0],[x1,y0,z1],[x1,y1,z1],U(0,0),U(d,0),U(d,h),U(0,h),col,1,0,0);
+    if(fs&16) fq(B,[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1],U(0,0),U(d,0),U(d,h),U(0,h),col,-1,0,0);
+    if(fs&32) fq(B,[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],U(0,0),U(w,0),U(w,d),U(0,d),col,0,0,-1); }
+  // a round thing turned from an outline of [radius, height] points round x,y on the plan, n sides, smooth where the
+  // outline bends gently and creased where it turns sharply
+  function lathe(B,x,y,pr,col,n,un){ n=n||14; const m=pr.length, sg=[];
+    for(let k=0;k<m-1;k++){ const dr=pr[k+1][0]-pr[k][0], dz=pr[k+1][1]-pr[k][1], l=Math.hypot(dr,dz)||1; sg.push([dz/l,-dr/l]); }
+    const nAt=(k,e)=>{ const s=sg[k], o=e?sg[k+1]:sg[k-1]; if(o&&s[0]*o[0]+s[1]*o[1]>.7){ const a=s[0]+o[0], c=s[1]+o[1], l=Math.hypot(a,c)||1; return [a/l,c/l]; } return s; };
+    for(let k=0;k<m-1;k++){ const [r0,z0]=pr[k], [r1,z1]=pr[k+1]; if(Math.abs(r0-r1)+Math.abs(z0-z1)<1e-4) continue; const na=nAt(k,0), nb=nAt(k,1);
+      for(let i=0;i<n;i++){ const a0=i/n*6.28319, a1=(i+1)/n*6.28319, c0=Math.cos(a0), s0=Math.sin(a0), c1=Math.cos(a1), s1=Math.sin(a1);
+        const P=[wp(B,x+c0*r0,y+s0*r0,z0),wp(B,x+c1*r0,y+s1*r0,z0),wp(B,x+c1*r1,y+s1*r1,z1),wp(B,x+c0*r1,y+s0*r1,z1)];
+        const N=[wd(B,c0*na[0],s0*na[0],na[1]),wd(B,c1*na[0],s1*na[0],na[1]),wd(B,c1*nb[0],s1*nb[0],nb[1]),wd(B,c0*nb[0],s0*nb[0],nb[1])];
+        const L=6.28319*Math.max(r0,r1), U=un?[[i/n*L/un,z0/un],[(i+1)/n*L/un,z0/un],[(i+1)/n*L/un,z1/un],[i/n*L/un,z1/un]]:[[i/n,.001],[(i+1)/n,.001],[(i+1)/n,.999],[i/n,.999]];
+        const ux=P[2][0]-P[0][0], uy=P[2][1]-P[0][1], uz=P[2][2]-P[0][2], vx=P[3][0]-P[1][0], vy=P[3][1]-P[1][1], vz=P[3][2]-P[1][2];
+        const fx=uy*vz-uz*vy, fy=uz*vx-ux*vz, fz=ux*vy-uy*vx, o=N[0][0]+N[2][0], oy=N[0][1]+N[2][1], oz=N[0][2]+N[2][2];
+        const ord=fx*o+fy*oy+fz*oz<0?[0,3,2,1]:[0,1,2,3];
+        for(const [a,b2,c] of [[ord[0],ord[1],ord[2]],[ord[0],ord[2],ord[3]]]){ const A=P[a], Q=P[b2], C=P[c];
+          B.p.push(A[0],A[1],A[2],Q[0],Q[1],Q[2],C[0],C[1],C[2]); for(const j of [a,b2,c]){ B.n.push(N[j][0],N[j][1],N[j][2]); B.c.push(col[0],col[1],col[2]); B.t.push(B.ti,B.ro); B.u.push(U[j][0],U[j][1]); } } } } }
+  const cylP=(B,x,y,r,z0,z1,col,n,top)=>lathe(B,x,y,top?[[r,z0],[r,z1],[0,z1]]:[[r,z0],[r,z1]],col,n);
+
+  // what a block is made of when its drawing doesn't say: by the kind of building
+  const WALLK={house:"house",bighouse:"house",town:"brick",apts:"apts",mixed:"apts",hotel:"apts",office:"office",shop:"render",center:"render",mall:"render",
+    factory:"ind",warehouse:"ind",plant:"ind",datacenter:"ind",power:"ind",solar:"ind",depot:"ind",pump:"ind",garage:"garage",parking:"garage",
+    fire:"civic",police:"civic",clinic:"civic",school:"civic",daycare:"civic",water:"ind"};
+  const RUNIT={tile:9,slate:9,roofing:24,gravel:14,metal:12,glass:10,solar:6,grass:12,conc:12,wood:8,white:8,render:8};
+  function look3(b,r){ const o=r.o||{}, k=b.type, sc=r.sc, H=H3(r.h)*sc;
+    if(b.cons) return {H,roof:"pic",wall:"site",wc:W0,ov:0};
+    const pitched=o.roof?o.roof==="hip"||o.roof==="gable":!r.flat&&PITCH3.has(k)&&!(k==="house"&&b.v===3);
+    const roof=o.roof||(pitched?(k==="house"&&b.v===1||k==="town"?"gable":"hip"):WALLK[k]?"flat":"pic");
+    const Hw=o.H!==undefined?o.H*sc:pitched?Math.max(6.4,H*.56):H;
+    const wc=LC(o.wc||wallTint(b));
+    return {H:Hw,roof,rise:o.rise!==undefined?o.rise:pitched?Math.max(H,Hw+3)-Hw:o.rise,wall:o.wall||WALLK[k]||"civic",front:o.front,side:o.side,wc,
+      rc:LC(o.rc||(roof==="flat"?"#a9a7a1":b.col||"#8e5a44")),rm:o.rm||(pitched?"tile":roof==="flat"?"roofing":roof==="saw"||roof==="low"||roof==="shed"?"metal":"roofing"),
+      par:o.par!==undefined?o.par:roof==="flat"?1.1:0,pc:o.pc?LC(o.pc):cMul(wc,.9),ov:o.ov!==undefined?o.ov:1.1,gf:o.gf||0,gk:o.gk||"shop",balc:o.balc,
+      fins:o.fins!==undefined?o.fins:(o.wall||WALLK[k])==="office",frames:o.frames,base:o.base?LC(o.base):null,hip:o.hip,along:o.along,doors:o.doors||null,ridge:o.ridge}; }
+
+  // the windows painted on each wall picture, so the frames, sills and balconies built out from the wall line up with them:
+  // [left, right] across a bay and [bottom, top] up a floor, as fractions
+  const WINS={house:[[.289,.711,.289,.758]],brick:[[.289,.711,.289,.758]],siding:[[.289,.711,.289,.758]],timber:[[.289,.711,.289,.758]],stone:[[.289,.711,.289,.758]],
+    civic:[[.258,.742,.234,.844]],apts:[[.156,.43,.234,.82],[.547,.844,.414,.82]],aptb:[[.156,.43,.234,.82],[.547,.844,.414,.82]]};
+  const TRIM={frame:[.93,.92,.89],sill:[.8,.79,.76],rail:[.42,.45,.48],glassR:[.62,.72,.78],fin:[.82,.85,.88],dark:[.18,.19,.21],fascia:[.92,.91,.88]};
+  // a wall: its picture from the ground up, and what stands out of it where the picture has windows. The wall runs from
+  // a to b on the plan with its outside towards (nx,ny); doors are the stretches along it kept clear
+  function wall3(B,a,b,nx,ny,z0,z1,tile,col,L,det,side,vOff,doors){
+    const len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<.05) return; const tx=(b[0]-a[0])/len, ty=(b[1]-a[1])/len, FS=FSIZE[tile]||[8,8], U=FS[0]*NB, V=FS[1]*NB, v0=(z0-(vOff||0))/V, v1=(z1-(vOff||0))/V;
+    mat(B,tile,tile==="office"?.32:.88);
+    fq(B,[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1],[a[0],a[1],z1],[0,v0],[len/U,v0],[len/U,v1],[0,v1],col,nx,ny,0);
+    const P=(s,o,z)=>[a[0]+tx*s+nx*o,a[1]+ty*s+ny*o,z];
+    // a box standing out from the wall, s along it, z up, o out from it, with only the faces asked for: 1 top, 2 front,
+    // 4 underneath, 8 and 16 the ends
+    const wb=(s0,s1,za,zb,o0,o1,c,fs)=>{ fs=fs||31;
+      if(fs&1) fq(B,P(s0,o0,zb),P(s1,o0,zb),P(s1,o1,zb),P(s0,o1,zb),[0,0],[1,0],[1,1],[0,1],c,0,0,1);
+      if(fs&2) fq(B,P(s0,o1,za),P(s1,o1,za),P(s1,o1,zb),P(s0,o1,zb),[0,0],[1,0],[1,1],[0,1],c,nx,ny,0);
+      if(fs&4) fq(B,P(s0,o0,za),P(s1,o0,za),P(s1,o1,za),P(s0,o1,za),[0,0],[1,0],[1,1],[0,1],c,0,0,-1);
+      if(fs&8) fq(B,P(s0,o0,za),P(s0,o1,za),P(s0,o1,zb),P(s0,o0,zb),[0,0],[1,0],[1,1],[0,1],c,-tx,-ty,0);
+      if(fs&16) fq(B,P(s1,o0,za),P(s1,o1,za),P(s1,o1,zb),P(s1,o0,zb),[0,0],[1,0],[1,1],[0,1],c,tx,ty,0); };
+    const bw=FS[0], fh=FS[1], nb=Math.floor(len/bw+.02), nf=Math.ceil((z1-(vOff||0))/fh)+1, clear=(s0,s1)=>!(doors||[]).some(d=>s1>d[0]-.4&&s0<d[1]+.4);
+    const W=WINS[tile], flats=(tile==="apts"||tile==="aptb")&&L.balc&&len>=12&&(L.balc>1||side===0||side===2);
+    // close up, a sill under each window and a head over it, standing out from the wall
+    if(W&&det>1&&L.frames!==false){ mat(B,"white",.6);
+      for(let f=0;f<nf;f++) for(let k=0;k<nb;k++) for(const w of W){ const s0=k*bw+w[0]*bw, s1=k*bw+w[1]*bw, za=(vOff||0)+(f+w[2])*fh, zb=(vOff||0)+(f+w[3])*fh, t=.3;
+        if(zb+t>z1-.3||za<z0+.2||!clear(s0,s1)||flats&&f>0) continue;
+        wb(s0-t-.25,s1+t+.25,za-.36,za,0,.6,TRIM.sill,7); wb(s0-t,s1+t,zb,zb+t,0,.3,TRIM.frame,6); } }
+    // balconies on the flats: a slab at each floor with a glass front and a rail, across each bay
+    if(flats&&det){
+      for(let f=1;f<nf;f++){ const zb=(vOff||0)+(f+.234)*fh-.1; if(zb<z0+3||zb+2>z1-.4) continue;
+        for(let k=0;k<nb;k++){ const s0=k*bw+bw*.07, s1=(k+1)*bw-bw*.07; if(!clear(s0,s1)) continue;
+          mat(B,"conc",.9); wb(s0,s1,zb-.45,zb,0,2,cMul(col,.94),31);
+          mat(B,"glass",.25); wb(s0+.1,s1-.1,zb,zb+2,1.82,1.9,TRIM.glassR,2);
+          mat(B,"white",.5); wb(s0,s1,zb+2,zb+2.2,1.7,2,TRIM.rail,3); } } }
+    // office glass: slim fins between the bays and a ledge at each floor
+    if(L.fins&&det){ mat(B,"white",.4);
+      for(let k=1;k<nb;k++) if(clear(k*bw-.2,k*bw+.2)) wb(k*bw-.14,k*bw+.14,z0+.5,z1,0,.5,TRIM.fin,26);
+      if(det>1) for(let f=1;f<nf;f++){ const z=(vOff||0)+f*fh; if(z>z1-.6) break; wb(0,len,z-.15,z+.22,0,.3,TRIM.fin,7); } }
   }
-  function partsOf(b,recs){
-    const parts={}, get=k=>parts[k]||(parts[k]={p:[],n:[],u:[],c:[]});
-    const th=b.ang-Math.PI/2, cs=Math.cos(th), sn=Math.sin(th), fk=b.cons?"site":FKIND[b.type]||"civic", [bw,fh]=FSIZE[fk], U=bw*NB, V=fh*NB;
-    const wall=b.cons?[1,1,1]:LC(wallTint(b)), white=[1,1,1], shopWall=LC("#f6f4ee"), g0=hAt(b.x,b.y);
-    let top=0;
-    for(const r of recs){ const sc=r.sc, H=H3(r.h)*sc;
-      const M=(lx,ly,y)=>[b.x+(lx*cs-ly*sn)*sc, g0+y, b.y+(lx*sn+ly*cs)*sc];
-      r.rects.forEach((q,qi)=>{
-        const x0=q[0], y0=q[1], x1=q[0]+q[2], y1=q[1]+q[3];
-        const pitched=!b.cons&&!r.flat&&PITCH3.has(b.type)&&!(b.type==="house"&&b.v===3);
-        const Hw=pitched?Math.max(6.4,H*.56):H; top=Math.max(top,pitched?Math.max(H,Hw+3):H);
-        const corners=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]], cc=M((x0+x1)/2,(y0+y1)/2,0);
-        const W=get("f:"+fk);
-        for(let i=0;i<4;i++){ const A=corners[i], B=corners[(i+1)%4];
-          let a0=M(A[0],A[1],0), b0=M(B[0],B[1],0); const ex=b0[0]-a0[0], ez=b0[2]-a0[2], len=Math.hypot(ex,ez); if(len<.05) continue;
-          if((-ez)*((a0[0]+b0[0])/2-cc[0])+ex*((a0[2]+b0[2])/2-cc[2])<0){ const s=a0; a0=b0; b0=s; }
-          const u1=len/U, v1=Hw/V, lo=g0-.6, gf=b.type==="mixed"&&!b.cons&&Hw>14?10:0;
-          // mixed-use: shop fronts along the bottom, homes above
-          if(gf){ const us=len/(FSIZE.shop[0]*NB); quad(get("f:shop"),[a0[0],lo,a0[2]],[b0[0],lo,b0[2]],[b0[0],g0+gf,b0[2]],[a0[0],g0+gf,a0[2]],[0,0],[us,0],[us,.25],[0,.25],shopWall); }
-          quad(W,[a0[0],gf?g0+gf:lo,a0[2]],[b0[0],gf?g0+gf:lo,b0[2]],[b0[0],g0+Hw,b0[2]],[a0[0],g0+Hw,a0[2]],[0,gf/V],[u1,gf/V],[u1,v1],[0,v1],wall);
-          if(!b.cons) wallBits(get("trim"),a0,b0,len,Hw,lo,gf,fk,bw,V,wall,g0,!pitched,!mobile); }
-        if(!pitched){ const Rf=get("roof"); let P=corners.map(c=>M(c[0],c[1],Hw)), uvs=P.map(p=>[p[0]/MW,p[2]/MH]);
-          if(faceN(P[0],P[1],P[2])[1]<0){ P.reverse(); uvs.reverse(); }
-          quad(Rf,P[0],P[1],P[2],P[3],uvs[0],uvs[1],uvs[2],uvs[3],white); return; }
-        // a pitched roof: the ridge runs along the long side; a hipped roof slopes down at the ends too, a gabled one has a wall there
-        const Rf=get("tile"), along=q[2]>=q[3], o=1.3, hip=b.type==="house"&&b.v!==1;
-        const Ht=Math.max(H,Hw+3), rise=Ht-Hw;
-        const rc=LC(b.type==="town"&&b.cols?b.cols[qi%b.cols.length]:(b.col||"#b9604a"));
-        const L0=(along?x0:y0)-o, L1=(along?x1:y1)+o, D0=(along?y0:x0)-o, D1=(along?y1:x1)+o, Dm=(D0+D1)/2, half=(D1-D0)/2;
-        const ins=hip?Math.min(half,(L1-L0)/2-.3):0, eave=Hw-o*rise/(half-o);
-        const pt=(l,d,y)=>along?M(l,d,y):M(d,l,y), tu=(l,d)=>[l/9,d/9];
-        // which way is out along the ridge, on the map
-        const ax=along?cs:-sn, az=along?sn:cs;
-        for(const de of [D0,D1]){ const a=pt(L0,de,eave), bb=pt(L1,de,eave), c=pt(L1-ins,Dm,Ht), d=pt(L0+ins,Dm,Ht);
-          let arr=[a,bb,c,d], uu=[tu(0,0),tu(L1-L0,0),tu(L1-L0-ins,half),tu(ins,half)];
-          if(faceN(a,bb,c)[1]<0){ arr=[bb,a,d,c]; uu=[uu[1],uu[0],uu[3],uu[2]]; }
-          quad(Rf,arr[0],arr[1],arr[2],arr[3],uu[0],uu[1],uu[2],uu[3],rc); }
-        for(const [le,s] of [[L0,-1],[L1,1]]){
-          if(hip){ const a=pt(le,D0,eave), bb=pt(le,D1,eave), c=pt(le-s*ins,Dm,Ht); triOut(Rf,a,bb,c,tu(0,0),tu(D1-D0,0),tu(half,half),ax*s,az*s,rc); }
-          else { const lw=le-s*o, a=pt(lw,D0+o,Hw), bb=pt(lw,D1-o,Hw), c=pt(lw,Dm,Ht);
-            triOut(W,a,bb,c,[0,Hw/V],[(D1-D0-2*o)/U,Hw/V],[(half-o)/U,Ht/V],ax*s,az*s,wall); } }
-        // solar panels lying on the back slope, as in 2D
-        if(b.type==="house"&&b.solar&&qi===0&&along){ const f=dd=>eave+(Ht-eave)*(dd-D0)/(Dm-D0)+.14, k=.6, la=L0+ins*k+.9, lb=la+(L1-L0-2*ins*k-1.8)*.7, da=D0+(Dm-D0)*.2, db=D0+(Dm-D0)*k;
-          let Q=[pt(la,da,f(da)),pt(lb,da,f(da)),pt(lb,db,f(db)),pt(la,db,f(db))]; if(faceN(Q[0],Q[1],Q[2])[1]<0) Q.reverse(); quad(get("trim"),Q[0],Q[1],Q[2],Q[3],[0,0],[1,0],[1,1],[0,1],LC("#24314a")); }
-        if(b.type==="house"&&qi===0&&!r.flat){ const cx=x0+q[2]*.75+1.5, cy=y0+q[3]*.25-.1, k=1.15, c0=Hw-.5, c1=Ht+1.2;
-          hexa(get("trim"),[M(cx-k,cy-k,c0),M(cx+k,cy-k,c0),M(cx+k,cy-k,c1),M(cx-k,cy-k,c1),M(cx-k,cy+k,c0),M(cx+k,cy+k,c0),M(cx+k,cy+k,c1),M(cx-k,cy+k,c1)],LC("#8a6a5a")); }
-      }); }
-    return {parts,top};
-  }
+  // a pitched roof over a block: the ridge along its long side (or as told), hipped at the ends or with gable walls there,
+  // eaves overhanging the walls with a fascia board along them and a darker underside, and a ridge capping
+  function pitched3(B,x0,y0,x1,y1,Hw,L,det){
+    const along=L.along!==undefined?L.along:x1-x0>=y1-y0, o=L.ov, hip=L.roof==="hip", rise=L.rise, Ht=Hw+rise, rc=L.rc, under=cMul(rc,.45);
+    const L0=(along?x0:y0)-o, L1=(along?x1:y1)+o, D0=(along?y0:x0)-o, D1=(along?y1:x1)+o, Dm=(D0+D1)/2, half=(D1-D0)/2;
+    const ins=hip?Math.min(half,(L1-L0)/2-.3):0, eave=Hw-o*rise/(half-o), un=RUNIT[L.rm]||9;
+    const pt=(l,d,z)=>along?[l,d,z]:[d,l,z], tu=(l,d)=>[l/un,d/un], ax=along?1:0, ay=along?0:1;
+    mat(B,L.rm,.8);
+    for(const [de,s] of [[D0,-1],[D1,1]]){ const sl=Math.hypot(half,rise)*(1+o/half*0);
+      const a=pt(L0,de,eave), bb=pt(L1,de,eave), c=pt(L1-ins,Dm,Ht), d=pt(L0+ins,Dm,Ht), ox=along?0:s, oy=along?s:0;
+      fq(B,a,bb,c,d,tu(0,0),tu(L1-L0,0),tu(L1-L0-ins,sl),tu(ins,sl),rc,ox,oy,1);
+      // the underside of the overhang, and the fascia board along the eaves
+      mat(B,"white",.9); fq(B,a,bb,c,d,[0,0],[1,0],[1,1],[0,1],under,-ox,-oy,-1);
+      const a2=pt(L0,de,eave-.55), b2=pt(L1,de,eave-.55); fq(B,a2,b2,bb,a,[0,0],[1,0],[1,1],[0,1],TRIM.fascia,ox,oy,0); mat(B,L.rm,.8); }
+    for(const [le,s] of [[L0,-1],[L1,1]]){
+      if(hip){ const a=pt(le,D0,eave), bb=pt(le,D1,eave), c=pt(le-s*ins,Dm,Ht); ft(B,a,bb,c,tu(0,0),tu(D1-D0,0),tu(half,half),rc,ax*s,ay*s,.5);
+        mat(B,"white",.9); ft(B,a,bb,c,[0,0],[1,0],[.5,1],under,-ax*s,-ay*s,-1); mat(B,L.rm,.8); }
+      else { const lw=le-s*o, a=pt(lw,D0+o,Hw), bb=pt(lw,D1-o,Hw), c=pt(lw,Dm,Ht), FS=FSIZE[L.wall]||[8,8], U=FS[0]*NB, V=FS[1]*NB;
+        mat(B,L.wall,.88); ft(B,a,bb,c,[0,Hw/V],[(D1-D0-2*o)/U,Hw/V],[(half-o)/U,Ht/V],L.wc,ax*s,ay*s,0);
+        // the barge boards up the gable
+        if(det){ mat(B,"white",.8); const g0=pt(le,D0,eave), g1=pt(le,Dm,Ht), g2=pt(le,D1,eave), dz=-.5;
+          fq(B,g0,g1,[g1[0],g1[1],g1[2]+dz],[g0[0],g0[1],g0[2]+dz],[0,0],[1,0],[1,1],[0,1],TRIM.fascia,ax*s,ay*s,0);
+          fq(B,g1,g2,[g2[0],g2[1],g2[2]+dz],[g1[0],g1[1],g1[2]+dz],[0,0],[1,0],[1,1],[0,1],TRIM.fascia,ax*s,ay*s,0); }
+        mat(B,L.rm,.8); } }
+    // the ridge capping
+    if(det>1&&L.ridge!==false&&L1-L0-2*ins>.5){ const r0=L0+ins, r1=L1-ins, w=.32, A=pt(r0,Dm-w,Ht-.12), Bq=pt(r1,Dm-w,Ht-.12), C=pt(r1,Dm,Ht+.22), D=pt(r0,Dm,Ht+.22), E=pt(r0,Dm+w,Ht-.12), F=pt(r1,Dm+w,Ht-.12), cc=cMul(rc,.8);
+      fq(B,A,Bq,C,D,tu(0,0),tu(r1-r0,0),tu(r1-r0,.4),tu(0,.4),cc,along?0:-1,along?-1:0,1); fq(B,E,F,C,D,tu(0,0),tu(r1-r0,0),tu(r1-r0,.4),tu(0,.4),cc,along?0:1,along?1:0,1); }
+    return {Ht,eave,along,D0,D1,L0,L1,ins,Dm}; }
+  // one block of a building: its walls (a shop front or a lobby along the front of the ground floor if it has one) and its roof
+  function block3(B,b,x0,y0,x1,y1,L,det,out){
+    const Hw=L.H, lo=-.6, S=[[[x1,y0],[x0,y0],0,-1],[[x1,y1],[x1,y0],1,0],[[x0,y1],[x1,y1],0,1],[[x0,y0],[x0,y1],-1,0]];
+    S.forEach(([a,c,nx,ny],i)=>{ const tile=i===2&&L.front||(i===0?L.back:i&1?L.side:0)||L.wall, gf=i===2&&L.gf;
+      const doors=i===2&&L.doors?L.doors.map(d=>[d[0]-x0,d[1]-x0]):null;
+      if(gf){ shop3(B,a,c,nx,ny,L.gf,L,det,L.gk); wall3(B,a,c,nx,ny,gf,Hw,tile,L.wc,L,det,i,gf); }
+      else wall3(B,a,c,nx,ny,lo,Hw,tile,L.wc,L,det,i,0,doors); });
+    if(L.base){ mat(B,"conc",.9); bx(B,x0-.2,y0-.2,x1+.2,y1+.2,lo,.7,L.base,0,30); }
+    let top=Hw;
+    if(L.roof==="hip"||L.roof==="gable"){ const r=pitched3(B,x0,y0,x1,y1,Hw,L,det); top=r.Ht; out.pr=r; }
+    else if(L.roof==="pic"){ if(!B.pic) B.pic={p:[],n:[],u:[],c:[]}; let P=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]].map(c=>wp(B,c[0],c[1],Hw)), uvs=P.map(p=>[p[0]/MW,p[2]/MH]);
+      if(faceN(P[0],P[1],P[2])[1]<0){ P.reverse(); uvs.reverse(); } quad(B.pic,P[0],P[1],P[2],P[3],uvs[0],uvs[1],uvs[2],uvs[3],W0); }
+    else if(L.roof==="saw"){ top=saw3(B,x0,y0,x1,y1,Hw,L,det); }
+    else if(L.roof==="low"||L.roof==="shed"){ top=low3(B,x0,y0,x1,y1,Hw,L,det); }
+    else if(L.roof!=="none"){ const un=RUNIT[L.rm]||20, p=L.par>0?.45:0;
+      mat(B,L.rm,.92); fq(B,[x0+p,y0+p,Hw],[x1-p,y0+p,Hw],[x1-p,y1-p,Hw],[x0+p,y1-p,Hw],[x0/un,y0/un],[x1/un,y0/un],[x1/un,y1/un],[x0/un,y1/un],L.rc,0,0,1);
+      if(L.par>0){ const t=.45, z1=Hw+L.par; mat(B,"render",.9);
+        bx(B,x0,y0,x1,y0+t,Hw-.05,z1,L.pc,8,30); bx(B,x0,y1-t,x1,y1,Hw-.05,z1,L.pc,8,30); bx(B,x0,y0+t,x0+t,y1-t,Hw-.05,z1,L.pc,8,25); bx(B,x1-t,y0+t,x1,y1-t,Hw-.05,z1,L.pc,8,25);
+        if(det){ const cp=[.86,.85,.82], e=.12; mat(B,"conc",.8); bx(B,x0-e,y0-e,x1+e,y0+t+e,z1,z1+.25,cp,10); bx(B,x0-e,y1-t-e,x1+e,y1+e,z1,z1+.25,cp,10); bx(B,x0-e,y0+t+e,x0+t+e,y1-t-e,z1,z1+.25,cp,10); bx(B,x1-t-e,y0+t+e,x1+e,y1-t-e,z1,z1+.25,cp,10); }
+        top=z1; } }
+    out.top=top; return top; }
+  // a saw-tooth roof: rows of teeth, each a sloping metal face rising to a tall glazed face that lets the north light in
+  function saw3(B,x0,y0,x1,y1,Hw,L,det){ const n=Math.max(2,Math.round((x1-x0)/9)), sw=(x1-x0)/n, rise=Math.min(5,sw*.55), un=RUNIT.metal;
+    for(let i=0;i<n;i++){ const a=x0+i*sw, c=a+sw;
+      mat(B,"metal",.6); fq(B,[a,y0,Hw],[c,y0,Hw+rise],[c,y1,Hw+rise],[a,y1,Hw],[0,0],[0,sw/un],[(y1-y0)/un,sw/un],[(y1-y0)/un,0],L.rc,-1,0,1.4);
+      mat(B,"glass",.2); fq(B,[c,y0,Hw],[c,y1,Hw],[c,y1,Hw+rise],[c,y0,Hw+rise],[0,0],[(y1-y0)/6,0],[(y1-y0)/6,1],[0,1],[.85,.9,.95],1,0,0);
+      // the triangles closing each end
+      mat(B,"metal",.7); for(const [y,s] of [[y0,-1],[y1,1]]) ft(B,[a,y,Hw],[c,y,Hw],[c,y,Hw+rise],[0,0],[sw/un,0],[sw/un,rise/un],cMul(L.rc,.9),0,s,0); }
+    return Hw+rise; }
+  // a low pitched metal roof (a shed or a warehouse), or one sloping all one way
+  function low3(B,x0,y0,x1,y1,Hw,L,det){ const along=x1-x0>=y1-y0, rise=L.rise!==undefined?L.rise:Math.min(4,(along?y1-y0:x1-x0)*.08), o=.5, un=RUNIT[L.rm]||12;
+    if(L.roof==="shed"){ // highest at the back, dropping to the front
+      mat(B,L.rm,.7); fq(B,[x0-o,y0-o,Hw+rise],[x1+o,y0-o,Hw+rise],[x1+o,y1+o,Hw],[x0-o,y1+o,Hw],[0,0],[(x1-x0)/un,0],[(x1-x0)/un,(y1-y0)/un],[0,(y1-y0)/un],L.rc,0,1,2);
+      mat(B,L.wall,.88); for(const [x,s] of [[x0,-1],[x1,1]]) ft(B,[x,y0,Hw],[x,y1,Hw],[x,y0,Hw+rise],[0,0],[.3,0],[0,.1],L.wc,s,0,0);
+      mat(B,"render",.9); bx(B,x0,y0-.3,x1,y0,Hw,Hw+rise,L.wc,8,6); return Hw+rise; }
+    return pitched3(B,x0,y0,x1,y1,Hw,Object.assign({},L,{roof:"gable",rise,ov:o,along}),det).Ht; }
+  // a shop front along the ground floor: big panes of glass in dark frames, a door, a fascia board above and stall risers
+  function shop3(B,a,b,nx,ny,h,L,det,k){
+    const len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<.05) return; const tx=(b[0]-a[0])/len, ty=(b[1]-a[1])/len, P=(s,o,z)=>[a[0]+tx*s+nx*o,a[1]+ty*s+ny*o,z];
+    const face=(s0,s1,za,zb,o,tile,col,ro,uu,vv)=>{ mat(B,tile,ro); fq(B,P(s0,o,za),P(s1,o,za),P(s1,o,zb),P(s0,o,zb),[.001,.001],[uu||.999,.001],[uu||.999,vv||.999],[.001,vv||.999],col,nx,ny,0); };
+    const wb=(s0,s1,za,zb,o0,o1,c)=>{ const q=[P(s0,o0,za),P(s1,o0,za),P(s1,o1,za),P(s0,o1,za),P(s0,o0,zb),P(s1,o0,zb),P(s1,o1,zb),P(s0,o1,zb)]; hexa(B,q.map(v=>wp(B,v[0],v[1],v[2])),c,BOX5); };
+    const fz=h-2.3;
+    // the wall the shop front sits in, the glass a little way back, and the fascia over it
+    face(0,len,-.6,h,-.02,"render",W0.map((c,i)=>L.wc[i]*.9),.9,len/8,h/8);
+    face(.6,len-.6,.5,fz-.3,.05,"front",W0,.25,(len-1.2)/7,1);
+    mat(B,"white",.6); wb(0,.6,-.6,h,0,.35,TRIM.dark); wb(len-.6,len,-.6,h,0,.35,TRIM.dark); wb(.6,len-.6,fz-.3,fz,0,.3,TRIM.dark);
+    mat(B,"render",.9); wb(0,len,fz,h,0,.4,cMul(L.wc,.82)); }
+  // how high the roof is over a spot on the plan, for what stands on it
+  function roofAt(blocks,x,y){ let z=0; for(const k of blocks) if(x>=k.x0-.01&&x<=k.x1+.01&&y>=k.y0-.01&&y<=k.y1+.01) z=Math.max(z,k.flat?k.H:k.H); return z; }
+  // the details a building's drawing asked for, each in its own way
+  function detail(B,b,d,blocks,det){
+    if(d.det&&det<d.det) return;
+    const col=LC(d.col||"#e6e4de"), z=d.z!==undefined?d.z:roofAt(blocks,d.x+(d.w||0)/2,d.y+(d.d||0)/2);
+    mat(B,d.m||"white",d.ro);
+    switch(d.k){
+      case "box": bx(B,d.x,d.y,d.x+d.w,d.y+d.d,z,z+d.h,col,d.un||0,d.fs); break;
+      // plant on a roof: a box with louvred sides and a fan on top
+      case "plant": { const h=d.h||2.4; mat(B,"conc",.8); bx(B,d.x,d.y,d.x+d.w,d.y+d.d,z,z+h,col,6);
+        mat(B,"white",.8); bx(B,d.x+.25,d.y+.25,d.x+d.w-.25,d.y+d.d-.25,z+h,z+h+.25,cMul(col,.8));
+        if(det&&d.w>=2.6&&d.d>=2.6){ const r=Math.min(d.w,d.d)*.34, cx=d.x+d.w/2, cy=d.y+d.d/2; mat(B,"fan",.6); fq(B,[cx-r,cy-r,z+h+.27],[cx+r,cy-r,z+h+.27],[cx+r,cy+r,z+h+.27],[cx-r,cy+r,z+h+.27],[.001,.001],[.999,.001],[.999,.999],[.001,.999],W0,0,0,1); } break; }
+      case "cyl": lathe(B,d.x,d.y,d.top==="dome"?[[d.r,z],[d.r,z+d.h],[d.r*.9,z+d.h+d.r*.22],[d.r*.6,z+d.h+d.r*.4],[0,z+d.h+d.r*.48]]:d.top==="cone"?[[d.r,z],[d.r,z+d.h],[0,z+d.h+d.r*.6]]:[[d.r,z],[d.r,z+d.h],[0,z+d.h]],col,d.n||14,d.un); break;
+      case "lathe": lathe(B,d.x,d.y,d.pr.map(q=>[q[0],q[1]+z]),col,d.n||16,d.un); break;
+      case "awn": { // an awning over a shop window: sloping out and down, with a valance along its front
+        const y=d.y, o=d.out||2.4, z1=z, z0=z1-(d.drop||1.6), x0=d.x0, x1=d.x1, s=d.s||1; mat(B,d.m||"stripe",.9);
+        const u=(x1-x0)/(d.un||3);
+        fq(B,[x0,y,z1],[x1,y,z1],[x1,y+o*s,z0],[x0,y+o*s,z0],[0,0],[u,0],[u,.6],[0,.6],col,0,s,1.5);
+        fq(B,[x0,y,z1],[x1,y,z1],[x1,y+o*s,z0],[x0,y+o*s,z0],[0,0],[u,0],[u,.6],[0,.6],cMul(col,.7),0,-s,-1);
+        fq(B,[x0,y+o*s,z0-.7],[x1,y+o*s,z0-.7],[x1,y+o*s,z0],[x0,y+o*s,z0],[0,0],[u,0],[u,.2],[0,.2],col,0,s,0);
+        fq(B,[x0,y,z1],[x0,y+o*s,z0],[x0,y+o*s,z0-.7],[x0,y,z1-.01],[0,0],[.2,0],[.2,.2],[0,.2],col,-1,0,0);
+        fq(B,[x1,y,z1],[x1,y+o*s,z0],[x1,y+o*s,z0-.7],[x1,y,z1-.01],[0,0],[.2,0],[.2,.2],[0,.2],col,1,0,0); break; }
+      case "sign": { // a sign board on the front of a building, its lettering from the sign pictures
+        const y=d.y, x0=d.x0, x1=d.x1, z0=z, z1=z+(d.h||1.8), r=d.row||0, s=d.s||1; mat(B,"white",.7); bx(B,x0-.15,s>0?y:y-.35,x1+.15,s>0?y+.35:y,z0-.15,z1+.15,LC(d.edge||"#3a3d42"));
+        mat(B,d.set===2?"signs2":"signs",.5); const v0=r/8+.004, v1=(r+1)/8-.004, yy=y+s*.37;
+        if(s>0) fq(B,[x0,yy,z0],[x1,yy,z0],[x1,yy,z1],[x0,yy,z1],[.004,v0],[.996,v0],[.996,v1],[.004,v1],W0,0,1,0);
+        else fq(B,[x1,yy,z0],[x0,yy,z0],[x0,yy,z1],[x1,yy,z1],[.004,v0],[.996,v0],[.996,v1],[.004,v1],W0,0,-1,0); break; }
+      case "heli": { const r=d.r, x=d.x, y=d.y; mat(B,"conc",.8); bx(B,x-r,y-r,x+r,y+r,z,z+.5,LC("#9a9ea3"),8); mat(B,"heli",.8);
+        fq(B,[x-r+.3,y-r+.3,z+.52],[x+r-.3,y-r+.3,z+.52],[x+r-.3,y+r-.3,z+.52],[x-r+.3,y+r-.3,z+.52],[.002,.002],[.998,.002],[.998,.998],[.002,.998],W0,0,0,1); break; }
+      case "panels": { // rows of solar panels on a frame, tilted up towards the sun
+        const n=Math.max(1,Math.round(d.d/(d.pd||3.4))), pd=d.d/n, tilt=d.tilt||.32;
+        for(let i=0;i<n;i++){ const y0=d.y+i*pd+.3, y1=y0+pd-.6, zl=z+.5, zh=zl+(y1-y0)*Math.tan(tilt); mat(B,"solar",.35);
+          fq(B,[d.x,y1,zl],[d.x+d.w,y1,zl],[d.x+d.w,y0,zh],[d.x,y0,zh],[0,0],[d.w/(d.pu||4),0],[d.w/(d.pu||4),1],[0,1],W0,0,.6,1);
+          mat(B,"white",.6); bx(B,d.x,y0,d.x+d.w,y0+.2,z,zh,[.55,.57,.6],0,31); } break; }
+      case "slab": mat(B,d.m||"conc",d.ro||.85); bx(B,d.x,d.y,d.x+d.w,d.y+d.d,z,z+(d.h||.4),col,d.un||8,d.fs||63); break;
+      case "quad": mat(B,d.m||"water",d.ro||.2); fq(B,[d.x,d.y,z],[d.x+d.w,d.y,z],[d.x+d.w,d.y+d.d,z],[d.x,d.y+d.d,z],[0,0],[d.w/(d.un||8),0],[d.w/(d.un||8),d.d/(d.un||8)],[0,d.d/(d.un||8)],col,0,0,1); break;
+      case "gable": { // a little building of its own: a shed, a porch, a dormer
+        const L={roof:d.roof||"gable",rise:d.rise,ov:d.ov!==undefined?d.ov:.5,rc:LC(d.rc||"#6b6159"),rm:d.rm||"tile",wall:d.wall||"wood",wc:col,along:d.along,ridge:false};
+        const x0=d.x, y0=d.y, x1=d.x+d.w, y1=d.y+d.d; if(d.walls!==false){ mat(B,L.wall,.9); bx(B,x0,y0,x1,y1,z-.3,z+d.h,col,FSIZE[L.wall]?FSIZE[L.wall][0]*NB:6,30); }
+        pitched3(B,x0,y0,x1,y1,z+d.h,L,det); break; }
+      case "door": { // a front door: frame, the door itself, a step, and a light
+        const y=d.y, x=d.x, w=d.w||2.6, h=d.h||5, s=d.s||1, yo=y+s*.05; mat(B,"white",.6);
+        bx(B,x-w/2-.35,s>0?y:y-.3,x+w/2+.35,s>0?y+.3:y,-.1,h+.35,TRIM.frame,0,30);
+        mat(B,"wood",.6); fq(B,[x-w/2,yo+s*.28,0],[x+w/2,yo+s*.28,0],[x+w/2,yo+s*.28,h],[x-w/2,yo+s*.28,h],[0,0],[.4,0],[.4,.9],[0,.9],LC(d.col||"#5b3f2e"),0,s,0);
+        mat(B,"conc",.9); bx(B,x-w/2-.8,s>0?y:y-1.4,x+w/2+.8,s>0?y+1.4:y,-.4,.45,[.82,.81,.78],8);
+        if(d.lamp!==false){ mat(B,"white",.3); bx(B,x+w/2+.7,s>0?y:y-.4,x+w/2+1.1,s>0?y+.4:y,h-.9,h-.3,[.2,.2,.22]); } break; }
+      case "gdoor": { // a garage door in the front of a wall
+        const y=d.y, x0=d.x0, x1=d.x1, h=d.h||4.6, s=d.s||1; mat(B,"white",.6); bx(B,x0-.3,s>0?y:y-.25,x1+.3,s>0?y+.25:y,-.1,h+.3,TRIM.frame,0,30);
+        mat(B,d.m||"door",.7); fq(B,[x0,y+s*.27,-.1],[x1,y+s*.27,-.1],[x1,y+s*.27,h],[x0,y+s*.27,h],[0,0],[(x1-x0)/(d.un||5),0],[(x1-x0)/(d.un||5),h/(d.vn||5)],[0,h/(d.vn||5)],LC(d.col||"#efede8"),0,s,0); break; }
+      case "posts": for(const p of d.at) { mat(B,"white",.6); bx(B,p[0]-(d.r||.25),p[1]-(d.r||.25),p[0]+(d.r||.25),p[1]+(d.r||.25),z,z+d.h,col,0,30); } break;
+      case "rail": { const dx=d.x1-d.x0, dy=d.y1-d.y0, l=Math.hypot(dx,dy), n=Math.max(1,Math.round(l/2)); mat(B,"white",.5);
+        for(let i=0;i<=n;i++){ const x=d.x0+dx*i/n, y=d.y0+dy*i/n; bx(B,x-.08,y-.08,x+.08,y+.08,z,z+(d.h||1.8),col,0,30); }
+        const t=.1; hexa(B,[[d.x0,d.y0-t,z+(d.h||1.8)],[d.x1,d.y1-t,z+(d.h||1.8)],[d.x1,d.y1+t,z+(d.h||1.8)],[d.x0,d.y0+t,z+(d.h||1.8)],[d.x0,d.y0-t,z+(d.h||1.8)+.18],[d.x1,d.y1-t,z+(d.h||1.8)+.18],[d.x1,d.y1+t,z+(d.h||1.8)+.18],[d.x0,d.y0+t,z+(d.h||1.8)+.18]].map(q=>wp(B,q[0],q[1],q[2])),col); break; }
+    } }
+  // everything a building's drawing recorded, made into one set of arrays
+  function partsOf(b,recs,dl,lv){
+    const B=mkB(b), blocks=[]; let top=0;
+    for(const r of recs){ const sc=r.sc;
+      for(const q of r.rects){ const x0=q[0]*sc, y0=q[1]*sc, x1=(q[0]+q[2])*sc, y1=(q[1]+q[3])*sc; if(x1-x0<.05||y1-y0<.05) continue;
+        const L=look3(b,r), out={}; top=Math.max(top,block3(B,b,x0,y0,x1,y1,L,lv,out)); blocks.push({x0,y0,x1,y1,H:L.H,top:out.top,flat:L.roof==="flat",pr:out.pr}); } }
+    if(dl) for(const d of dl) detail(B,b,d,blocks,lv);
+    for(const d of dl||[]) if(d.top) top=Math.max(top,d.top);
+    const F=a=>new Float32Array(a);
+    return {geo:{p:F(B.p),n:F(B.n),u:F(B.u),c:F(B.c),t:F(B.t),pic:B.pic&&{p:F(B.pic.p),n:F(B.pic.n),u:F(B.pic.u)}},top}; }
+  // the cells' meshes: the buildings standing in a cell (by their middles) are drawn together, and made again when one changes
+  function grp(c){ let g=groups.get(c); if(!g) groups.set(c,g={set:new Set(),mesh:null,pic:null,dirty:true}); return g; }
+  function setE(b,e){ const o=bcache.get(b); if(o){ const g=groups.get(o.cell); if(g){ g.set.delete(b); g.dirty=true; } }
+    if(e){ bcache.set(b,e); const g=grp(e.cell); g.set.add(b); g.dirty=true; } else bcache.delete(b); batchDirty=true; }
+  function moveE(b,e,c){ if(e.cell===c) return; const g=groups.get(e.cell); if(g){ g.set.delete(b); g.dirty=true; } e.cell=c; const h=grp(c); h.set.add(b); h.dirty=true; batchDirty=true; }
   function rebuildBatches(){
     batchDirty=false;
-    const tot={};
-    for(const e of bcache.values()) for(const k in e.parts) tot[k]=(tot[k]||0)+e.parts[k].p.length;
-    for(const k in batches) if(!tot[k]) batches[k].visible=false;
-    for(const k in tot){ const n=tot[k], pos=new Float32Array(n), nrm=new Float32Array(n), col=new Float32Array(n), uv=new Float32Array(n/3*2); let o=0, ou=0;
-      for(const e of bcache.values()){ const P=e.parts[k]; if(!P) continue; pos.set(P.p,o); nrm.set(P.n,o); col.set(P.c,o); uv.set(P.u,ou); o+=P.p.length; ou+=P.u.length; }
-      const geo=new T.BufferGeometry(); geo.setAttribute("position",new T.BufferAttribute(pos,3)); geo.setAttribute("normal",new T.BufferAttribute(nrm,3)); geo.setAttribute("color",new T.BufferAttribute(col,3)); geo.setAttribute("uv",new T.BufferAttribute(uv,2));
-      let m=batches[k]; if(!m){ m=batches[k]=new T.Mesh(geo,mats[k]); m.castShadow=m.receiveShadow=true; m.frustumCulled=false; scene.add(m); }
-      else { m.geometry.dispose(); m.geometry=geo; }
-      m.visible=true; }
+    for(const [c,g] of groups){ if(!g.dirty) continue; g.dirty=false;
+      for(const k of ["mesh","pic"]) if(g[k]){ scene.remove(g[k]); g[k].geometry.dispose(); g[k]=null; }
+      if(!g.set.size){ groups.delete(c); continue; }
+      let n=0, np=0; for(const b of g.set){ const e=bcache.get(b).geo; n+=e.p.length; if(e.pic) np+=e.pic.p.length; }
+      if(n){ const pos=new Float32Array(n), nrm=new Float32Array(n), col=new Float32Array(n), uv=new Float32Array(n/3*2), tl=new Float32Array(n/3*2); let o=0, ou=0;
+        for(const b of g.set){ const e=bcache.get(b).geo; pos.set(e.p,o); nrm.set(e.n,o); col.set(e.c,o); uv.set(e.u,ou); tl.set(e.t,ou); o+=e.p.length; ou+=e.u.length; }
+        const geo=new T.BufferGeometry(); geo.setAttribute("position",new T.BufferAttribute(pos,3)); geo.setAttribute("normal",new T.BufferAttribute(nrm,3)); geo.setAttribute("color",new T.BufferAttribute(col,3));
+        geo.setAttribute("uv",new T.BufferAttribute(uv,2)); geo.setAttribute("tile",new T.BufferAttribute(tl,2));
+        const m=g.mesh=new T.Mesh(geo,bMat); m.castShadow=m.receiveShadow=true; m.frustumCulled=false; scene.add(m); }
+      if(np){ const pos=new Float32Array(np), nrm=new Float32Array(np), uv=new Float32Array(np/3*2); let o=0, ou=0;
+        for(const b of g.set){ const e=bcache.get(b).geo.pic; if(!e) continue; pos.set(e.p,o); nrm.set(e.n,o); uv.set(e.u,ou); o+=e.p.length; ou+=e.u.length; }
+        const geo=new T.BufferGeometry(); geo.setAttribute("position",new T.BufferAttribute(pos,3)); geo.setAttribute("normal",new T.BufferAttribute(nrm,3)); geo.setAttribute("uv",new T.BufferAttribute(uv,2));
+        const m=g.pic=new T.Mesh(geo,mats.roof); m.castShadow=m.receiveShadow=true; m.frustumCulled=false; scene.add(m); } }
   }
 
   // ----- overpasses: decks on pillars, up the ramps and over the road below -----
@@ -7177,7 +7421,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   function paintCell(L,cx,cy,sig){
     const key=cx+","+cy, CW=L.CW, x0=cx*CW, y0=cy*CW, sx=mod(cx,NC)*CPX, sy=mod(cy,NC)*CPX;
     let c=L.cells.get(key); if(!c) L.cells.set(key,c={cx,cy,sig:-1,rec:null,terr:false,at:0});
-    const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),parked:[],trees:[],models:[],props:[]};
+    const old=c.rec, rc={own:(x,y)=>x>=x0&&x<x0+CW&&y>=y0&&y<y0+CW,boxes:new Map(),det:new Map(),parked:[],trees:[],models:[],props:[]};
     const T0=terrain, t0=performance.now();
     pass2d(stage,CPX,x0,y0,CW,()=>{
       // just the outlines that reach the cell, and the grass tufts and flowers only where they'd show, as in 2D
@@ -7202,13 +7446,20 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     return {c,old};
   }
   // the walls of the buildings in a cell that was painted again
-  const bkey=(b,recs)=>recs.map(r=>r.sc.toFixed(3)+"|"+r.h+"|"+r.rects.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(";")).join("/")+"@"+b.x.toFixed(1)+","+b.y.toFixed(1)+","+b.ang.toFixed(3)+(b.col||"")+(b.v||0)+(b.cols?b.cols.join(""):"")+(b.cons?"c":"");
+  const bkey=(b,recs,det)=>recs.map(r=>r.sc.toFixed(3)+"|"+r.h+"|"+r.rects.map(q=>q.map(v=>v.toFixed(1)).join(",")).join(";")+(r.o?JSON.stringify(r.o):"")).join("/")+"@"+b.x.toFixed(1)+","+b.y.toFixed(1)+","+b.ang.toFixed(3)+(b.col||"")+(b.v||0)+(b.cols?b.cols.join(""):"")+(b.cons?"c":"")+(det?JSON.stringify(det):"");
+  // a building belongs to the cell its middle stands in (or to any cell showing it, if its middle is off the picture)
+  const owns=(c,b)=>{ if(c.rec.own(b.x,b.y)) return true; const L=front, i=Math.floor(b.x/L.CW), j=Math.floor(b.y/L.CW); return i<L.ox||j<L.oy||i>=L.ox+NC||j>=L.oy+NC; };
+  // how much detail the buildings get: everything close up, less further out, and less on phones and on Normal
+  const lvNow=()=>{ const S=front.S||1e9; return mobile?(S<=2100?1:0):ultra?(S<=2900?2:S<=6000?1:0):(S<=1500?2:S<=4100?1:0); };
+  const gcache=new Map();   // building -> {key, its shapes at each level of detail made so far}
+  function take(c,b,recs){ const dl=c.rec.det.get(b), key=bkey(b,recs,dl), lv=lvNow(), k2=key+"#"+lv, e=bcache.get(b); if(e&&e.key===k2){ moveE(b,e,c); return; }
+    let C=gcache.get(b); if(!C||C.key!==key) gcache.set(b,C={key,g:[]}); const pr=C.g[lv]||(C.g[lv]=partsOf(b,recs,dl,lv)); setE(b,{key:k2,geo:pr.geo,top:pr.top,cell:c}); }
   function adopt({c,old}){
-    if(old) for(const b of old.boxes.keys()) if(!c.rec.boxes.has(b)){ const e=bcache.get(b); if(e&&e.cell===c){ bcache.delete(b); batchDirty=true; } }
-    for(const [b,recs] of c.rec.boxes){ const key=bkey(b,recs), e=bcache.get(b); if(e&&e.key===key){ e.cell=c; continue; }
-      const pr=partsOf(b,recs); bcache.set(b,{key,parts:pr.parts,top:pr.top,cell:c}); batchDirty=true; }
+    if(old) for(const b of old.boxes.keys()) if(!c.rec.boxes.has(b)){ const e=bcache.get(b); if(e&&e.cell===c) setE(b,null); }
+    for(const [b,recs] of c.rec.boxes) if(owns(c,b)) take(c,b,recs);
   }
-  function drop(c){ if(c.rec) for(const b of c.rec.boxes.keys()){ const e=bcache.get(b); if(e&&e.cell===c){ bcache.delete(b); batchDirty=true; } } }
+  function drop(c){ if(c.rec) for(const b of c.rec.boxes.keys()){ const e=bcache.get(b); if(e&&e.cell===c) setE(b,null); } }
+  function clearB(){ for(const g of groups.values()) for(const k of ["mesh","pic"]) if(g[k]){ scene.remove(g[k]); g[k].geometry.dispose(); } groups.clear(); bcache.clear(); gcache.clear(); batchDirty=true; }
   // parked cars and trees from all the cells, and the wild trees on the land under the picture
   function gather(){
     const P=[], tl=[], M=[], Q=[], seen=new Set(), x0=reg.x0, y0=reg.y0, S=reg.S;
@@ -7255,9 +7506,9 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     spare=front; front=back; back=null;
     // the walls: kept where nothing changed, from the new picture's cells
     const seen=new Set();
-    for(const c of front.cells.values()) if(c.rec) for(const [b,recs] of c.rec.boxes){ seen.add(b); const key=bkey(b,recs), e=bcache.get(b); if(e&&e.key===key){ e.cell=c; continue; }
-      const pr=partsOf(b,recs); bcache.set(b,{key,parts:pr.parts,top:pr.top,cell:c}); batchDirty=true; }
-    for(const b of [...bcache.keys()]) if(!seen.has(b)){ bcache.delete(b); batchDirty=true; }
+    for(const c of front.cells.values()) if(c.rec) for(const [b,recs] of c.rec.boxes) if(owns(c,b)){ seen.add(b); take(c,b,recs); }
+    for(const b of [...bcache.keys()]) if(!seen.has(b)) setE(b,null);
+    const live=new Set(blds); for(const b of [...gcache.keys()]) if(!live.has(b)) gcache.delete(b);
     mats.ground.map=mats.roof.map=front.tex; groundMesh(front); gather();
   }
   let dark3=null;
@@ -7265,7 +7516,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const t0=performance.now(), nd=need(), nr=nd.near, n=Math.min(Math.max(nd.x1-nd.x0,nd.y1-nd.y0),Math.max(nr.x1-nr.x0,nr.y1-nr.y0)*3); painted=0;
     // a new map, or the graphics changed: everything is painted again. Building only changes the cells it's in
     const gk=ultra+","+(biome?biome.base:"")+","+city+","+dark;
-    if(hterr!==terrain){ hterr=terrain; heights(); front.S=0; back=null; bcache.clear(); batchDirty=true; }
+    if(hterr!==terrain){ hterr=terrain; heights(); front.S=0; back=null; clearB(); }
     if(gk!==tkey3){ tkey3=gk; base.material.color.set(biome?mapBiome().base:"#cfe0a8"); for(const L of [front,back,spare]) if(L) for(const c of L.cells.values()){ c.terr=false; c.sig=-1; } }
     // a theme switch paints the whole view again at once, rather than creeping across it a square at a time
     if(dark!==dark3){ if(dark3!==null){ front.S=0; back=null; } dark3=dark; }
@@ -7400,7 +7651,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const day=1-nk;
     sun.intensity=(2.6*day+.15)*(1-rainK*.55); sun.color.set(nk>.5?"#9db4ff":dk>.05?"#ffc89a":"#fff1dc");
     hemi.intensity=.4+.8*day; hemi.color.set(nk>.5?"#5d6d9c":"#dcecff");
-    const em=clamp((nk-.12)/.5,0,1)+rainK*.2; for(const k in mats) if(k.startsWith("f:")) mats[k].emissiveIntensity=em*1.3;
+    const em=clamp((nk-.12)/.5,0,1)+rainK*.2; bMat.emissiveIntensity=em*1.3;
     const L=Math.max(400,dist*1.4); sun.position.set(cam.x-SHX*L*.62,L,cam.y-SHY*L*.62); sun.target.position.set(cam.x,0,cam.y);
     const sr=Math.min(1700,dist*1.3), sc=sun.shadow.camera; sc.left=-sr; sc.right=sr; sc.top=sr; sc.bottom=-sr; sc.near=1; sc.far=L*3; sc.updateProjectionMatrix();
   }
@@ -7432,7 +7683,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   }
   return {R,sync,pick,project,render,hAt,
     top:b=>{ const e=bcache.get(b); return e?e.top:0; },
-    stats:()=>({pc:pcN,pms:+pcMs.toFixed(1),blds:bcache.size,batches:Object.keys(batches).length,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
+    stats:()=>({pc:pcN,pms:+pcMs.toFixed(1),blds:bcache.size,batches:groups.size,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
     dbg:()=>{ const nd=need(); return {nd,core:core(front,nd),ox:front.ox,oy:front.oy,S:front.S,CW:front.CW,todo:front.todo.length,cov:covers(front,core(front,nd))}; }};
 }
 
