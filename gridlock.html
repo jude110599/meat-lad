@@ -3562,10 +3562,10 @@ const YARD={res:["#a3cf75","#7aa858"],dense:["#a7d07c","#7aa95a"],high:["#a2cc78
 const polyPath=P=>{ ctx.beginPath(); P.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath(); };
 function drawLots(){
   if(!lots.length) return;
-  const show=tool==="build"||tool==="erase";
+  const show=tool==="build"||tool==="erase", ga=rec3d?0:natA(.9,2.4)*.42, gp=ga>0?natFill("g",.32):null;
   for(const L of lots){ if(!inView(L.x,L.y,L.r)) continue;
     polyPath(L.poly);
-    if(L.b){ const Y=YARD[L.kind]; ctx.fillStyle=dk(Y[0]); ctx.fill();
+    if(L.b){ const Y=YARD[L.kind]; ctx.fillStyle=dk(Y[0]); ctx.fill(); if(gp){ ctx.globalAlpha=ga; ctx.fillStyle=gp; ctx.fill(); ctx.globalAlpha=1; }
       // a hedge round each house's garden
       if(!show&&L.kind==="res"&&LOD){ ctx.strokeStyle=dk("#4b7a37"); ctx.lineWidth=2.3; ctx.stroke(); ctx.strokeStyle=dk("#5f9446"); ctx.lineWidth=1.1; ctx.stroke(); }
       else { ctx.strokeStyle=show?ZONES[L.kind].col:dk(Y[1]); ctx.lineWidth=L.kind==="res"||L.kind==="dense"||L.kind==="high"?1.4:.9; if(L.kind==="ind") ctx.setLineDash([2,1.5]); ctx.stroke(); ctx.setLineDash([]); }
@@ -4922,8 +4922,8 @@ cv.addEventListener("pointerdown",e=>{ zoomGoal=null;
   // the right button moves the map (and cancels a grid that's half laid out)
   if(e.button===2){ if(mode==="grid"&&grid){ grid=null; setHint("Grid cancelled.",2); return; } mode="pan"; }
   if(e.button===1||spaceDown) mode="pan";
-  // 3D: hold Alt (or Ctrl) and drag to turn and tilt the town
-  if(v3live()&&e.pointerType==="mouse"&&(e.altKey||e.ctrlKey)) mode="orbit";
+  // 3D: drag with the middle button, or hold Alt (or Ctrl) and drag, to turn and tilt the town
+  if(v3live()&&e.pointerType==="mouse"&&(e.altKey||e.ctrlKey||e.button===1)) mode="orbit";
   const w=toWorld(e.clientX,e.clientY);
   drag={mode,sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y,w0:w,yaw:v3yaw,pitch:v3pitch,moved:false,raw:[w],start:null,plan:null,over:tool==="road"&&roadMode==="over"&&mode==="road"};
   if(mode==="pan"||mode==="orbit"){ cv.style.cursor="grabbing"; return; }
@@ -4967,7 +4967,7 @@ cv.addEventListener("pointermove",e=>{
     if(city&&zoneSel){ ghost=null; if(!zpts) zoneGhosts=null; } else ghost=placeSel&&!mv&&!lineMode?ghostAt(placeSel,w):null; }
   if(tool==="road"&&roadMode==="grid"&&(e.pointerType==="mouse"||drag)) gridCur=w;
   if(!drag) return;
-  if(drag.mode==="orbit"){ v3yaw=v3yawTo=drag.yaw+(e.clientX-drag.sx)*.008; v3pitch=v3pitchTo=clamp(drag.pitch+(e.clientY-drag.sy)*.006,P3MIN,P3MAX); return; }
+  if(drag.mode==="orbit"){ v3yawTo=drag.yaw+(e.clientX-drag.sx)*.008; v3pitchTo=clamp(drag.pitch+(e.clientY-drag.sy)*.006,P3MIN,P3MAX); return; }
   if(drag.mode==="build"){ if(placeSel) ghost=ghostAt(placeSel,buildPt(e,w)); return; }
   if(drag.mode==="zone"){ const bp=buildPt(e,w), l=drag.path[drag.path.length-1], now=performance.now();
     drag.far=Math.max(drag.far,Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)); if(drag.far<9) return;
@@ -5677,6 +5677,7 @@ function drawGround(){
   ctx.fillStyle=B.grass[0]; ctx.fill(T.grass[0],"evenodd"); ctx.fillStyle=B.grass[1]; ctx.fill(T.grass[1],"evenodd");
   // the shady floor of the woods, its edge softened
   ctx.lineJoin="round"; ctx.strokeStyle=ctx.fillStyle=B.wood; ctx.globalAlpha=.35; ctx.lineWidth=14; ctx.stroke(T.woods); ctx.globalAlpha=.75; ctx.fill(T.woods,"evenodd"); ctx.globalAlpha=1;
+  { const a=v3on?0:natA(.9,2.4)*.5; if(a>0){ ctx.globalAlpha=a; ctx.fillStyle=natFill("g",.32); ctx.fillRect(view.x0,view.y0,view.x1-view.x0,view.y1-view.y0); ctx.globalAlpha=1; } }
   drawMeadow();
   // wet grass where the land meets the water, then a thin muddy edge
   ctx.strokeStyle=B.lush; ctx.globalAlpha=.6; ctx.lineWidth=26; ctx.stroke(T.water); ctx.globalAlpha=1;
@@ -5776,6 +5777,23 @@ function drawCrags(){
     ctx.fillStyle=dark?"rgba(150,150,140,.16)":"rgba(70,62,52,.2)"; ctx.fill(C.scr); }
   ctx.lineCap="butt";
 }
+// Close up in 2D, grass gets blades and flecks of light and shade, and the crowns of trees clusters of leaves catching
+// the light. Each is a small picture repeated across the map at a fixed size on the ground, so it costs one fill, and
+// it fades in as you zoom in (further out it would only blur)
+const NATP={}, natCtx=new WeakMap();
+function natPic(k){ if(NATP[k]) return NATP[k]; const n=k==="g"?96:64, c=document.createElement("canvas"); c.width=c.height=n; const g=c.getContext("2d");
+  const wrap=(x,y,r,f)=>{ for(const ox of [0,-n,n]) for(const oy of [0,-n,n]){ const cx=x+ox, cy=y+oy; if(cx>-r&&cy>-r&&cx<n+r&&cy<n+r) f(cx,cy); } };
+  if(k==="g") for(let i=0;i<1100;i++){ const x=hash(i,301)*n, y=hash(i,302)*n, a=-1.57+(hash(i,303)-.5)*1.2, L=.9+hash(i,304)*2, lt=hash(i,305)<.42;
+    g.strokeStyle=lt?"rgba(236,255,200,.55)":"rgba(26,56,12,.5)"; g.lineWidth=.55+hash(i,306)*.5; g.lineCap="round";
+    wrap(x,y,3,(cx,cy)=>{ g.beginPath(); g.moveTo(cx,cy); g.lineTo(cx+Math.cos(a)*L,cy+Math.sin(a)*L); g.stroke(); }); }
+  else for(let i=0;i<300;i++){ const x=hash(i,311)*n, y=hash(i,312)*n, r=1.1+hash(i,313)*1.5;
+    wrap(x,y,r+2,(cx,cy)=>{ g.fillStyle="rgba(8,32,4,.3)"; g.beginPath(); g.arc(cx+r*.3,cy+r*.38,r,0,7); g.fill();
+      g.fillStyle="rgba(255,255,222,.3)"; g.beginPath(); g.arc(cx-r*.25,cy-r*.3,r*.58,0,7); g.fill(); }); }
+  return NATP[k]=c; }
+// the picture as a fill for this canvas, sized s map units to a pixel of it
+function natFill(k,s){ let m=natCtx.get(ctx); if(!m) natCtx.set(ctx,m={}); const P=m[k]||(m[k]=ctx.createPattern(natPic(k),"repeat"));
+  P.setTransform(new DOMMatrix([s,0,0,s,0,0])); return P; }
+const natA=(z0,z1)=>clamp((cam.z-z0)/(z1-z0),0,1)*(dark?.5:1);
 // patches of wild flowers on the grass, in squares of the map so only the ones in view are drawn
 const FLOWERS=["#ffffff","#f6d74a","#f29bb8","#b79cf0","#7fb2f0"], FPICK=[.36,.68,.82,.92,1], FCH=400;
 function drawMeadow(){
@@ -5849,6 +5867,7 @@ function drawTrees(){
   ctx.lineCap="round"; ctx.strokeStyle=dk("#6f8c3e",.7); ctx.lineWidth=.55; ctx.stroke(rd); ctx.fillStyle=dk("#6b4a2e",.7); ctx.fill(cat); ctx.lineCap="butt";
   cr.forEach((a,k)=>a.forEach((P,i)=>{ ctx.fillStyle=dk(TCOL[k][i],.75); ctx.fill(P); }));
   hl.forEach((P,k)=>{ if(TLIT[k]){ ctx.fillStyle="rgba("+TLIT[k]+","+.55*dm+")"; ctx.fill(P); } });
+  { const a=natA(.85,2)*.7; if(a>0&&!md){ ctx.globalAlpha=a; ctx.fillStyle=natFill("l",.22); cr.forEach(q=>q.forEach(P=>ctx.fill(P))); ctx.globalAlpha=1; } }
   ctx.fillStyle=dk("#fbe9f0",.6); ctx.fill(fl);
   if(U){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; ctx.fill(sp); }
 }
@@ -6182,6 +6201,7 @@ function tree(x,y,r){
   if(ultra&&k!==1&&k!==4){ ctx.fillStyle="rgba(34,64,26,.55)"; f(()=>crown(ctx,k,x+.4,y+.6,r,v)); }
   ctx.fillStyle=dk(TCOL[k][(v*TCOL[k].length)|0],.75); f(()=>crown(ctx,k,x,y,r,v));
   ctx.fillStyle="rgba("+TLIT[k]+","+.55*dm+")"; f(()=>crownLit(ctx,k,x,y,r,v));
+  if(cam.z>.85){ ctx.globalAlpha=natA(.85,2)*.7; ctx.fillStyle=natFill("l",.22); f(()=>crown(ctx,k,x,y,r,v)); ctx.globalAlpha=1; }
   if(ultra&&k===0){ ctx.fillStyle="rgba(232,255,195,"+.6*dm+")"; f(()=>ctx.arc(x-r*.42,y-r*.46,r*.2,0,7)); } }
 const easeBack=x=>1+2.7*Math.pow(x-1,3)+1.7*Math.pow(x-1,2);
 const growth=(b,dur)=>rec3d?1:.6+.4*easeBack(clamp((animT-b.grow)/dur,0,1));
@@ -6956,7 +6976,7 @@ const GH={house:6,bighouse:6,town:7,apts:18,shop:6,center:8,mall:9,office:14,fac
 const ghostH=g=>H3(GH[g.type]===undefined?9:GH[g.type])+.8;
 const P3MIN=.3, P3MAX=1.45;
 async function v3import(){ for(const u of V3URL){ try{ return await import(u); }catch(e){} } return null; }
-function v3hint(){ setHint(isTouch?"3D view. Twist two fingers to turn the town, or use the buttons on the left. Everything builds just as in 2D.":"3D view. Hold Alt and drag, or press Z, X, [ and ], to turn and tilt the town. Everything builds just as in 2D.",5); }
+function v3hint(){ setHint(isTouch?"3D view. Twist two fingers to turn the town, or use the buttons on the left. Everything builds just as in 2D.":"3D view. Drag with the middle mouse button (or hold Alt and drag) to turn and tilt the town; Z, X, [ and ] do it too. Everything builds just as in 2D.",5); }
 // auto: the City builder turning 3D on by itself. It isn't kept as a choice, and if 3D can't load the town just stays
 // in 2D without a word
 function setView3d(on,quiet,auto){
@@ -7143,10 +7163,29 @@ function v3init(T){
   // anything else drawn over them) the ground turns smooth and shiny, small waves run across it and catch the sun,
   // and the sky shows in it, more so the flatter you look across it
   const wU={wt:{value:0},ws:{value:1},wsky:{value:new T.Color(0xcfe0ee)}};
-  mats.ground.onBeforeCompile=sh=>{ sh.uniforms.wt=wU.wt; sh.uniforms.ws=wU.ws; sh.uniforms.wsky=wU.wsky;
+  // grass close up: wherever the picture is green, broad patches of lusher and drier grass, then clumps, then fine
+  // tufts, all from one small noise picture tiled across the world at three sizes. Far off it evens out to the map's
+  // own colour, so the view from high up doesn't change
+  const gdet=(()=>{ const S=256, c=document.createElement("canvas"); c.width=c.height=S; const g=c.getContext("2d"), im=g.createImageData(S,S), D=im.data;
+    const vn=(x,y,p,sd)=>{ const xi=Math.floor(x), yi=Math.floor(y), fx=x-xi, fy=y-yi, h=(i,j)=>hash((i%p+p)%p+sd*131,(j%p+p)%p+sd*71), sx=fx*fx*(3-2*fx), sy=fy*fy*(3-2*fy);
+      return (h(xi,yi)*(1-sx)+h(xi+1,yi)*sx)*(1-sy)+(h(xi,yi+1)*(1-sx)+h(xi+1,yi+1)*sx)*sy; };
+    for(let y=0;y<S;y++) for(let x=0;x<S;x++){ const u=x/S, v=y/S, o=(y*S+x)*4;
+      D[o]=(vn(u*4,v*4,4,1)*.6+vn(u*8,v*8,8,2)*.3+vn(u*16,v*16,16,3)*.1)*255;
+      D[o+1]=(vn(u*8,v*8,8,4)*.5+vn(u*16,v*16,16,5)*.3+vn(u*32,v*32,32,6)*.2)*255;
+      D[o+2]=(vn(u*64,v*64,64,7)*.45+vn(u*128,v*128,128,8)*.3+hash(x+999,y)*.25)*255; D[o+3]=255; }
+    g.putImageData(im,0,0); const t=new T.CanvasTexture(c); t.wrapS=t.wrapT=T.RepeatWrapping; t.anisotropy=aniso; return t; })();
+  wU.gdet={value:gdet};
+  const GRASS3=`
+  float gm=smoothstep(.015,.06,c.g-max(c.r,c.b))*(1.-wat);
+  if(gm>0.){ vec2 p=vWp.xz; float a=texture2D(gdet,p*.0037).r, b=texture2D(gdet,p*.011).g, f=texture2D(gdet,p*.03).b;
+    vec3 g=diffuseColor.rgb; float L=dot(g,vec3(.3,.59,.11));
+    g=mix(vec3(L),g,.84)*(.92+(a-.5)*.8+(b-.5)*.7+(f-.5)*.9);
+    g*=mix(vec3(1.06,1.02,.8),vec3(.93,1.,1.05),smoothstep(.35,.65,a));
+    diffuseColor.rgb=mix(diffuseColor.rgb,g,gm); }`;
+  mats.ground.onBeforeCompile=sh=>{ sh.uniforms.wt=wU.wt; sh.uniforms.ws=wU.ws; sh.uniforms.wsky=wU.wsky; sh.uniforms.gdet=wU.gdet;
     sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vWp;").replace("#include <fog_vertex>","#include <fog_vertex>\nvWp=(modelMatrix*vec4(transformed,1.)).xyz;");
-    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWp; uniform float wt, ws; uniform vec3 wsky; float wat=0.;")
-      .replace("#include <map_fragment>","#include <map_fragment>\n{ vec3 c=sqrt(max(diffuseColor.rgb,0.)); wat=smoothstep(.025,.07,c.b-max(c.r,c.g))*smoothstep(.2,.3,(c.b-min(c.r,c.g))/(c.b+.001)); }")
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWp; uniform float wt, ws; uniform vec3 wsky; uniform sampler2D gdet; float wat=0.;")
+      .replace("#include <map_fragment>","#include <map_fragment>\n{ vec3 c=sqrt(max(diffuseColor.rgb,0.)); wat=smoothstep(.025,.07,c.b-max(c.r,c.g))*smoothstep(.2,.3,(c.b-min(c.r,c.g))/(c.b+.001));"+GRASS3+"}")
       .replace("#include <roughnessmap_fragment>","#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.16,wat);")
       .replace("#include <lights_fragment_end>","#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(1.,ws,wat);")
       .replace("#include <normal_fragment_maps>",`#include <normal_fragment_maps>
@@ -7477,17 +7516,55 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     for(const [g,x,y,z] of parts){ const q=g.toNonIndexed(); q.translate(x,y,z); q.computeVertexNormals();
       for(const v of q.attributes.position.array) pos.push(v); for(const v of q.attributes.normal.array) nor.push(v); q.dispose(); g.dispose(); }
     const out=new T.BufferGeometry(); out.setAttribute("position",new T.Float32BufferAttribute(pos,3)); out.setAttribute("normal",new T.Float32BufferAttribute(nor,3)); return out; }
-  // a crown in lumps rather than one ball, a pine in three tiers and a fir in four narrower ones, a birch's loose
-  // crown, a poplar's tall one, a low bush and a clump of reeds
-  const ico=(r,d,sy)=>new T.IcosahedronGeometry(r,d).scale(1,sy||1,1);
-  const crownG=mergeG([[ico(.8,1),0,.1,0],[ico(.56,0),.44,-.12,.2],[ico(.5,0),-.4,-.16,-.22],[ico(.46,0),.06,-.22,-.44]]);
-  const pineG=mergeG([[new T.ConeGeometry(1,.56,7),0,-.22,0],[new T.ConeGeometry(.76,.5,7),0,.06,0],[new T.ConeGeometry(.5,.44,7),0,.3,0]]), trunkG=new T.CylinderGeometry(.16,.22,1,6);
-  const firG=mergeG([[new T.ConeGeometry(.9,.4,8),0,-.3,0],[new T.ConeGeometry(.72,.38,8),0,-.08,0],[new T.ConeGeometry(.54,.36,8),0,.13,0],[new T.ConeGeometry(.34,.36,8),0,.33,0]]);
-  const birchG=mergeG([[ico(.5,0),0,.15,0],[ico(.42,0),.36,-.05,.12],[ico(.4,0),-.32,-.1,-.16],[ico(.36,0),.05,-.2,.38],[ico(.34,0),-.08,.44,.04]]);
-  const poplarG=mergeG([[ico(.6,1,1.9),0,0,0],[ico(.36,0),.2,-.4,.12],[ico(.32,0),-.16,.32,-.1]]);
-  const bushG=mergeG([[ico(.62,0,.75),0,0,0],[ico(.48,0,.8),.45,-.1,.15],[ico(.45,0,.8),-.38,-.1,-.25]]);
+  // Leafy crowns are a few lumpy balls with soft shading: each point's light leans on the whole crown's shape so it
+  // reads as one rounded tree, the underneath and the hollows between the lumps are darker, and the edges are a
+  // little ragged. The smaller lumps are plainer except on Ultra
+  const LD=ultra&&!mobile?1:0;
+  function lumps(parts){ const P=[], O=[], I=[], N=[], C=[]; let y0=1e9, y1=-1e9, cy=0, cw=0;
+    for(const [r,,,y] of parts){ cy+=y*r*r; cw+=r*r; } cy/=cw;
+    parts.forEach(([r,d,x,y,z,sy],pi)=>{ const g=new T.IcosahedronGeometry(1,d), a=g.attributes.position.array, seen=new Map();
+      for(let v=0;v<a.length;v+=3){ const ux=a[v], uy=a[v+1], uz=a[v+2], kx=Math.round(ux*999), ky=Math.round(uy*999), kz=Math.round(uz*999), key=kx+","+ky+","+kz; let ix=seen.get(key);
+        if(ix===undefined){ ix=P.length/3; seen.set(key,ix); const k=1+.26*(hash(kx+pi*7919,ky*31+kz)-.5), py=y+uy*r*(sy||1)*k;
+          P.push(x+ux*r*k,py,z+uz*r*k); O.push(ux,uy,uz); y0=Math.min(y0,py); y1=Math.max(y1,py); }
+        I.push(ix); } g.dispose(); });
+    for(let i=0;i<P.length;i+=3){ let dx=P[i], dy=P[i+1]-cy, dz=P[i+2]; const l=Math.hypot(dx,dy,dz)||1; dx/=l; dy/=l; dz/=l;
+      const nx=O[i]*.4+dx*.6, ny=O[i+1]*.4+dy*.6, nz=O[i+2]*.4+dz*.6, nl=Math.hypot(nx,ny,nz)||1; N.push(nx/nl,ny/nl,nz/nl);
+      const h=(P[i+1]-y0)/(y1-y0||1), ao=(.52+.48*Math.pow(h,.8))*(.7+.3*Math.max(0,O[i]*dx+O[i+1]*dy+O[i+2]*dz)); C.push(ao,ao,ao); }
+    const g=new T.BufferGeometry(); g.setAttribute("position",new T.Float32BufferAttribute(P,3)); g.setAttribute("normal",new T.Float32BufferAttribute(N,3));
+    g.setAttribute("color",new T.Float32BufferAttribute(C,3)); g.setIndex(I); return g; }
+  // pines and firs: tiers of boughs with ragged, drooping edges, dark underneath and darker lower down
+  function tiers(list){ const P=[], N=[], C=[], I=[];
+    list.forEach(([r,h,y],ti)=>{ const g=new T.ConeGeometry(r,h,mobile?7:10,1,false), a=g.attributes.position.array, nn=g.attributes.normal.array, b0=P.length/3, f=ti/Math.max(1,list.length-1);
+      for(let v=0;v<a.length;v+=3){ const x=a[v], yy=a[v+1], z=a[v+2], rr=Math.hypot(x,z), rim=rr>1e-4&&yy<0, k=rim?1+.3*(hash(Math.round(Math.atan2(z,x)*100)+ti*977,ti+5)-.5):1;
+        P.push(x*k,y+yy-(rim?h*.18*k:0),z*k); N.push(nn[v],nn[v+1]*.7+.3,nn[v+2]);
+        const ao=nn[v+1]<-.9?.38:(.5+.5*(yy/h+.5))*(.78+.22*f); C.push(ao,ao,ao); }
+      for(const q of g.index.array) I.push(b0+q); g.dispose(); });
+    const g=new T.BufferGeometry(); g.setAttribute("position",new T.Float32BufferAttribute(P,3)); g.setAttribute("normal",new T.Float32BufferAttribute(N,3));
+    g.setAttribute("color",new T.Float32BufferAttribute(C,3)); g.setIndex(I); return g; }
+  // a broadleaf crown in lumps, a pine in three tiers and a fir in five narrower ones, a birch's loose crown, a
+  // poplar's tall one, a low bush and a clump of reeds
+  const crownG=lumps([[.8,LD+1,0,.1,0],[.56,LD,.44,-.12,.2],[.5,LD,-.4,-.16,-.22],[.46,LD,.06,-.22,-.44],[.42,LD,-.14,.46,.3],[.4,LD,.36,.36,-.26]]);
+  const pineG=tiers([[1,.56,-.22],[.78,.5,.06],[.52,.44,.3]]), trunkG=new T.CylinderGeometry(.16,.22,1,6);
+  const firG=tiers([[.9,.36,-.32],[.76,.34,-.14],[.6,.32,.03],[.45,.3,.19],[.3,.3,.35]]);
+  const birchG=lumps([[.5,LD,0,.15,0],[.42,LD,.36,-.05,.12],[.4,LD,-.32,-.1,-.16],[.36,LD,.05,-.2,.38],[.34,LD,-.08,.44,.04]]);
+  const poplarG=lumps([[.6,LD+1,0,0,0,1.9],[.36,LD,.2,-.4,.12],[.32,LD,-.16,.32,-.1],[.3,LD,.05,.75,.08]]);
+  const bushG=lumps([[.62,LD,0,0,0,.75],[.48,LD,.45,-.1,.15,.8],[.45,LD,-.38,-.1,-.25,.8],[.38,LD,.05,.05,.42,.8]]);
   const reedG=mergeG([0,1,2,3,4,5,6].map(i=>{ const a=i*2.4, d=.12+.12*(i%3); return [new T.ConeGeometry(.07,1,3).rotateZ(Math.cos(a)*.3).rotateX(Math.sin(a)*.3),Math.cos(a)*d,.5,Math.sin(a)*d]; }));
-  const leafMat=new T.MeshStandardMaterial({color:0xffffff,roughness:.85,flatShading:true});
+  reedG.setAttribute("color",new T.Float32BufferAttribute(new Float32Array(reedG.attributes.position.count*3).fill(.85),3));
+  // close up, clusters of leaves (and needles) show on every crown: a small picture of them, light on top and shaded
+  // underneath, wrapped round each tree by its own shape, so it stays put as the tree is turned and scaled
+  const leafTex=tex(256,256,(g,w,h)=>{ g.fillStyle="#5c5c5c"; g.fillRect(0,0,w,h);
+    for(let i=0;i<520;i++){ const x=rnd3(i,21)*w, y=rnd3(i,22)*h, r=7+rnd3(i,23)*11, v=120+rnd3(i,24)*90|0;
+      for(const ox of [-w,0,w]) for(const oy of [-h,0,h]){ const cx=x+ox, cy=y+oy; if(cx<-r-2||cy<-r-2||cx>w+r+2||cy>h+r+2) continue;
+        g.fillStyle="rgba(0,0,0,.22)"; g.beginPath(); g.arc(cx+1,cy+r*.3,r,0,7); g.fill();
+        const gr=g.createLinearGradient(cx,cy-r,cx,cy+r); gr.addColorStop(0,"rgb("+Math.min(255,v+50)+","+Math.min(255,v+50)+","+Math.min(255,v+50)+")"); gr.addColorStop(1,"rgb("+(v-45)+","+(v-45)+","+(v-45)+")");
+        g.fillStyle=gr; g.beginPath(); g.arc(cx,cy,r,0,7); g.fill(); } } });
+  leafTex.colorSpace=T.NoColorSpace;
+  const leafMat=new T.MeshStandardMaterial({color:0xffffff,roughness:.9,vertexColors:true});
+  leafMat.onBeforeCompile=sh=>{ sh.uniforms.leafT={value:leafTex};
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vLp, vLn;").replace("#include <begin_vertex>","#include <begin_vertex>\nvLp=position; vLn=normal;");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vLp, vLn; uniform sampler2D leafT;")
+      .replace("#include <color_fragment>","#include <color_fragment>\n{ float a=texture2D(leafT,vLp.xz*.9+.37).r, b=texture2D(leafT,vec2(vLp.x-vLp.z*.8,vLp.y*1.2)*.9).r; diffuseColor.rgb*=.42+1.15*mix(b,a,smoothstep(.3,.85,abs(vLn.y))); }"); };
   // one stamp for each kind (blossom and copper beeches use the broadleaf's), and the trunks, brown or a birch's white
   const KG=[crownG,pineG,birchG,poplarG,firG,bushG,reedG], KCAP=[6000,3000,3000,1500,3000,4000,3000];
   const KI=KG.map((g,i)=>new T.InstancedMesh(g,leafMat,KCAP[i])), trunkI=new T.InstancedMesh(trunkG,new T.MeshStandardMaterial({color:0xffffff,roughness:.9}),14000);
@@ -7500,9 +7577,10 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     const n=KI.map(()=>0), tmm=trunkI.instanceMatrix.array; let nt=0;
     for(let i=0;i<list.length;i+=4){ const x=list[i], y=list[i+1], r=list[i+2], g0=hAt(x,y), s=hash(x*10|0,y*10|0), k=list[i+3]<0?gardenKind(s):list[i+3], q=k>6?0:k;
       if(n[q]>=KCAP[q]) continue; const m=KI[q], a=m.instanceMatrix.array, j=n[q]++, C=LEAF[k]; setC(m,j,C[(hash(y*10|0,x*10|0)*C.length)|0]);
+      { const ci=m.instanceColor.array, kb=.86+.26*hash(x*7|0,y*7|0); ci[j*3]*=kb; ci[j*3+1]*=kb; ci[j*3+2]*=kb*.96; }
       // where the trunk goes, how tall and wide, and its colour
       let th=0, tw=r, ty=0, tc="#7a5a3c";
-      if(q===0){ const cr=r*1.08; setM(a,j,x,g0+r*1.25+cr*.9,y,s*6,cr,cr*1.12,cr); th=r*1.6; ty=g0+r*.75; }
+      if(q===0){ const cr=r*1.08; setM(a,j,x,g0+r*.95+cr*.9,y,s*6,cr,cr*(1.02+.2*hash(x|0,y|0)),cr); th=r*1.4; ty=g0+r*.65; }
       else if(q===1){ const h=r*3.4; setM(a,j,x,g0+r*.9+h/2,y,s*6,r*1.05,h,r*1.05); th=r*1.1; tw=r*.8; ty=g0+r*.5; }
       else if(q===4){ const h=r*4.2; setM(a,j,x,g0+r*.7+h/2,y,s*6,r*.92,h,r*.92); th=r*1; tw=r*.75; ty=g0+r*.45; }
       else if(q===2){ setM(a,j,x,g0+r*1.95,y,s*6,r*.95,r*1.1,r*.95); th=r*2.2; tw=r*.62; ty=g0+r*1.05; tc="#ebe7de"; }
