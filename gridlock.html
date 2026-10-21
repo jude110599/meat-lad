@@ -890,6 +890,8 @@ function treesIn(x0,y0,x1,y1){ const Q=128;
 
 // ---------- road network ----------
 function addNode(x,y){ const n={id:nid++,x,y,segs:[],type:"plain",light:null,trim:0,mh:0,ix:0,gd:0,hold:[],wait:new Map(),near:[],near2:[],lc:{},slip:{}}; nodes.set(n.id,n); return n; }
+// set when a new junction has just got its traffic lights on its own, so the player is told once how to take them off
+let autoLit=false, litHinted=false;
 function segBetween(a,b){ for(const id of a.segs){ const s=segs.get(id); if((s.a===a.id&&s.b===b.id)||(s.a===b.id&&s.b===a.id)) return s; } return null; }
 // lanes: lanes from a to b; back: lanes from b to a (the same if left out, none on a one-way road)
 function addSeg(a,b,lanes,back){
@@ -956,9 +958,12 @@ function rebuildNet(){
   segArr=[...segs.values()]; segArr.forEach((s,i)=>s.ix=i);
   for(const n of nodeList){
     const deg=n.segs.length;
-    if(n.type!=="plain"&&deg<3){ if(n.type==="round")res.round++; else res.light++; n.type="plain"; n.light=null; }
+    if(n.type!=="plain"&&deg<3){ if(n.type==="round")res.round++; else if(!n.free)res.light++; n.type="plain"; n.light=null; n.free=false; }
     let mh=0, ml=1e9; for(const id of n.segs){ const s=segs.get(id); mh=Math.max(mh,segHW(s)); ml=Math.min(ml,s.len); }
     n.mh=mh; n.ml=ml; n.hw=deg>=3&&n.segs.filter(id=>segs.get(id).hwy).length>=2&&n.segs.every(id=>{ const q=segs.get(id); return q.hwy||oneWay(q); });
+    // a new City junction where three or more ordinary roads meet comes with traffic lights, free. It's only done
+    // once, when the junction is made, so the player can still take them off or put a roundabout there instead
+    if(city&&deg>=3&&!n.dec){ n.dec=true; if(n.type==="plain"&&!n.hw&&n.segs.every(id=>{ const q=segs.get(id); return !q.hwy&&!q.over; })){ n.type="light"; n.light=null; n.free=true; autoLit=true; } }
     if(deg<=1) n.trim=0;
     else if(n.type==="round") n.trim=ringR(n)+LW/2+5;
     else if(deg===2){
@@ -1617,7 +1622,7 @@ function eraseSeg(s){
 function setNodeType(n,type){
   if(n&&n.hw){ setHint("Ramps onto a highway merge on their own. Lights and roundabouts go on ordinary junctions.",3); return; }
   if(!n||n.segs.length<3){ setHint(type==="round"?"Roundabouts go on junctions where three or more roads meet.":"Traffic lights go on junctions where three or more roads meet.",3); return; }
-  if(n.type===type){ if(type==="round")res.round++; else res.light++; n.type="plain"; n.light=null; afterEdit(); return; }
+  if(n.type===type){ if(type==="round")res.round++; else if(!n.free)res.light++; n.type="plain"; n.light=null; n.free=false; afterEdit(); return; }
   if(type==="round"&&n.type!=="round"){
     // a roundabout needs room: it can't run into the next junction along any of its roads
     const need=ringR(n)+LW/2+5;
@@ -1629,9 +1634,9 @@ function setNodeType(n,type){
   const have=type==="round"?res.round:res.light;
   if(have<=0&&city){ if(!buy(type)){ flashTool(type==="round"?"nRound":"nLight"); setHint((type==="round"?"A roundabout costs ":"Traffic lights cost ")+money(PRICE[type])+". Wait for the taxes to come in.",3); return; } }
   else if(have<=0){ flashTool(type==="round"?"nRound":"nLight"); setHint(type==="round"?"No roundabouts left. Pick more when the town levels up.":"No traffic lights left. Pick more when the town levels up.",3); return; }
-  if(n.type==="round")res.round++; else if(n.type==="light")res.light++;
+  if(n.type==="round")res.round++; else if(n.type==="light"&&!n.free)res.light++;
   if(type==="round")res.round--; else res.light--;
-  n.type=type; n.light=null;
+  n.type=type; n.light=null; n.free=false;
   if(type==="round"){
     // a roundabout needs room: drop trees and check buildings
     for(const tr of treesIn(n.x-34,n.y-34,n.x+34,n.y+34)) if(tr.alive&&Math.hypot(tr.x-n.x,tr.y-n.y)<34) fell(tr);
@@ -1641,6 +1646,8 @@ function setNodeType(n,type){
 }
 function afterEdit(){
   rebuildNet(); tver++; pruneLots();
+  if(autoLit&&!litHinted&&city){ litHinted=true; setHint("New junctions get traffic lights on their own, free. To take them off, pick Lights and tap the junction.",5); }
+  autoLit=false;
   // a road knocked down while it was still being laid takes its crew with it
   if(works.length) works=works.filter(w=>{ const mx=(w.ax+w.bx)/2, my=(w.ay+w.by)/2; for(const q of segs.values()){ const A=nodes.get(q.a), B=nodes.get(q.b); if(projSeg(mx,my,A.x,A.y,B.x,B.y).d<1) return true; } return false; });
   for(const c of cars) if(c.state==="drive"&&!routeValid(c)) reanchor(c);
@@ -4552,7 +4559,7 @@ function eraseAt(w,first){
   if(first){ const b=bldUnder(w,1); if(b){ const L=b.lot; if(deleteBld(b)&&L&&city) removeLot(L); return; } }
   if(city){ const L=lotUnder(w); if(L){ if(L.b&&first) deleteBld(L.b,true); if(!L.b||!blds.includes(L.b)){ removeLot(L); return; } } }
   const n=nodeUnder(w);
-  if(n&&n.type!=="plain"&&Math.hypot(n.x-w.x,n.y-w.y)<n.trim){ if(n.type==="round")res.round++; else res.light++; n.type="plain"; n.light=null; afterEdit(); return; }
+  if(n&&n.type!=="plain"&&Math.hypot(n.x-w.x,n.y-w.y)<n.trim){ if(n.type==="round")res.round++; else if(!n.free)res.light++; n.type="plain"; n.light=null; n.free=false; afterEdit(); return; }
   const s=segUnder(w,3); if(s){ eraseSeg(s); afterEdit(); }
 }
 cv.addEventListener("pointermove",e=>{
@@ -7207,6 +7214,37 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
     const rg=reg; for(const c of stCh.values()) if(c.mesh) c.mesh.visible=!rg||(c.x+CH+40>rg.x0&&c.y+CH+40>rg.y0&&c.x-40<rg.x0+rg.S&&c.y-40<rg.y0+rg.S);
   }
 
+  // ----- traffic lights: a post on the pavement at each road's stop line, its signal facing the cars coming in and
+  // lit red, amber or green as the junction changes; with protected left turns a second signal hangs out over the
+  // road for the turning lane. Only the ones under the picture are placed, and only again when the roads change.
+  const TLCAP=600, tlMat=new T.MeshStandardMaterial({color:0x2b2e33,roughness:.55}), tlLit=new T.MeshBasicMaterial({color:0xffffff});
+  const tlPole=new T.InstancedMesh(new T.CylinderGeometry(.17,.22,1,6).translate(0,.5,0),tlMat,TLCAP), tlBox=new T.InstancedMesh(new T.BoxGeometry(1,1,1),tlMat,TLCAP*3), tlLamp=new T.InstancedMesh(new T.CylinderGeometry(.5,.5,1,10).rotateX(Math.PI/2),tlLit,TLCAP*5);
+  for(const m of [tlPole,tlBox,tlLamp]){ m.count=0; m.frustumCulled=false; scene.add(m); } tlPole.castShadow=tlBox.castShadow=true; tlLamp.setColorAt(0,new T.Color(1,1,1));
+  const TL_ON={r:"#ff4436",a:"#ffbe2e",g:"#3ee070"}, TL_OFF=["#3b2523","#3a3222","#1f3427"];
+  let tlList=[], tlRC=null, tlReg=null;
+  function trafficLights3(){
+    const on=city&&!!roadCache; for(const m of [tlPole,tlBox,tlLamp]) m.visible=on; if(!on) return;
+    if(roadCache!==tlRC||reg!==tlReg){ tlRC=roadCache; tlReg=reg; tlList=[]; let np=0, nb=0, nl=0;
+      const pm=tlPole.instanceMatrix.array, bm=tlBox.instanceMatrix.array, lm=tlLamp.instanceMatrix.array, rg=reg;
+      for(const h of roadCache.heads){ if(tlList.length>=TLCAP) break; if(rg&&(h.x<rg.x0-20||h.y<rg.y0-20||h.x>rg.x0+rg.S+20||h.y>rg.y0+rg.S+20)) continue;
+        // the post, its arm reaching out over the lanes coming in, and the signal hanging from the end of the arm
+        const a=Math.atan2(-h.dx,h.dy), y0=hAt(h.x,h.y)+(walkable(h.s)?KY:0), fx=h.dx*.45, fy=h.dy*.45, e={h,l:nl,p:false};
+        const pr=!!(h.n.light&&h.n.light.prot), L=Math.min(10,Math.max(3.5,inL(h.s,h.n.id)*LW*.55))+(pr?1.6:0), ux=-h.dy, uy=h.dx, sx=h.x+ux*(L-(pr?1.6:0)), sy=h.y+uy*(L-(pr?1.6:0));
+        setM(pm,np++,h.x,y0,h.y,a,1.1,8,1.1); setM(bm,nb++,h.x+ux*L/2,y0+7.75,h.y+uy*L/2,Math.atan2(uy,ux),L,.26,.26);
+        setM(bm,nb++,sx,y0+6.55,sy,a,1.05,2.7,.75);
+        for(let k=0;k<3;k++) setM(lm,nl++,sx+fx,y0+7.4-k*.85,sy+fy,a,.64,.64,.14);
+        // with protected left turns, the turn signal hangs beside it, further out over the road
+        if(pr){ const tx=h.x+ux*L, ty=h.y+uy*L; e.p=true; setM(bm,nb++,tx,y0+6.95,ty,a,.95,1.9,.7);
+          for(let k=0;k<2;k++) setM(lm,nl++,tx+fx,y0+7.35-k*.85,ty+fy,a,.58,.58,.14); }
+        tlList.push(e); }
+      tlPole.count=np; tlBox.count=nb; tlLamp.count=nl; for(const m of [tlPole,tlBox,tlLamp]) m.instanceMatrix.needsUpdate=true; }
+    // which lamp is lit, every frame
+    for(const e of tlList){ const st=lightState(e.h.n,e.h.g,"S");
+      for(let k=0;k<3;k++) setC(tlLamp,e.l+k,"rag"[k]===st?TL_ON[st]:TL_OFF[k]);
+      if(e.p){ const sl=lightState(e.h.n,e.h.g,"L"); setC(tlLamp,e.l+3,sl==="r"?TL_ON.r:TL_OFF[0]); setC(tlLamp,e.l+4,sl!=="r"?TL_ON[sl]:TL_OFF[2]); } }
+    if(tlList.length) tlLamp.instanceColor.needsUpdate=true;
+  }
+
   // ----- cars, trucks and their lights, drawn in batches -----
   function boxInto(P,x0,x1,y0,y1,z0,z1,col){ const v=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
     for(const f of [[0,3,2,1],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,4,7,3]]) quad(P,v[f[0]],v[f[1]],v[f[2]],v[f[3]],[0,0],[1,0],[1,1],[0,1],col); }
@@ -7716,7 +7754,7 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
     overlay();
     focus();
     const rebuilt=batchDirty; if(batchDirty) rebuildBatches();
-    decks(); streets3();
+    decks(); streets3(); trafficLights3();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
     sky(nk,dk); wU.wt.value=now/1000;
     ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
