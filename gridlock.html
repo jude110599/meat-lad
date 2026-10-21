@@ -391,7 +391,7 @@ body.dark .ov{background:rgba(14,15,18,.74)}
     <svg id="icSvc" viewBox="0 0 26 26"><path d="M13 3 4.5 6.5v6c0 5 3.6 8.6 8.5 10.5 4.9-1.9 8.5-5.5 8.5-10.5v-6z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linejoin="round"/><path d="M13 9v8M9 13h8" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
     Services
   </button>
-  <button class="tool cityonly" data-tool="build" data-tab="util" title="Utilities (9): power plants, solar farms, water towers and pumps">
+  <button class="tool cityonly" data-tool="build" data-tab="util" title="Utilities (9): coal, gas and nuclear power plants, solar farms, wind turbines, water towers, pumps and treatment works">
     <svg id="icUtil" viewBox="0 0 26 26"><path d="M11 3 5 14h5l-2 9 8-12h-5l2-8z" fill="currentColor"/><path d="M19.5 12.5c-2 2.6-3 4.3-3 5.6a3 3 0 0 0 6 0c0-1.3-1-3-3-5.6z" fill="#3f8fc2"/></svg>
     <span class="lb">Utilities</span><span class="ls">Utility</span>
   </button>
@@ -548,10 +548,14 @@ const BT={
   // a data center: clean and quiet, but it takes a lot of power
   datacenter:{w:60,d:50,r:39,col:"#4a90b8",dark:"#2f6a8c",light:"#9ccbe6",name:"data center",names:"data centers",need:"work",rate:.5,cap:{work:5}},
   // the City builder's public services (see SVC): bought outright, then paid for every month
-  power:   {svc:true,w:62,d:48,r:40,col:"#8d5a4a",name:"power plant",names:"power plants"},
+  power:   {svc:true,w:62,d:48,r:40,col:"#8d5a4a",name:"coal power plant",names:"coal power plants"},
+  gas:     {svc:true,w:54,d:40,r:34,col:"#9aa3ab",name:"gas power plant",names:"gas power plants"},
+  nuclear: {svc:true,w:116,d:84,r:72,col:"#c8c4b8",name:"nuclear power plant",names:"nuclear power plants"},
   solar:   {svc:true,w:56,d:44,r:36,col:"#3b5f93",name:"solar farm",names:"solar farms"},
+  wind:    {svc:true,w:16,d:16,r:12,col:"#c9d3da",name:"wind turbine",names:"wind turbines"},
   water:   {svc:true,w:24,d:26,r:18,col:"#5aa7d8",name:"water tower",names:"water towers"},
   pump:    {svc:true,w:30,d:26,r:20,col:"#3f8fc2",name:"water pump",names:"water pumps"},
+  treat:   {svc:true,w:84,d:60,r:52,col:"#4f8fb0",name:"water treatment works",names:"water treatment works"},
   fire:    {svc:true,w:42,d:34,r:27,col:"#d63a2c",name:"fire station",names:"fire stations"},
   police:  {svc:true,w:38,d:32,r:25,col:"#2d4e9c",name:"police station",names:"police stations"},
   clinic:  {svc:true,w:48,d:40,r:31,col:"#e2493a",name:"hospital",names:"hospitals"},
@@ -1849,6 +1853,10 @@ function placeWhy(x,y,r,type,ignore,ang){
     for(const s of segs.values()){ if(s.lanes<3) continue; const A=nodes.get(s.a),B=nodes.get(s.b); if(projSeg(x,y,A.x,A.y,B.x,B.y).d<halfW(3)+NOISE+r*.5) return "noise"; }
   }
   if(SMOKY.has(type)){ for(const b of blds) if(b!==ignore&&isHome(b)&&Math.hypot(b.x-x,b.y-y)<POLL+b.r*.4) return "smoke"; }
+  // homes stay well clear of a nuclear plant, and wind turbines need room for their blades
+  if(BT[type].home) for(const b of blds) if(b!==ignore&&FAR[b.type]&&Math.hypot(b.x-x,b.y-y)<FAR[b.type]+r*.4) return "far";
+  if(FAR[type]) for(const b of blds) if(b!==ignore&&isHome(b)&&Math.hypot(b.x-x,b.y-y)<FAR[type]+b.r*.4) return "far";
+  if(type==="wind") for(const b of blds) if(b!==ignore&&b.type==="wind"&&Math.hypot(b.x-x,b.y-y)<TURB) return "spin";
   if(city&&SVC[type]&&!ignore&&res.road<SVC[type].cost) return "cash";
   return "";
 }
@@ -2260,7 +2268,8 @@ function ghostAt(type,w,ignore){
 const WHY={edge:"That's too close to the edge of the map.",land:"Buildings need dry, flat land. Not on the water or the hills.",bld:"There's another building in the way.",
   road:"That's on top of a road. Put it beside one.",smoke:"Too close to a factory or power plant. Nobody wants to live in the smoke, so keep homes and smoky places apart.",
   nowater:"That has to go right on the shore of a lake or river, with its back to the water.",cash:"Not enough money for that. Taxes come in at the end of every month.",
-  noise:"Too close to a highway. Nobody wants to live right next to all that traffic noise."};
+  noise:"Too close to a highway. Nobody wants to live right next to all that traffic noise.",
+  far:"Too close to homes. A nuclear power plant has to stand well away from where people live.",spin:"Too close to another wind turbine. Their blades need room to turn."};
 const PLACE_HINT={shop:"The shop will start asking for customers after a little while. Make sure a road reaches its front.",
   mall:"Malls want lots of customers and goods. There are two ways into the car park, so run a good road along the front.",
   office:"The office will start asking for workers after a little while. Make sure a road reaches its front.",
@@ -2603,7 +2612,7 @@ const MONTH=30, CITY_START=15000, TAX_HOME=2.2, TAX_TRIP=1.6, UPKEEP=.018, MALL_
 // nothing to half as much again: less reaches less far and does less, more reaches further and does more
 let taxR=9, taxB=9, parkFee=2, parkWant=0, budget={}, finLog=[], finLast=null, hapTax=0, taxHintT=-99;
 const BUDK={roads:"Roads",pow:"Power",wat:"Water",fire:"Fire",police:"Police",health:"Health",edu:"Schools",parks:"Parks"};
-const SVC_BUD={power:"pow",solar:"pow",water:"wat",pump:"wat",fire:"fire",police:"police",clinic:"health",school:"edu",daycare:"edu",park:"parks",bigpark:"parks",plaza:"parks",beach:"parks",marina:"parks",depot:"roads"};
+const SVC_BUD={power:"pow",gas:"pow",nuclear:"pow",solar:"pow",wind:"pow",water:"wat",pump:"wat",treat:"wat",fire:"fire",police:"police",clinic:"health",school:"edu",daycare:"edu",park:"parks",bigpark:"parks",plaza:"parks",beach:"parks",marina:"parks",depot:"roads"};
 for(const k in BUDK) budget[k]=1;
 const budOf=type=>{ const k=SVC_BUD[type]; return k?budget[k]:1; };
 const reachK=b=>b<=0?0:.55+.45*Math.min(b,1.5);     // half the budget reaches .78 as far; half as much again, 1.22
@@ -3215,7 +3224,7 @@ function lotType(L){
 function lotBlocked(L,type){
   const S=L.site;
   if(BT[type].home){
-    for(const f of blds) if(SMOKY.has(f.type)&&Math.hypot(f.x-S.x,f.y-S.y)<POLL+L.r*.3) return true;
+    for(const f of blds) if(SMOKY.has(f.type)&&Math.hypot(f.x-S.x,f.y-S.y)<POLL+L.r*.3||FAR[f.type]&&Math.hypot(f.x-S.x,f.y-S.y)<FAR[f.type]+L.r*.3) return true;
     if(type!=="mixed") for(const s of nearSegs([S],halfW(3)+NOISE+L.r)){ if(s.lanes<3) continue; const A=nodes.get(s.a), B=nodes.get(s.b); if(projSeg(S.x,S.y,A.x,A.y,B.x,B.y).d<halfW(3)+NOISE*.6+S.d*.3) return true; }
   }
   if(type==="factory") for(const h of blds) if(isHome(h)&&Math.hypot(h.x-S.x,h.y-S.y)<POLL+h.r*.4) return true;
@@ -3440,7 +3449,7 @@ function cityTips(dt){
     const em=cityD[k]>GROW_AT[k]?lots.filter(L=>L.kind===k&&!L.b&&t>=L.cool):[], why=em.length&&em.every(L=>L.why)?em[0].why:null;
     stuckT[k]=why?(stuckT[k]||0)+dt:0;
     if(stuckT[k]>12){ stuckT[k]=-50; const nm=ZONES[k].name;
-      setHint("The town wants more "+nm+", but the "+nm+" plots can't grow: "+(why==="road"?"they can't be reached from a road. Zone right beside one.":why==="pow"?"no power reaches them. Build a power plant or solar farm joined to them by road.":why==="wat"?"no water reaches them. Build a water tower joined to them by road.":why==="homes"?"no homes are joined to them by road, so nobody would come. Join their road up to the town.":"they're too close to factory smoke or a busy road."),6); return; }
+      setHint("The town wants more "+nm+", but the "+nm+" plots can't grow: "+(why==="road"?"they can't be reached from a road. Zone right beside one.":why==="pow"?"no power reaches them. Build a power plant or solar farm joined to them by road.":why==="wat"?"no water reaches them. Build a water tower joined to them by road.":why==="homes"?"no homes are joined to them by road, so nobody would come. Join their road up to the town.":"they're too close to factory smoke, a nuclear plant or a busy road."),6); return; }
     const want=cityD[k]>(k==="res"?1:1.2)&&!lots.some(L=>L.kind===k&&!L.b);
     wantT[k]=want?(wantT[k]||0)+dt:0;
     if(wantT[k]>25){ wantT[k]=-60; setHint(k==="res"?"People want to move in. Zone more Low residential beside a road.":k==="dense"?"The town could use some Medium residential: apartment blocks.":k==="high"?"The town is ready for High residential: tower blocks.":k==="mixed"?"The town could use a main street: zone some Mixed, with shops downstairs and flats upstairs.":"The town wants more "+ZONES[k].name+". Zone some land for them.",5); return; } }
@@ -3561,10 +3570,14 @@ function angleTag(c,u,v,ang,col,k,snap){
 // builds up, and road depots send trucks to fix roads that traffic has worn out. All of it makes people happier,
 // and happy people pay more tax and want to move in; unhappy ones move out.
 const SVC={
-  power: {name:"Power plant",short:"Power",cost:1500,up:40,cap:330,util:"pow",done:"Power plant built. Its power reaches everything joined to it by road, as far as it goes.",tip:"Power plant: makes power for everything joined to it by road. It's smoky, so homes keep their distance."},
+  power: {name:"Coal power plant",short:"Coal",cost:1500,up:40,cap:330,util:"pow",done:"Coal power plant built. Its power reaches everything joined to it by road, as far as it goes.",tip:"Coal power plant: cheap for the power it makes, for everything joined to it by road. It's smoky, so homes keep their distance."},
+  gas:   {name:"Gas power plant",short:"Gas",cost:1900,up:45,cap:250,util:"pow",done:"Gas power plant built. Its power reaches everything joined to it by road.",tip:"Gas power plant: cleaner than coal, so homes can go right up to it, but it makes a bit less power and costs more."},
+  nuclear:{name:"Nuclear power plant",short:"Nuclear",cost:8000,up:140,cap:1600,util:"pow",done:"Nuclear power plant built. Enough power for a big city, for everything joined to it by road.",tip:"Nuclear power plant: huge amounts of clean power, but it costs a lot and has to stand well away from homes."},
   solar: {name:"Solar farm",short:"Solar",cost:900,up:15,cap:110,util:"pow",done:"Solar farm built. Clean power for everything joined to it by road.",tip:"Solar farm: clean power, but less of it. It can go right next to homes."},
+  wind:  {name:"Wind turbine",short:"Wind",cost:450,up:6,cap:45,util:"pow",done:"Wind turbine built. Clean power for everything joined to it by road.",tip:"Wind turbine: a little clean power from a small spot, so build a few. Their blades need room, so they stand a little apart."},
   water: {name:"Water tower",short:"Water",cost:700,up:20,cap:170,util:"wat",done:"Water tower built. Its water reaches everything joined to it by road.",tip:"Water tower: water for everything joined to it by road."},
-  pump:  {name:"Water pump",short:"Pump",cost:1100,up:25,cap:390,util:"wat",done:"Water pump built. Lots of water for everything joined to it by road.",tip:"Water pump: lots of water, but it has to go right beside a lake or river."},
+  pump:  {name:"Water pump",short:"Pump",cost:1100,up:25,cap:390,util:"wat",done:"Water pump built. Lots of water for everything joined to it by road.",tip:"Water pump: a pump house that draws lots of water from a lake or river, so it has to go right on the shore."},
+  treat: {name:"Water treatment works",short:"Treatment",cost:2600,up:50,cap:950,util:"wat",done:"Water treatment works built. Plenty of clean water for everything joined to it by road.",tip:"Water treatment works: plenty of clean water for a big city, anywhere on dry land. It takes a lot of room and costs a lot."},
   fire:  {name:"Fire station",short:"Fire",cost:1200,up:35,R:400,cars:2,done:"Fire station built. Its trucks race to fires inside the blue circle.",tip:"Fire station: its fire trucks race out to fires nearby. A fire nobody puts out burns the building down."},
   police:{name:"Police station",short:"Police",cost:1200,up:35,R:400,cars:2,done:"Police station built. Its cars keep crime down inside the blue circle.",tip:"Police station: its cars patrol nearby and keep crime down."},
   clinic:{name:"Hospital",short:"Hospital",cost:1600,up:45,R:500,cars:2,done:"Hospital built. Its ambulances fetch people who fall ill inside the blue circle.",tip:"Hospital: ambulances fetch people who fall ill nearby."},
@@ -3580,10 +3593,13 @@ const SVC={
   depot: {name:"Road depot",short:"Roads",cost:900,up:25,R:600,cars:2,done:"Road depot built. Its trucks fix worn roads inside the blue circle.",tip:"Road depot: its trucks fix roads nearby that traffic has worn out. Worn roads are slow."}
 };
 const SKEYS=Object.keys(SVC);
-const SVC_COLS={parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",solar:"#3b5f93",water:"#5aa7d8",pump:"#3f8fc2",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#e0a23a",daycare:"#e06aa6",depot:"#f08c1a"};
+const SVC_COLS={parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",gas:"#9aa3ab",nuclear:"#c8c4b8",solar:"#3b5f93",wind:"#c9d3da",water:"#5aa7d8",pump:"#3f8fc2",treat:"#4f8fb0",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#e0a23a",daycare:"#e06aa6",depot:"#f08c1a"};
 const VEH={fire:{len:16,wid:7,col:"#d62f22",cab:"#c02218",truck:true},police:{len:11.5,wid:6,col:"#f4f4f2",truck:false,doors:"#20305c"},clinic:{len:13,wid:6.6,col:"#f7f7f5",cab:"#f7f7f5",truck:true,stripe:"#e2493a"},
   school:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},depot:{len:14,wid:6.6,col:"#f08c1a",cab:"#e8e6df",truck:true}};
 const isSvc=b=>!!(BT[b.type]&&BT[b.type].svc), SMOKY=new Set(["factory","power"]);
+// a nuclear plant keeps homes this far away; wind turbines face into the wind (it blows the smoke off the other way) and
+// stand this far apart so their blades clear each other
+const FAR={nuclear:230}, WIND_A=Math.atan2(2.5,-5), TURB=46;
 const CITY_TAX_BIZ=5, FIRE_BURN=75, HAPPY_LEAVE=22;
 let cityTab="zones", firstFire=false, firstSick=false, firstWorn=false, utilStat={pow:[0,0],wat:[0,0]}, happyAvg=0, svcT=0, svcDT=0, utilHintT=-99;
 
@@ -3736,6 +3752,7 @@ function drawSvc(b){
     for(const cx of [w/2-27,w/2-11]){ ctx.fillStyle="#b9b5ad"; ctx.beginPath(); ctx.arc(cx,-d/2+11,8,0,7); ctx.fill(); ctx.fillStyle="#d6d3cc"; ctx.beginPath(); ctx.arc(cx-.8,-d/2+10.2,6.4,0,7); ctx.fill(); ctx.fillStyle="#8d8a84"; ctx.beginPath(); ctx.arc(cx,-d/2+11,4.6,0,7); ctx.fill(); }
     // coal heaps and the yard
     ctx.fillStyle="#3a3836"; ctx.beginPath(); ctx.ellipse(w/2-16,d/2-10,9,5,0,0,7); ctx.fill(); ctx.fillStyle="#55524e"; ctx.beginPath(); ctx.ellipse(w/2-17,d/2-11,5,2.6,0,0,7); ctx.fill();
+    if(!rec3d){ ctx.strokeStyle="#7d848b"; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(w/2-20,d/2-13); ctx.lineTo(-w/2+3+w*.5,-d/2+3+d*.55*.7); ctx.stroke(); }
     ctx.restore();
     // steam from the cooling towers, smoke from the stack
     if(!M3) for(const cx of [w/2-27,w/2-11]){ const p=toMap(b,cx*sc,(-d/2+11)*sc); for(let i=0;i<3;i++){ const ph=((t*.35+i/3+cx*.01)%1); ctx.fillStyle="rgba(250,250,250,"+(.32*(1-ph)*ph*4)+")"; ctx.beginPath(); ctx.arc(p.x+ph*8*sc,p.y-ph*18*sc,(3+ph*6)*sc,0,7); ctx.fill(); } }
@@ -3754,16 +3771,110 @@ function drawSvc(b){
     lot(b,sc,-w/2,-d/2,w,d,0,"#d3cfc4");
     // in 3D a real tower stands on the pad: four legs, the tank up top under a pointed roof, and a pump house beside it
     if(M3){ const p=toMap(b,0,(-d/2+10)*sc); M3.push({k:"wt",x:p.x,y:p.y,a:b.ang}); B3(b,[-4,d/2-7,8,5],{roof:"flat",H:6.4,wall:"civic",wc:"#d9cfc2",par:.5,rc:"#b9b6ae"});
-      tr(); ctx.fillStyle="#c2bdb1"; ctx.beginPath(); ctx.arc(0,-d/2+10,10.5,0,7); ctx.fill(); box(-4,d/2-7,8,5,"#ecebe6","#b9b7b0",2); ctx.restore(); }
+      tr(); ctx.fillStyle="#c2bdb1"; ctx.beginPath(); ctx.arc(0,-d/2+10,10.5,0,7); ctx.fill(); ctx.restore(); }
     else { bodyShadow(b,sc,26,[[-8,-d/2+2,16,16]]); tr();
     ctx.fillStyle="#3f7fae"; ctx.beginPath(); ctx.arc(0,-d/2+10,9,0,7); ctx.fill(); ctx.fillStyle="#7cc3ea"; ctx.beginPath(); ctx.arc(-.8,-d/2+9.2,7.4,0,7); ctx.fill();
     ctx.fillStyle="#a9dbf5"; ctx.beginPath(); ctx.arc(-2.4,-d/2+7.6,3,0,7); ctx.fill(); ctx.fillStyle="#3f7fae"; ctx.beginPath(); ctx.arc(0,-d/2+10,1.6,0,7); ctx.fill();
     box(-4,d/2-7,8,5,"#ecebe6","#b9b7b0",2); ctx.restore(); }
   } else if(b.type==="pump"){
-    // the pipes run out the back into the water
-    tr(); ctx.strokeStyle="#5f6670"; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(-5,-d/2+4); ctx.lineTo(-5,-d/2-14); ctx.moveTo(5,-d/2+4); ctx.lineTo(5,-d/2-14); ctx.stroke();
-    ctx.fillStyle="#8e959e"; ctx.fillRect(-7,-d/2-16,4,3); ctx.fillRect(3,-d/2-16,4,3); ctx.restore();
-    if(rec3d) b3Pump(b); else bodyShadow(b,sc,8,[[-w/2+2,-d/2+2,w-4,d*.6]]); tr(); roofBlock(-w/2+2,-d/2+2,w-4,d*.6,"#4f9fd0","#2d6f99"); ctx.fillStyle="rgba(255,255,255,.4)"; ctx.fillRect(-w/2+5,-d/2+5,w-10,1.4); ctx.restore();
+    // a pump station on the shore: the brick pump house under its gabled roof, the big blue pump out in the yard with its
+    // pipes and valve, and the intake pipes running out the back under a walkway to the intake standing in the water
+    const q=[-w/2+2,-d/2+2,w-4,14], by=q[1]-16, py=8, fy=q[1]+q[3];
+    if(rec3d) b3Pump(b,q); else bodyShadow(b,sc,8,[q]);
+    tr();
+    ctx.fillStyle="#c9c5bb"; ctx.fillRect(-13,py-3,16.5,6);
+    if(!rec3d){
+      // the intake pipes, the walkway over them and the round intake in the water
+      ctx.strokeStyle="rgba(30,36,22,.22)"; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(-4+SHX,q[1]+SHY); ctx.lineTo(-1.8+SHX,by+2.8+SHY); ctx.moveTo(4+SHX,q[1]+SHY); ctx.lineTo(1.8+SHX,by+2.8+SHY); ctx.stroke();
+      ctx.strokeStyle="#5d6b78"; ctx.lineWidth=1.9; ctx.beginPath(); ctx.moveTo(-4,q[1]); ctx.lineTo(-1.8,by+2.8); ctx.moveTo(4,q[1]); ctx.lineTo(1.8,by+2.8); ctx.stroke();
+      ctx.fillStyle="rgba(30,36,22,.2)"; ctx.fillRect(-.8+SHX*3.4,by+3+SHY*3.4,1.6,q[1]-by-3); ctx.fillStyle="#9aa0a6"; ctx.fillRect(-.8,by+3,1.6,q[1]-by-3);
+      ctx.fillStyle="#c9a23a"; ctx.fillRect(-.95,by+3,.3,q[1]-by-3); ctx.fillRect(.65,by+3,.3,q[1]-by-3);
+      ctx.fillStyle="rgba(30,36,22,.22)"; ctx.beginPath(); ctx.arc(SHX*4,by+SHY*4,3.6,0,7); ctx.fill();
+      ctx.fillStyle="#a9a59c"; ctx.beginPath(); ctx.arc(0,by,3.7,0,7); ctx.fill(); ctx.fillStyle="#cfcbc2"; ctx.beginPath(); ctx.arc(0,by,3.2,0,7); ctx.fill(); ctx.fillStyle="#4d5257"; ctx.beginPath(); ctx.arc(0,by,2.4,0,7); ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.25)"; ctx.lineWidth=.3; ctx.beginPath(); for(let i=-2;i<=2;i++){ ctx.moveTo(i,by-2.2); ctx.lineTo(i,by+2.2); } ctx.stroke();
+      // the pump: its base frame, the motor with cooling fins, the coupling guard, the round pump casing, the pipe in from
+      // the house, and the pipe out past its valve to the front
+      ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(-11.8+SHX*3,py-1.8+SHY*3,10.6,3.6); ctx.beginPath(); ctx.arc(-3+SHX*3,py+SHY*3,2.5,0,7); ctx.fill();
+      ctx.fillStyle="#4f555b"; ctx.fillRect(-12,py-1.7,8,3.4);
+      ctx.fillStyle="#35597a"; ctx.fillRect(-11.8,py-1.5,.7,3); ctx.fillStyle="#3f6f9a"; ctx.fillRect(-11.2,py-1.75,5.6,3.5); ctx.fillStyle="rgba(255,255,255,.22)"; ctx.fillRect(-11.2,py-1.2,5.6,.6);
+      ctx.fillStyle="rgba(20,30,45,.3)"; for(let x=-10.8;x<-5.8;x+=.8) ctx.fillRect(x,py-1.75,.25,3.5);
+      ctx.fillStyle="#c99a3a"; ctx.fillRect(-5.6,py-.95,1.4,1.9);
+      ctx.strokeStyle="#62707d"; ctx.lineWidth=1.8; ctx.beginPath(); ctx.moveTo(-1.8,py); ctx.lineTo(2.8,py); ctx.lineTo(2.8,fy); ctx.stroke();
+      ctx.fillStyle="#35597a"; ctx.fillRect(-4.2,py-2.5,2.4,5); ctx.fillStyle="#4a7398"; ctx.fillRect(-4,py-2.2,2,1.4);
+      ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(-3,py); ctx.lineTo(-3,d/2-1.6); ctx.stroke(); ctx.fillStyle="#4f5a64"; ctx.fillRect(-4.2,py+2.2,2.4,1.2);
+      ctx.strokeStyle="#a8473a"; ctx.lineWidth=.45; ctx.beginPath(); ctx.arc(-3,py+2.8,1.15,0,7); ctx.moveTo(-4.15,py+2.8); ctx.lineTo(-1.85,py+2.8); ctx.moveTo(-3,py+1.65); ctx.lineTo(-3,py+3.95); ctx.stroke();
+      ctx.fillStyle="#4f5a64"; ctx.beginPath(); ctx.arc(-3,d/2-1.6,1.3,0,7); ctx.fill();
+      box(4,fy-.6,6,.6,"#c9ccce","#9a9ea2",.2); }
+    gableRoof(b,q[2],q[3],"#6d8798",q[0]+q[2]/2,q[1]+q[3]/2);
+    ctx.restore();
+  } else if(b.type==="wind"){
+    // a wind turbine on its gravel pad, turned into the wind, with a little switch box at its foot. In 3D the tower and
+    // its turning blades are real models; in 2D the blades sweep round over their own shadow
+    const kq=[w/2-6.2,d/2-5,4.6,3.6]; lot(b,sc,-w/2,-d/2,w,d,0,"#d3cfc3");
+    if(rec3d){ B3(b,kq,{roof:"flat",H:4.4,wall:"ind",wc:"#dcd9d0",par:.3,rc:"#a9a7a1",base:"#77726a"}); if(M3) M3.push({k:"tur",x:b.x,y:b.y,a:WIND_A},{k:"rot",x:b.x,y:b.y,a:WIND_A});
+      tr(); ctx.fillStyle="#b9b5aa"; ctx.beginPath(); ctx.arc(0,0,4.6,0,7); ctx.fill(); ctx.restore(); }
+    else { bodyShadow(b,sc,2.6,[kq]); tr(); ctx.fillStyle="#b9b5aa"; ctx.beginPath(); ctx.arc(0,0,4.6,0,7); ctx.fill(); box(kq[0],kq[1],kq[2],kq[3],"#dcd9d0","#a9a69c",2.6); ctx.restore(); windTop(b,sc); }
+  } else if(b.type==="gas"){
+    // a gas power station: the turbine hall in pale cladding, two boiler houses each with a slim stack, the yellow gas
+    // main along the front and the transformers out in their yard
+    lot(b,sc,-w/2,-d/2,w,d,0,"#cdc9bf");
+    const q=[-w/2+3,-d/2+4,24,16], hb=[[2,-d/2+3,8.5,15],[12.5,-d/2+3,8.5,15]], st=hb.map(r=>[r[0]+r[2]/2,r[1]+2.6]);
+    if(rec3d) b3Gas(b,q,hb,st);
+    else { bodyShadow(b,sc,10,[q]); bodyShadow(b,sc,14,hb);
+      for(const [x,y] of st){ const p=toMap(b,x*sc,y*sc); ctx.strokeStyle="rgba(30,36,22,.22)"; ctx.lineWidth=3.4*sc; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x+SHX*26*sc,p.y+SHY*26*sc); ctx.stroke(); ctx.lineCap="butt"; } }
+    tr();
+    // the switchyard: gravel, two transformers and the gantry over them
+    ctx.fillStyle="#bdb8ac"; ctx.fillRect(3.5,4,w/2-6.5,d/2-6.5);
+    if(!rec3d){ for(const x of [6,14]){ box(x,6,5,4,"#7c8778","#4f584c",3.4); ctx.fillStyle="rgba(255,255,255,.18)"; for(let i=1;i<5;i++) ctx.fillRect(x+i,6.4,.35,3.2); }
+      ctx.strokeStyle="#8e949a"; ctx.lineWidth=.6; ctx.beginPath(); ctx.moveTo(5,13.2); ctx.lineTo(21,13.2); ctx.moveTo(8.5,13.2); ctx.lineTo(8.5,10); ctx.moveTo(16.5,13.2); ctx.lineTo(16.5,10); ctx.stroke(); }
+    roofBlock(q[0],q[1],q[2],q[3],"#cdd1d4","#8d9399"); ctx.fillStyle="rgba(255,255,255,.22)"; for(let x=q[0]+2;x<q[0]+q[2]-1;x+=2.2) ctx.fillRect(x,q[1]+.8,.5,q[3]-1.6);
+    ctx.fillStyle="#9ea4a9"; ctx.fillRect(q[0]+1,q[1]+q[3]/2-.4,q[2]-2,.8);
+    for(const r of hb){ roofBlock(r[0],r[1],r[2],r[3],"#b9bfc3","#7d848a"); if(!rec3d) box(r[0]+2,r[1]+8,r[2]-4,3,"#d4d8db","#9aa0a5",1.4); }
+    for(const [x,y] of st){ ctx.fillStyle="#9aa0a6"; ctx.beginPath(); ctx.arc(x,y,2,0,7); ctx.fill(); ctx.fillStyle="#3d4247"; ctx.beginPath(); ctx.arc(x,y,1.25,0,7); ctx.fill(); }
+    // the gas main in yellow, into the hall, and its metering skid
+    ctx.strokeStyle="#c9a73a"; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(-w/2+1,3.4); ctx.lineTo(q[0]+q[2]-2.4,3.4); ctx.lineTo(q[0]+q[2]-2.4,q[1]+q[3]); ctx.stroke();
+    if(!rec3d) box(-w/2+4,4.6,6,3.6,"#d8c06a","#a88d2c",2);
+    ctx.restore();
+  } else if(b.type==="nuclear"){
+    // a nuclear power station: two huge cooling towers breathing steam, the reactor under its concrete dome, the turbine
+    // hall beside it, the offices by the gate and the switchyard
+    lot(b,sc,-w/2,-d/2,w,d,0,"#cfcbc0");
+    const R={x:-w/2+20,y:-d/2+21,r:12.5}, ht=[-w/2+37,-d/2+7,30,24], of=[-w/2+6,d/2-17,30,12], ct=[[w/2-17,-d/2+18],[w/2-46,-d/2+18]], sy=[w/2-50,d/2-30,44,24];
+    if(rec3d) b3Nuclear(b,R,ht,of,sy); else { bodyShadow(b,sc,14,[ht]); bodyShadow(b,sc,7,[of]); bodyShadow(b,sc,22,[[R.x-R.r*.7,R.y-R.r*.7,R.r*1.4,R.r*1.4]]); }
+    if(M3) for(const [x,y] of ct){ const p=toMap(b,x*sc,y*sc); M3.push({k:"ct",x:p.x,y:p.y,a:b.ang,s:1.6}); }
+    else bodyShadow(b,sc,38,ct.map(([x,y])=>[x-10,y-10,20,20]));
+    tr();
+    ctx.fillStyle="#bdb8ac"; ctx.fillRect(sy[0],sy[1],sy[2],sy[3]);
+    if(!rec3d){ for(let i=0;i<3;i++){ const x=sy[0]+4+i*13; box(x,sy[1]+5,7,5,"#7c8778","#4f584c",3.6); }
+      ctx.strokeStyle="#8e949a"; ctx.lineWidth=.6; ctx.beginPath(); for(const y of [sy[1]+15,sy[1]+20]){ ctx.moveTo(sy[0]+2,y); ctx.lineTo(sy[0]+sy[2]-2,y); } for(let i=0;i<4;i++){ const x=sy[0]+2+i*(sy[2]-4)/3; ctx.moveTo(x,sy[1]+14); ctx.lineTo(x,sy[1]+21); } ctx.stroke(); }
+    roofBlock(ht[0],ht[1],ht[2],ht[3],"#cdd1d4","#8d9399"); ctx.fillStyle="rgba(255,255,255,.22)"; for(let x=ht[0]+2;x<ht[0]+ht[2]-1;x+=2.4) ctx.fillRect(x,ht[1]+.8,.5,ht[3]-1.6);
+    roofBlock(of[0],of[1],of[2],of[3],"#a9a7a1","#77756f"); if(!rec3d) box(of[0]+of[2]-9,of[1]+3,6,4,"#dcdad3","#a9a69c",1.6);
+    // the reactor's dome, lit from the sun's side
+    ctx.fillStyle="#9e9a91"; ctx.beginPath(); ctx.arc(R.x,R.y,R.r+.6,0,7); ctx.fill();
+    const g=ctx.createRadialGradient(R.x+LDX*R.r*.45,R.y+LDY*R.r*.45,1,R.x,R.y,R.r); g.addColorStop(0,"#f3f1ec"); g.addColorStop(1,"#c3bfb6"); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(R.x,R.y,R.r,0,7); ctx.fill();
+    // the cooling towers from above: the shell narrowing up to the wide open top
+    if(!M3) for(const [x,y] of ct){ ctx.fillStyle="#b9b5ad"; ctx.beginPath(); ctx.arc(x,y,13.6,0,7); ctx.fill(); ctx.fillStyle="#d6d3cc"; ctx.beginPath(); ctx.arc(x-1,y-1,11.4,0,7); ctx.fill(); ctx.fillStyle="#8d8a84"; ctx.beginPath(); ctx.arc(x,y,9.4,0,7); ctx.fill(); }
+    ctx.restore();
+    if(!M3) for(const [x,y] of ct){ const p=toMap(b,x*sc,y*sc); for(let i=0;i<4;i++){ const ph=((t*.3+i/4+x*.01)%1); ctx.fillStyle="rgba(250,250,250,"+(.36*(1-ph)*ph*4)+")"; ctx.beginPath(); ctx.arc(p.x+ph*14*sc,p.y-ph*30*sc,(6+ph*11)*sc,0,7); ctx.fill(); } }
+  } else if(b.type==="treat"){
+    // a water treatment works: round settling tanks with their bridges turning slowly, rows of filter beds, the chemical
+    // tanks and the control building by the gate
+    lot(b,sc,-w/2,-d/2,w,d,0,"#cfccc1");
+    const cl=[[w/2-15,-d/2+15],[w/2-41,-d/2+15]], CR=12, fb=[-w/2+4,-d/2+4,26,30], cb=[w/2-30,d/2-17,26,12], tk=[[-w/2+9,d/2-9],[-w/2+17,d/2-9]];
+    if(rec3d) b3Treat(b,cl,CR,fb,cb,tk); else { bodyShadow(b,sc,6,[cb]); bodyShadow(b,sc,1.4,[fb]); bodyShadow(b,sc,6,tk.map(([x,y])=>[x-2.6,y-2.6,5.2,5.2])); }
+    tr();
+    // pipes between them, half buried
+    ctx.strokeStyle="#7f8c97"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(fb[0]+fb[2],fb[1]+8); ctx.lineTo(cl[1][0]-CR,cl[1][1]); ctx.moveTo(cl[1][0]+CR,cl[1][1]); ctx.lineTo(cl[0][0]-CR,cl[0][1]); ctx.moveTo(cl[0][0],cl[0][1]+CR); ctx.lineTo(cl[0][0],cb[1]); ctx.stroke();
+    cl.forEach(([x,y],i)=>{ ctx.fillStyle="#a9a69c"; ctx.beginPath(); ctx.arc(x,y,CR+.5,0,7); ctx.fill(); ctx.fillStyle="#dcd9d1"; ctx.beginPath(); ctx.arc(x,y,CR,0,7); ctx.fill();
+      ctx.fillStyle="#5d8fa3"; ctx.beginPath(); ctx.arc(x,y,CR-.8,0,7); ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.18)"; ctx.lineWidth=.5; ctx.beginPath(); ctx.arc(x,y,CR-3,0,7); ctx.moveTo(x+CR-6,y); ctx.arc(x,y,CR-6,0,7); ctx.stroke();
+      if(!rec3d){ const a=t*.12+i*2.2; ctx.strokeStyle="rgba(30,36,22,.25)"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(x+SHX*2.4,y+SHY*2.4); ctx.lineTo(x+Math.cos(a)*CR+SHX*2.4,y+Math.sin(a)*CR+SHY*2.4); ctx.stroke();
+        ctx.strokeStyle="#c9cdd1"; ctx.lineWidth=1.3; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+Math.cos(a)*CR,y+Math.sin(a)*CR); ctx.stroke(); ctx.fillStyle="#e9eaeb"; ctx.beginPath(); ctx.arc(x,y,1.5,0,7); ctx.fill(); } });
+    // the filter beds: four basins of water in a concrete block, a walkway down the middle
+    ctx.fillStyle="#a9a69c"; ctx.fillRect(fb[0]-.4,fb[1]-.4,fb[2]+.8,fb[3]+.8); ctx.fillStyle="#d6d3cb"; ctx.fillRect(fb[0],fb[1],fb[2],fb[3]);
+    for(let i=0;i<2;i++) for(let j=0;j<2;j++){ ctx.fillStyle=j?"#5f93a3":"#6a9aa6"; ctx.fillRect(fb[0]+.8+i*(fb[2]/2),fb[1]+.8+j*(fb[3]/2),fb[2]/2-1.6,fb[3]/2-1.6); }
+    roofBlock(cb[0],cb[1],cb[2],cb[3],"#a9a7a1","#77756f"); if(!rec3d) box(cb[0]+3,cb[1]+3,5,4,"#dcdad3","#a9a69c",1.6);
+    for(const [x,y] of tk){ ctx.fillStyle="#b8b5ad"; ctx.beginPath(); ctx.arc(x,y,3,0,7); ctx.fill(); ctx.fillStyle="#efeee9"; ctx.beginPath(); ctx.arc(x-.4,y-.4,2.5,0,7); ctx.fill(); }
+    ctx.restore();
   } else if(b.type==="fire"||b.type==="police"||b.type==="clinic"){
     const apron=b.type==="clinic"?12:11;
     lot(b,sc,-w/2,d/2-apron,w,apron,0,"#d7d3ca");
@@ -4261,7 +4372,7 @@ function dockSel(){
   $("laneRow").classList.toggle("hide",tool!=="road"||roadMode==="lanes"); $("sideRow").classList.toggle("hide",tool!=="road"||roadMode!=="lanes");
 }
 const TAB_HINT={svc:"Services: fire stations, police, hospitals, schools, daycare, road depots and parking. Each one costs money to build and a little every month.",
-  util:"Utilities: nothing grows without power and water. They reach everything joined to them by road.",
+  util:"Utilities: nothing grows without power and water. They reach everything joined to them by road. Coal is cheap but smoky, gas is cleaner, nuclear makes the most; sun and wind are clean but small.",
   parks:"Parks: parks, plazas, beaches and marinas make the homes around them happier. Beaches and marinas go on the shore, and draw tourists who fill hotels."};
 const svcTab=k=>SVC[k].tab||(SVC[k].util?"util":"svc");
 // the Zone, Services, Utilities and Parks buttons each open their own bar in the City builder
@@ -5224,7 +5335,7 @@ function drawNight(){
       Lt(cp.x,cp.y,big?b.w*.75:b.d*.95,1,"225,236,255"); Lt(b.x,b.y,b.r*1.3,.55,"190,205,255"); Gl(fr.x,fr.y,big?16:9,.7,"110,170,255"); continue; }
     if(b.type==="office"){ Lt(b.x,b.y,b.r*1.6,.7,"215,205,255"); Gl(b.x,b.y,b.r*.7,.25,"200,190,255"); continue; }
     if(b.type==="hotel"){ Lt(b.x,b.y,b.r*1.8,.9,"255,214,150"); Gl(b.x,b.y,b.r*.5,.3,"255,220,160"); const fr=toMap(b,0,b.d/2-4); Gl(fr.x,fr.y,8,.7,"255,200,120"); continue; }
-    if(isSvc(b)){ if(b.type!=="solar"){ Lt(b.x,b.y,b.r*1.5,.75,"235,240,255"); const fr=toMap(b,0,b.d/2-4); Gl(fr.x,fr.y,6,.6,"255,240,210"); } continue; }
+    if(isSvc(b)){ if(b.type!=="solar"&&b.type!=="wind"){ Lt(b.x,b.y,b.r*1.5,.75,"235,240,255"); const fr=toMap(b,0,b.d/2-4); Gl(fr.x,fr.y,6,.6,"255,240,210"); } continue; }
     // the yards are floodlit
     for(const k of [-1,1]){ const p=toMap(b,k*b.w*.42,b.d*.42); Lt(p.x,p.y,34,.95,"255,168,84"); Gl(p.x,p.y,4,.8,"255,220,170"); } }
   if(roadCache) for(const h of roadCache.heads){ if(!inView(h.x,h.y,20)) continue; const st=lightState(h.n,h.g,"S"), col=st==="g"?"60,220,100":st==="a"?"255,200,50":"255,70,55"; Lt(h.x,h.y,14,.8,col); Gl(h.x,h.y,6,.8,col); }
@@ -6368,10 +6479,89 @@ function b3Garage(b){
 function b3Solar(b){ const w=b.w, d=b.d;
   B3(b,[-6,d/2-7,12,6],{roof:"flat",H:6,wall:"ind",wc:"#e6e3dc",par:.4,rc:"#b9b6ae"});
   for(let r=0;r<5;r++) for(let k=0;k<3;k++){ const hh=(d-12)/5-2.4; d3(b,{k:"panels",x:-w/2+4+k*(w-8)/3+.8,y:-d/2+4+r*(d-12)/5,w:(w-8)/3-1.6,d:hh,z:0,pd:hh,tilt:.38}); } }
-// a pump house on the shore: brick under a low roof, its intake pipes running out the back into the water
-function b3Pump(b){ const w=b.w, d=b.d;
-  B3(b,[-w/2+2,-d/2+2,w-4,d*.6],{roof:"gable",H:10,rise:3.4,wall:"civic",wc:"#b98670",rc:"#5e7d93",rm:"metal",base:"#6f6a62"});
-  for(const x of [-5,5]) d3(b,{k:"beam",x0:x-.7,y0:-d/2+3,z0:.4,x1:x-.7,y1:-d/2-14,z1:.4,w:1.4,h:1.4,col:"#5f6670"},{k:"box",x:x-1.6,y:-d/2-16,w:3.2,d:2.4,z:-.4,h:2.4,col:"#8e959e"}); }
+// a gas power station in 3D: the turbine hall in pale cladding under a low metal roof, two taller boiler houses each
+// with its slim stack, the yellow gas main on low stands into the hall, and the transformers under their gantry
+function b3Gas(b,q,hb,st){ const w=b.w, d=b.d, fy=q[1]+q[3], gx=q[0]+q[2]-2.4, Y="#cfae45";
+  B3(b,q,{roof:"low",H:15,rise:2.4,wall:"ind",wc:"#dfe2e3",rc:"#a3a9ae",rm:"metal",base:"#6f6a62",along:true,doors:[[q[0]+3,q[0]+11]]});
+  d3(b,{k:"gdoor",x0:q[0]+4,x1:q[0]+10,y:fy,h:8,m:"roller",un:3,vn:3,col:"#c9ccce"});
+  hb.forEach((r,i)=>{ B3(b,r,{roof:"flat",H:22,wall:"metal",wc:"#c6ccd0",par:.4,pc:"#bfc5c9",rc:"#9ea4a9",base:"#6f6a62"}); const [x,y]=st[i];
+    d3(b,{k:"cyl",x,y,r:1.9,h:40,z:0,n:14,col:"#bfc4c8"},{k:"cyl",x,y,r:2.05,h:1.8,z:37.4,n:14,col:"#55595e"},{k:"cyl",x,y,r:2.05,h:.8,z:30,n:14,col:"#a9aeb3"},
+      {k:"plant",x:r[0]+2,y:r[1]+8,w:r[2]-4,d:3,h:2,col:"#d4d8db"}); });
+  d3(b,{k:"tube",x0:-w/2+1,y0:3.4,z0:1.5,x1:gx,y1:3.4,z1:1.5,r:.6,col:Y},{k:"tube",x0:gx,y0:3.4,z0:1.5,x1:gx,y1:fy-.2,z1:1.5,r:.6,col:Y},
+    {k:"posts",at:[[-w/2+12,3.4],[-w/2+18,3.4]],h:1,z:0,r:.35,col:"#8e949a"},{k:"box",x:-w/2+4,y:4.6,w:6,d:3.6,z:0,h:2.6,m:"metal",un:3,col:"#d8c06a"});
+  for(const x of [6,14]) d3(b,{k:"box",x,y:6,w:5,d:4,z:0,h:4.4,m:"metal",un:2,col:"#7c8778"},{k:"box",x:x+1,y:6.8,w:3,d:2.4,z:4.4,h:1.4,col:"#8f9a8c"},
+    {k:"cyl",x:x+1.2,y:7,r:.35,h:1.6,z:5.8,n:8,col:"#b9a77e"},{k:"cyl",x:x+3.8,y:7,r:.35,h:1.6,z:5.8,n:8,col:"#b9a77e"});
+  d3(b,{k:"posts",at:[[5,13.2],[12.5,13.2],[20,13.2]],h:9,z:0,r:.3,col:"#9aa0a6"},{k:"beam",x0:5,y0:13.2,z0:8.6,x1:20,y1:13.2,z1:8.6,w:.5,h:.5,col:"#9aa0a6"});
+}
+// a nuclear power station in 3D: the reactor in its tall concrete drum under a dome, a low block round its foot, the
+// turbine hall beside it, offices by the gate with their sign, and the switchyard of transformers and gantries
+function b3Nuclear(b,R,ht,of,sy){
+  d3(b,{k:"cyl",x:R.x,y:R.y,r:R.r,h:27,z:0,top:"dome",n:30,m:"conc",un:10,col:"#dedbd3"},{k:"cyl",x:R.x,y:R.y,r:R.r+.5,h:1.4,z:0,n:30,col:"#a9a59c"},
+    {k:"cyl",x:R.x,y:R.y,r:R.r+.25,h:.6,z:20,n:30,col:"#c9c5bb"});
+  B3(b,[R.x-R.r-3,R.y+R.r-5,2*R.r+6,9],{roof:"flat",H:12,wall:"ind",wc:"#d6d3cb",par:.5,pc:"#cfccc4",rc:"#a9a7a1",base:"#6f6a62"});
+  B3(b,ht,{roof:"low",H:20,rise:2.6,wall:"ind",wc:"#d8dcdf",rc:"#a3a9ae",rm:"metal",base:"#6f6a62",along:true});
+  d3(b,{k:"beam",x0:R.x+R.r-1,y0:R.y-4,z0:14,x1:ht[0]+.2,y1:R.y-4,z1:14,w:3,h:3,col:"#c6c3bb"});
+  B3(b,of,{roof:"flat",H:9.4,wall:"office",wc:"#e6e4de",par:.8,pc:"#d9d6cf",rc:"#a9a7a1",base:"#77726a",doors:[[of[0]+of[2]/2-3,of[0]+of[2]/2+3]]});
+  d3(b,{k:"door",x:of[0]+of[2]/2,y:of[1]+of[3],w:4.4,h:5.4,col:"#3b4a58",lamp:false},{k:"plant",x:of[0]+of[2]-9,y:of[1]+3,w:6,d:4,h:2.2,col:"#dcdad3"});
+  for(let i=0;i<3;i++){ const x=sy[0]+4+i*13; d3(b,{k:"box",x,y:sy[1]+5,w:7,d:5,z:0,h:5.4,m:"metal",un:2,col:"#7c8778"},{k:"box",x:x+1.2,y:sy[1]+6,w:4.6,d:3,z:5.4,h:1.6,col:"#8f9a8c"}); }
+  const gp=[]; for(let i=0;i<4;i++){ const x=sy[0]+2+i*(sy[2]-4)/3; gp.push([x,sy[1]+15],[x,sy[1]+20]); }
+  d3(b,{k:"posts",at:gp,h:11,z:0,r:.35,col:"#9aa0a6"});
+  for(const y of [sy[1]+15,sy[1]+20]) d3(b,{k:"beam",x0:sy[0]+2,y0:y,z0:10.6,x1:sy[0]+sy[2]-2,y1:y,z1:10.6,w:.5,h:.5,col:"#9aa0a6"});
+}
+// a water treatment works in 3D: round settling tanks with a bridge out to the rim, the filter beds full of water in
+// their concrete block, the white chemical tanks, the control building in brick and the pipes between them
+function b3Treat(b,cl,CR,fb,cb,tk){ const P="#6f7d89";
+  cl.forEach(([x,y],i)=>{ const a=.7+i*2.3;
+    d3(b,{k:"lathe",x,y,pr:[[CR+.5,0],[CR+.5,2.6],[CR-.3,2.6],[CR-.3,1.7]],n:28,z:0,m:"conc",un:6,col:"#d6d3cb"},{k:"lathe",x,y,pr:[[CR-.3,1.8],[0,1.8]],n:28,z:0,m:"water",ro:.12,col:"#5f8fa2"},
+      {k:"cyl",x,y,r:1.4,h:3.4,z:0,n:12,col:"#c9c6be"},{k:"beam",x0:x,y0:y,z0:3,x1:x+Math.cos(a)*(CR+.2),y1:y+Math.sin(a)*(CR+.2),z1:3,w:1.3,h:.6,col:"#c4c9cd"},
+      {k:"rail",x0:x+Math.cos(a+.08)*1.5,y0:y+Math.sin(a+.08)*1.5,x1:x+Math.cos(a+.05)*CR,y1:y+Math.sin(a+.05)*CR,z:3.6,h:1.2,col:"#c9a23a"}); });
+  d3(b,{k:"slab",x:fb[0],y:fb[1],w:fb[2],d:fb[3],z:0,h:2.4,col:"#d6d3cb"});
+  for(let i=0;i<2;i++) for(let j=0;j<2;j++) d3(b,{k:"quad",x:fb[0]+.8+i*(fb[2]/2),y:fb[1]+.8+j*(fb[3]/2),w:fb[2]/2-1.6,d:fb[3]/2-1.6,z:2.42,m:"water",ro:.12,col:j?"#5f8fa2":"#6a98a8"});
+  d3(b,{k:"rail",x0:fb[0]+fb[2]/2,y0:fb[1]+.4,x1:fb[0]+fb[2]/2,y1:fb[1]+fb[3]-.4,z:2.4,h:1.2,col:"#c9a23a"});
+  B3(b,cb,{roof:"flat",H:10,wall:"civic",wc:"#c9a58e",par:.9,pc:"#e2ddd3",rc:"#a9a7a1",base:"#77726a",doors:[[cb[0]+cb[2]/2-3,cb[0]+cb[2]/2+3]]});
+  d3(b,{k:"door",x:cb[0]+cb[2]/2,y:cb[1]+cb[3],w:4,h:5.2,col:"#3b5266",lamp:false},{k:"plant",x:cb[0]+3,y:cb[1]+3,w:5,d:4,h:2,col:"#dcdad3"});
+  for(const [x,y] of tk) d3(b,{k:"cyl",x,y,r:2.8,h:8,z:0,top:"dome",n:16,col:"#ecebe6"},{k:"cyl",x,y,r:3.1,h:.6,z:0,n:16,col:"#a9a69c"});
+  d3(b,{k:"tube",x0:fb[0]+fb[2],y0:fb[1]+8,z0:.9,x1:cl[1][0]-CR,y1:cl[1][1],z1:.9,r:.7,col:P},{k:"tube",x0:cl[1][0]+CR,y0:cl[1][1],z0:.9,x1:cl[0][0]-CR,y1:cl[0][1],z1:.9,r:.7,col:P},
+    {k:"tube",x0:cl[0][0],y0:cl[0][1]+CR,z0:.9,x1:cl[0][0],y1:cb[1],z1:.9,r:.7,col:P});
+}
+// a pump station on the shore in 3D: the brick pump house with a gabled metal roof and a roller door; out in its yard the
+// big blue pump on a plinth (its motor, the coupling under a guard and the round pump casing) with the pipe in from the
+// house and the pipe out over a valve and down into the ground; and out the back, the two intake pipes under a walkway
+// running to a round concrete intake standing in the water
+function b3Pump(b,q){ const w=b.w, d=b.d, fy=q[1]+q[3], P="#62707d", by=q[1]-16, py=8, z=3, dx=-3, fr=d/2-1.6;
+  B3(b,q,{roof:"gable",H:10,rise:3.6,wall:"civic",wc:"#b98670",rc:"#5e7d93",rm:"metal",base:"#6f6a62",doors:[[3,11]]});
+  d3(b,{k:"gdoor",x0:4,x1:10,y:fy,h:7,m:"roller",un:3,vn:3,col:"#c9ccce"},
+    {k:"cyl",x:0,y:by,r:3.6,h:6.4,z:-2.6,n:18,m:"conc",un:6,col:"#c4c0b7"},{k:"cyl",x:0,y:by,r:2.5,h:.25,z:3.8,n:16,col:"#4d5257"},
+    {k:"beam",x0:0,y0:q[1],z0:3.4,x1:0,y1:by+3.2,z1:3.4,w:1.6,h:.35,col:"#8f969c"},
+    {k:"rail",x0:-.8,y0:q[1]-.2,x1:-.8,y1:by+3.4,z:3.75,h:1.5,col:"#c9a23a"},{k:"rail",x0:.8,y0:q[1]-.2,x1:.8,y1:by+3.4,z:3.75,h:1.5,col:"#c9a23a"},
+    {k:"posts",at:[[0,q[1]-5],[0,q[1]-10]],h:5.4,z:-2,r:.3,col:"#8f969c"},
+    {k:"tube",x0:-4,y0:q[1]+.4,z0:1.2,x1:-1.8,y1:by+2.8,z1:1.2,r:.95,col:P},{k:"tube",x0:4,y0:q[1]+.4,z0:1.2,x1:1.8,y1:by+2.8,z1:1.2,r:.95,col:P});
+  d3(b,{k:"slab",x:-13,y:py-3,w:16.5,d:6,z:0,h:1,col:"#bdb9b0"},{k:"box",x:-12,y:py-1.7,w:8,d:3.4,z:1,h:.5,m:"white",col:"#4f555b"},
+    {k:"tube",x0:-11.2,y0:py,z0:z,x1:-5.6,y1:py,z1:z,r:1.75,n:14,cap:1,col:"#3f6f9a"},{k:"tube",x0:-11.8,y0:py,z0:z,x1:-11.2,y1:py,z1:z,r:1.5,n:14,cap:1,col:"#35597a"},
+    {k:"box",x:-10.4,y:py-1.5,w:4,d:3,z:1.5,h:.6,col:"#35597a"},
+    {k:"box",x:-5.6,y:py-.95,w:1.4,d:1.9,z:z-.95,h:1.9,col:"#c99a3a"},
+    {k:"tube",x0:-4.2,y0:py,z0:z,x1:-1.8,y1:py,z1:z,r:2.5,n:18,cap:1,col:"#35597a"},{k:"box",x:-4,y:py-1.2,w:2,d:2.4,z:1.5,h:.6,col:"#35597a"},
+    {k:"tube",x0:-1.8,y0:py,z0:z,x1:2.8,y1:py,z1:z,r:.9,col:P},{k:"tube",x0:2.8,y0:py+.9,z0:z,x1:2.8,y1:fy-.1,z1:z,r:.9,col:P},{k:"cyl",x:2.8,y:py,r:.9,h:1.8,z:z-.9,n:12,col:P},
+    {k:"tube",x0:-.4,y0:py,z0:z,x1:.2,y1:py,z1:z,r:1.25,col:"#4f5a64"},
+    {k:"tube",x0:dx,y0:py,z0:z+2,x1:dx,y1:py,z1:9.4,r:.8,col:P},{k:"tube",x0:dx,y0:py-.8,z0:8.6,x1:dx,y1:fr,z1:8.6,r:.8,col:P},{k:"tube",x0:dx,y0:fr,z0:9.4,x1:dx,y1:fr,z1:0,r:.8,col:P},
+    {k:"tube",x0:dx,y0:py+2.2,z0:8.6,x1:dx,y1:py+3.4,z1:8.6,r:1.2,col:"#4f5a64"},{k:"tube",x0:dx,y0:py+2.8,z0:9.7,x1:dx,y1:py+2.8,z1:11,r:.16,col:"#4f5a64"},
+    {k:"tube",x0:dx,y0:py+2.8,z0:11,x1:dx,y1:py+2.8,z1:11.25,r:1.3,n:14,cap:1,col:"#a8473a"},
+    {k:"tube",x0:dx,y0:fr-.3,z0:.6,x1:dx,y1:fr-.3,z1:1.1,r:1.3,col:"#4f5a64"});
+}
+// a wind turbine from above in 2D: the tower's shadow and its blades' shadow turning on the ground, then the nacelle
+// facing into the wind, and the blades as they sweep round (long when they're level, short as they pass the top)
+function windTop(b,sc){
+  const a0=performance.now()/1000*1.3+b.id*.7, ux=Math.cos(WIND_A), uy=Math.sin(WIND_A), R=21*sc, H=34*sc, hx=b.x+ux*3.5*sc, hy=b.y+uy*3.5*sc, sx=SHX*H, sy=SHY*H;
+  ctx.strokeStyle="rgba(30,36,22,.2)"; ctx.lineCap="round"; ctx.lineWidth=2.4*sc; ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(b.x+sx,b.y+sy); ctx.stroke();
+  ctx.lineWidth=1.4*sc; ctx.beginPath(); for(let k=0;k<3;k++){ const a=a0+k*2.0944, c=Math.cos(a)*R, s=Math.sin(a)*R*.65; ctx.moveTo(hx+sx,hy+sy); ctx.lineTo(hx+sx-uy*c+SHX*s,hy+sy+ux*c+SHY*s); } ctx.stroke(); ctx.lineCap="butt";
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(WIND_A); ctx.scale(sc,sc);
+  ctx.fillStyle="#9ea3a6"; roundRect(-5.9,-1.65,8.6,3.3,1.2); ctx.fill(); ctx.fillStyle="#eceeef"; roundRect(-5.5,-1.3,7.9,2.6,1); ctx.fill(); ctx.fillStyle="rgba(255,255,255,.9)"; ctx.fillRect(-5,-1.05,7,.6);
+  for(let k=0;k<3;k++){ const c=Math.cos(a0+k*2.0944)*21; if(Math.abs(c)<1.4) continue; const s=Math.sign(c);
+    ctx.fillStyle="#8f9497"; ctx.beginPath(); ctx.moveTo(2.7,s*1.1); ctx.lineTo(4.3,s*1.1); ctx.lineTo(3.65,c); ctx.lineTo(3.3,c); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#f3f4f4"; ctx.beginPath(); ctx.moveTo(2.95,s*1.3); ctx.lineTo(4.05,s*1.3); ctx.lineTo(3.56,c-s*.45); ctx.lineTo(3.38,c-s*.45); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle="#9ea3a6"; ctx.beginPath(); ctx.ellipse(3.5,0,1.75,1.5,0,0,7); ctx.fill(); ctx.fillStyle="#e6e8e9"; ctx.beginPath(); ctx.ellipse(3.6,-.2,1.4,1.15,0,0,7); ctx.fill();
+  ctx.restore();
+}
 function drawDest(b){
   if(b.sand) return drawBeach(b);
   if(isSvc(b)) return LEIS.has(b.type)?drawLeisure(b):drawSvc(b);
@@ -6648,7 +6838,7 @@ function drawGhost(){
   ctx.strokeStyle=g.ok?"#2f9e55":"#e2493a"; ctx.lineWidth=1.6; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.arc(g.x,g.y,g.r+5,0,7); ctx.stroke(); ctx.setLineDash([]);
   if(!g.ok&&WHY_SHORT[g.why]) pill(g.x,g.y-g.r-8,WHY_SHORT[g.why],"rgba(226,73,58,.92)",-10,11,{x:g.x,y:g.y,lift:ghostH(g)});
 }
-const WHY_SHORT={nowater:"Needs to back onto water",cash:"Not enough money",smoke:"Too close to the smoke",noise:"Too close to a highway",road:"That's on a road",bld:"No room here",land:"Needs flat, dry land",edge:"Too near the edge"};
+const WHY_SHORT={nowater:"Needs to back onto water",cash:"Not enough money",smoke:"Too close to the smoke",noise:"Too close to a highway",far:"Too close to homes",spin:"Too close to another turbine",road:"That's on a road",bld:"No room here",land:"Needs flat, dry land",edge:"Too near the edge"};
 // a label in a pill, its text sitting dy screen pixels below the map spot x,y. In 3D it's kept and drawn flat on the
 // screen over the spot a3 (or x,y), so it never stretches over a hill.
 function pill(x,y,txt,bg,dy,fs,a3){ dy=dy||0; fs=fs||11;
@@ -6833,7 +7023,7 @@ const H3=h=>h<=12?h*2.4:28.8+(h-12)*1.55;   // how tall walls stand, from the le
 const OVH=17;                               // how high an overpass deck rides between its ramps
 const PITCH3=new Set(["house","bighouse","town"]);
 // how tall a ghost block stands while it's being placed
-const GH={house:6,bighouse:6,town:7,apts:18,shop:6,center:8,mall:9,office:14,factory:10,warehouse:9,plant:9,hotel:30,mixed:12,datacenter:8,park:0,bigpark:0,plaza:0,beach:0,marina:0,parking:0,solar:1};
+const GH={house:6,bighouse:6,town:7,apts:18,shop:6,center:8,mall:9,office:14,factory:10,warehouse:9,plant:9,hotel:30,mixed:12,datacenter:8,park:0,bigpark:0,plaza:0,beach:0,marina:0,parking:0,solar:1,wind:30};
 const ghostH=g=>H3(GH[g.type]===undefined?9:GH[g.type])+.8;
 const P3MIN=.3, P3MAX=1.45;
 async function v3import(){ for(const u of V3URL){ try{ return await import(u); }catch(e){} } return null; }
@@ -7216,10 +7406,22 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
         for(const [a,b2,c] of [[ord[0],ord[1],ord[2]],[ord[0],ord[2],ord[3]]]){ const A=P[a], Q=P[b2], C=P[c];
           B.p.push(A[0],A[1],A[2],Q[0],Q[1],Q[2],C[0],C[1],C[2]); for(const j of [a,b2,c]){ B.n.push(N[j][0],N[j][1],N[j][2]); B.c.push(col[0],col[1],col[2]); B.t.push(B.ti,B.ro); B.u.push(U[j][0],U[j][1]); } } } } }
   const cylP=(B,x,y,r,z0,z1,col,n,top)=>lathe(B,x,y,top?[[r,z0],[r,z1],[0,z1]]:[[r,z0],[r,z1]],col,n);
+  // a round pipe or drum from one point to another on the plan, smooth all round, its ends closed if asked
+  function tube(B,x0,y0,z0,x1,y1,z1,r,col,n,cap){ n=n||10;
+    const ax=x1-x0, ay=y1-y0, az=z1-z0, l=Math.hypot(ax,ay,az); if(l<1e-3) return; const a=[ax/l,ay/l,az/l];
+    const u0=Math.abs(a[2])<.95?[-a[1],a[0],0]:[1,0,0], ul=Math.hypot(u0[0],u0[1],u0[2]), u=u0.map(q=>q/ul), v=[a[1]*u[2]-a[2]*u[1],a[2]*u[0]-a[0]*u[2],a[0]*u[1]-a[1]*u[0]];
+    const e=i=>{ const t=i/n*6.28319, c=Math.cos(t), s=Math.sin(t); return [c*u[0]+s*v[0],c*u[1]+s*v[1],c*u[2]+s*v[2]]; }, at=(k,q)=>k?[x1+q[0]*r,y1+q[1]*r,z1+q[2]*r]:[x0+q[0]*r,y0+q[1]*r,z0+q[2]*r];
+    // one triangle, wound to face the way its normals point
+    const put=(P,N,U)=>{ const A=P.map(p=>wp(B,p[0],p[1],p[2])), M=N.map(q=>wd(B,q[0],q[1],q[2])), f=faceN(A[0],A[1],A[2]);
+      const ord=f[0]*(M[0][0]+M[1][0]+M[2][0])+f[1]*(M[0][1]+M[1][1]+M[2][1])+f[2]*(M[0][2]+M[1][2]+M[2][2])<0?[0,2,1]:[0,1,2];
+      for(const j of ord){ B.p.push(A[j][0],A[j][1],A[j][2]); B.n.push(M[j][0],M[j][1],M[j][2]); B.c.push(col[0],col[1],col[2]); B.t.push(B.ti,B.ro); B.u.push(U[j][0],U[j][1]); } };
+    for(let i=0;i<n;i++){ const p=e(i), q=e(i+1), s0=i/n, s1=(i+1)/n;
+      put([at(0,p),at(0,q),at(1,q)],[p,q,q],[[s0,.001],[s1,.001],[s1,.999]]); put([at(0,p),at(1,q),at(1,p)],[p,q,p],[[s0,.001],[s1,.999],[s0,.999]]);
+      if(cap) for(const k of [0,1]){ const m=k?a:a.map(w=>-w), c=k?[x1,y1,z1]:[x0,y0,z0]; put([c,at(k,p),at(k,q)],[m,m,m],[[.5,.5],[.5,.001],[.5,.001]]); } } }
 
   // what a block is made of when its drawing doesn't say: by the kind of building
   const WALLK={house:"house",bighouse:"house",town:"brick",apts:"apts",mixed:"apts",hotel:"apts",office:"office",shop:"render",center:"render",mall:"render",
-    factory:"ind",warehouse:"ind",plant:"ind",datacenter:"ind",power:"ind",solar:"ind",depot:"ind",pump:"ind",garage:"garage",parking:"garage",
+    factory:"ind",warehouse:"ind",plant:"ind",datacenter:"ind",power:"ind",gas:"ind",nuclear:"ind",solar:"ind",wind:"ind",treat:"civic",depot:"ind",pump:"ind",garage:"garage",parking:"garage",
     fire:"civic",police:"civic",clinic:"civic",school:"civic",daycare:"civic",water:"ind"};
   const RUNIT={tile:9,slate:9,roofing:24,gravel:14,metal:12,glass:10,solar:6,grass:12,conc:12,wood:8,white:8,render:8};
   function look3(b,r){ const o=r.o||{}, k=b.type, sc=r.sc, H=H3(r.h)*sc;
@@ -7428,6 +7630,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
         const dx=d.x1-d.x0, dy=d.y1-d.y0, l=Math.hypot(dx,dy)||1, nx=-dy/l*d.w/2, ny=dx/l*d.w/2, h=d.h||d.w;
         const P=[[d.x0-nx,d.y0-ny,d.z0],[d.x1-nx,d.y1-ny,d.z1],[d.x1+nx,d.y1+ny,d.z1],[d.x0+nx,d.y0+ny,d.z0]];
         hexa(B,[...P.map(p=>wp(B,p[0],p[1],p[2])),...P.map(p=>wp(B,p[0],p[1],p[2]+h))],col); break; }
+      case "tube": tube(B,d.x0,d.y0,d.z0,d.x1,d.y1,d.z1,d.r,col,d.n||10,d.cap); break;
       case "fanu": { // a cooling fan on a roof: a round housing with the fan inside it
         const r=d.r, q=r*.6; mat(B,"white",.6); lathe(B,d.x,d.y,[[r,z],[r,z+1.3],[r*.86,z+1.3],[r*.86,z+.9]],[.78,.8,.82],12);
         mat(B,"fan",.5); fq(B,[d.x-q,d.y-q,z+.95],[d.x+q,d.y-q,z+.95],[d.x+q,d.y+q,z+.95],[d.x-q,d.y+q,z+.95],[.001,.001],[.999,.001],[.999,.999],[.001,.999],W0,0,0,1); break; }
@@ -7575,7 +7778,11 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   // ----- the things that aren't boxes: water towers, cooling towers, chimney stacks and the depot's salt dome -----
   function merged(parts){ const P=[], N=[], C=[];
     for(const [g0,col] of parts){ const g=g0.index?g0.toNonIndexed():g0, pp=g.attributes.position.array, nn=g.attributes.normal.array, c=LC(col);
-      for(let i=0;i<pp.length;i++){ P.push(pp[i]); N.push(nn[i]); } for(let i=0;i<pp.length;i+=3) C.push(c[0],c[1],c[2]); if(g!==g0) g.dispose(); g0.dispose(); }
+      // each triangle wound to face the way its normals point, so the lit side of a turned shape (a cooling tower) is the outside
+      for(let i=0;i<pp.length;i+=9){ const ux=pp[i+3]-pp[i], uy=pp[i+4]-pp[i+1], uz=pp[i+5]-pp[i+2], vx=pp[i+6]-pp[i], vy=pp[i+7]-pp[i+1], vz=pp[i+8]-pp[i+2];
+        const o=[0,3,6].reduce((s,k)=>s+(uy*vz-uz*vy)*nn[i+k]+(uz*vx-ux*vz)*nn[i+k+1]+(ux*vy-uy*vx)*nn[i+k+2],0)<0?[0,6,3]:[0,3,6];
+        for(const k of o) for(let j=0;j<3;j++){ P.push(pp[i+k+j]); N.push(nn[i+k+j]); } }
+      for(let i=0;i<pp.length;i+=3) C.push(c[0],c[1],c[2]); if(g!==g0) g.dispose(); g0.dispose(); }
     const g=new T.BufferGeometry(); g.setAttribute("position",new T.Float32BufferAttribute(P,3)); g.setAttribute("normal",new T.Float32BufferAttribute(N,3)); g.setAttribute("color",new T.Float32BufferAttribute(C,3)); return g; }
   const cyl=(r0,r1,h,y,x,z,n)=>new T.CylinderGeometry(r1,r0,h,n||16).translate(x||0,y+h/2,z||0);
   const HL=33, LEGS=[[4.6,4.6],[-4.6,4.6],[-4.6,-4.6],[4.6,-4.6]], steel="#7d848c", wt=[];
@@ -7584,12 +7791,27 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   wt.push([cyl(1.3,1.3,HL,0,0,0,10),"#9aa1a8"], [new T.CylinderGeometry(10,10,.4,24).translate(0,HL-.1,0),"#8a9097"],
     [new T.ConeGeometry(9,3.6,24).rotateX(Math.PI).translate(0,HL-1.8,0),"#86b5d6"], [cyl(9,9,11,HL,0,0,24),"#9cc8e4"], [cyl(9.25,9.25,.9,HL+4.5,0,0,24),"#3f7fae"],
     [new T.ConeGeometry(9.7,4.4,24).translate(0,HL+13.2,0),"#3f7fae"], [cyl(.4,.3,1.6,HL+15.3,0,0,6),"#3f7fae"]);
-  const MDL={wt:merged(wt),
+  // a wind turbine: a tall tapering white tower on its footing with the nacelle on top; its rotor (the hub and three long
+  // blades) is a model of its own that turns on the graphics card, each a little out of step with the next, so the
+  // blades cost nothing to animate however many there are
+  const TH=52, HX=3.6, RB=21, tur=[[cyl(2.3,1.25,TH,0,0,0,14),"#e9ebec"],[cyl(4,4,1,-.2,0,0,16),"#b9b8b2"],[new T.BoxGeometry(8.6,3,3).translate(-1.6,TH+1.5,0),"#e6e8e9"],
+    [new T.BoxGeometry(3,.5,2.2).translate(-4.2,TH+3.2,0),"#cfd2d4"],[new T.CylinderGeometry(1.35,1.35,.8,12).rotateZ(Math.PI/2).translate(HX-1.1,TH+1.5,0),"#d9dbdc"]], rot=[];
+  for(let k=0;k<3;k++){ const g=new T.BoxGeometry(.32,RB-1.2,1.5), p=g.attributes.position;
+    for(let i=0;i<p.count;i++) if(p.getY(i)>0){ p.setZ(i,p.getZ(i)*.28); p.setX(i,p.getX(i)*.6); }
+    rot.push([g.rotateY(.2).translate(0,(RB-1.2)/2+1,0).rotateX(k*2.0944),"#eef0f1"]); }
+  rot.push([new T.ConeGeometry(1.4,3.2,14).rotateZ(-Math.PI/2).translate(1.1,0,0),"#e6e8e9"],[new T.SphereGeometry(1.2,10,8).scale(.7,1,1),"#d9dbdc"]);
+  const MDL={wt:merged(wt),tur:merged(tur),rot:merged(rot),
     ct:merged([[new T.LatheGeometry([[8.6,0],[7.9,6],[6.9,16],[6.1,28],[6,34],[6.3,40],[6.6,44]].map(q=>new T.Vector2(q[0],q[1])),28),"#d9d6cf"]]),
     ch:merged([[cyl(4.3,2.9,42,0,0,0,14),"#8b7363"],[cyl(3.2,3.2,1.6,36.5,0,0,14),"#ece8df"],[cyl(3.05,3.05,2,42,0,0,14),"#3f352e"]]),
     dome:merged([[new T.SphereGeometry(7.4,20,10,0,Math.PI*2,0,Math.PI/2).scale(1,1.15,1),"#e9dfc4"],[cyl(7.6,7.6,1.2,0,0,0,20),"#b7ab8d"]])};
   const mdlMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide}), mdlI={}, MCAP=96;
-  for(const k in MDL){ const m=new T.InstancedMesh(MDL[k],mdlMat,MCAP); m.count=0; m.frustumCulled=false; m.castShadow=m.receiveShadow=true; scene.add(m); mdlI[k]=m; }
+  // the rotors turn about their hubs in the vertex shader (and in their shadows too), by the clock the water uses
+  const rotMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.5,side:T.DoubleSide}), rotDep=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking});
+  const spin=sh=>{ sh.uniforms.wt=wU.wt; const S="float ra=wt*1.3+instanceMatrix[3].x*.031+instanceMatrix[3].z*.017; mat2 rr=mat2(cos(ra),sin(ra),-sin(ra),cos(ra));";
+    sh.vertexShader="uniform float wt;\n"+sh.vertexShader.replace("#include <beginnormal_vertex>","#include <beginnormal_vertex>\n{ "+S+" objectNormal.yz=rr*objectNormal.yz; }")
+      .replace("#include <begin_vertex>","#include <begin_vertex>\n{ "+S+" transformed.yz=rr*transformed.yz; transformed+=vec3("+HX.toFixed(2)+","+(TH+1.5).toFixed(2)+",0.); }"); };
+  rotMat.onBeforeCompile=spin; rotDep.onBeforeCompile=spin;
+  for(const k in MDL){ const m=new T.InstancedMesh(MDL[k],k==="rot"?rotMat:mdlMat,MCAP); m.count=0; m.frustumCulled=false; m.castShadow=m.receiveShadow=true; if(k==="rot") m.customDepthMaterial=rotDep; scene.add(m); mdlI[k]=m; }
   let mdlKey="";
   function modelsSet(list){
     let key=""; for(const q of list) key+=q.k+Math.round(q.x)+","+Math.round(q.y)+";"; if(key===mdlKey) return; mdlKey=key;
