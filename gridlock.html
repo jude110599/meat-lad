@@ -363,6 +363,9 @@ body.city #scoreN.neg{color:var(--no)}
 #demPill .dq b{font-size:9px;font-weight:700;color:var(--soft);line-height:1;letter-spacing:.02em}
 body.dark #demPill .dq i{background:rgba(255,255,255,.12)}
 #hapPill .face{width:20px;height:20px}
+.mfly{position:fixed;z-index:7;transform:translateX(-50%);pointer-events:none;white-space:nowrap;font-size:12.5px;font-weight:800;color:#fff;background:#2f8a46;padding:4px 9px;border-radius:999px;box-shadow:var(--sh2);animation:mfly 2.1s ease-out forwards}
+.mfly.neg{background:#c8452f}
+@keyframes mfly{0%{opacity:0;transform:translate(-50%,-6px) scale(.85)}12%{opacity:1;transform:translate(-50%,0) scale(1)}75%{opacity:1;transform:translate(-50%,4px)}100%{opacity:0;transform:translate(-50%,10px)}}
 .face.ok{color:var(--ok)} .face.meh{color:var(--meh)} .face.bad{color:var(--no)}
 @media (max-width:480px){
   .pill .ci{display:none}
@@ -626,7 +629,13 @@ const LNAME={1:"2-lane street",2:"4-lane avenue",3:"6-lane road"};
 const ACC=55, BRK=170;
 const OVER_LIMIT=45;
 const HC=32;                     // car hash cell
-const CAR_COLS=["#e2493a","#3d7fe0","#f4f4f2","#2b2e33","#f1c232","#4caf50","#ff8a3d","#9b59b6","#c0c6cc","#1abc9c","#d6457f","#7a8b99"];
+// cars come in the colours real ones do: mostly white, black, silver and grey, then dark blues, reds and greens and the odd
+// beige or brown
+const CAR_COLS=["#f1f1ee","#e9e8e3","#dedfdc","#1e2124","#2b2e33","#b6bbc0","#a3a9af","#71777d","#565b61","#2c4672","#3e5f93","#a1322c","#6e2528","#2f4f40","#c7b99c","#76583f"];
+// and in five kinds, so a street isn't all one model: saloons, hatchbacks, SUVs, vans and pickups. The kind goes by a
+// count, not a dice roll, so it changes nothing else in the game
+let carSeq=0;
+const carKind=()=>{ const h=hash(carSeq++,911); return h<.34?0:h<.58?1:h<.82?2:h<.9?3:4; };
 const ROOFS=["#6fbf4f","#5aa944","#84cc62","#6fbf4f","#4f9e3d","#78b956","#d9734e","#9aa3ad","#e2b54a","#c85f5f"];
 // every kind of building: its footprint, colours, what it asks for and how fast, and how many of each it can have waiting
 const BT={
@@ -1991,7 +2000,7 @@ function nextDestType(){
 
 // ---------- cars ----------
 function newCar(home,truck){
-  return {home,truck,len:truck?18:11,wid:truck?7:6,col:truck?"#f4f4f0":pick(CAR_COLS),cab:truck?pick(["#e2493a","#3d7fe0","#4caf50","#ff8a3d"]):null,
+  return {home,truck,len:truck?18:11,wid:truck?7:6,col:truck?"#f4f4f0":pick(CAR_COLS),cab:truck?pick(["#b8402f","#2f5a92","#3d6b4a","#e4e1d9"]):null,m:carKind(),
     state:"home",cool:rnd(.5,3),rt:null,s:0,v:0,x:home.door.x,y:home.door.y,ang:0,leg:0,ci:0,still:0,ghost:0,purpose:null,ringNode:0,ringAng:0,braking:false,at:null,up:false,h:0};
 }
 function unhold(n,c){ if(!n) return; const i=n.hold.findIndex(h=>h.c===c); if(i>=0) n.hold.splice(i,1); n.wait.delete(c); }
@@ -3453,7 +3462,7 @@ function cityMonth(){
   const f=finCalc(monthTrips,happyAvg,parkWant);
   lastIn=Math.round(f.tin); lastOut=Math.round(f.tout); res.road+=lastIn-lastOut; monthTrips=0; parkWant=0;
   const sp=$("scorePill"); sp.classList.remove("up","down"); void sp.offsetWidth; if(lastIn!==lastOut) sp.classList.add(lastIn>lastOut?"up":"down");
-  finLast=f; finLog.push({m:month,i:lastIn,o:lastOut}); if(finLog.length>12) finLog.shift(); month++;
+  finLast=f; finLog.push({m:month,i:lastIn,o:lastOut}); if(finLog.length>12) finLog.shift(); month++; monthFx(lastIn-lastOut);
   updateUI(); if(finOpen) finDraw();
 }
 // ---------- the Finance panel ----------
@@ -3980,15 +3989,18 @@ function noteOf(b){
   return null;
 }
 // what each building needs is looked at a few times a second; a new notice waits a moment so they don't flicker
-let noteAt=-1;
+let noteAt=-1, noteL=[], lotN=[], consL=[], nLen=-1, nLots=-1;
 const noteJam=new Map();
 function notesTick(){
-  if(animT>=noteAt&&animT-noteAt<.25) return; noteAt=animT;
+  if(animT>=noteAt&&animT-noteAt<.25&&blds.length===nLen&&lots.length===nLots) return; noteAt=animT; nLen=blds.length; nLots=lots.length;
   // the cars on their way to each place, and how many of them are crawling along in traffic
   noteJam.clear(); for(const c of cars){ if(c.state!=="drive"||!c.purpose||c.purpose.svc) continue; const d=c.purpose.d; let j=noteJam.get(d); if(!j) noteJam.set(d,j=[0,0]); j[0]++; if(c.v<2.5) j[1]++; }
+  noteL=[]; consL=[];
   for(const b of blds){ const k=noteOf(b), cur=b.nk||null;
     if(k!==b.nw){ b.nw=k; b.ns=animT; }
-    if(k!==cur&&animT-b.ns>=(k==="fire"||k==="road"?.3:k?1:.6)){ if(cur){ b.no=cur; b.nf=animT; } b.nk=k; b.nt=animT; } }
+    if(k!==cur&&animT-b.ns>=(k==="fire"||k==="road"?.3:k?1:.6)){ if(cur){ b.no=cur; b.nf=animT; } b.nk=k; b.nt=animT; }
+    if(b.nk||b.no) noteL.push(b); if(b.cons) consL.push(b); }
+  lotN=lots.filter(L=>L.why&&!L.b&&NOTE[L.why]);
 }
 const nrr=(g,x,y,w,h,r)=>{ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
 // the signs, in white on the disc (c is the disc's colour, for the holes), drawn round 0,0 about 16 across
@@ -4053,15 +4065,16 @@ function drawNotes(){
   notesTick(); infoTick();
   const v3=v3live(), zs=clamp(.52+(cam.z-.22)*.6,.52,1);
   if(!v3&&cam.z<.08) return;
+  drawCoins(v3,zs);
   nlist.length=0;
-  for(const b of blds){ if(b.no&&animT-b.nf>.4) b.no=null; if(!b.nk&&!b.no) continue;
+  for(const b of noteL){ if(b.no&&animT-b.nf>.4) b.no=null; if(!b.nk&&!b.no) continue;
     let p;
     if(v3){ p=noteAt3(b.x,b.y,V3.top(b)+V3.hAt(b.x,b.y)+2); if(!p) continue; }
     else { if(!inView(b.x,b.y,b.r+60)) continue; p={x:(b.x-cam.x)*cam.z+vw/2,y:(b.y-cam.y)*cam.z+vh/2-Math.min(b.d*.2,8)*cam.z,s:zs}; }
     p.b=b; nlist.push(p); }
   // the plots that can't grow, smaller and flat, under the buildings' notices
   const lp=[];
-  for(const L of lots){ if(!L.why||L.b||!NOTE[L.why]) continue;
+  for(const L of lotN){ if(!L.why||L.b||!NOTE[L.why]) continue;
     let p; if(v3){ p=noteAt3(L.x,L.y,V3.hAt(L.x,L.y)+1); if(!p) continue; } else { if(!inView(L.x,L.y,30)) continue; p={x:(L.x-cam.x)*cam.z+vw/2,y:(L.y-cam.y)*cam.z+vh/2,s:zs}; }
     p.L=L; lp.push(p); }
   if(!nlist.length&&!lp.length) return;
@@ -4073,6 +4086,46 @@ function drawNotes(){
     if(b.nk){ const age=animT-b.nt, e=clamp(age/.42,0,1), bob=Math.sin(animT*2.3+b.id*1.7)*1.1*s;
       noteDraw(b.nk,p.x,p.y-(1-e)*7*s+bob,s*easeBack(e),Math.min(1,age/.12),urgency(b)); } }
 }
+// The month's end in the City builder: what the month brought in floats down off the money, and coins pop up over a
+// few of the homes and businesses in view that paid their taxes
+function monthFx(net){
+  const sp=$("scorePill"), el=document.createElement("span"); el.className="mfly"+(net<0?" neg":""); el.textContent=(net<0?"-":"+")+money(Math.abs(net))+" this month";
+  const r=sp.getBoundingClientRect(); el.style.left=(r.left+r.width/2)+"px"; el.style.top=(r.bottom+6)+"px"; document.body.appendChild(el); setTimeout(()=>el.remove(),2200);
+  if(net<=0||!running) return; const v3=v3live(), B=[];
+  for(const b of blds){ if(b.cons||isSvc(b)||!(b.pins||isHome(b))) continue;
+    if(v3){ const p=V3.project(b.x,V3.hAt(b.x,b.y),b.y); if(p.behind||p.x<20||p.y<70||p.x>vw-20||p.y>vh-120) continue; } else if(!inView(b.x,b.y,-20)) continue; B.push(b); }
+  const n=Math.min(10,B.length), st=B.length/Math.max(1,n);
+  for(let i=0;i<n;i++){ const b=B[Math.floor((i+hash(month,i)*.9)*st)]; if(b) effects.push({k:"coin",b,x:b.x,y:b.y,t:-i*.09,life:1.4}); } }
+const coinSpr=()=>sprite("coin",64,(g,n)=>{ g.scale(n/24,n/24);
+  g.fillStyle="rgba(0,0,0,.18)"; g.beginPath(); g.arc(12.4,13,10.6,0,7); g.fill();
+  g.fillStyle="#b8862a"; g.beginPath(); g.arc(12,12,10.6,0,7); g.fill(); g.fillStyle="#efc04e"; g.beginPath(); g.arc(12,12,8.9,0,7); g.fill();
+  g.strokeStyle="rgba(150,104,24,.55)"; g.lineWidth=.9; g.beginPath(); g.arc(12,12,7.2,0,7); g.stroke();
+  g.fillStyle="#9c6c18"; g.font="800 11px "+FONT; g.textAlign="center"; g.textBaseline="middle"; g.fillText("$",12,12.6);
+  g.fillStyle="rgba(255,255,255,.4)"; g.beginPath(); g.arc(12,12,8.9,3.6,5.2); g.arc(12,12,6.4,5.2,3.6,true); g.fill(); });
+// the coins: each pops up over its roof, spins as it rises a little, and fades
+function drawCoins(v3,zs){
+  if(!effects.some(e=>e.k==="coin"&&e.t>0&&e.t<e.life)) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0); const S=coinSpr();
+  for(const e of effects){ if(e.k!=="coin"||e.t<=0||e.t>=e.life) continue; const b=e.b, f=e.t/e.life;
+    let p; if(v3){ p=noteAt3(b.x,b.y,V3.top(b)+V3.hAt(b.x,b.y)+2); if(!p) continue; } else p={x:(b.x-cam.x)*cam.z+vw/2,y:(b.y-cam.y)*cam.z+vh/2,s:zs};
+    const s=p.s*easeBack(clamp(f/.28,0,1)), w=.25+.75*Math.abs(Math.cos(f*6)), y=p.y-8*p.s-f*24*p.s;
+    ctx.globalAlpha=f<.7?1:1-(f-.7)/.3; ctx.drawImage(S,p.x-13*s*w,y-13*s,26*s*w,26*s); }
+  ctx.globalAlpha=1; }
+// dust: tan off a building site, grey where something's knocked down or a plot is cleared
+const dustSpr=k=>sprite("dust"+k,64,(g,s)=>{ const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2), c=k?"178,174,166":"226,212,186";
+  r.addColorStop(0,"rgba("+c+",.95)"); r.addColorStop(.45,"rgba("+c+",.6)"); r.addColorStop(1,"rgba("+c+",0)"); g.fillStyle=r; g.fillRect(0,0,s,s); });
+// in 3D: dust drifting up off the building sites, and a cloud of it rolling out where something's knocked down
+function drawDust3(){
+  ctx.setTransform(dpr,0,0,dpr,0,0); const D=dustSpr(0), G=dustSpr(1);
+  const blob=(S,x,y,h,r,a)=>{ if(a<=.01) return; const p=V3.project(x,h,y); if(p.behind||p.x<-90||p.y<-90||p.x>vw+90||p.y>vh+90) return;
+    const q=V3.project(x+r,h,y), q2=V3.project(x,h,y+r), k=Math.max(Math.hypot(q.x-p.x,q.y-p.y),Math.hypot(q2.x-p.x,q2.y-p.y)); if(k<1.5) return; ctx.globalAlpha=a; ctx.drawImage(S,p.x-k,p.y-k,2*k,2*k); };
+  let n=0;
+  if(city) for(const b of consL){ if(!b.cons||n>=40) continue; const g=V3.hAt(b.x,b.y), c=V3.project(b.x,g,b.y); if(c.behind||c.x<-60||c.y<-60||c.x>vw+60||c.y>vh+60) continue; n++;
+    for(let i=0;i<4;i++){ const ph=(animT*.3+i/4+b.id*.13)%1, a=hash(b.id,i)*6.283, d=b.r*.55;
+      blob(D,b.x+Math.cos(a)*d+ph*8,b.y+Math.sin(a)*d-ph*4,g+2+ph*12,4+ph*8+b.r*.1,.75*Math.sin(ph*Math.PI)); } }
+  for(const e of effects){ if(e.k!=="puff") continue; const f=e.t/e.life; if(f<0||f>=1) continue; const R=e.big||0, g=V3.hAt(e.x,e.y), m=R>12?7:4;
+    for(let i=0;i<m;i++){ const a=i/m*6.283+R, d=(2+R*.55)*(.4+f*.8); blob(G,e.x+Math.cos(a)*d,e.y+Math.sin(a)*d,g+2+f*(6+R*.3),(3+R*.35)*(.6+f*.9),.62*(1-f)*(1-f*.4)); } }
+  ctx.globalAlpha=1; }
 // worn roads: cracks and potholes, more of them the worse the road gets
 function drawWear(){
   for(const s of segs.values()){ if(s.cond===undefined||s.cond>=.62||s.hwy) continue;
@@ -6079,8 +6132,13 @@ function drawOverpasses(){
 // narrower (the small works vehicles are drawn as they are). One in a narrow bay is drawn to fit it
 const carDims=(c,wm)=>{ const m=wm||99; if(c.len<11) return [c.len,Math.min(c.wid,m)]; return c.truck?[c.len*.86,Math.min(c.wid*.78,m)]:[c.len*.84,Math.min(c.wid*.67,m)]; };
 const CARL=11*.84;
+// the kinds of car from above: where the glass and the roof over it run along the car, how rounded its corners are, and
+// how long and wide it is next to a saloon
+const CARM=[{g:[-.31,.25],r:[-.23,.12],rr:.4,l:1,w:1},{g:[-.44,.22],r:[-.37,.1],rr:.4,l:.9,w:.98},{g:[-.45,.24],r:[-.4,.14],rr:.26,l:1.04,w:1.06},
+  {g:[.17,.33],r:[-.48,.19],rr:.18,l:1.06,w:1.04},{g:[-.04,.27],r:[.01,.16],rr:.28,l:1.06,w:1.04}];
 function drawCar(c){
-  const [L,W]=carDims(c,c.wm), h=c.h||0, so=1.3+h*12;
+  let [L,W]=carDims(c,c.wm); const h=c.h||0, so=1.3+h*12, M=CARM[c.svc?0:c.m||0];
+  if(!c.truck&&!c.svc&&c.len>=11){ L*=M.l; W=Math.min(W*M.w,c.wm||99); }
   // shadow first, always down and to the right; cars up on an overpass throw theirs further
   if(ultra){ ctx.save(); ctx.translate(c.x+SHX*so*1.8,c.y+SHY*so*1.8); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.08)"; roundRect(-L/2-1.2,-W/2-1.2,L+2.4,W+2.4,3.2); ctx.fill(); ctx.restore();
     ctx.save(); ctx.translate(c.x+SHX*so*.55,c.y+SHY*so*.55); ctx.rotate(c.ang); ctx.fillStyle="rgba(0,0,0,.22)"; roundRect(-L/2+.2,-W/2+.2,L-.4,W-.4,2); ctx.fill(); ctx.restore(); }
@@ -6095,13 +6153,18 @@ function drawCar(c){
     ctx.fillStyle="rgba(255,255,255,.7)"; ctx.fillRect(L/2-2.6,-W/2+1.2,1.6,W-2.4);
     if(lit){ ctx.fillStyle="rgba(255,255,255,.4)"; ctx.fillRect(-L/2+.8,lit<0?-W/2+.4:W/2-1.3,L*.72-1.6,.9); ctx.fillStyle="rgba(0,0,0,.12)"; ctx.fillRect(-L/2+.8,lit<0?W/2-1.3:-W/2+.4,L*.72-1.6,.9); }
   } else {
-    ctx.fillStyle=c.col; roundRect(-L/2,-W/2,L,W,W*.4); ctx.fill();
+    const r0=M.r[0]*L, r1=M.r[1]*L;
+    ctx.fillStyle=c.col; roundRect(-L/2,-W/2,L,W,W*M.rr); ctx.fill();
     // the glass all round the cabin with the roof over it, so the windscreen, the back window and a strip of side window show
-    ctx.fillStyle="rgba(30,40,54,.86)"; roundRect(-L*.31,-W/2+.5,L*.56,W-1,.9); ctx.fill();
-    ctx.fillStyle=c.col; roundRect(-L*.23,-W/2+.85,L*.35,W-1.7,.7); ctx.fill();
-    ctx.fillStyle="rgba(255,255,255,.2)"; ctx.fillRect(-L*.21,-W/2+1.05,L*.31,.55);
+    ctx.fillStyle="rgba(30,40,54,.86)"; roundRect(L*M.g[0],-W/2+.5,L*(M.g[1]-M.g[0]),W-1,.9); ctx.fill();
+    ctx.fillStyle=c.col; roundRect(r0,-W/2+.85,r1-r0,W-1.7,.7); ctx.fill();
+    ctx.fillStyle="rgba(255,255,255,.2)"; ctx.fillRect(r0+L*.02,-W/2+1.05,r1-r0-L*.04,.55);
+    // an SUV's roof rails, a pickup's open bed, a van's long roof panels
+    if(c.m===2&&!c.svc){ ctx.fillStyle="rgba(20,22,26,.4)"; ctx.fillRect(r0+L*.03,-W/2+1,r1-r0-L*.06,.36); ctx.fillRect(r0+L*.03,W/2-1.36,r1-r0-L*.06,.36); }
+    if(c.m===4&&!c.svc){ ctx.fillStyle="rgba(0,0,0,.3)"; roundRect(-L*.47,-W/2+.7,L*.41,W-1.4,.4); ctx.fill(); ctx.fillStyle="rgba(0,0,0,.14)"; for(let i=1;i<4;i++) ctx.fillRect(-L*.47+i*L*.1,-W/2+.9,.25,W-1.8); }
+    if(c.m===3&&!c.svc){ ctx.fillStyle="rgba(0,0,0,.1)"; ctx.fillRect(-L*.16,-W/2+1,.3,W-2); ctx.fillRect(-L*.33,-W/2+1,.3,W-2); }
     // a crease down the bonnet, the lights at the corners and the wing mirrors
-    ctx.fillStyle="rgba(0,0,0,.13)"; ctx.fillRect(L*.29,-.15,L*.17,.3);
+    ctx.fillStyle="rgba(0,0,0,.13)"; if(M.g[1]<.3) ctx.fillRect(L*.29,-.15,L*.17,.3);
     ctx.fillStyle="#fff4cf"; ctx.fillRect(L/2-.75,-W/2+.45,.55,1.05); ctx.fillRect(L/2-.75,W/2-1.5,.55,1.05);
     ctx.fillStyle="#b8261c"; ctx.fillRect(-L/2+.2,-W/2+.45,.5,1.05); ctx.fillRect(-L/2+.2,W/2-1.5,.5,1.05);
     ctx.fillStyle=c.col; ctx.fillRect(L*.2,-W/2-.4,.7,.45); ctx.fillRect(L*.2,W/2-.05,.7,.45);
@@ -6109,8 +6172,9 @@ function drawCar(c){
       ctx.fillStyle="rgba(255,255,255,.34)"; ctx.fillRect(-L/2+1.3,lit<0?-W/2+.3:W/2-1,L-2.6,.7);
       ctx.fillStyle="rgba(0,0,0,.17)"; ctx.fillRect(-L/2+1.3,lit<0?W/2-1:-W/2+.3,L-2.6,.7);
       // the sky glinting off the roof and a streak across the windscreen
-      ctx.fillStyle="rgba(255,255,255,.35)"; ctx.beginPath(); ctx.ellipse(-L*.06,lit*W*.1,L*.12,W*.14,0,0,7); ctx.fill();
-      ctx.fillStyle="rgba(255,255,255,.6)"; ctx.beginPath(); ctx.moveTo(L*.16,-W/2+.7); ctx.lineTo(L*.2,-W/2+.7); ctx.lineTo(L*.17,W/2-.7); ctx.lineTo(L*.13,W/2-.7); ctx.closePath(); ctx.fill();
+      const gx=M.g[1]*L-L*.09;
+      ctx.fillStyle="rgba(255,255,255,.35)"; ctx.beginPath(); ctx.ellipse((r0+r1)/2,lit*W*.1,(r1-r0)*.34,W*.14,0,0,7); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,.6)"; ctx.beginPath(); ctx.moveTo(gx,-W/2+.7); ctx.lineTo(gx+L*.04,-W/2+.7); ctx.lineTo(gx+L*.01,W/2-.7); ctx.lineTo(gx-L*.03,W/2-.7); ctx.closePath(); ctx.fill();
     }
   }
   if(c.svc) svcMarks(c,L,W);
@@ -6123,7 +6187,7 @@ function drawCar(c){
 }
 // a car standing still somewhere: in a drive, a car park or a loading bay
 // (the 3D view collects these instead and stands real cars there)
-const parked=(c,x,y,ang,wm)=>rec3d?rec3d.parked.push({c,x,y,a:ang,wm}):drawCar({x,y,ang,len:c.len,wid:c.wid,col:c.col,cab:c.cab,truck:c.truck,braking:false,h:0,svc:c.svc,wm});
+const parked=(c,x,y,ang,wm)=>rec3d?rec3d.parked.push({c,x,y,a:ang,wm}):drawCar({x,y,ang,len:c.len,wid:c.wid,col:c.col,cab:c.cab,truck:c.truck,braking:false,h:0,svc:c.svc,wm,m:c.m});
 function hull(P){
   P.sort((a,b)=>a.x-b.x||a.y-b.y); const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x), lo=[], up=[];
   for(const p of P){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
@@ -6914,7 +6978,8 @@ function draw(){
   effects=effects.filter(e=>{
     const f=e.t/e.life; if(f>=1) return false;
     if(e.k==="ring"){ ctx.strokeStyle=e.c; ctx.globalAlpha=1-f; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(e.x,e.y,(e.r||14)+f*24,0,7); ctx.stroke(); ctx.globalAlpha=1; }
-    else if(e.k==="puff"){ const R=e.big||0; ctx.fillStyle="rgba(150,150,150,"+(.5*(1-f))+")"; ctx.beginPath(); ctx.arc(e.x,e.y,4+R*.7+f*(8+R*.6),0,7); ctx.fill(); }
+    else if(e.k==="puff"&&f>=0){ const R=e.big||0, m=R>12?7:4, S=dustSpr(1);
+      for(let i=0;i<m;i++){ const a=i/m*6.283+R, d=(2+R*.55)*(.4+f*.8), r=(4+R*.4)*(.6+f*.9); ctx.globalAlpha=.6*(1-f)*(1-f*.4); ctx.drawImage(S,e.x+Math.cos(a)*d-r,e.y+Math.sin(a)*d-r-f*4,2*r,2*r); } ctx.globalAlpha=1; }
     else if(e.k==="plus"&&!city){ ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
     return true;
   });
@@ -7411,6 +7476,42 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   for(const x of [-.31,.31]){ loft(trimG,ring(x,.2,.0714,.2,.5),tyre); loft(trimG,ring(x,.2,.04,.11,.508),hub); }
   for(const z of [-1,1]){ boxInto(trimG,.488,.506,.38,.445,z<0?-.43:.25,z<0?-.25:.43,lamp); boxInto(trimG,-.506,-.488,.39,.46,z<0?-.45:.27,z<0?-.27:.45,tail); }
   boxInto(trimG,.497,.508,.22,.35,-.27,.27,blk); boxInto(trimG,.49,.512,.17,.235,-.465,.465,blk); boxInto(trimG,-.512,-.49,.17,.25,-.465,.465,blk);
+  // the other kinds, built the same way: [body, trim, longer, taller, wider than a saloon]. A hatchback is shorter with
+  // a near-upright back window; an SUV taller and squarer with roof rails and dark cladding; a van a tall box with a
+  // raked windscreen; a pickup a cab with an open bed behind it
+  const CK=[[carG,trimG,1,1,1]];
+  const wheels=(X,x0,x1,ry,rx)=>{ for(const x of [x0,x1]){ loft(X,ring(x,ry,rx,ry,.5),tyre); loft(X,ring(x,ry,rx*.56,ry*.55,.508),hub); } };
+  const lamps=(X,yh,yt)=>{ for(const z of [-1,1]){ boxInto(X,.488,.506,yh,yh+.065,z<0?-.43:.25,z<0?-.25:.43,lamp); boxInto(X,-.506,-.488,yt,yt+.07,z<0?-.45:.27,z<0?-.27:.45,tail); }
+    boxInto(X,.49,.512,.17,.235,-.465,.465,blk); boxInto(X,-.512,-.49,.17,.25,-.465,.465,blk); };
+  const mirrors=(B,x,y)=>{ for(const z of [-1,1]) boxInto(B,x,x+.06,y,y+.07,z<0?-.53:.43,z<0?-.43:.53,W1); };
+  // a strip of glass lying on a sloping face of the body, from a to b in the side outline, standing just proud of it
+  const slab=(X,a,b,z)=>{ const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy), nx=dy/l, ny=-dx/l, s=nx*(a[0]+b[0])+ny*(a[1]+b[1])>0?.012:-.012;
+    loft(X,[[a[0],a[1],z],[b[0],b[1],z],[b[0]+nx*s,b[1]+ny*s,z],[a[0]+nx*s,a[1]+ny*s,z]],glass); };
+  { const B=G0(), X=G0();
+    loft(B,[[-.5,.17,.46],[.5,.17,.46],[.5,.37,.47],[.47,.45,.455],[.22,.52,.44],[-.47,.52,.44],[-.5,.45,.455],[-.5,.37,.47]],W1);
+    loft(B,[[-.43,.84,.36],[.07,.84,.36],[.05,.91,.33],[-.41,.91,.33]],W1);
+    loft(B,[[-.1,.52,.446],[-.04,.52,.446],[-.05,.85,.366],[-.1,.85,.366]],W1); mirrors(B,.16,.53);
+    loft(X,[[-.47,.52,.43],[.23,.52,.43],[.05,.855,.35],[-.44,.86,.35]],glass);
+    wheels(X,-.32,.31,.2,.075); lamps(X,.38,.4); CK.push([B,X,.9,1.02,.98]); }
+  { const B=G0(), X=G0();
+    loft(B,[[-.5,.2,.47],[.5,.2,.47],[.5,.42,.475],[.47,.5,.46],[.25,.56,.45],[-.47,.56,.45],[-.5,.5,.46],[-.5,.42,.475]],W1);
+    loft(B,[[-.46,.86,.38],[.09,.86,.38],[.07,.92,.35],[-.45,.92,.35]],W1);
+    loft(B,[[-.1,.56,.456],[-.04,.56,.456],[-.05,.87,.386],[-.1,.87,.386]],W1); mirrors(B,.18,.57);
+    loft(X,[[-.47,.56,.44],[.26,.56,.44],[.09,.875,.37],[-.45,.88,.37]],glass);
+    for(const z of [-1,1]) boxInto(X,-.4,.03,.92,.96,z<0?-.33:.29,z<0?-.29:.33,blk);
+    boxInto(X,-.505,.505,.2,.27,-.478,.478,[.16,.16,.17]);
+    wheels(X,-.31,.31,.21,.068); lamps(X,.42,.45); CK.push([B,X,1.04,1.18,1.06]); }
+  { const B=G0(), X=G0();
+    loft(B,[[-.5,.16,.47],[.5,.16,.47],[.5,.42,.47],[.45,.53,.46],[.3,.9,.45],[-.48,.92,.45],[-.5,.88,.46]],W1); mirrors(B,.36,.52);
+    slab(X,[.44,.555],[.32,.865],.43); boxInto(X,.16,.36,.58,.82,-.462,.462,glass);
+    boxInto(X,-.505,.505,.16,.21,-.475,.475,[.2,.2,.21]); boxInto(X,-.03,-.015,.24,.86,-.467,.467,[.3,.3,.32]);
+    wheels(X,-.33,.33,.19,.062); lamps(X,.42,.6); CK.push([B,X,1.06,1.3,1.04]); }
+  { const B=G0(), X=G0();
+    loft(B,[[-.5,.17,.47],[.5,.17,.47],[.5,.38,.47],[.47,.47,.46],[.24,.53,.455],[-.5,.53,.46]],W1);
+    loft(B,[[-.12,.53,.455],[.21,.53,.455],[.07,.9,.4],[-.12,.9,.4]],W1); mirrors(B,.17,.54);
+    slab(X,[.2,.56],[.085,.87],.39); boxInto(X,-.09,.12,.6,.82,-.45,.45,glass); slab(X,[-.12,.6],[-.12,.84],.38);
+    boxInto(X,-.485,-.13,.42,.535,-.425,.425,[.17,.17,.18]);
+    wheels(X,-.32,.32,.21,.068); lamps(X,.4,.42); CK.push([B,X,1.06,1.14,1.04]); }
   // a truck (15.5 long, 5.5 wide, TRKH tall): the box in its colour, the cab in its own, with a raked windscreen, side
   // windows, a bumper, lights and three axles
   const boxG=G0(), cabG=G0(), trkG=G0();
@@ -7424,7 +7525,8 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   const carMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.4}), trimMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.3});
   const CAP=2048;
   const inst=(g,mat,shadow,plain)=>{ const m=new T.InstancedMesh(g,mat,CAP); m.instanceMatrix.setUsage(T.DynamicDrawUsage); if(!plain) m.setColorAt(0,new T.Color(1,1,1)); m.count=0; m.frustumCulled=false; m.castShadow=!!shadow; scene.add(m); return m; };
-  const carI=inst(geoOf(carG),carMat,true), boxI=inst(geoOf(boxG),carMat,true), cabI=inst(geoOf(cabG),carMat,true), trimI=inst(geoOf(trimG),trimMat,true,true), trkI=inst(geoOf(trkG),trimMat,true,true);
+  const carIs=CK.map(k=>inst(geoOf(k[0]),carMat,true)), trimIs=CK.map(k=>inst(geoOf(k[1]),trimMat,true,true));
+  const boxI=inst(geoOf(boxG),carMat,true), cabI=inst(geoOf(cabG),carMat,true), trkI=inst(geoOf(trkG),trimMat,true,true);
   const lampG=new T.BoxGeometry(1,1,1);
   const headI=inst(lampG,new T.MeshBasicMaterial({color:0xfff6dc})), tailI=inst(lampG,new T.MeshBasicMaterial({color:0xffffff})), barI=inst(lampG,new T.MeshBasicMaterial({color:0xffffff}));
   const CARH=3.3, TRKH=7.6;
@@ -7433,19 +7535,20 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   function setC(m,i,hex){ const v=LC(hex), a=m.instanceColor.array; a[i*3]=v[0]; a[i*3+1]=v[1]; a[i*3+2]=v[2]; }
   let parkedList=[];
   function carsFrame(nk){
-    let nc=0, nb=0, nh=0, nt=0, nr=0;
-    const cm=carI.instanceMatrix.array, bm=boxI.instanceMatrix.array, km=cabI.instanceMatrix.array, hm=headI.instanceMatrix.array, tm=tailI.instanceMatrix.array, rm=barI.instanceMatrix.array, xm=trimI.instanceMatrix.array, ym=trkI.instanceMatrix.array;
+    let nc=0, nb=0, nh=0, nt=0, nr=0; const nk5=CK.map(()=>0);
+    const bm=boxI.instanceMatrix.array, km=cabI.instanceMatrix.array, hm=headI.instanceMatrix.array, tm=tailI.instanceMatrix.array, rm=barI.instanceMatrix.array, ym=trkI.instanceMatrix.array;
     const lights=nk>.15, flash=performance.now()%420<210;
-    const put=(c,x,y,a,h,moving,wm)=>{ if(nc>=CAP||nb>=CAP) return; const [L,W]=carDims(c,wm), gy=h*OVH+hAt(x,y), ca=Math.cos(a), sa=Math.sin(a), HH=c.truck?TRKH:CARH;
+    const put=(c,x,y,a,h,moving,wm)=>{ if(nc>=CAP||nb>=CAP) return; let [L,W]=carDims(c,wm), HH=c.truck?TRKH:CARH; const gy=h*OVH+hAt(x,y), ca=Math.cos(a), sa=Math.sin(a);
       if(c.truck){ setM(bm,nb,x,gy,y,a,L,HH,W); setC(boxI,nb,c.col||"#f4f4f0"); setM(km,nb,x,gy,y,a,L,HH,W); setC(cabI,nb,c.cab||"#e2493a"); setM(ym,nb,x,gy,y,a,L,HH,W); nb++; }
-      else { setM(cm,nc,x,gy,y,a,L,HH,W); setC(carI,nc,c.col||"#888"); setM(xm,nc,x,gy,y,a,L,HH,W); nc++; }
+      else { const q=!c.svc&&c.len>=11&&c.m||0, K=CK[q], j=nk5[q]++; if(q){ L*=K[2]; HH*=K[3]; W=Math.min(W*K[4],wm||99); }
+        setM(carIs[q].instanceMatrix.array,j,x,gy,y,a,L,HH,W); setC(carIs[q],j,c.col||"#888"); setM(trimIs[q].instanceMatrix.array,j,x,gy,y,a,L,HH,W); nc++; }
       if(c.svc&&nr<CAP-1){ const top=c.truck?HH*.76:HH*.92; setM(rm,nr,x+ca*L*(c.truck?.38:-.04),gy+top+.3,y+sa*L*(c.truck?.38:-.04),a,1.3,.7,W*.75); setC(barI,nr,c.siren?(flash?"#3d7fff":"#ff2a1c"):"#c8ced6"); nr++; }
       if(moving&&lights&&nh<CAP-2) for(const o of [-1,1]){ const ox=-sa*o*W*.34, oy=ca*o*W*.34; setM(hm,nh,x+ca*(L*.5+.05)+ox,gy+HH*(c.truck?.26:.41),y+sa*(L*.5+.05)+oy,a,.3,.7,1.2); nh++; }
       if(nt<CAP-2&&(c.braking||lights)) for(const o of [-1,1]){ const ox=-sa*o*W*.36, oy=ca*o*W*.36; setM(tm,nt,x-ca*(L*.5+.05)+ox,gy+HH*(c.truck?.23:.42),y-sa*(L*.5+.05)+oy,a,.3,.7,1.1); setC(tailI,nt,c.braking?"#ff3020":"#b81c12"); nt++; } };
     for(const c of cars){ if(c.state==="drive") put(c,c.x,c.y,c.ang,c.h||0,true); else if(c.svc&&c.state==="park") put(c,c.x,c.y,c.ang,0,false); }
     for(const q of parkedList) if(q.c.state!=="drive") put(q.c,q.x,q.y,q.a,0,false,q.wm);
     for(const w of works){ const d=crewAt(w); if(d!==null) for(const v of crew(w,d)) put(v,v.x,v.y,v.ang,0,true); }
-    for(const [m,n] of [[carI,nc],[trimI,nc],[boxI,nb],[cabI,nb],[trkI,nb],[headI,nh],[tailI,nt],[barI,nr]]){ m.count=n; m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
+    for(const [m,n] of [...CK.map((k,i)=>[carIs[i],nk5[i]]),...CK.map((k,i)=>[trimIs[i],nk5[i]]),[boxI,nb],[cabI,nb],[trkI,nb],[headI,nh],[tailI,nt],[barI,nr]]){ m.count=n; m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
     return nc+nb;
   }
 
@@ -7642,6 +7745,29 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     for(let i=ks;i<sprites.length;i+=2) sprites[i].visible=false;
   }
 
+  // ----- smoke from the chimney stacks and steam off the cooling towers: soft puffs that rise, swell, drift off on the
+  // wind and fade. One batch of points for all of them, capped, and only from the stacks near the view -----
+  const SMK=mobile?160:320, sg=new T.BufferGeometry(), sP=new Float32Array(SMK*3), sC=new Float32Array(SMK*4), sS=new Float32Array(SMK);
+  sg.setAttribute("position",new T.BufferAttribute(sP,3)); sg.setAttribute("color",new T.BufferAttribute(sC,4)); sg.setAttribute("ps",new T.BufferAttribute(sS,1));
+  const smkMat=new T.PointsMaterial({map:smokeTex,size:1,sizeAttenuation:true,transparent:true,depthWrite:false,vertexColors:true,fog:false});
+  smkMat.onBeforeCompile=sh=>{ sh.vertexShader=sh.vertexShader.replace("uniform float size;","uniform float size;\nattribute float ps;").replace("gl_PointSize = size;","gl_PointSize = size*ps;"); };
+  const smkPts=new T.Points(sg,smkMat); smkPts.frustumCulled=false; smkPts.renderOrder=3; scene.add(smkPts);
+  let stacks=[], puffs=[], smkAt=0;
+  function smoke3(nk){
+    const now=performance.now(), dt=paused?0:Math.min(.1,(now-(smkAt||now))/1000); smkAt=now;
+    const R2=Math.pow(Math.max(500,dist*1.3),2), lt=1-.55*nk;
+    for(const q of stacks){ if((q.x-cam.x)**2+(q.y-cam.y)**2>R2) continue; const st=q.k==="ct", s=q.s||1;
+      q.acc=(q.acc||0)+dt; const per=st?.45:.32;
+      while(q.acc>per){ q.acc-=per; if(puffs.length>=SMK) continue; const j=Math.random()*6.283, r=st?3.5:1.2*s;
+        puffs.push({x:q.x+Math.cos(j)*r,y:q.y+Math.sin(j)*r,h:hAt(q.x,q.y)+(st?44:43*s),age:0,life:st?4.2+Math.random()*1.5:6+Math.random()*2.5,r:st?7:3.4*s,st}); } }
+    let n=0;
+    puffs=puffs.filter(p=>{ p.age+=dt; if(p.age>=p.life) return false; const f=p.age/p.life;
+      p.h+=dt*Math.max(1,(p.st?11:8)-p.age*1.4); p.x+=dt*(4+p.age*.8); p.y-=dt*(2+p.age*.4); p.r+=dt*(p.st?3.2:2.2+p.age*.4);
+      const c=(p.st?.97:.8)*lt, a=Math.min(1,p.age*2.5)*Math.pow(1-f,1.4)*(p.st?.6:.5), o=n*4;
+      sP[n*3]=p.x; sP[n*3+1]=p.h; sP[n*3+2]=p.y; sC[o]=c; sC[o+1]=c; sC[o+2]=c*.98; sC[o+3]=a; sS[n]=p.r*2.6/Math.tan(camera.fov*Math.PI/360); n++; return true; });
+    sg.setDrawRange(0,n); for(const k of ["position","color","ps"]) sg.attributes[k].needsUpdate=true; smkPts.visible=n>0;
+  }
+
   // ----- the camera, looking down at the spot the 2D view is centred on -----
   const ray=new T.Raycaster(), ndc=new T.Vector2(), tgt=new T.Vector3();
   let lastW=0, lastH=0, lastDpr=0, lastPr=0, dist=1000;
@@ -7726,7 +7852,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],-1);
       for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } }
       for(const q of c.rec.props||[]){ const k="p"+q.k+Math.round(q.x*4)+","+Math.round(q.y*4)+","+Math.round(q.z||0); if(!seen.has(k)){ seen.add(k); Q.push(q); } } }
-    parkedList=P; treesSet(tl); modelsSet(M); propsSet(Q);
+    parkedList=P; treesSet(tl); modelsSet(M); propsSet(Q); stacks=M.filter(q=>q.k==="ch"||q.k==="ct");
   }
   // a fingerprint of everything drawn in each cell of a layer, to tell which ones changed
   function cellSigs(L){
@@ -7818,7 +7944,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   }
   // the light picture over the whole view: the haze round the factories and the reach of the service being placed
   function overlay(){
-    const now=performance.now(), fx=effects.some(e=>(e.k==="ring"||e.k==="puff")&&e.t<e.life);
+    const now=performance.now(), fx=effects.some(e=>e.k==="ring"&&e.t<e.life);
     const gk=ghost&&(SMOKY.has(ghost.type)||SVC[ghost.type]&&SVC[ghost.type].R)?Math.round(ghost.x)+","+Math.round(ghost.y):"";
     const key=[tool,placeSel,zoneSel,moving?moving.b.id:"",gk,reg.x0,reg.y0,reg.S].join("|");
     if(!fx&&!fxWas&&key===dynKey) return;
@@ -7828,8 +7954,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
       ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,DTEX,DTEX); worldT();
       drawZones();
       for(const e of effects){ const f=e.t/e.life; if(f>=1) continue;
-        if(e.k==="ring"){ ctx.strokeStyle=e.c; ctx.globalAlpha=1-f; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(e.x,e.y,(e.r||14)+f*24,0,7); ctx.stroke(); ctx.globalAlpha=1; }
-        else if(e.k==="puff"){ const Rr=e.big||0; ctx.fillStyle="rgba(150,150,150,"+(.5*(1-f))+")"; ctx.beginPath(); ctx.arc(e.x,e.y,4+Rr*.7+f*(8+Rr*.6),0,7); ctx.fill(); } }
+        if(e.k==="ring"){ ctx.strokeStyle=e.c; ctx.globalAlpha=1-f; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(e.x,e.y,(e.r||14)+f*24,0,7); ctx.stroke(); ctx.globalAlpha=1; } }
     });
     dtex.needsUpdate=true; dms=performance.now()-now;
   }
@@ -7935,7 +8060,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
     decks();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
     sky(nk,dk); wU.wt.value=now/1000;
-    ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
+    ncars=carsFrame(nk); cranes(); ghosts(); fires(); smoke3(nk); streetLights(nk);
     // the shadows follow the camera; when it's still they're drawn every other frame for the moving cars
     const ck=camera.position.x.toFixed(1)+camera.position.y.toFixed(1)+camera.position.z.toFixed(1);
     R.shadowMap.needsUpdate=rebuilt||painted>0||ck!==render.ck||(render.n=(render.n||0)+1)%(mobile?3:2)===0; render.ck=ck;
@@ -7959,7 +8084,7 @@ function v3overlay(){
     drawPins(b); }
   if(!city) for(const e of effects){ if(e.k!=="plus") continue; const f=e.t/e.life; if(f>=1) continue; if(!at(e.x,e.y,10+V3.hAt(e.x,e.y),e.x,e.y)) continue;
     ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
-  cam.z=sv; if(city) drawSel3(); drawNotes();
+  cam.z=sv; drawDust3(); if(city) drawSel3(); drawNotes();
   // labels from the overlays: price of a road, why a ghost can't go there, how many plots
   if(v3tagList.length){ ctx.setTransform(dpr,0,0,dpr,0,0); cam.z=1;
     for(const g of v3tagList){ const p=V3.project(g.x,V3.hAt(g.x,g.y)+g.lift,g.y); if(p.behind||p.x<-80||p.y<-40||p.x>vw+80||p.y>vh+40) continue; pill(p.x,p.y,g.txt,g.bg,g.dy,g.fs); } }
