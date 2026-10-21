@@ -2127,7 +2127,9 @@ function updateCars(dt){
       if(dist>70) break;
       if(k.kind==="none"||k.passed) continue;
       const n=nodes.get(k.node); let go=true;
-      if(n&&c.ghost<=0&&k.slip){
+      // in the City a car gives way to people on a zebra crossing it's about to drive over, if it can still stop
+      if(n&&n.xing&&c.ghost<=0&&(n.xing[k.inSeg]||n.xing[k.outSeg])&&dist>c.v*c.v/(2*BRK)+1) go=false;
+      else if(n&&c.ghost<=0&&k.slip){
         // a free right turn on a slip lane doesn't wait for the lights or the other traffic
         if(dist<10){ if(exitBlocked(c,k)) go=false; else k.passed=true; }
       } else if(n&&c.ghost<=0){
@@ -4260,6 +4262,175 @@ function drawParkWalkers(){
     ctx.fillStyle="rgba(20,24,16,.22)"; ctx.beginPath(); ctx.arc(x+SHX*2,y+SHY*2,1.5,0,7); ctx.fill();
     ctx.fillStyle=c.col; ctx.beginPath(); ctx.arc(x,y,1.6,0,7); ctx.fill(); ctx.fillStyle=SKIN[(c.len*7|0)%SKIN.length]; ctx.beginPath(); ctx.arc(x+bob,y-.15,.85,0,7); ctx.fill(); }
 }
+// ---------- people out walking (City) ----------
+// People come out of the homes, shops and offices near where you're looking, walk along the pavements, turn the
+// corners, cross at the zebra crossings (when the lights are red for the road they cross, or at a gap in the traffic,
+// and cars wait for them) and go in somewhere else. Others stroll round the paths in the parks and plazas or sit on
+// the benches. Only the ones near the view are kept, up to a fixed number, so a big city costs no more than a small
+// one, and there are none when you've zoomed right out. Each has a level for the 3D view: 0 the ground, 1 the road,
+// 2 up on the pavement.
+const PED_SHIRT=["#b5574a","#4f6f9a","#cfa957","#5f8a58","#76608c","#c98552","#e6e3dc","#3a3e45","#5b958a","#a8627a","#8d7b68","#9ea3a8"];
+const PED_LEGS=["#2f3a4f","#38393c","#5a4a3c","#7a7d82","#26282c","#4a5a6a","#6b5b4b"], PED_HAIR=["#2b2420","#4a3426","#6e5034","#b8935a","#8a8784","#1f1d1c"];
+let peds=[], pedBox=null, pedKey="", pedRV=-1, pedDoors=[], pedParks=[], pedAcc=new Map(), pedRT=0, pedXN=[], pedLive=new Set();
+const pedCap=()=>isTouch?70:160, PED_Z=1;
+// where on road s a person is: d along it from its start and o out from its middle
+const pedAt=(s,d,o)=>{ const A=nodes.get(s.a); return {x:A.x+s.ux*d-s.uy*o,y:A.y+s.uy*d+s.ux*o}; };
+// the roads at a junction, in order round it, each with the way out along it, its left and where its end is
+function pedArms(n){
+  if(n.pa&&n.pa.v===rver) return n.pa.a;
+  const a=n.segs.map(id=>{ const s=segs.get(id), d=dirFrom(s,n.id), t=trimAt(s,n.id); return {s,d,t,hw:segHW(s),l:{x:-d.y,y:d.x},q:{x:n.x+d.x*t,y:n.y+d.y*t},an:Math.atan2(d.y,d.x)}; }).sort((p,q)=>p.an-q.an);
+  n.pa={v:rver,a}; return a; }
+// the benches in a park or plaza: where each is, along it, and the way someone sitting on it faces
+function pedBenches(b){
+  const w=b.w, d=b.d, L=b.type==="plaza"?[[-w/2+5,0,Math.PI/2],[w/2-5,0,Math.PI/2],[0,-d/2+5,0]]:[[-w*.18,d*.22,.4],[w*.2,d*.2,-.4]], th=b.ang-Math.PI/2;
+  return L.map(([x,y,a])=>{ const p=toMap(b,x,y), ax=Math.cos(th+a), ay=Math.sin(th+a); let fx=-ay, fy=ax; if(fx*(b.x-p.x)+fy*(b.y-p.y)<0){ fx=-fx; fy=-fy; } return {x:p.x,y:p.y,ax,ay,fx,fy}; }); }
+// a point on the path round a park (u from 0 to 3, starting and ending at its gate), or round a plaza's fountain
+function pedLoop(p){ const b=p.b, w=b.w, d=b.d;
+  if(b.type==="plaza"){ const a=p.u*Math.PI*2/3; return toMap(b,Math.cos(a)*p.pr,Math.sin(a)*p.pr); }
+  const C=[[0,d/2],[-w*.35,d*.1],[-w*.3,-d*.32],[w*.05,-d*.5],[w*.36,-d*.2],[w*.42,d*.25],[0,d/2]], k=clamp(Math.floor(p.u),0,2), f=clamp(p.u-k,0,1), v=1-f, A=C[k*2], Q=C[k*2+1], B=C[k*2+2];
+  return toMap(b,v*v*A[0]+2*v*f*Q[0]+f*f*B[0],v*v*A[1]+2*v*f*Q[1]+f*f*B[1]); }
+function pedNew(x,y){ const r=Math.random;
+  return {k:"walk",x,y,z:2,a:r()*7,v:2.5+r()*.8,lat:(r()-.5)*1.4,zj:(r()-.5)*2.6,life:25+r()*50,ph:r()*7,h:.92+r()*.16,
+    sh:r()*PED_SHIRT.length|0,lg:r()*PED_LEGS.length|0,sk:r()*SKIN.length|0,hr:r()*PED_HAIR.length|0}; }
+// start walking out along arm C of junction n, on side ls of it, from d0 along it (or from the junction)
+function pedOut(p,n,C,ls,d0){ const s=C.s;
+  if(segs.get(s.id)!==s||!walkable(s)){ p.dead=true; return; }
+  const fa=s.a===n.id; p.k="walk"; p.s=s; p.dir=fa?1:-1; p.sd=fa?ls:-ls; p.o=segHW(s)+.7+p.lat; p.cx=false; p.z=2;
+  p.d=d0===undefined?(fa?s.ta:s.len-s.tb):(fa?d0:s.len-d0); }
+const pedGo=(p,P,nx)=>{ p.k="path"; p.P=P; p.pi=0; p.nx=nx; };
+// the way round a corner on the pavement, from arm A (on side ls of it) to the next arm round, C
+function pedCorner(n,A,ls,C,o){
+  const p1={x:A.q.x+A.l.x*ls*o,y:A.q.y+A.l.y*ls*o,z:2}, p2={x:C.q.x-C.l.x*ls*o,y:C.q.y-C.l.y*ls*o,z:2}, P=[];
+  if(n.type==="round"){ const R=ringR(n)+LW/2+2+(GUT+SWO)/2, ra=Math.sqrt(Math.max(0,R*R-o*o));
+    const a0=Math.atan2(A.d.y*ra+A.l.y*ls*o,A.d.x*ra+A.l.x*ls*o); let da=Math.atan2(C.d.y*ra-C.l.y*ls*o,C.d.x*ra-C.l.x*ls*o)-a0;
+    while(ls>0&&da<=0) da+=Math.PI*2; while(ls<0&&da>=0) da-=Math.PI*2;
+    P.push(p1); for(let k=0;k<=10;k++){ const a=a0+da*k/10; P.push({x:n.x+Math.cos(a)*R,y:n.y+Math.sin(a)*R,z:2}); } P.push(p2); return P; }
+  const den=A.d.x*C.d.y-A.d.y*C.d.x, wx=p2.x-p1.x, wy=p2.y-p1.y;
+  if(Math.abs(den)>.05){ const sa=(wx*C.d.y-wy*C.d.x)/den, sb=(wx*A.d.y-wy*A.d.x)/den;
+    if(sa<=0&&sb<=0&&sa>-(A.t+2*A.hw+10)&&sb>-(C.t+2*C.hw+10)){ const c={x:p1.x+A.d.x*sa,y:p1.y+A.d.y*sa};
+      for(let k=0;k<=8;k++){ const u=k/8, v=1-u; P.push({x:v*v*p1.x+2*v*u*c.x+u*u*p2.x,y:v*v*p1.y+2*v*u*c.y+u*u*p2.y,z:2}); } return P; } }
+  return [p1,p2]; }
+// across the zebra on arm X of junction n, at r along it, from side sg to the other side, then out onto the pavement
+function pedZebra(X,n,r,sg,o){ const at=(rr,oo,z)=>({x:n.x+X.d.x*rr+X.l.x*oo,y:n.y+X.d.y*rr+X.l.y*oo,z}), hc=X.hw-GUT;
+  return {S:at(r,sg*(X.hw-.5),2),P:[at(r,sg*(hc+.05),2),at(r,sg*(hc-.05),1),at(r,-sg*(hc-.05),1),at(r,-sg*(hc+.05),2),at(r,-sg*(X.hw-.5),2),at(r+1.5,-sg*o,2)]}; }
+// can someone step onto the zebra on arm X of junction n now: the lights are red for that road (and not about to
+// change), no car is going through the junction to or from it, and nothing's coming fast
+function pedMay(n,X,z){
+  const L=n.type==="light"?n.light:null;
+  if(L&&L.ph){ const ph=L.ph[L.phase]; if(!ph||ph.g===L.grp[X.s.id]||L.t>ph.dur*.55) return false; }
+  for(const h of n.hold) if(h.k.inSeg===X.s.id||h.k.outSeg===X.s.id) return false;
+  const gx=Math.floor(z.x/HC), gy=Math.floor(z.y/HC);
+  for(let ox=-1;ox<=1;ox++) for(let oy=-1;oy<=1;oy++){ const a=carGrid.get((gx+ox)*4096+gy+oy); if(!a) continue;
+    for(const c of a){ if(c.v<1.5||c.up) continue; if(Math.hypot(c.x-z.x,c.y-z.y)<c.v*c.v/(2*BRK)+14) return false; } }
+  return true; }
+// wait at the kerb at S, then cross along P; nx is what they do on the far side
+function pedWait(p,n,X,Z,nx){ pedGo(p,[Z.S],q=>{ q.k="wait"; q.xn=n; q.xa=X; q.P=Z.P; q.nx=nx; q.wt=0; }); }
+// a person walking along a road has come to its end, at junction n
+function pedArrive(p){
+  const s=p.s, n=nodes.get(p.dir>0?s.b:s.a), ls=n.id===s.a?p.sd:-p.sd, deg=n.segs.length, o=p.o, back=()=>{ p.dir=-p.dir; };
+  if(deg===1){ // a dead end: round the turning circle and back along the other side
+    const A=pedArms(n)[0], a0=Math.atan2(A.l.y*ls,A.l.x*ls), P=[]; for(let i=1;i<=8;i++){ const a=a0+ls*Math.PI*i/8; P.push({x:n.x+Math.cos(a)*o,y:n.y+Math.sin(a)*o,z:2}); }
+    pedGo(p,P,q=>pedOut(q,n,A,-ls)); return; }
+  if(n.hw) return back();
+  const arms=pedArms(n), m=arms.length, i=arms.findIndex(a=>a.s===s); if(i<0) return back();
+  const A=arms[i], C=arms[(i+(ls>0?1:-1)+m)%m];
+  if(C===A||!walkable(C.s)||C.s.over||(deg===2&&n.type!=="plain")) return back();
+  const P=pedCorner(n,A,ls,C,o);
+  // some cross the road round the corner, the rest walk on round into it
+  if(deg>=3&&zebraAt(n)&&cwAt(C.s)&&Math.random()<.45){ const Z=pedZebra(C,n,C.t+3.7+p.zj,-ls,C.hw+.7+p.lat);
+    pedGo(p,[...P,Z.S],q=>pedWait(q,n,C,Z,r=>pedOut(r,n,C,ls,C.t+3.7+p.zj+1.5))); return; }
+  pedGo(p,P,q=>pedOut(q,n,C,-ls)); }
+// someone heading off the street: up the path to a door, or into a park
+function pedIn(p,q){ const b=q.b, A=pedAt(p.s,p.d,p.sd*(segHW(p.s)+SWO+.1)), B=pedAt(p.s,p.d,p.sd*(segHW(p.s)+SWO+.3));
+  if(q.park){ const g=toMap(b,0,b.d/2-1); pedGo(p,[{x:A.x,y:A.y,z:2},{x:B.x,y:B.y,z:0},{x:g.x,y:g.y,z:0}],r=>pedPark(r,b)); }
+  else pedGo(p,[{x:A.x,y:A.y,z:2},{x:B.x,y:B.y,z:0},{x:q.door.x,y:q.door.y,z:0}],r=>{ r.dead=true; }); }
+// out of a door (or a park's gate) and down to the pavement in front
+function pedFrom(p,q){ const s=segs.get(q.acc.seg); if(!s||!walkable(s)) { p.dead=true; return; }
+  const d=q.acc.t*s.len, sd=q.acc.side, A=pedAt(s,d,sd*(segHW(s)+SWO+.3)), B=pedAt(s,d,sd*(segHW(s)+SWO+.1)), C=pedAt(s,d,sd*(segHW(s)+.7+p.lat));
+  pedGo(p,[{x:A.x,y:A.y,z:0},{x:B.x,y:B.y,z:2},{x:C.x,y:C.y,z:2}],r=>{ r.k="walk"; r.s=s; r.sd=sd; r.dir=Math.random()<.5?1:-1; r.d=clamp(d,s.ta,s.len-s.tb); r.o=segHW(s)+.7+r.lat; r.cx=false; r.z=2; }); }
+// strolling round a park, then perhaps a sit on a bench, then off out of the gate
+function pedPark(p,b){ p.k="park"; p.b=b; p.z=0; p.u=b.type==="plaza"?Math.random()*3:0; p.pr=b.type==="plaza"?Math.min(11,Math.min(b.w,b.d)/2-3)+(Math.random()-.5)*3:0; p.pd=Math.random()<.5?1:-1; p.st=20+Math.random()*50; }
+function pedStep(dt){
+  // the area round the view, and nobody when zoomed right out
+  if(!city||cam.z<PED_Z){ if(peds.length) peds=[]; for(const n of pedXN) n.xing=null; pedXN=[]; return; }
+  // (the 3D view sees further, up towards the horizon)
+  const v3=v3live(), hx=Math.min(900,(v3?Math.max(vw,vh)*.75:vw/2)/cam.z+40), hy=Math.min(900,(v3?Math.max(vw,vh)*.75:vh/2)/cam.z+40), bx={x0:cam.x-hx,y0:cam.y-hy,x1:cam.x+hx,y1:cam.y+hy};
+  pedRT-=dt;
+  // the roads have changed: anyone on a road that's gone goes too
+  if(pedRV!==rver){ pedRV=rver; for(const p of peds){ if(p.s&&(segs.get(p.s.id)!==p.s||!walkable(p.s))) p.dead=true; else if(p.s) p.d=clamp(p.d,p.s.ta,p.s.len-p.s.tb);
+    if((p.k==="wait"||p.k==="cross")&&(nodes.get(p.xn.id)!==p.xn||segs.get(p.xa.s.id)!==p.xa.s)) p.dead=true; } }
+  const key=rver+":"+tver+":"+blds.length+":"+Math.round(cam.x/60)+":"+Math.round(cam.y/60)+":"+Math.round(hx/40)+":"+Math.round(hy/40);
+  if(key!==pedKey&&pedRT<=0||pedRT<-6){ pedKey=key; pedRT=1; pedBox=bx;
+    // the doors and parks in the area, and which side of which road each opens onto
+    pedDoors=[]; pedParks=[]; pedAcc=new Map(); pedLive=new Set(blds);
+    for(const b of blds){ if(b.cons||b.x<bx.x0||b.y<bx.y0||b.x>bx.x1||b.y>bx.y1) continue; const pk=b.type==="park"||b.type==="bigpark"||b.type==="plaza";
+      for(const a of (b.accs||(b.acc?[b.acc]:[]))){ const s=segs.get(a.seg); if(!s||!walkable(s)) continue; const q={b,acc:a,door:a.door||b.door,park:pk,d:a.t*s.len,sd:a.side};
+        if(pk) pedParks.push(q); else if(b.type!=="parking"&&b.type!=="garage") pedDoors.push(q);
+        let L=pedAcc.get(s.id); if(!L) pedAcc.set(s.id,L=[]); L.push(q); } }
+    for(const p of peds) if(p.b&&!pedLive.has(p.b)) p.dead=true; }
+  const B=pedBox||bx, mg=60;
+  peds=peds.filter(p=>!p.dead&&p.x>B.x0-mg&&p.y>B.y0-mg&&p.x<B.x1+mg&&p.y<B.y1+mg);
+  // more people out where there are more doors and parks
+  const want=Math.min(pedCap(),Math.round(pedDoors.length*1.3+pedParks.length*5));
+  for(let k=0;k<3&&peds.length<want;k++){ const r=Math.random();
+    if(pedParks.length&&r<pedParks.length*5/(want+1)){ const q=pedParks[Math.random()*pedParks.length|0], b=q.b, p=pedNew(b.x,b.y);
+      // someone sitting on a bench, if there's room
+      const bs=pedBenches(b), bi=Math.random()*bs.length|0, sat=peds.filter(o=>o.k==="sit"&&o.b===b&&o.bi===bi).length;
+      if(Math.random()<.4&&sat<2){ const c=bs[bi], f=sat?-1:1; Object.assign(p,{k:"sit",b,bi,z:0,x:c.x+c.ax*f*.9,y:c.y+c.ay*f*.9,a:Math.atan2(c.fy,c.fx),st:15+Math.random()*40}); }
+      else { pedPark(p,b); p.u=Math.random()*3; const q2=pedLoop(p); p.x=q2.x; p.y=q2.y; }
+      peds.push(p); continue; }
+    if(!pedDoors.length) break;
+    const q=pedDoors[Math.random()*pedDoors.length|0], s=segs.get(q.acc.seg); if(!s) continue;
+    // at first the streets fill straight away; after that people come out of the doors
+    if(peds.length<want*.6&&Math.random()<.7){ const p=pedNew(0,0); p.s=s; p.sd=Math.random()<.5?1:-1; p.dir=Math.random()<.5?1:-1; p.d=s.ta+Math.random()*Math.max(0,s.len-s.ta-s.tb); p.o=segHW(s)+.7+p.lat; p.cx=false;
+      const w=pedAt(s,p.d,p.sd*p.o); p.x=w.x; p.y=w.y; p.a=Math.atan2(s.uy*p.dir,s.ux*p.dir); peds.push(p); }
+    else { const p=pedNew(q.door.x,q.door.y); p.z=0; pedFrom(p,q); peds.push(p); } }
+  for(const p of peds){ p.ph+=dt*p.v*1.9;
+    if(p.k==="walk"){ const s=p.s; p.life-=dt; p.d+=p.dir*p.v*dt;
+      const n=nodes.get(p.dir>0?s.b:s.a), rem=p.dir>0?s.len-p.d:p.d;
+      // the zebra across this road at the junction ahead: some cross here and walk back along the other side
+      if(!p.cx&&n.segs.length>=3&&zebraAt(n)&&cwAt(s)){ const tr=trimAt(s,n.id), r0=tr+3.7+p.zj; if(rem<=r0+1.5){ p.cx=true;
+        if(Math.random()<.22){ const A=pedArms(n).find(a=>a.s===s), ls=n.id===s.a?p.sd:-p.sd, Z=pedZebra(A,n,r0,ls,p.o); pedWait(p,n,A,Z,r=>pedOut(r,n,A,-ls,r0+1.5)); continue; } } }
+      const end=p.dir>0?s.len-s.tb:s.ta;
+      if(p.dir>0?p.d>=end:p.d<=end){ p.d=end; const w=pedAt(s,p.d,p.sd*p.o); p.x=w.x; p.y=w.y; pedArrive(p); continue; }
+      const w=pedAt(s,p.d,p.sd*p.o); p.x=w.x; p.y=w.y; p.a=Math.atan2(s.uy*p.dir,s.ux*p.dir);
+      // time to go in: the next door on this side
+      if(p.life<0){ const L=pedAcc.get(s.id); if(L) for(const q of L) if(q.sd===p.sd&&Math.abs(q.d-p.d)<1.4&&pedLive.has(q.b)){ pedIn(p,q); break; } }
+    } else if(p.k==="path"||p.k==="cross"){ let m=p.v*dt*(p.k==="cross"?1.25:1);
+      while(m>0&&p.pi<p.P.length){ const q=p.P[p.pi], dx=q.x-p.x, dy=q.y-p.y, l=Math.hypot(dx,dy);
+        if(l>.05) p.a=Math.atan2(dy,dx);
+        if(l<=m){ p.x=q.x; p.y=q.y; p.z=q.z; m-=l; p.pi++; } else { const z0=p.z; p.x+=dx/l*m; p.y+=dy/l*m; p.z=z0+(q.z-z0)*Math.min(1,m/l); m=0; } }
+      if(p.pi>=p.P.length){ const f=p.nx; p.nx=null; p.xn=null; p.k="walk"; if(f) f(p); else p.dead=true; }
+    } else if(p.k==="wait"){ p.wt+=dt; const n=p.xn, X=p.xa;
+      if(pedMay(n,X,{x:(p.P[1].x+p.P[2].x)/2,y:(p.P[1].y+p.P[2].y)/2})){ p.k="cross"; p.pi=0; }
+      else if(p.wt>50){ p.dead=true; } else { p.ph-=dt*p.v*1.9; const z=p.P[2]; p.a=Math.atan2(z.y-p.y,z.x-p.x); }
+    } else if(p.k==="park"){ const b=p.b; p.st-=dt; const L=b.type==="plaza"?Math.PI*2*p.pr:(b.w+b.d)*1.5;
+      p.u=((p.u+p.pd*p.v*dt*3/L*.8)%3+3)%3; const q=pedLoop(p), dx=q.x-p.x, dy=q.y-p.y; if(dx*dx+dy*dy>1e-4) p.a=Math.atan2(dy,dx); p.x=q.x; p.y=q.y;
+      // done here: out of the gate onto the street (a park's path starts and ends at its gate)
+      if(p.st<0&&(b.type==="plaza"||p.u<.08||p.u>2.92)){ const q2=pedParks.find(o=>o.b===b);
+        if(q2){ const g=toMap(b,0,b.d/2-1); p.life=20+Math.random()*40; pedGo(p,[{x:g.x,y:g.y,z:0}],r=>pedFrom(r,q2)); } else p.st=10; }
+    } else if(p.k==="sit"){ p.st-=dt; p.ph=0;
+      // up off the bench and back onto the path
+      if(p.st<0){ pedPark(p,p.b); const g=pedLoop(p); pedGo(p,[{x:g.x,y:g.y,z:0}],r=>{ r.k="park"; }); } } }
+  // who's on which crossing, for the cars to wait for
+  for(const n of pedXN) n.xing=null; pedXN=[];
+  for(const p of peds) if(p.k==="cross"&&p.xn){ const n=p.xn; if(!n.xing){ n.xing={}; pedXN.push(n); } n.xing[p.xa.s.id]=(n.xing[p.xa.s.id]||0)+1; }
+}
+// in 2D: a shadow, the body with the shoulders across, and the head
+function drawPeds(){
+  if(cam.z<1.05||!LOD||!peds.length) return;
+  const body=PED_SHIRT.map(()=>new Path2D()), hair=PED_HAIR.map(()=>new Path2D()), face=SKIN.map(()=>new Path2D()), sh=new Path2D();
+  for(const p of peds){ if(!inView(p.x,p.y,4)) continue; const c=Math.cos(p.a), s=Math.sin(p.a), bob=p.k==="sit"?0:Math.sin(p.ph)*.1, x=p.x, y=p.y;
+    sh.moveTo(x+SHX*2+1.5,y+SHY*2); sh.arc(x+SHX*2,y+SHY*2,1.5,0,7);
+    body[p.sh].moveTo(x+c*.95,y+s*.95); body[p.sh].ellipse(x,y,.95,1.55,p.a,0,7);
+    hair[p.hr].moveTo(x+c*bob+.82,y+s*bob); hair[p.hr].arc(x+c*bob,y+s*bob,.82,0,7);
+    face[p.sk].moveTo(x+c*(.42+bob)+.42,y+s*(.42+bob)); face[p.sk].arc(x+c*(.42+bob),y+s*(.42+bob),.42,0,7); }
+  ctx.fillStyle="rgba(20,24,16,.2)"; ctx.fill(sh);
+  ctx.strokeStyle="rgba(0,0,0,.28)"; ctx.lineWidth=.25;
+  body.forEach((P,i)=>{ ctx.fillStyle=dk(PED_SHIRT[i],.35); ctx.fill(P); ctx.stroke(P); });
+  hair.forEach((P,i)=>{ ctx.fillStyle=dk(PED_HAIR[i],.35); ctx.fill(P); });
+  face.forEach((P,i)=>{ ctx.fillStyle=dk(SKIN[i],.35); ctx.fill(P); });
+}
 const LEIS=new Set(["parking","garage","park","bigpark","plaza","beach","marina"]);
 const FUNK=SKEYS.filter(k=>SVC[k].fun);
 const MIXED_COLS=["#9c6a55","#a5765a","#8a8f96","#b5835a","#7f8f9a","#8e7b6e"];
@@ -5115,23 +5286,29 @@ function drawSmoke(dt){
 
 // people walking between their cars and the door
 const SHIRTS=["#e2493a","#3d7fe0","#f1c232","#4caf50","#9b59b6","#ff8a3d","#f4f4f2","#2b2e33","#1abc9c","#d6457f"], SKIN=["#f1c7a5","#d9a27c","#a8714d","#7a4f33","#f6d9c0"];
-function drawWalkers(){
-  if(cam.z<1.05||!LOD) return;
-  const now=performance.now()/1000, body=SHIRTS.map(()=>new Path2D()), heads=SKIN.map(()=>new Path2D()), sh=new Path2D();
-  for(const b of blds){ const k=b.type; if((k!=="shop"&&k!=="office"&&k!=="mall")||!inView(b.x,b.y,b.r)||b.cons||animT-b.grow<1) continue;
+// the people at the shops, offices and malls that inB(x,y,r) takes in: each one's spot, shirt, skin, number and
+// which way they're walking
+function shopWalkers(fn,inB){
+  const now=performance.now()/1000;
+  for(const b of blds){ const k=b.type; if((k!=="shop"&&k!=="office"&&k!=="mall")||!inB(b.x,b.y,b.r)||b.cons||animT-b.grow<1) continue;
     const here=(parkedAt.get(b)||[]).length, n=Math.min(k==="mall"?12:6,here+(k==="mall"?2:1));
-    const by=k==="shop"?3:k==="office"?7:-1.5;
+    const by=k==="shop"?3:k==="office"?7:-1.5, th=b.ang-Math.PI/2;
     for(let i=0;i<n;i++){
       const ph=(now*(.05+hash(b.id,i+40)*.03)+hash(b.id,i))%1; if(ph>.4&&ph<.6) continue;   // inside for a while
       const u=ph<.4?ph/.4:1-(ph-.6)/.4;
       const lx0=-b.w/2+5+hash(b.id,i+9)*(b.w-10), ly0=k==="mall"?6+hash(b.id,i+29)*(b.d/2-12):by+7.5+(k==="office"?-2:0);
       const lx1=(hash(b.id,i+19)-.5)*(k==="mall"?20:6), ly1=by+1;
-      const p=toMap(b,lx0+(lx1-lx0)*u,ly0+(ly1-ly0)*u), bob=Math.sin(now*9+i)*.12;
-      sh.moveTo(p.x+SHX*2+1.5,p.y+SHY*2); sh.arc(p.x+SHX*2,p.y+SHY*2,1.5,0,7);
-      const bi=(b.id*3+i)%SHIRTS.length, hi=(b.id+i*7)%SKIN.length;
-      body[bi].moveTo(p.x+1.6,p.y); body[bi].ellipse(p.x,p.y,1.6,1.6,0,0,7);
-      heads[hi].moveTo(p.x+.85+bob,p.y-.15); heads[hi].arc(p.x+bob,p.y-.15,.85,0,7); }
+      const p=toMap(b,lx0+(lx1-lx0)*u,ly0+(ly1-ly0)*u), g=ph<.4?1:-1, dx=(lx1-lx0)*g, dy=(ly1-ly0)*g;
+      fn(p.x,p.y,(b.id*3+i)%SHIRTS.length,(b.id+i*7)%SKIN.length,i,Math.atan2(dx*Math.sin(th)+dy*Math.cos(th),dx*Math.cos(th)-dy*Math.sin(th))); }
   }
+}
+function drawWalkers(){
+  if(cam.z<1.05||!LOD) return;
+  const now=performance.now()/1000, body=SHIRTS.map(()=>new Path2D()), heads=SKIN.map(()=>new Path2D()), sh=new Path2D();
+  shopWalkers((x,y,bi,hi,i)=>{ const bob=Math.sin(now*9+i)*.12;
+    sh.moveTo(x+SHX*2+1.5,y+SHY*2); sh.arc(x+SHX*2,y+SHY*2,1.5,0,7);
+    body[bi].moveTo(x+1.6,y); body[bi].ellipse(x,y,1.6,1.6,0,0,7);
+    heads[hi].moveTo(x+.85+bob,y-.15); heads[hi].arc(x+bob,y-.15,.85,0,7); },inView);
   ctx.fillStyle="rgba(20,24,16,.22)"; ctx.fill(sh);
   body.forEach((P,i)=>{ ctx.fillStyle=SHIRTS[i]; ctx.fill(P); ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=.3; ctx.stroke(P); });
   heads.forEach((P,i)=>{ ctx.fillStyle=SKIN[i]; ctx.fill(P); });
@@ -6512,7 +6689,7 @@ function draw(){
   for(const c of cars) if(c.svc&&c.state==="park"&&inView(c.x,c.y,20)) drawCar(c);
   if(city) for(const b of blds) if(b.fire&&inView(b.x,b.y,b.r+40)){ drawHose(b); drawFire(b); }
   if(ultra){ drawWalkers(); drawSmoke(fdt); }
-  if(city) drawParkWalkers();
+  if(city){ drawParkWalkers(); drawPeds(); }
   drawOverpasses();
   for(const c of cars) if(c.state==="drive"&&c.up&&inView(c.x,c.y,20)) drawCar(c);
   drawOutside();
@@ -6546,6 +6723,8 @@ function step(dt){
     for(const h of blds){ if(h.wait>0) h.wait-=dt; if(h.cons&&t>=h.cons.t0+h.cons.dur) finishWork(h); }
   }
   updateLights(dt);
+  // (people out walking are only for show: if anything goes wrong with them, they're cleared and the game goes on)
+  try{ pedStep(dt); }catch(e){ peds=[]; console.error(e); }
   updateCars(dt);
   for(const e of effects) e.t+=dt;
   if(!over&&levelPending){ levelPending=false; levelUp(); }
@@ -7245,6 +7424,42 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
     if(tlList.length) tlLamp.instanceColor.needsUpdate=true;
   }
 
+  // ----- people as little figures: legs that swing as they walk, a body in their own colours, a head and hair. The
+  // ones out walking, the ones on their way between a car park and a door, and the shop crowds on Ultra. People on a
+  // bench sit with their legs out, and the benches they use are put in too.
+  const PC3=360, pMat=new T.MeshStandardMaterial({roughness:.85}), pDummy=new T.Object3D();
+  const pLeg=new T.InstancedMesh(new T.BoxGeometry(.4,1.55,.44).translate(0,-.775,0),pMat,PC3*2), pBody=new T.InstancedMesh(new T.BoxGeometry(1.02,1.4,.56).translate(0,.7,0),pMat,PC3);
+  const pHead=new T.InstancedMesh(new T.IcosahedronGeometry(.4,1),pMat,PC3), pHair=new T.InstancedMesh(new T.IcosahedronGeometry(.44,1).scale(1,.62,1).translate(0,.16,-.05),pMat,PC3);
+  const bnMat=new T.MeshStandardMaterial({color:0x8a6a4a,roughness:.8}), bnI=new T.InstancedMesh(new T.BoxGeometry(1,1,1),bnMat,240);
+  for(const m of [pLeg,pBody,pHead,pHair,bnI]){ m.count=0; m.frustumCulled=false; m.castShadow=true; scene.add(m); if(m!==bnI) m.setColorAt(0,new T.Color(1,1,1)); }
+  const pPut=(m,i,x,y,z,ry,rx,s)=>{ pDummy.position.set(x,y,z); pDummy.rotation.set(rx,ry,0,"YXZ"); pDummy.scale.set(s,s,s); pDummy.updateMatrix(); m.setMatrixAt(i,pDummy.matrix); };
+  function people3(){
+    let n=0, nb=0; const on=city&&cam.z>=PED_Z; for(const m of [pLeg,pBody,pHead,pHair,bnI]) m.visible=on;
+    if(!on){ for(const m of [pLeg,pBody,pHead,pHair,bnI]) m.count=0; return; }
+    const lift=z=>z<=1?z*RY:RY+(z-1)*(KY-RY), now=performance.now()/1000, B=pedBox, inB=(x,y,r)=>!!B&&x>B.x0-r&&y>B.y0-r&&x<B.x1+r&&y<B.y1+r;
+    // one person: where, which way they face, their walk (ph), size, colours, and whether they're sitting
+    // (a touch over life size, so they read from up where the camera is)
+    const one=(x,y,lift,a,ph,h,sh,lg,sk,hr,sit)=>{ if(n>=PC3) return; h*=1.2; const dx=Math.cos(a), dy=Math.sin(a), ry=Math.atan2(dx,dy), y0=hAt(x,y)+lift, sw=sit?-Math.PI/2:Math.sin(ph)*.5, hip=sit?1.02:1.55*h, ox=dy*.23*h, oz=-dx*.23*h, bob=sit?0:Math.abs(Math.cos(ph))*.08;
+      pPut(pLeg,n*2,x+ox,y0+hip+bob,y+oz,ry,sw,h); pPut(pLeg,n*2+1,x-ox,y0+hip+bob,y-oz,ry,sit?sw:-sw,h);
+      pPut(pBody,n,x,y0+hip+bob,y,ry,0,h); pPut(pHead,n,x,y0+hip+bob+1.4*h+.42*h,y,ry,0,h); pPut(pHair,n,x,y0+hip+bob+1.4*h+.42*h,y,ry,0,h);
+      setC(pLeg,n*2,lg); setC(pLeg,n*2+1,lg); setC(pBody,n,sh); setC(pHead,n,sk); setC(pHair,n,hr); n++; };
+    for(const p of peds) one(p.x,p.y,p.k==="sit"?0:lift(p.z),p.a,p.ph,p.h,PED_SHIRT[p.sh],PED_LEGS[p.lg],SKIN[p.sk],PED_HAIR[p.hr],p.k==="sit");
+    // the benches in the parks where people are sitting
+    const used=new Set(); for(const p of peds) if(p.k==="sit"||p.k==="park") used.add(p.b);
+    for(const b of used){ if(nb>230) break; for(const c of pedBenches(b)){ const y0=hAt(c.x,c.y);
+      setM(bnI.instanceMatrix.array,nb++,c.x,y0+.85,c.y,Math.atan2(c.ay,c.ax),4,.22,1.05);
+      setM(bnI.instanceMatrix.array,nb++,c.x-c.fx*.5,y0+1.45,c.y-c.fy*.5,Math.atan2(c.ay,c.ax),4,.95,.18);
+      for(const e of [-1.6,1.6]) setM(bnI.instanceMatrix.array,nb++,c.x+c.ax*e,y0+.42,c.y+c.ay*e,Math.atan2(c.ay,c.ax),.22,.84,.9); } }
+    // people walking between their cars and the door
+    if(cam.z>=1.05) for(const c of cars){ if(c.state!=="park"||!c.walk||!c.at) continue; const d=c.walk, P=c.at, out=t-(c.parkT||0), back=c.park; let u;
+      if(out<9) u=out/9; else if(back<9) u=back/9; else continue; if(!inB(P.x,P.y,20)) continue;
+      const x=P.x+(d.door.x-P.x)*u, y=P.y+(d.door.y-P.y)*u, k=(c.len*7|0); one(x,y,0,Math.atan2((d.door.y-P.y)*(out<9?1:-1),(d.door.x-P.x)*(out<9?1:-1)),now*5+c.len,1,c.col,PED_LEGS[k%PED_LEGS.length],SKIN[k%SKIN.length],PED_HAIR[k%PED_HAIR.length],false); }
+    // the crowds coming and going at the shops, on Ultra
+    if(ultra&&cam.z>=1.05) shopWalkers((x,y,bi,hi,i,a)=>one(x,y,0,a,now*5+i,1,SHIRTS[bi],PED_LEGS[i%PED_LEGS.length],SKIN[hi],PED_HAIR[i%PED_HAIR.length],false),inB);
+    pLeg.count=n*2; pBody.count=pHead.count=pHair.count=n; bnI.count=nb;
+    for(const m of [pLeg,pBody,pHead,pHair]){ m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; } bnI.instanceMatrix.needsUpdate=true;
+  }
+
   // ----- cars, trucks and their lights, drawn in batches -----
   function boxInto(P,x0,x1,y0,y1,z0,z1,col){ const v=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
     for(const f of [[0,3,2,1],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,4,7,3]]) quad(P,v[f[0]],v[f[1]],v[f[2]],v[f[3]],[0,0],[1,0],[1,1],[0,1],col); }
@@ -7754,7 +7969,7 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
     overlay();
     focus();
     const rebuilt=batchDirty; if(batchDirty) rebuildBatches();
-    decks(); streets3(); trafficLights3();
+    decks(); streets3(); trafficLights3(); people3();
     const nk=ultra?nightK():0, dk=ultra?duskK():0;
     sky(nk,dk); wU.wt.value=now/1000;
     ncars=carsFrame(nk); cranes(); ghosts(); fires(); streetLights(nk);
@@ -7815,6 +8030,7 @@ window.__gridlock={
   addLane:(x,y,x2,y2,side)=>{ const sg=segUnder({x,y},4); if(!sg) return null; const ok=addLane(sg,{x,y},x2!==undefined&&x2!==null?{x:x2,y:y2}:null,side||"both"); return ok?sg.lanes:false; },
   oneWay:(x,y,lanes)=>{ const sg=segUnder({x,y},4); return sg?makeOneWay(sg,{x,y},lanes||1):null; },
   hint:()=>$("hint").textContent,
+  peds:()=>({n:peds.length,doors:pedDoors.length,parks:pedParks.length,kinds:peds.reduce((o,p)=>(o[p.k]=(o[p.k]||0)+1,o),{}),xing:pedXN.length,box:pedBox&&Math.round(pedBox.x1-pedBox.x0)}),
   kind:k=>{ if(k) { roadKind=k; laneButtons(); } return roadKind; },
   line:(type,path)=>{ const gs=lineAt(type,path); let n=0; for(const g of gs) if(placeGhost(g)) n++; if(n) afterPlace(type); return n; },
   tune:(id,o)=>{ const n=nodes.get(id); if(!n) return null; o=o||{};
