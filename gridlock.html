@@ -516,6 +516,9 @@ let MW=2600, MH=1820;            // map size in world units (metres): the City b
 let MAPK=MW*MH/(2000*1400);      // how much more land there is than the old 2000 x 1400 map
 const LW=7, KERB=2.5;            // lane width, kerb
 const halfW=l=>l*LW+KERB;        // half road width for 1 or 2 lanes each way
+// City streets: the kerb sits GUT in from a road's edge and the pavement runs SWO past it, out to where the plots
+// start; at a junction the zebra crossing runs from CW0 to CW1 past the mouth, and the stop line is STOPR past it
+const GUT=1.2, SWO=2.6, CW0=1.2, CW1=6.2, STOPR=7.6;
 const SPEED={1:52,2:80,3:100}, SPEED_HWY=125;
 const RAMP=40, POLL=100, NOISE=40; // overpass run-up length, factory smoke radius, how far past a highway's edge it's too noisy to live
 const LNAME={1:"2-lane street",2:"4-lane avenue",3:"6-lane road"};
@@ -922,6 +925,18 @@ const inL=(s,nId)=>s.b===nId?s.lf:s.lb;            // lanes arriving at node nId
 const totL=s=>s.lf+s.lb;
 const segHW=s=>totL(s)*LW/2+KERB;
 const oneWay=s=>!s.lf||!s.lb;
+// which City roads have pavements: not highways, overpasses or the road in from outside
+const walkable=s=>city&&!s.hwy&&!s.over&&!s.fixed;
+// the junctions that get zebra crossings, and the roads into them long enough for one with a stop line behind it
+const zebraAt=n=>city&&n.segs.length>=3&&n.type!=="round"&&!n.hw;
+const cwAt=s=>walkable(s)&&s.len-s.ta-s.tb>=28;
+// manholes: none on a short road, and about one every 250 along a long one, each in the middle of a lane
+function holesOf(s){
+  const run=s.len-s.ta-s.tb, n=run<150?0:Math.max(1,Math.round(run/250)), A=nodes.get(s.a), T=totL(s), id=s.id*31, out=[];
+  for(let k=0;k<n;k++){ const d=s.ta+run*(k+.5+(hash(id,k+1)-.5)*.4)/n, l=Math.min(T-1,Math.floor(hash(id,k+40)*T)), o=(l+.5)*LW-T*LW/2;
+    out.push({x:A.x+s.ux*d-s.uy*o,y:A.y+s.uy*d+s.ux*o}); }
+  return out;
+}
 function setL(s,lf,lb){ s.lf=lf; s.lb=lb; s.lanes=Math.max(lf,lb); rver++; }
 // how far right of the road's middle the lanes heading away from fromId start: off-centre when one way has more lanes
 const divOff=(s,fromId)=>(s.a===fromId?s.lb-s.lf:s.lf-s.lb)*LW/2;
@@ -1795,7 +1810,7 @@ function buildRoute(start,legs,endDoor){
       const kind=n.hw?(!L.seg.hwy&&N.seg.hwy?"merge":"none"):n.type==="round"?"round":n.type==="light"?"light":deg>=3?"lock":"none";
       const vt=L.seg.hwy&&N.seg.hwy?Math.max(60,SPEED_HWY-Math.abs(tn.ang)*130):tn.type==="U"?11:n.type==="round"?20:Math.max(n.hw?40:17,Math.min(70,58-Math.abs(tn.ang)*28));
       ctrls.push({node:n.id,i0:c0,i1:pts.length-1,kind,vt,turn:tn.type,group:n.type==="light"&&n.light?n.light.grp[L.seg.id]:0,aIn,ntype:n.type,junc:deg>=3,hw:!!n.hw,held:false,passed:false,inSeg:L.seg.id,outSeg:N.seg.id,pIn,pOut,ex:p1.x,ey:p1.y,eux:dO.x,euy:dO.y,
-        slip:deg>=3&&tn.type==="R"&&!!n.slip[L.seg.id]&&n.type!=="round"});
+        slip:deg>=3&&tn.type==="R"&&!!n.slip[L.seg.id]&&n.type!=="round",cw:zebraAt(n)&&cwAt(L.seg)?STOPR:0});
     } else {
       quad(pts[pts.length-1],lanePt(L.seg,L.from,ln,L.d1),endDoor,6);
     }
@@ -2115,7 +2130,7 @@ function updateCars(dt){
         } else if(k.kind==="light"){
           const st=lightState(n,k.group,k.turn), perm=k.turn==="L"&&!(n.light&&n.light.prot);
           if(st==="g"&&dist<34&&k.turn!=="L") n.near.push({c,k,rt});
-          if(st==="r"||(st==="a"&&dist>c.v*c.v/(2*BRK)+4&&!(perm&&dist<7))) go=false;
+          if(st==="r"||(st==="a"&&dist-(k.cw?k.cw+c.len*.42-1.1:0)>c.v*c.v/(2*BRK)+4&&!(perm&&dist<7))) go=false;
           else if(perm&&dist<16&&!mayCross(n,c,k)) go=false;
           else if(dist<10){ if(exitBlocked(c,k)) go=false; else { k.passed=true; n.hold.push({c,k,rt}); k.held=true; } }
         } else if(k.kind==="round"){
@@ -2124,7 +2139,8 @@ function updateCars(dt){
           if(dist<36){ if(mergeBlocked(c,k)) go=false; else if(dist<8) k.passed=true; }
         }
       }
-      if(!go){ maxS=Math.min(maxS,k.s0-1.5); break; }
+      // in the City a car waits behind the stop line, clear of the zebra crossing
+      if(!go){ maxS=Math.min(maxS,k.s0-(k.cw?k.cw+.4+c.len*.42:1.5)); break; }
       if(!k.passed) break;
     }
     if(c.ghost<=0){
@@ -2511,7 +2527,7 @@ function newGame(isRelaxed,isCity){
   grid=null; gridCur=null; lineGhosts=null; closeTune();
   $("speedBtn").classList.remove("fast");
   makeOutside();
-  rebuildNet();
+  roadCols(); rebuildNet();
   cam.x=MW/2; cam.y=MH/2;
   cam.z=vw<640?vw/420:Math.min(vw/760,vh/520); clampCam();
   running=true; setFrozen(false);
@@ -4763,8 +4779,8 @@ function laneGlyph(S,H,x,y,ax,ay,set){
 }
 // the paved area of a junction: each road's end, joined round to the next road by a kerb that curves in,
 // so a T-junction has a flat far side and a wide road meeting a narrow one tapers instead of bulging
-function junctionPath(n,P){
-  const arms=n.segs.map(id=>{ const s=segs.get(id), d=dirFrom(s,n.id), t=trimAt(s,n.id); return {d,t,hw:segHW(s),a:Math.atan2(d.y,d.x),q:{x:n.x+d.x*t,y:n.y+d.y*t}}; }).sort((p,q)=>p.a-q.a);
+function junctionPath(n,P,ins){
+  const arms=n.segs.map(id=>{ const s=segs.get(id), d=dirFrom(s,n.id), t=trimAt(s,n.id); return {d,t,hw:segHW(s)-(ins&&walkable(s)?ins:0),a:Math.atan2(d.y,d.x),q:{x:n.x+d.x*t,y:n.y+d.y*t}}; }).sort((p,q)=>p.a-q.a);
   const m=arms.length;
   for(let i=0;i<m;i++){
     const A=arms[i], B=arms[(i+1)%m], la={x:-A.d.y,y:A.d.x}, lb={x:-B.d.y,y:B.d.x};
@@ -4782,11 +4798,15 @@ function junctionPath(n,P){
 }
 // roads are kept in one path per width (1 to 6 lanes across), so each width strokes in one go
 const WIDTHS=[1,2,3,4,5,6], byW=()=>{ const o={}; for(const k of WIDTHS) o[k]=new Path2D(); return o; };
-const roadLayer=()=>({body:byW(),yel:new Path2D(),dbl:new Path2D(),white:new Path2D(),med:new Path2D(),edge:new Path2D(),shadow:byW(),ends:[],any:false});
+const roadLayer=()=>({body:byW(),walk:byW(),yel:new Path2D(),dbl:new Path2D(),white:new Path2D(),med:new Path2D(),edge:new Path2D(),shadow:byW(),ends:[],any:false});
 function buildRoadCache(){
   roadLate=false;
   const G=roadLayer(), U=roadLayer(), stops=new Path2D(), arrows=new Path2D(), heads0=new Path2D(), slipS=new Path2D(), slipH=new Path2D(), drives=new Path2D(), rails=byW();
-  const junc=new Path2D(), rings=[], heads=[];
+  // in the City a junction's asphalt stops at its kerbs (juncI), the pavement runs round its corners (juncW), and only
+  // the ramps onto a highway keep the plain kerb all round (juncK); zebra crossings and the few manholes go in zeb and holes
+  const junc=new Path2D(), juncI=city?new Path2D():junc, juncW=city?new Path2D():null, juncK=city?new Path2D():junc, rings=[], heads=[];
+  const zeb=new Path2D(), holes=new Path2D(), holeL=new Path2D();
+  const jp=n=>{ junctionPath(n,junc); if(!city) return; if(n.hw){ junctionPath(n,juncI); junctionPath(n,juncK); } else { junctionPath(n,juncI,GUT); junctionPath(n,juncW); } };
   // the lines on a road, given the lanes on the right and the left of the way the line f is drawn: a centre line
   // (single yellow on a 2-lane street, double on wider roads, a concrete barrier down a highway), dashed lines between
   // lanes going the same way, and solid edge lines on highways. A one-way road has no centre line
@@ -4798,8 +4818,12 @@ function buildRoadCache(){
     const A=nodes.get(s.a), B=nodes.get(s.b), Ly=s.over?U:G, T=totL(s);
     const pa={x:A.x+s.ux*s.ta,y:A.y+s.uy*s.ta}, pb={x:B.x-s.ux*s.tb,y:B.y-s.uy*s.tb}, nx=-s.uy, ny=s.ux;
     Ly.any=true;
-    Ly.body[T].moveTo(pa.x,pa.y); Ly.body[T].lineTo(pb.x,pb.y);
-    marks(Ly,s.lf,s.lb,s.hwy,(P,o)=>{ P.moveTo(pa.x+nx*o,pa.y+ny*o); P.lineTo(pb.x+nx*o,pb.y+ny*o); });
+    const Bd=(walkable(s)?Ly.walk:Ly.body)[T]; Bd.moveTo(pa.x,pa.y); Bd.lineTo(pb.x,pb.y);
+    if(city&&!s.over&&!s.hwy) for(const p of holesOf(s)){ holes.moveTo(p.x+1.6,p.y); holes.arc(p.x,p.y,1.6,0,7);
+      for(const o of [-.7,0,.7]){ holeL.moveTo(p.x+o*s.ux-1.1*nx,p.y+o*s.uy-1.1*ny); holeL.lineTo(p.x+o*s.ux+1.1*nx,p.y+o*s.uy+1.1*ny); } }
+    // (in the City the lines stop at the stop lines)
+    const ea=zebraAt(A)&&cwAt(s)?STOPR+.8:0, eb=zebraAt(B)&&cwAt(s)?STOPR+.8:0, ma={x:pa.x+s.ux*ea,y:pa.y+s.uy*ea}, mb={x:pb.x-s.ux*eb,y:pb.y-s.uy*eb};
+    marks(Ly,s.lf,s.lb,s.hwy,(P,o)=>{ P.moveTo(ma.x+nx*o,ma.y+ny*o); P.lineTo(mb.x+nx*o,mb.y+ny*o); });
     // one-way roads have arrows painted along them
     if(oneWay(s)&&!s.over){ const run=s.len-s.ta-s.tb, n=s.lf||s.lb, from=s.lf?s.a:s.b, u=travelDir(s,from), F=nodes.get(from), t0=s.lf?s.ta:s.tb;
       for(let d=t0+22;d<t0+run-14;d+=70) for(let l=0;l<n;l++){ const o=divOff(s,from)+(l+.5)*LW; laneGlyph(arrows,heads0,F.x+u.x*d-u.y*o,F.y+u.y*d+u.x*o,u.x,u.y,"S"); } }
@@ -4816,31 +4840,36 @@ function buildRoadCache(){
   for(const n of nodes.values()){
     const deg=n.segs.length;
     if(deg===1){ const s=segs.get(n.segs[0]); if(s.over) U.ends.push({x:n.x,y:n.y,r:segHW(s)}); }
-    if(deg===2&&n.type==="plain"&&!flowsOn(segs.get(n.segs[0]),n.id,segs.get(n.segs[1]))&&!segs.get(n.segs[0]).over&&!segs.get(n.segs[1]).over) junctionPath(n,junc);
+    if(deg===2&&n.type==="plain"&&!flowsOn(segs.get(n.segs[0]),n.id,segs.get(n.segs[1]))&&!segs.get(n.segs[0]).over&&!segs.get(n.segs[1]).over) jp(n);
     else if(deg===2&&n.type==="plain"){
       const s1=segs.get(n.segs[0]), s2=segs.get(n.segs[1]), d1=dirFrom(s1,n.id), d2=dirFrom(s2,n.id), t1=trimAt(s1,n.id), t2=trimAt(s2,n.id);
       const q1={x:n.x+d1.x*t1,y:n.y+d1.y*t1}, q2={x:n.x+d2.x*t2,y:n.y+d2.y*t2}, Ly=s1.over&&s2.over?U:G;
-      for(const L of new Set([totL(s1),totL(s2)])){ Ly.body[L].moveTo(q1.x,q1.y); Ly.body[L].quadraticCurveTo(n.x,n.y,q2.x,q2.y); }
+      const Bw=walkable(s1)&&walkable(s2)?Ly.walk:Ly.body;
+      for(const L of new Set([totL(s1),totL(s2)])){ Bw[L].moveTo(q1.x,q1.y); Bw[L].quadraticCurveTo(n.x,n.y,q2.x,q2.y); }
       // drawn from s1 round to s2: s1's lanes into the joint are on the right
       if(flowsOn(s1,n.id,s2)) marks(Ly,inL(s1,n.id),dirL(s1,n.id),s1.hwy,(P,o)=>{ if(o) offsetQuad(P,q1,n,q2,o,10); else { P.moveTo(q1.x,q1.y); P.quadraticCurveTo(n.x,n.y,q2.x,q2.y); } });
     } else if(deg>=3){
-      if(n.type==="round") rings.push({x:n.x,y:n.y,R:ringR(n),outer:n.trim});
-      else junctionPath(n,junc);
+      if(n.type==="round") rings.push({x:n.x,y:n.y,R:ringR(n),outer:n.trim,walk:city&&!n.hw});
+      else jp(n);
       if(n.hw){ const hs=n.segs.map(id=>segs.get(id)).filter(q=>q.hwy);
         if(hs.length===2&&flowsOn(hs[0],n.id,hs[1])){ const s1=hs[0], s2=hs[1], d1=dirFrom(s1,n.id), d2=dirFrom(s2,n.id), t1=trimAt(s1,n.id), t2=trimAt(s2,n.id);
           const q1={x:n.x+d1.x*t1,y:n.y+d1.y*t1}, q2={x:n.x+d2.x*t2,y:n.y+d2.y*t2}, Ly=s1.over&&s2.over?U:G;
           Ly.body[6].moveTo(q1.x,q1.y); Ly.body[6].quadraticCurveTo(n.x,n.y,q2.x,q2.y);
           marks(Ly,inL(s1,n.id),dirL(s1,n.id),true,(P,o)=>{ if(o) offsetQuad(P,q1,n,q2,o,10); else { P.moveTo(q1.x,q1.y); P.quadraticCurveTo(n.x,n.y,q2.x,q2.y); } }); } }
       if(n.type!=="round"&&!n.hw) for(const id of n.segs){
-        const s=segs.get(id), d=dirFrom(s,n.id), tr=trimAt(s,n.id), q={x:n.x+d.x*tr,y:n.y+d.y*tr}, nl=inL(s,n.id);
+        const s=segs.get(id), d=dirFrom(s,n.id), tr=trimAt(s,n.id), nl=inL(s,n.id), cw=zebraAt(n)&&cwAt(s);
+        // a zebra crossing just past the mouth of each road, and the stop line set back behind it
+        if(cw){ const hc=segHW(s)-GUT, m=Math.floor((2*hc-2.2)/2.7)+1, lx=-d.y, ly=d.x;
+          for(let i=0;i<m;i++){ const o=(i-(m-1)/2)*2.7, x=n.x+d.x*(tr+CW0)+lx*o, y=n.y+d.y*(tr+CW0)+ly*o; zeb.moveTo(x,y); zeb.lineTo(x+d.x*(CW1-CW0),y+d.y*(CW1-CW0)); } }
+        const sb=cw?STOPR:0, q={x:n.x+d.x*(tr+sb),y:n.y+d.y*(tr+sb)};
         if(!nl) continue;                           // a one-way road leading away: nothing arrives here
         const ax=-d.x, ay=-d.y, rx=-ay, ry=ax, dv=divOff(s,segOther(s,n.id));     // arriving direction, its right side, where its lanes start
         stops.moveTo(q.x+rx*(dv+1.2),q.y+ry*(dv+1.2)); stops.lineTo(q.x+rx*(dv+nl*LW),q.y+ry*(dv+nl*LW));
-        if(s.len-s.ta-s.tb>46){ const set=laneSet(n,s), sl=!!n.slip[id];
+        if(s.len-s.ta-s.tb>46+sb){ const set=laneSet(n,s), sl=!!n.slip[id];
           for(let l=0;l<nl;l++){ const o=dv+(l+.5)*LW, x=q.x+rx*o+d.x*10, y=q.y+ry*o+d.y*10;
             if(sl&&l===nl-1&&set[l].includes("R")){ laneGlyph(slipS,slipH,x,y,ax,ay,"R"); if(set[l]!=="R") laneGlyph(arrows,heads0,x,y,ax,ay,set[l].replace("R","")); }
             else laneGlyph(arrows,heads0,x,y,ax,ay,set[l]); } }
-        if(n.type==="light") heads.push({n,g:n.light?n.light.grp[id]:0,x:q.x+rx*(dv+nl*LW+5)+d.x*2,y:q.y+ry*(dv+nl*LW+5)+d.y*2,dx:d.x,dy:d.y});
+        if(n.type==="light"){ const o=city?segHW(s)+(walkable(s)?.7:2.5):dv+nl*LW+5, e=cw?-1:2; heads.push({n,g:n.light?n.light.grp[id]:0,x:q.x+rx*o+d.x*e,y:q.y+ry*o+d.y*e,dx:d.x,dy:d.y,s,cw}); }
       }
     }
   }
@@ -4853,7 +4882,7 @@ function buildRoadCache(){
   if(outside){ const n=nodes.get(outside.node); if(n&&n.segs.length){ const s=segs.get(n.segs[0]), f={x:outside.fx,y:outside.fy}, e={x:n.x-f.x*420,y:n.y-f.y*420};
     G.body[totL(s)].moveTo(n.x,n.y); G.body[totL(s)].lineTo(e.x,e.y);
     marks(G,s.lanes,s.lanes,false,(P,o)=>{ P.moveTo(n.x-f.y*o,n.y+f.x*o); P.lineTo(e.x-f.y*o,e.y+f.x*o); }); } }
-  roadCache={G,U,stops,arrows,heads0,slipS,slipH,rails,drives,junc,rings,heads,dec:ultra?roadDecals():null};
+  roadCache={G,U,stops,arrows,heads0,slipS,slipH,rails,drives,junc,juncI,juncW,juncK,zeb,holes,holeL,rings,heads,dec:ultra?roadDecals():null};
 }
 
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
@@ -4948,10 +4977,10 @@ function roadDecals(){
     const A=nodes.get(s.a), hw=segHW(s), nx=-s.uy, ny=s.ux, run=s.len-s.ta-s.tb, id=s.id*31, T=totL(s);
     if(run<24) continue;
     const at=(d,o)=>({x:A.x+s.ux*(s.ta+d)+nx*o,y:A.y+s.uy*(s.ta+d)+ny*o});
-    for(let d=20+hash(id,1)*30,k=0;d<run-14;d+=55+hash(id,k+2)*60,k++){
-      const lane=Math.floor(hash(id,k+40)*T)-T/2, p=at(d,(lane+.5)*LW);
-      hole.moveTo(p.x+2,p.y); hole.arc(p.x,p.y,2,0,7);
-      for(const o of [-.9,0,.9]){ holeL.moveTo(p.x+o*s.ux-1.4*nx,p.y+o*s.uy-1.4*ny); holeL.lineTo(p.x+o*s.ux+1.4*nx,p.y+o*s.uy+1.4*ny); } }
+    // (the City draws its own manholes and zebras at every graphics level)
+    if(!city&&!s.hwy) for(const p of holesOf(s)){
+      hole.moveTo(p.x+1.6,p.y); hole.arc(p.x,p.y,1.6,0,7);
+      for(const o of [-.7,0,.7]){ holeL.moveTo(p.x+o*s.ux-1.1*nx,p.y+o*s.uy-1.1*ny); holeL.lineTo(p.x+o*s.ux+1.1*nx,p.y+o*s.uy+1.1*ny); } }
     for(let d=12+hash(id,3)*40,k=0;d<run-16;d+=40+hash(id,k+60)*70,k++){
       const r=hash(id,k+80);
       if(r<.45){ const w=6+hash(id,k+90)*10, h=3+hash(id,k+100)*(hw-3), o=(hash(id,k+110)-.5)*(2*hw-h-3), c=[at(d-w/2,o-h/2),at(d+w/2,o-h/2),at(d+w/2,o+h/2),at(d-w/2,o+h/2)];
@@ -4962,7 +4991,7 @@ function roadDecals(){
   for(const n of nodes.values()){
     if(n.segs.length<3||n.type==="round"||n.hw) continue;
     const arms=n.segs.map(id=>{ const s=segs.get(id); return {s,d:dirFrom(s,n.id),t:trimAt(s,n.id)}; }).sort((a,b)=>Math.atan2(a.d.y,a.d.x)-Math.atan2(b.d.y,b.d.x));
-    for(const a of arms){ const s=a.s, hw=segHW(s); if(s.over||s.len-s.ta-s.tb<24) continue;
+    if(!city) for(const a of arms){ const s=a.s, hw=segHW(s); if(s.over||s.len-s.ta-s.tb<24) continue;
       const lx=-a.d.y, ly=a.d.x;
       for(let o=-hw+2.4;o<=hw-2.3;o+=2.7){ const x=n.x+a.d.x*(a.t+1.2)+lx*o, y=n.y+a.d.y*(a.t+1.2)+ly*o; zeb.moveTo(x,y); zeb.lineTo(x+a.d.x*4.6,y+a.d.y*4.6); } }
     // where cars have swept round the corners
@@ -5164,7 +5193,7 @@ function drawBirds(dt){
 // the wet look after rain: the tarmac goes darker and the patched bits hold puddles that catch the sky
 function drawWet(rc){
   if(wetK<.02) return;
-  ctx.strokeStyle=ctx.fillStyle="rgba(45,60,95,"+(.14*wetK)+")"; strokeBody(rc.G,0); ctx.lineWidth=7; ctx.stroke(rc.drives); ctx.fill(rc.junc);
+  ctx.strokeStyle=ctx.fillStyle="rgba(45,60,95,"+(.14*wetK)+")"; strokeBody(rc.G,0,-2*GUT); ctx.lineWidth=7; ctx.stroke(rc.drives); ctx.fill(rc.juncI);
   if(rc.dec){ ctx.fillStyle="rgba(150,172,212,"+(.55*wetK)+")"; ctx.fill(rc.dec.pud); ctx.strokeStyle="rgba(255,255,255,"+(.5*wetK)+")"; ctx.lineWidth=.35; ctx.stroke(rc.dec.pud); }
 }
 function drawRain(){
@@ -5561,13 +5590,17 @@ let KC="#a7a49b", AS="#f8f7f3", YC="#e2b43a", LC="#bbb8b0";
 // the road colours for the theme: light grey roads on pale land, or dark asphalt on dark land
 const RDC={kc:["#a7a49b","#5a5e66"],as:["#f8f7f3","#383c43"],yc:["#e2b43a","#a8862f"],lc:["#bbb8b0","#7c8088"],bridge:["#8b877d","#4b4e55"],med:["#a29f97","#5a5d64"],medT:["#dedbd3","#70737a"],
   ovS:["#6f6c64","#25272c"],ovT:["#d4d1c8","#4e5157"],drive:["#d6d2c8","#45484f"],arrow:["#cfccc3","#81848b"],stop:["#b2afa6","#8a8d93"],zeb:["#d6d3ca","#8a8d93"],hole:["#c9c5bb","#53565c"],holeL:["#a29e94","#6a6d73"]};
-const rdc=k=>RDC[k][+dark];
+// the City's streets: grey asphalt with white lines and zebras, between pale concrete pavements
+const RDC_C={as:["#a5a7aa","#3a3e45"],kc:["#bab6ac","#5c6067"],lc:["#f4f3ef","#8d9197"],side:["#e1ded6","#4a4e55"],arrow:["#f1f0eb","#8d9096"],stop:["#f4f3ef","#9a9da3"],
+  zeb:["#f6f5f1","#979aa0"],hole:["#808286","#2c2f34"],holeL:["#65676b","#4f5258"],drive:["#b4b5b6","#41454c"]};
+const rdc=k=>(city&&RDC_C[k]||RDC[k])[+dark];
 let SITE=SITE_L, SITE_D=null;
 function roadCols(){ KC=rdc("kc"); AS=rdc("as"); YC=rdc("yc"); LC=rdc("lc"); tarPat=null;
   if(dark&&!SITE_D){ SITE_D={}; for(const k in SITE_L) SITE_D[k]=SITE_L[k][0]==="#"&&k!=="peg"?darkC(SITE_L[k],.8):SITE_L[k]; }
   SITE=dark?SITE_D:SITE_L; }
 const widthOf=T=>T*LW+2*KERB;               // a road T lanes across, kerb to kerb
-function strokeBody(Ly,extra){ for(const T of WIDTHS){ ctx.lineWidth=widthOf(T)+extra; ctx.stroke(Ly.body[T]); } }
+// a layer's roads stroked extra wider than kerb to kerb; the City's roads with pavements take wx instead
+function strokeBody(Ly,extra,wx){ for(const T of WIDTHS){ ctx.lineWidth=widthOf(T)+extra; ctx.stroke(Ly.body[T]); if(Ly.walk){ ctx.lineWidth=widthOf(T)+(wx===undefined?extra:wx); ctx.stroke(Ly.walk[T]); } } }
 function drawMarks(Ly){
   ctx.lineCap="butt";
   ctx.strokeStyle=YC; ctx.lineWidth=1.1; ctx.stroke(Ly.yel);
@@ -5584,15 +5617,28 @@ function drawRoads(){
   ctx.save(); ctx.translate(SHX*7,SHY*7); ctx.strokeStyle="rgba(30,50,100,.2)"; for(const T of WIDTHS){ ctx.lineWidth=widthOf(T)+7; ctx.stroke(rc.rails[T]); } ctx.restore();
   ctx.strokeStyle=rdc("bridge"); for(const T of WIDTHS){ ctx.lineWidth=widthOf(T)+7; ctx.stroke(rc.rails[T]); }
   // Ultra: the kerbs stand a little proud of the ground and throw a thin shadow
-  if(ultra){ ctx.save(); ctx.translate(SHX*2,SHY*2); ctx.strokeStyle=ctx.fillStyle="rgba(40,42,25,.13)"; ctx.lineWidth=11; ctx.stroke(rc.drives); strokeBody(rc.G,6);
-    ctx.lineWidth=6; ctx.stroke(rc.junc); ctx.fill(rc.junc); for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+5,0,7); ctx.fill(); } ctx.restore(); }
-  // kerbs
-  ctx.strokeStyle=KC; ctx.lineWidth=9.5; ctx.stroke(rc.drives); strokeBody(rc.G,3);
-  ctx.lineWidth=3; ctx.stroke(rc.junc); ctx.fillStyle=KC;
-  for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+3.5,0,7); ctx.fill(); }
-  // asphalt
-  ctx.strokeStyle=AS; ctx.lineWidth=7; ctx.stroke(rc.drives); strokeBody(rc.G,0);
-  ctx.fillStyle=AS; ctx.fill(rc.junc);
+  if(ultra){ ctx.save(); ctx.translate(SHX*2,SHY*2); ctx.strokeStyle=ctx.fillStyle="rgba(40,42,25,.13)"; ctx.lineWidth=11; ctx.stroke(rc.drives); strokeBody(rc.G,6,6+2*SWO);
+    ctx.lineWidth=6; ctx.stroke(rc.junc); ctx.fill(rc.junc); if(rc.juncW){ ctx.lineWidth=6+2*SWO; ctx.stroke(rc.juncW); }
+    for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+5+(r.walk?SWO:0),0,7); ctx.fill(); } ctx.restore(); }
+  if(city){
+    // the drives, then the pavements over their ends and round the corners of the junctions
+    ctx.strokeStyle=KC; ctx.lineWidth=9.5; ctx.stroke(rc.drives); ctx.strokeStyle=rdc("drive"); ctx.lineWidth=7; ctx.stroke(rc.drives);
+    ctx.strokeStyle=ctx.fillStyle=rdc("side"); for(const T of WIDTHS){ ctx.lineWidth=widthOf(T)+2*SWO; ctx.stroke(rc.G.walk[T]); }
+    ctx.lineWidth=2*SWO; ctx.stroke(rc.juncW); ctx.fill(rc.juncW);
+    for(const r of rc.rings) if(r.walk){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+2+GUT+SWO,0,7); ctx.fill(); }
+    // the kerb where the pavement steps down to the road, and the plain kerb along the highways and their ramps
+    ctx.strokeStyle=KC; strokeBody(rc.G,3,1-2*GUT); ctx.lineWidth=3; ctx.stroke(rc.juncK); ctx.lineWidth=1; ctx.stroke(rc.juncI); ctx.fillStyle=KC;
+    for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+(r.walk?2.5:3.5),0,7); ctx.fill(); }
+    ctx.strokeStyle=AS; strokeBody(rc.G,0,-2*GUT); ctx.fillStyle=AS; ctx.fill(rc.juncI);
+  } else {
+    // kerbs
+    ctx.strokeStyle=KC; ctx.lineWidth=9.5; ctx.stroke(rc.drives); strokeBody(rc.G,3);
+    ctx.lineWidth=3; ctx.stroke(rc.junc); ctx.fillStyle=KC;
+    for(const r of rc.rings){ ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+3.5,0,7); ctx.fill(); }
+    // asphalt
+    ctx.strokeStyle=AS; ctx.lineWidth=7; ctx.stroke(rc.drives); strokeBody(rc.G,0);
+    ctx.fillStyle=AS; ctx.fill(rc.junc);
+  }
   for(const r of rc.rings){ ctx.fillStyle=AS; ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+2,0,7); ctx.fill();
     ctx.fillStyle=KC; ctx.beginPath(); ctx.arc(r.x,r.y,r.R-LW/2-.5,0,7); ctx.fill();
     ctx.fillStyle=dk("#a6d17c"); ctx.beginPath(); ctx.arc(r.x,r.y,r.R-LW/2-2,0,7); ctx.fill();
@@ -5601,7 +5647,7 @@ function drawRoads(){
     ctx.strokeStyle=dark?"rgba(120,124,132,.9)":"rgba(190,187,178,.9)"; ctx.lineWidth=1; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.arc(r.x,r.y,r.R+LW/2+.5,0,7); ctx.stroke(); ctx.setLineDash([]); }
   const dc=ultra&&rc.dec;
   if(dc){
-    ctx.strokeStyle=ctx.fillStyle=tarmac(); strokeBody(rc.G,0); ctx.lineWidth=7; ctx.stroke(rc.drives); ctx.fill(rc.junc);
+    ctx.strokeStyle=ctx.fillStyle=tarmac(); strokeBody(rc.G,0,-2*GUT); ctx.lineWidth=7; ctx.stroke(rc.drives); ctx.fill(rc.juncI);
     ctx.fillStyle="rgba(125,118,102,.07)"; ctx.fill(dc.patch); ctx.strokeStyle="rgba(125,118,102,.14)"; ctx.lineWidth=.5; ctx.stroke(dc.patch);
     ctx.strokeStyle="rgba(115,108,95,.3)"; ctx.lineWidth=.4; ctx.stroke(dc.crack);
     ctx.strokeStyle="rgba(60,60,60,.05)"; ctx.lineWidth=1.3; ctx.stroke(dc.tyre);
@@ -5613,6 +5659,9 @@ function drawRoads(){
   ctx.lineCap="round"; ctx.strokeStyle=rdc("arrow"); ctx.lineWidth=1; ctx.stroke(rc.arrows); ctx.fillStyle=rdc("arrow"); ctx.fill(rc.heads0);
   ctx.strokeStyle="#7cc35d"; ctx.stroke(rc.slipS); ctx.fillStyle="#7cc35d"; ctx.fill(rc.slipH); ctx.lineCap="butt";
   ctx.strokeStyle=rdc("stop"); ctx.lineWidth=1.6; ctx.stroke(rc.stops);
+  // the City's zebra crossings, and its manholes when close enough to see them
+  if(city){ ctx.strokeStyle=rdc("zeb"); ctx.lineWidth=1.4; ctx.stroke(rc.zeb);
+    if(cam.z>.8){ ctx.fillStyle=rdc("hole"); ctx.fill(rc.holes); ctx.strokeStyle=rdc("holeL"); ctx.lineWidth=.45; ctx.stroke(rc.holes); ctx.lineWidth=.3; ctx.stroke(rc.holeL); } }
   const lamp=st=>st==="g"?"#3ccf5a":st==="a"?"#f1c232":"#f04a3a";
   const halo=st=>st==="g"?"60,207,90":st==="a"?"241,194,50":"240,74,58";
   for(const h of rc.heads){ const st=lightState(h.n,h.g,"S");
