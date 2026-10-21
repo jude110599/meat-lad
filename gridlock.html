@@ -3298,24 +3298,31 @@ const compOf=acc=>{ const s=acc&&segs.get(acc.seg); return s?comp.get(s.a):null;
 // how keen the town has to be on a kind before anything grows there (the bars beside the zones start from here), and
 // how many buildings can start going up at once
 const GROW_AT={res:.1,dense:.15,high:.3,mixed:.2,com:.2,off:.2,ind:.2}, GROW_MAX=6;
-// what the town wants next, in buildings' worth: people come for jobs and shops, and shops and jobs follow people
+// what the town wants next, in buildings' worth. People move in while there's work going, shops open where people
+// need them, and offices and industry come when there are people looking for work. Each side feeds the other at
+// about the same rate, so the town keeps growing without any one bar sitting full
 function cityDemand(){
-  let R=0, Rc=0, nC=0, nO=0, nI=0, nH=0, hk=0;
-  for(const b of blds){ if(isHome(b)){ if(b.acc){ R+=b.cars.length; if(b.cons) Rc+=b.cars.length; } if(b.type==="mixed") nC+=.6*(b.k||1); continue; }
-    if(isSvc(b)) continue;
-    const k=b.k||1; if(b.type==="hotel"){ nH++; hk+=.7*k; continue; } if(b.type==="shop") nC+=k; else if(b.type==="center") nC+=2.2*k; else if(b.type==="mall") nC+=2.5; else if(b.type==="office") nO+=k; else nI+=k; }
+  let R=0, Rc=0, nC=0, nH=0, J=0;
+  for(const b of blds){ const k=b.k||1;
+    if(isHome(b)){ if(b.acc){ R+=b.cars.length; if(b.cons) Rc+=b.cars.length; } if(b.type==="mixed"){ nC+=.6*k; J+=1.5*k; } continue; }
+    // the people working at the fire station, the school or the park
+    if(isSvc(b)){ J+=1; continue; }
+    if(b.type==="hotel"){ nH++; J+=2.5*k; continue; }
+    if(b.type==="shop"){ nC+=k; J+=2.5*k; } else if(b.type==="center"){ nC+=2.2*k; J+=5.5*k; } else if(b.type==="mall"){ nC+=2.5; J+=7; } else J+=4.5*k; }
   people=R-Rc;
-  const u=R/12, nD=nC+nO+nI+hk;
+  // six in ten people work; looking for work if there's less work than that, jobs going begging if there's more
+  const U=.6*R-J;
   // a happy town draws people in; a miserable one puts them off
-  cityD.res=(14*nD+30-R)/8+(R>20?(happyAvg-55)/20:0)+taxPull(taxR);
+  cityD.res=(12-U)/5+.4+(R>20?(happyAvg-55)/20:0)+taxPull(taxR);
   // flats as soon as the town gets going, and towers once it's a city
   cityD.dense=R<20?cityD.res*.35:cityD.res*.75;
   cityD.high=R<150?-1:cityD.res*.5+Math.min(1.5,(R-150)/300);
-  // shops follow people, and hotels follow the tourists the beaches, marinas and big parks bring in
+  // a shop for every fifteen people, and hotels for the tourists the beaches, marinas and big parks bring in
   const bp=bizPull(taxB);
-  cityD.com=.8*u+2-nC+(R>=40?Math.max(0,tourism-nH)*.8:0)+bp;
-  cityD.off=.62*u+1.6-nO+bp;
-  cityD.ind=.55*u+1.4-nI+bp;
+  cityD.com=R/15+1-nC+(R>=40?Math.max(0,tourism-nH)*.8:0)+bp;
+  // offices and industry, for the people looking for work
+  cityD.off=U*.11+.4+bp;
+  cityD.ind=U*.11+.35+bp;
   // a main street of shops with flats above
   cityD.mixed=R<20?-1:cityD.res*.5+Math.max(0,cityD.com)*.5;
   const L=1+Math.min(19,Math.floor(R/30)); if(L!==level){ level=L; topOutside(); }
@@ -3430,7 +3437,7 @@ function lotWhy(L,sup,homes){
   if(!lotAccess(L)) return "road";
   if(sup){ const c=compOf(L.acc); if((sup.pow.get(c)||0)<3) return "pow"; if((sup.wat.get(c)||0)<3) return "wat"; }
   if(!HOMEZ.has(L.kind)&&!homes.has(compOf(L.acc))) return "homes";
-  if(L.kind==="res"&&lotBlocked(L,"house")) return "smoke";
+  if(HOMEZ.has(L.kind)&&L.kind!=="mixed"&&lotBlocked(L,"house")) return "smoke";
   return null;
 }
 function cityGrow(sup){
@@ -7646,7 +7653,7 @@ window.__gridlock={
   turnOK:(nodeId,inSeg,outSeg)=>{ const n=nodes.get(nodeId); return turnOK(n,segs.get(inSeg),turnType(n,segs.get(inSeg),segs.get(outSeg))); },
   route:(fromId,toId)=>{ const a=blds.find(q=>q.id===fromId), b=blds.find(q=>q.id===toId); if(!a||!b||!a.acc) return null; const pl=planRoute({seg:a.acc.seg,t:a.acc.t},[{b}],null); return pl&&{cost:+pl.cost.toFixed(2),legs:pl.legs.map(l=>l.seg.id)}; },
   levelUp:()=>{ levelUp(); },
-  city:()=>({money:Math.round(res.road),people,month,monthT:+monthT.toFixed(1),lastIn,lastOut,lots:lots.length,empty:lots.filter(L=>!L.b).length,closed:closedN,
+  city:()=>({money:Math.round(res.road),people,month,util:utilStat,happy:Math.round(happyAvg),monthT:+monthT.toFixed(1),lastIn,lastOut,lots:lots.length,empty:lots.filter(L=>!L.b).length,closed:closedN,
     grown:lots.filter(L=>L.b).map(L=>L.b.type).reduce((o,k)=>(o[k]=(o[k]||0)+1,o),{}),dem:Object.fromEntries(ZKEYS.map(k=>[k,+cityD[k].toFixed(2)])),tray:trayCount(),level}),
   newCity:()=>{ $("ovStart").classList.remove("show"); newGame(false,true); },
   zone:(kind,path)=>{ zoneSel=kind; const gs=zoneAt(kind,path); addLots(gs); for(const e of gs.ext||[]) growLot(e.L,e.poly); return gs.length; },
@@ -7677,6 +7684,8 @@ window.__gridlock={
     const m=mergeSel&&mergePrev(); return {sel:mergeSel&&mergeSel.map(L=>L.id),why:m&&m.why||null,ask:$("ovAsk").classList.contains("show"),lots:lots.length,hint:$("hint").textContent}; },
   split:(o)=>{ o=o||{}; if(o.start) splitStart(); if(o.tap) splitTap(o.tap); if(o.n&&splitSel){ splitSel.n=o.n; sKey=""; } if(o.go) splitGo(); if(o.ok&&$("ovAsk").classList.contains("show")) $("askOk").onclick(); if(o.cancel) splitCancel();
     const p=splitSel&&splitSel.L&&splitPrev(); return {sel:splitSel&&splitSel.L&&splitSel.L.id,n:splitSel&&splitSel.n,meta:p&&p.meta?{min:p.meta.min,max:p.meta.max}:null,plan:p&&p.g?p.g.length:0,why:p&&p.why||null,ask:$("ovAsk").classList.contains("show"),lots:lots.length,hint:$("hint").textContent}; },
+  relax:v=>{ relaxed=!!v; },
+  lotWhys:()=>lots.filter(L=>!L.b).map(L=>L.kind+":"+(t<L.cool?"cool":L.why||"-")),
   zsnap:(x,y)=>{ const z=zoneSnap({x,y}); return {p:{x:+z.p.x.toFixed(1),y:+z.p.y.toFixed(1)},ang:z.ang&&+z.ang.toFixed(1),hit:z.hit.map(g=>g.k+(g.first?"f":"")),lines:z.lines.map(g=>g.k+":"+g.off.toFixed(1)+"/"+g.along.toFixed(1)),road:z.road,lot:z.lot?(z.lot.corner?"corner":"side"):null}; },
   plotOpts:o=>{ if(o){ if(o.split) plotSplit=o.split; if(o.size) plotSize=o.size; if(o.side) plotSide=o.side; updateUI(); } return {split:plotSplit,size:plotSize,side:plotSide}; },
   lotPolys:()=>lots.map(L=>({k:L.kind,b:L.b?L.b.type:null,poly:L.poly.map(p=>[Math.round(p.x),Math.round(p.y)]),site:{w:Math.round(L.site.w),d:Math.round(L.site.d)}})),
