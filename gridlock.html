@@ -4227,7 +4227,7 @@ function busArrive(c){
   const st=c.purpose&&c.purpose.d; c.purpose=null; c.rt=null;
   if(!st){ c.state="home"; c.cool=1; c.at=null; for(const r of c.load) rideLost(r); c.load=[]; if(c.retire||!c.line) dropBus(c); return; }
   const L=c.line; let n=0;
-  c.load=c.load.filter(r=>{ if(r.to!==st) return true; rideDone(r,L); n++; return false; });
+  c.load=c.load.filter(r=>{ if(r.to!==st) return true; rideEnd(r,L); n++; return false; });
   if(L&&!c.retire&&stops.includes(st)) st.q=st.q.filter(r=>{ if(c.load.length>=BUS_CAP||!L.stops.includes(r.to)) return true; c.load.push(r); n++; return false; });
   c.state="park"; c.at=st; c.atDi=0; c.park=3+Math.min(5,n*.12); c.v=0;
 }
@@ -4266,19 +4266,50 @@ function transitTick(dt){
 // ----- riders -----
 function nearStops(b){ if(b.nsK!==trv){ b.nsK=trv; b.ns=[]; for(const s of stops){ const d=Math.hypot(s.x-b.x,s.y-b.y); if(d<(s.kind==="metro"?WALKM:WALKB)) b.ns.push({s,d}); } } return b.ns; }
 const lineRuns=L=>L.kind==="metro"?L.buses.length>0:L.buses.length>0&&budget.transit>0;
-// someone setting off from home for a place near another stop on a running line may take the bus or the metro instead
+const qCap=s=>s.kind==="metro"?120:60;
+// Changing lines: people can get off one line and onto another where they share a station or a stop, or where the
+// stops are a short walk apart (a bus stop outside a metro station, say), so a trip can take two lines. The lines
+// through each stop, and the places each pair of lines meet, are worked out again only when the lines or stops change
+const XFER=170;
+let xfK=-1, xfAt=new Map(), xfPairs=new Map();
+function xferNet(){ if(xfK===trv) return; xfK=trv; xfAt=new Map(); xfPairs=new Map();
+  for(const L of lines) for(const s of L.stops){ let a=xfAt.get(s); if(!a) xfAt.set(s,a=[]); if(!a.includes(L)) a.push(L); }
+  for(const L1 of lines) for(const L2 of lines){ if(L1===L2) continue; const P=[];
+    for(const x of L1.stops) for(const y of L2.stops){ const d=x===y?0:Math.hypot(x.x-y.x,x.y-y.y); if(d<XFER) P.push({x,y,d}); }
+    if(P.length){ P.sort((a,b)=>a.d-b.d); xfPairs.set(L1.id+":"+L2.id,P); } } }
+const linesAt=s=>{ xferNet(); return xfAt.get(s)||[]; };
+// the best way from near h to near d: one running line from a stop near one to a stop near the other, or failing that
+// two lines with a change between them. The shorter the walking, the better
+function tripPlan(h,d){
+  if(!lines.length) return null;
+  const A=nearStops(h); if(!A.length) return null; const B=nearStops(d); if(!B.length) return null;
+  let best=null;
+  for(const a of A) for(const b of B){ if(a.s===b.s||a.s.q.length>=qCap(a.s)) continue; const w=a.d+b.d; if(best&&w>=best.w) continue;
+    const L=linesAt(a.s).find(q=>lineRuns(q)&&q.stops.includes(b.s)); if(L) best={a:a.s,b:b.s,w,L}; }
+  if(best) return best;
+  for(const a of A){ if(a.s.q.length>=qCap(a.s)) continue;
+    for(const L1 of linesAt(a.s)){ if(!lineRuns(L1)) continue;
+      for(const b of B) for(const L2 of linesAt(b.s)){ if(L2===L1||!lineRuns(L2)||L1.stops.includes(b.s)) continue; const P=xfPairs.get(L1.id+":"+L2.id); if(!P) continue;
+        for(const q of P){ if(q.x===a.s||q.y===b.s) continue; const w=a.d+b.d+q.d*1.4+60; if(!best||w<best.w) best={a:a.s,b:b.s,w,L:L1,x:q.x,y:q.y,L2}; break; } } } }
+  return best; }
+// someone setting off from home for a place near another stop on a running line may take the bus, the tram or the
+// metro instead, changing lines on the way if they have to
 function transitRide(c,h,d){
   if(!lines.length||!c.purpose||!d.pins) return false;
-  const A=nearStops(h); if(!A.length) return false; const B=nearStops(d); if(!B.length) return false;
-  let best=null;
-  for(const a of A) for(const b of B){ if(a.s===b.s||a.s.q.length>=(a.s.kind==="metro"?120:60)) continue; const w=a.d+b.d; if(best&&w>=best.w) continue;
-    const L=lines.find(q=>lineRuns(q)&&q.stops.includes(a.s)&&q.stops.includes(b.s)); if(L) best={a:a.s,b:b.s,w,L}; }
-  if(!best) return false;
-  // a short walk at both ends and most people leave the car at home; the metro is quicker, so even more do
-  const m=best.L.kind==="metro", p=(m?.85:.68)-.4*best.w/(2*(m?WALKM:WALKB));
+  const best=tripPlan(h,d); if(!best) return false;
+  // a short walk at both ends and most people leave the car at home; the metro is quicker, so even more do. Having to
+  // change puts a few off
+  const m=best.L.kind==="metro"||best.L2&&best.L2.kind==="metro", p=(m?.85:.68)-(best.x?.12:0)-.4*best.w/(2*(m?WALKM:WALKB));
   if(Math.random()>p) return false;
-  best.a.q.push({d,kind:c.purpose.kind,to:best.b,t0:t}); c.purpose=null; c.cool=rnd(REST[0],REST[1]);
+  best.a.q.push({d,kind:c.purpose.kind,to:best.x||best.b,t0:t,nx:best.x?{at:best.y,to:best.b}:null}); c.purpose=null; c.cool=rnd(REST[0],REST[1]);
   return true;
+}
+// a rider gets off: at the end of the trip, or where they change, to wait at the next stop for the second line
+function rideEnd(r,L){
+  if(!r.nx) return rideDone(r,L);
+  if(L) L.riders++; const s=r.nx.at;
+  if(!stops.includes(s)||!stops.includes(r.nx.to)) return rideLost(r);
+  tStat.xf=(tStat.xf||0)+1; s.q.push({d:r.d,kind:r.kind,to:r.nx.to,t0:t,nx:null});
 }
 // a rider gets there: the same as a car arriving, but nobody has to park
 function rideDone(r,L){ const d=r.d, k=r.kind; tStat.month++; tStat.total++; if(L) L.riders++;
@@ -4379,6 +4410,7 @@ function drawTransit(k){
       sbox(st,6.6,-2.6,.4,.4,8,"#55595e"); sbox(st,6.6,-2.6,2.4,.35,2.4,"#2f6fae",6.4); sbox(st,6.6,-2.6,1.6,.4,.5,"#f2f0e8",7.5); }
     else { ctx.fillStyle="#4d5a66"; ctx.save(); ctx.translate(st.x,st.y); ctx.rotate(st.ang); ctx.fillRect(-5,-2,10,4); ctx.restore(); }
     if(!rec3d&&LOD) drawWaiting(st); }
+  if(k===1&&!rec3d) drawTrains();
 }
 // people waiting at a stop, a little queue along the pavement
 const PCOL=["#3d4f63","#7a3f3a","#4f6a4a","#6b5a7a","#8a7a5a","#2f3a46","#9a6a4a","#556070"];
@@ -4397,8 +4429,7 @@ function drawLines(){
     ctx.strokeStyle=L.col; ctx.globalAlpha=on?.9:.45; ctx.lineWidth=(on?(open?2.6:1.5)*(lineSel===L?1.5:1)*(met?1.6:1):2.2)*zk;
     // the metro dashed, square-ended so the gaps stay open however wide the line is
     if(met){ const lw=ctx.lineWidth; ctx.lineCap="butt"; ctx.setLineDash([Math.max(lw*2.4,5/cam.z),Math.max(lw*1.5,3.5/cam.z)]); }
-    ctx.beginPath(); P.forEach((p,i)=>(i&&!p.br)?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap="round";
-    if(met){ ctx.globalAlpha=1; drawTrains(L); } }
+    ctx.beginPath(); P.forEach((p,i)=>(i&&!p.br)?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap="round"; }
   ctx.globalAlpha=1;
   if(linePend&&linePend.stops.length){ const S=linePend.stops; ctx.strokeStyle=linePend.kind==="metro"?"#74508a":"#2f6fae"; ctx.lineWidth=2.4*zk; ctx.setLineDash([5/cam.z,4/cam.z]);
     ctx.beginPath(); S.forEach((s,i)=>i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y)); if(hoverW&&!drag) ctx.lineTo(hoverW.x,hoverW.y); ctx.stroke(); ctx.setLineDash([]); }
@@ -4417,7 +4448,7 @@ function stopBadge(st,s){ const pi=linePend?linePend.stops.indexOf(st):-1, met=s
   ctx.restore(); }
 function drawStopBadges(){ if(!tOpen()) return; const s=Math.max(1,1.3/cam.z); for(const st of stops) if(inView(st.x,st.y,20)) stopBadge(st,s); }
 // in 3D the markers float over the stops, the same size on screen however far off
-function transitBadges(){ trainBadges(); if(!tOpen()) return;
+function transitBadges(){ if(!tOpen()) return;
   for(const st of stops){ const h=V3.hAt(st.x,st.y)+(st.kind==="metro"?18:12), p=V3.project(st.x,h,st.y); if(p.behind||p.x<-30||p.y<-30||p.x>vw+30||p.y>vh+30) continue;
     const k=1.7; ctx.setTransform(dpr*k,0,0,dpr*k,dpr*(p.x-k*st.x),dpr*(p.y-k*st.y)); stopBadge(st,1); } }
 // where a stop would go under the pointer: a green shelter and the kerb box, or a ring round the stop it would pick
@@ -4468,7 +4499,9 @@ function drawBus(c){
 // back (or round and round, if it's drawn as a loop), quicker than anything on the streets and out of the traffic.
 // People within a long walk of a station leave the car at home. Each train costs money every month, and riders pay
 // the same fare as on the buses
-const WALKM=420, METRO_UP=60, TRAIN_V=120, TRAIN_CAP=240, TRAIN_DWELL=2.5;
+const WALKM=420, METRO_UP=60, TRAIN_V=120, TRAIN_CAP=240, TRAIN_DWELL=2.5, TRAIN_ACC=90;
+// a train is three carriages coupled together, each TCL long and TCW wide
+const TCARS=3, TCL=30, TCW=7.2, TGAP=1.6;
 let metK=-1;
 // the stations, kept in step with the station buildings: one appears when a station is built, and goes with it
 function metroSync(){ if(metK===tver) return; metK=tver;
@@ -4482,23 +4515,49 @@ const stationCount=()=>{ let n=0; for(const s of stops) if(s.kind==="metro") n++
 function mseq(L){ if(L.sqK===trv) return L.sq; L.sqK=trv;
   const key=L.stops.map(s=>s.id).join(".")+(L.loop?"o":""); if(key===L.sqS) return L.sq; L.sqS=key;
   const n=L.stops.length, q=[]; for(let i=0;i<n;i++) q.push(i); if(!L.loop) for(let i=n-2;i>0;i--) q.push(i); L.sq=q;
-  for(const tr of L.buses){ tr.k%=Math.max(1,q.length); tr.f=0; tr.load=tr.load.filter(r=>{ if(L.stops.includes(r.to)) return true; rideLost(r); return false; }); }
+  for(const tr of L.buses){ tr.k%=Math.max(1,q.length); tr.f=tr.e=0; tr.load=tr.load.filter(r=>{ if(L.stops.includes(r.to)) return true; rideLost(r); return false; }); }
   return q; }
 // where a train is between two stations, and which way it's heading
 function trainPos(L,tr){ const sq=mseq(L), m=sq.length, A=L.stops[sq[tr.k%m]], B=L.stops[sq[(tr.k+1)%m]];
   return {x:A.x+(B.x-A.x)*tr.f,y:A.y+(B.y-A.y)*tr.f,a:Math.atan2(B.y-A.y,B.x-A.x)}; }
+// a spot o along the line from the middle of a train (back if o is negative), following the line on round the station
+// behind it or ahead of it. Past the end of a line the tunnel runs on a little way, so a train can stand right along the
+// platform and turn back there. Each way has its own track, on the right; a train turning back at the end of the line
+// crosses over to the other track as it pulls out
+const TOFF=4.6;
+function trainPt(L,sq,k,f,o){ const m=sq.length, S=L.stops, A=S[sq[k]], B=S[sq[(k+1)%m]], P=S[sq[(k-1+m)%m]], lg=Math.hypot(B.x-A.x,B.y-A.y)||1, s=f*lg+o;
+  const on=(F,Q,u,sd)=>{ const dx=Q.x-F.x, dy=Q.y-F.y, w=TOFF*sd/(Math.hypot(dx,dy)||1); return {x:F.x+dx*u-dy*w,y:F.y+dy*u+dx*w}; };
+  const turn=!((L.loop||k>0)&&P!==B), e=clamp((s-35)/60,0,1), sd=turn?-1+2*e*e*(3-2*e):1;
+  if(s<0){ if(!turn){ const lp=Math.hypot(A.x-P.x,A.y-P.y)||1; return on(P,A,1+s/lp,1); } return on(A,B,s/lg,sd); }
+  if(s>lg){ const N=S[sq[(k+2)%m]]; if((L.loop||k<m-1)&&N!==A){ const ln=Math.hypot(N.x-B.x,N.y-B.y)||1; return on(B,N,(s-lg)/ln,1); } }
+  return on(A,B,s/lg,sd); }
+// which way the platforms at a metro station run: along the first line through it, from the station before to the one after
+function stnDir(st){ for(const L of lines){ if(L.kind!=="metro") continue; const S=L.stops, i=S.indexOf(st), n=S.length; if(i<0) continue;
+    const a=S[i>0?i-1:L.loop?n-1:i], b=S[i<n-1?i+1:L.loop?0:i], dx=b.x-a.x, dy=b.y-a.y; if(dx||dy) return Math.atan2(dy,dx); }
+  return null; }
+// the carriages of a train: where each one's middle is, which way it points, which end has a cab (1 the front, -1 the
+// back) and how plainly it shows: in full along the platform, fading to a faint shape out in the tunnel
+function trainCars(L,tr){ const sq=mseq(L), m=sq.length, out=[]; if(m<2) return out;
+  const k=tr.k%m, A=L.stops[sq[k]], B=L.stops[sq[(k+1)%m]], step=TCL+TGAP;
+  for(let i=0;i<TCARS;i++){ const o=(i-(TCARS-1)/2)*step, p=trainPt(L,sq,k,tr.f,o), f=trainPt(L,sq,k,tr.f,o+TCL/2), b=trainPt(L,sq,k,tr.f,o-TCL/2);
+    const d=Math.min(Math.hypot(p.x-A.x,p.y-A.y),Math.hypot(p.x-B.x,p.y-B.y));
+    out.push({x:(f.x+b.x)/2,y:(f.y+b.y)/2,a:Math.atan2(f.y-b.y,f.x-b.x),cab:i===TCARS-1?1:i===0?-1:0,al:.3+.7*clamp((118-d)/62,0,1)}); }
+  return out; }
 // every tick: the stations kept up, as many trains on each line as asked for (none while Transport is shut), and the
-// trains moved on, waiting a few seconds at each station
+// trains moved on: pulling away gently, up to speed, slowing into the next station and waiting there a few seconds
 function metroTick(dt){ metroSync();
   for(const L of lines){ if(L.kind!=="metro") continue; const sq=mseq(L), m=sq.length; if(m<2) continue;
     const want=budget.transit>0?L.want:0;
-    while(L.buses.length<want){ const i=L.buses.length; L.buses.push({k:Math.floor(i*m/want)%m,f:0,dw:1+i,load:[]}); }
+    while(L.buses.length<want){ const i=L.buses.length; L.buses.push({k:Math.floor(i*m/want)%m,f:0,e:0,dw:1+i,load:[]}); }
     while(L.buses.length>want){ const tr=L.buses.pop(); for(const r of tr.load) rideLost(r); }
     for(const tr of L.buses){ if(tr.dw>0){ tr.dw-=dt; continue; }
-      const A=L.stops[sq[tr.k]], B=L.stops[sq[(tr.k+1)%m]]; tr.f+=dt*TRAIN_V/Math.max(1,Math.hypot(B.x-A.x,B.y-A.y)); if(tr.f<1) continue;
-      tr.k=(tr.k+1)%m; tr.f=0; tr.dw=TRAIN_DWELL; trainAt(L,tr,B); } } }
-// a train at a station: people for here get off, then those waiting for somewhere on this line get on
-function trainAt(L,tr,st){ tr.load=tr.load.filter(r=>{ if(r.to!==st) return true; rideDone(r,L); return false; });
+      const A=L.stops[sq[tr.k]], B=L.stops[sq[(tr.k+1)%m]], lg=Math.max(1,Math.hypot(B.x-A.x,B.y-A.y)), da=Math.min(lg/2,TRAIN_ACC), ta=2*da/TRAIN_V, T=2*ta+(lg-2*da)/TRAIN_V;
+      tr.e=(tr.e||0)+dt; const e=tr.e;
+      if(e<T){ tr.f=(e<ta?TRAIN_V*e*e/(2*ta):e<T-ta?da+TRAIN_V*(e-ta):lg-TRAIN_V*(T-e)*(T-e)/(2*ta))/lg; continue; }
+      tr.k=(tr.k+1)%m; tr.f=tr.e=0; tr.dw=TRAIN_DWELL; trainAt(L,tr,B); } } }
+// a train at a station: people for here get off (or change to another line), then those waiting for somewhere on this
+// line get on
+function trainAt(L,tr,st){ tr.load=tr.load.filter(r=>{ if(r.to!==st) return true; rideEnd(r,L); return false; });
   if(st.q.length) st.q=st.q.filter(r=>{ if(tr.load.length>=TRAIN_CAP||r.to===st||!L.stops.includes(r.to)) return true; tr.load.push(r); return false; }); }
 const trainCount=()=>{ let n=0; for(const L of lines) if(L.kind==="metro") n+=L.buses.length; return n; };
 const metroOut=()=>trainCount()*METRO_UP, metroKey=()=>stationCount();
@@ -4507,17 +4566,22 @@ const vehWord=(nb,nt)=>[nb||!nt?nb+" bus"+(nb===1?"":"es"):"",nt?nt+" train"+(nt
 function metroBar(bb,btn){ metroSync();
   btn("metro",'<svg width="18" height="13" viewBox="0 0 18 13"><path d="M2 10 9 3l7 6" stroke="#74508a" stroke-width="2" fill="none" stroke-dasharray="2.6 1.8"/><circle cx="2" cy="10" r="2" fill="currentColor"/><circle cx="9" cy="3" r="2" fill="currentColor"/><circle cx="16" cy="9" r="2" fill="currentColor"/></svg>',"Metro line"); }
 function metroMade(L){ setHint("Metro "+L.id+" is running with "+L.want+" trains "+(L.loop?"round":"between")+" its "+L.stops.length+" stations. People within a long walk of a station leave the car at home. Use + and - to change how many trains.",6); }
-// a train seen from above, or as a marker over the 3D town: a capsule in its line's colour with a white edge
-function trainMark(col,s){ ctx.fillStyle="#fff"; roundRect(-7.5*s,-2.7*s,15*s,5.4*s,2.7*s); ctx.fill(); ctx.fillStyle=col; roundRect(-6.4*s,-1.7*s,12.8*s,3.4*s,1.7*s); ctx.fill();
-  ctx.fillStyle="rgba(255,255,255,.75)"; ctx.fillRect(3.2*s,-1*s,2*s,2*s); }
-function drawTrains(L){ if(!L.buses.length||mseq(L).length<2) return; const s=Math.max(.8,1.1/cam.z);
-  for(const tr of L.buses){ const q=trainPos(L,tr); if(!inView(q.x,q.y,20*s)) continue; ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(q.a); trainMark(L.col,s); ctx.restore(); } }
-function trainBadges(){
+// the trains seen from above (2D), drawn over the town as if you could see down through it: three brushed-steel
+// carriages with the gangways between them, a stripe in the line's colour down each side, roof vents, and the dark
+// cab windows at both ends. In the tunnel only a faint shape shows; along the platform the train is there in full
+function drawTrains(){
   for(const L of lines){ if(L.kind!=="metro"||!L.buses.length||mseq(L).length<2) continue;
-    for(const tr of L.buses){ const q=trainPos(L,tr), h=V3.hAt(q.x,q.y)+1, p=V3.project(q.x,h,q.y); if(p.behind||p.x<-30||p.y<-30||p.x>vw+30||p.y>vh+30) continue;
-      // as big as a train would be from here, but never too small to spot
-      const p2=V3.project(q.x+Math.cos(q.a)*10,h,q.y+Math.sin(q.a)*10), dx=p2.x-p.x, dy=p2.y-p.y, s=clamp(Math.hypot(dx,dy)*.16,1.3,2.8);
-      ctx.setTransform(dpr,0,0,dpr,dpr*p.x,dpr*p.y); ctx.rotate(Math.atan2(dy,dx)); trainMark(L.col,s); } } }
+    for(const tr of L.buses) for(const q of trainCars(L,tr)){ if(!inView(q.x,q.y,TCL)) continue; const l=TCL/2, w=TCW/2;
+      ctx.globalAlpha=q.al; ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(q.a);
+      if(q.al>.8){ ctx.fillStyle="rgba(30,36,22,.18)"; roundRect(-l+SHX,-w+SHY,2*l,2*w,1.4); ctx.fill(); }
+      ctx.fillStyle="#3a3d42"; ctx.fillRect(-l-TGAP/2-.1,-w*.42,2*l+TGAP+.2,w*.84);
+      ctx.fillStyle="#c3c8cd"; roundRect(-l,-w,2*l,2*w,q.cab?2.2:1.1); ctx.fill();
+      ctx.fillStyle=L.col; ctx.fillRect(-l+.8,-w,2*l-1.6,.85); ctx.fillRect(-l+.8,w-.85,2*l-1.6,.85);
+      ctx.fillStyle="#a2a7ad"; ctx.fillRect(-l+2.2,-w+1.5,2*l-4.4,2*w-3);
+      ctx.fillStyle="#878c93"; for(const x of [-l*.5,0,l*.5]) ctx.fillRect(x-1.7,-1.1,3.4,2.2);
+      if(q.cab){ const s=q.cab; ctx.fillStyle="rgba(26,33,42,.92)"; ctx.fillRect(s>0?l-2.1:-l+.5,-w+1,1.6,2*w-2); ctx.fillStyle=L.col; ctx.fillRect(s>0?l-.5:-l,-w+.9,.5,2*w-1.8); }
+      ctx.restore(); }
+    ctx.globalAlpha=1; } }
 
 // ----- the metro station -----
 // a paved square off the pavement: stairs going down under a curved canopy, glass rails round the stairwell, a lift,
@@ -10144,6 +10208,54 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
   const BCAP=256, busI=new T.InstancedMesh(geoOf(busG),carMat,BCAP), busTI=new T.InstancedMesh(geoOf(busT),trimMat,BCAP);
   busI.setColorAt(0,new T.Color(1,1,1));
   for(const m of [busI,busTI]){ m.instanceMatrix.setUsage(T.DynamicDrawUsage); m.count=0; m.frustumCulled=false; m.castShadow=true; scene.add(m); }
+  // ----- the metro trains -----
+  // a metro carriage (1 long, 1 tall and 1 wide, stretched to size): a brushed-steel body on two bogies with a band of
+  // glass all along it, three pairs of doors each side with windows in them, a stripe in its line's colour, the roof with
+  // its vents, and the rubber gangway at each end. An end carriage has the cab on the front: the windscreen with the
+  // sign over it, the stripe across the front, the lights and the coupler
+  const tcB=G0(), tcBT=G0(), tcC=G0(), tcCT=G0(), tSt=[.74,.76,.79], tSt2=[.85,.86,.88], tDk=[.17,.18,.2];
+  boxInto(tcBT,-.46,.46,.03,.15,-.4,.4,tDk); for(const x of [-.33,.33]) boxInto(tcBT,x-.08,x+.08,0,.12,-.44,.44,[.11,.11,.12]);
+  boxInto(tcBT,-.5,.5,.14,.41,-.5,.5,tSt); boxInto(tcBT,-.497,.497,.41,.79,-.49,.49,glass); boxInto(tcBT,-.5,.5,.79,.9,-.5,.5,tSt);
+  boxInto(tcBT,-.49,.49,.9,.95,-.45,.45,[.62,.64,.67]); for(const x of [-.25,0,.25]) boxInto(tcBT,x-.06,x+.06,.95,.99,-.22,.22,[.5,.52,.55]);
+  for(const z of [-1,1]){ const a=z<0?-.507:.49, b=z<0?-.49:.507;
+    for(const x of [-.3,0,.3]){ boxInto(tcBT,x-.058,x+.058,.15,.82,a,b,tSt2); boxInto(tcBT,x-.003,x+.003,.17,.8,z<0?-.51:.505,z<0?-.505:.51,tDk);
+      for(const s of [-1,1]) boxInto(tcBT,x+s*.03-.019,x+s*.03+.019,.46,.75,z<0?-.511:.506,z<0?-.506:.511,glass); }
+    for(const x of [-.45,-.15,.15,.45]) boxInto(tcBT,x-.012,x+.012,.41,.79,a,b,tSt); }
+  for(const x of [-.52,.5]) boxInto(tcBT,x,x+.02,.2,.84,-.28,.28,[.14,.14,.15]);
+  boxInto(tcB,-.5,.5,.33,.39,-.505,.505,W1); boxInto(tcB,-.5,.5,.835,.865,-.503,.503,W1);
+  boxInto(tcCT,.5,.536,.14,.46,-.48,.48,tSt); boxInto(tcCT,.5,.528,.46,.85,-.46,.46,glass); boxInto(tcCT,.5,.52,.85,.92,-.47,.47,tSt);
+  boxInto(tcCT,.528,.531,.76,.83,-.2,.2,amber); boxInto(tcCT,.536,.56,.11,.18,-.06,.06,tDk);
+  for(const z of [-1,1]) boxInto(tcCT,.536,.541,.19,.26,z<0?-.43:.29,z<0?-.29:.43,lamp);
+  boxInto(tcC,.536,.539,.28,.4,-.45,.45,W1);
+  // Under the town the trains are seen through the ground, as if it were glass: each point of a train is drawn as far
+  // in front of the ground above it as it lies under it (squashed into a thin layer just over the street, so its faces
+  // keep their order), so the streets don't hide it but the cars, the station's canopy and the buildings still do.
+  // ia is how plainly a carriage shows
+  const TRCAP=120, TSINK=9.4, trU={uSink:{value:TSINK},uH0:{value:1.2},uK:{value:.14}};
+  const trSh=sh=>{ Object.assign(sh.uniforms,trU);
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nattribute float ia; varying float vIa; uniform float uSink, uH0, uK;")
+      .replace("#include <project_vertex>","#include <project_vertex>\nvIa=ia; { vec4 wq=modelMatrix*instanceMatrix*vec4(transformed,1.); vec3 tc=cameraPosition-wq.xyz; float pl=(instanceMatrix[3][1]+uSink+uH0-wq.y+uK*(wq.y-instanceMatrix[3][1]))*length(tc)/max(tc.y,1.), dd=length(mvPosition.xyz); gl_Position=projectionMatrix*vec4(mvPosition.xyz*max(.05,(dd-pl)/dd),1.); }");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying float vIa;").replace("#include <dithering_fragment>","#include <dithering_fragment>\ngl_FragColor.a*=vIa;"); };
+  const trMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.4,transparent:true}), trMatT=trMat.clone(); trMat.onBeforeCompile=trMatT.onBeforeCompile=trSh;
+  const trIs=[[tcB,1],[tcBT,0],[tcC,1],[tcCT,0]].map(([g,tint])=>{ const geo=geoOf(g); geo.setAttribute("ia",new T.InstancedBufferAttribute(new Float32Array(TRCAP),1).setUsage(T.DynamicDrawUsage));
+    const m=new T.InstancedMesh(geo,tint?trMat:trMatT,TRCAP); if(tint) m.setColorAt(0,new T.Color(1,1,1)); m.instanceMatrix.setUsage(T.DynamicDrawUsage); m.count=0; m.frustumCulled=false; m.renderOrder=3; scene.add(m); return m; });
+  // under each station on a line, the station box seen the same way, as if cut open: the floor, a track each way with
+  // its rails, a platform along each side with its yellow edge, the walls with a strip of lights, and the tunnels
+  // leading off at each end. Only the faces looking into the box are drawn, so you see down into it
+  const pitG=G0(), PL=55, PW=12.6, PH=TSINK+.3;
+  const inQ=(a,b,c,d,col,n)=>{ const f=faceN(a,b,c); if(f[0]*n[0]+f[1]*n[1]+f[2]*n[2]<0) quad(pitG,d,c,b,a,[0,0],[1,0],[1,1],[0,1],col); else quad(pitG,a,b,c,d,[0,0],[1,0],[1,1],[0,1],col); };
+  inQ([-PL,0,-PW],[PL,0,-PW],[PL,0,PW],[-PL,0,PW],[.2,.21,.23],[0,1,0]);
+  for(const s of [-1,1]){ const z0=s*TOFF, zw=s*PW;
+    inQ([-PL,.04,z0-2.3],[PL,.04,z0-2.3],[PL,.04,z0+2.3],[-PL,.04,z0+2.3],[.3,.29,.28],[0,1,0]);
+    for(const r of [-1.45,1.45]) boxInto(pitG,-PL,PL,.04,.42,z0+r-.18,z0+r+.18,[.6,.63,.66]);
+    boxInto(pitG,-PL+8,PL-8,0,1.3,s<0?-PW:8.4,s<0?-8.4:PW,[.7,.69,.66]); boxInto(pitG,-PL+8,PL-8,1.3,1.33,s<0?-8.95:8.4,s<0?-8.4:8.95,[.86,.7,.2]);
+    inQ([-PL,0,zw],[PL,0,zw],[PL,PH*.62,zw],[-PL,PH*.62,zw],[.5,.51,.53],[0,0,-s]); inQ([-PL,PH*.62,zw],[PL,PH*.62,zw],[PL,PH,zw],[-PL,PH,zw],[.62,.62,.6],[0,0,-s]);
+    inQ([-PL+8,PH*.7,zw-s*.05],[PL-8,PH*.7,zw-s*.05],[PL-8,PH*.7+.4,zw-s*.05],[-PL+8,PH*.7+.4,zw-s*.05],[.98,.95,.84],[0,0,-s]);
+    const xe=s*PL; inQ([xe,0,-PW],[xe,0,PW],[xe,PH,PW],[xe,PH,-PW],[.46,.47,.49],[-s,0,0]);
+    for(const t of [-1,1]) inQ([xe-s*.05,0,t*TOFF-4.4],[xe-s*.05,0,t*TOFF+4.4],[xe-s*.05,9,t*TOFF+4.4],[xe-s*.05,9,t*TOFF-4.4],[.05,.05,.06],[-s,0,0]); }
+  const pitGeo=geoOf(pitG); pitGeo.setAttribute("ia",new T.InstancedBufferAttribute(new Float32Array(64).fill(.86),1));
+  const pitI=new T.InstancedMesh(pitGeo,new T.MeshStandardMaterial({vertexColors:true,roughness:.9,transparent:true}),64); pitI.material.onBeforeCompile=trSh;
+  pitI.count=0; pitI.frustumCulled=false; pitI.renderOrder=2.9; scene.add(pitI); let pitK="";
   // a person standing at a stop: legs, a coat in their own colour, and a head
   const PPCAP=600, pplI=new T.InstancedMesh(merged([[cyl(.52,.46,1.5,1.32,0,0,8),"#ffffff"],[bxg(.4,1.36,.34,0,0,-.21),"#565b63"],[bxg(.4,1.36,.34,0,0,.21),"#565b63"]]),new T.MeshStandardMaterial({vertexColors:true,roughness:.85}),PPCAP),
     hdI=new T.InstancedMesh(new T.SphereGeometry(.38,8,6).translate(0,3.18,0),new T.MeshStandardMaterial({roughness:.7}),PPCAP);
@@ -10173,6 +10285,18 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
         if(c.state==="home"){ if(k<5){ const p=toMap(d,(-24+k*12)*sc,14*sc); put(c,p.x,p.y,d.ang,0); } k++; }
         else put(c,c.x,c.y,c.ang,c.state==="drive"?c.h||0:0); } }
     busI.count=busTI.count=n; for(const m of [busI,busTI]) m.instanceMatrix.needsUpdate=true; busI.instanceColor.needsUpdate=true;
+    // the metro trains down in their tunnels: each carriage, and a cab on the front of the end ones
+    const ni=[0,0];
+    for(const L of lines){ if(L.kind!=="metro"||!L.buses.length) continue;
+      for(const tr of L.buses) for(const q of trainCars(L,tr)){ if(ni[0]>=TRCAP||reg&&(q.x<reg.x0-40||q.y<reg.y0-40||q.x>reg.x0+reg.S+40||q.y>reg.y0+reg.S+40)) continue;
+        const gy=hAt(q.x,q.y)-TSINK;
+        for(let j=0;j<(q.cab?4:2);j++){ const m=trIs[j], i=ni[j>>1]; setM(m.instanceMatrix.array,i,q.x,gy,q.y,j>1&&q.cab<0?q.a+Math.PI:q.a,TCL,8.6,TCW); m.geometry.attributes.ia.array[i]=q.al; if(m.instanceColor) setC(m,i,L.col); }
+        ni[0]++; if(q.cab) ni[1]++; } }
+    trIs.forEach((m,j)=>{ m.count=ni[j>>1]; m.instanceMatrix.needsUpdate=true; m.geometry.attributes.ia.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; });
+    // the station boxes, set out again when the stations or lines change
+    if(pitK!==trv+":"+lines.length){ pitK=trv+":"+lines.length; let n=0;
+      for(const st of stops){ if(st.kind!=="metro"||n>=64) continue; const a=stnDir(st); if(a===null) continue; setM(pitI.instanceMatrix.array,n++,st.x,hAt(st.x,st.y)-TSINK,st.y,a,1,1,1); }
+      pitI.count=n; pitI.instanceMatrix.needsUpdate=true; }
     // the people waiting, up to ten at a stop, at the stops in the picture
     let m=0; const pm=pplI.instanceMatrix.array, hm=hdI.instanceMatrix.array;
     for(const st of stops){ if(!st.q.length||st.kind!=="bus"||(reg&&(st.x<reg.x0||st.y<reg.y0||st.x>reg.x0+reg.S||st.y>reg.y0+reg.S))) continue;
@@ -10765,13 +10889,14 @@ window.__gridlock={
       fires:blds.filter(b=>b.fire).length,sick:blds.filter(b=>b.sick).length,crime:blds.filter(b=>(b.crime||0)>.6).length,out:cars.filter(c=>c.svc&&c.state!=="home").length,
       sirens:cars.filter(c=>c.siren).length,worn:[...segs.values()].filter(s=>s.cond!==undefined&&s.cond<.6).length,burnt:lots.filter(L=>L.burnt).length}; },
   civic:()=>({edu:{any:+eduStat.any.toFixed(2),hi:+eduStat.hi.toFixed(2)},dem:{off:+cityD.off.toFixed(2),ind:+cityD.ind.toFixed(2)}}),
-  transit:()=>({stops:stops.length,lines:lines.map(L=>({id:L.id,kind:L.kind,loop:L.loop,stops:L.stops.length,want:L.want,buses:L.buses.length,load:L.kind==="metro"?L.buses.reduce((n,q)=>n+q.load.length,0):undefined,len:Math.round(linePath(L).len),gaps:L.path.gaps.length,riders:L.riders})),wait:stops.reduce((n,q)=>n+q.q.length,0),riders:tStat.total,month:tStat.month,
+  transit:()=>({stops:stops.length,lines:lines.map(L=>({id:L.id,kind:L.kind,loop:L.loop,stops:L.stops.length,want:L.want,buses:L.buses.length,load:L.kind==="metro"?L.buses.reduce((n,q)=>n+q.load.length,0):undefined,len:Math.round(linePath(L).len),gaps:L.path.gaps.length,riders:L.riders})),wait:stops.reduce((n,q)=>n+q.q.length,0),riders:tStat.total,month:tStat.month,xf:tStat.xf||0,
+    changing:stops.reduce((n,q)=>n+q.q.filter(r=>r.nx).length,0)+lines.reduce((n,L)=>n+L.buses.reduce((m,v)=>m+v.load.filter(r=>r.nx).length,0),0),
     buses:allBuses().map(c=>({st:c.state,load:c.load.length,x:Math.round(c.x),y:Math.round(c.y),to:c.purpose&&c.purpose.d&&c.purpose.d.id}))}),
   stop:(x,y)=>{ const g=stopAt({x,y}); if(!g.ok) return {ok:false,why:g.why}; const st=addStop(g); return {ok:true,id:st.id,x:Math.round(st.x),y:Math.round(st.y),dx:Math.round(st.door.x),dy:Math.round(st.door.y)}; },
   tline:(ids,kind,loop)=>{ metroSync(); const S=ids.map(i=>stops.find(q=>q.id===i)).filter(Boolean); if(S.length<2) return {ok:false}; const L=addLine(S,kind||"bus",!!loop); return {ok:true,id:L.id,want:L.want,len:Math.round(linePath(L).len),gaps:L.path.gaps.length}; },
   stations:()=>{ metroSync(); return stops.filter(q=>q.kind==="metro").map(q=>({id:q.id,x:Math.round(q.x),y:Math.round(q.y),wait:q.q.length})); },
   trains:()=>lines.filter(L=>L.kind==="metro").flatMap(L=>L.buses.map(tr=>{ const q=trainPos(L,tr), s=v3live()?V3.project(q.x,V3.hAt(q.x,q.y)+1,q.y):null;
-    return {line:L.id,x:Math.round(q.x),y:Math.round(q.y),dwell:tr.dw>0,load:tr.load.length,sx:s&&Math.round(s.x),sy:s&&Math.round(s.y),behind:s&&s.behind}; })),
+    return {line:L.id,x:Math.round(q.x),y:Math.round(q.y),dwell:tr.dw>0,load:tr.load.length,sx:s&&Math.round(s.x),sy:s&&Math.round(s.y),behind:s&&s.behind,cars:trainCars(L,tr).map(c=>({x:Math.round(c.x),y:Math.round(c.y),al:+c.al.toFixed(2),cab:c.cab}))}; })),
   tmode:(m,tab)=>{ if(tab) openTab("transit"); if(m) setTMode(m); return {mode:transitMode,pend:linePend?linePend.stops.length:-1,tab:cityTab}; },
   ignite:i=>{ const hs=blds.filter(b=>!isSvc(b)&&!b.fire); const b=hs[i===undefined?0:i%hs.length]; if(b) b.fire={t0:t,truck:null}; return b&&b.type; },
   sicken:()=>{ const b=blds.find(b=>isHome(b)&&!b.sick); if(b) b.sick={t0:t,amb:null}; return !!b; },
