@@ -3243,7 +3243,9 @@ function makeLotBld(L,type){
     b.col=pick(HOUSE_ROOFS); if(b.v===3&&Math.random()<.6) b.v=Math.random()<.5?0:1;
     b.storeys=b.v!==3&&Math.random()<.4?2:1; b.ell=b.v!==3&&hw>=17&&hd>=13.5&&Math.random()<.42; b.solar=b.v!==3&&Math.random()<.22;
     const yard=back?(b.pool?16:9):S.d-hd-fy; b.shed=!b.pool&&yard>=13&&Math.random()<.5; b.patio=!b.pool&&yard>=9&&Math.random()<.65;
+    houseStyle(b,S);
   }
+  else if(type==="shop") shopStyle(b);
   else if(type==="town"){ b.units=clamp(Math.floor(S.w/8.5),2,8); b.cols=[pick(TOWN_COLS),pick(TOWN_COLS)]; b.nCars=b.units; }
   else if(type==="apts"&&L.kind==="high"){ b.tower=true; b.floors=12+(Math.random()*19|0); b.style=S.w>=70&&Math.random()<.5?"twin":S.w>S.d*1.5&&Math.random()<.6?"slab":"point";
     b.col=pick(TOWER_COLS); b.nCars=clamp(Math.round(S.w*S.d*b.floors/2800),14,36); }
@@ -5770,7 +5772,7 @@ function drawHouse(b){
   const sc=growth(b,.35), w=b.w, d=b.d, v=b.v, P=housePlan(b), main=P.rects[0];
   if(b.lot) houseGrounds(b,sc);
   if(rec3d) b3House(b,P);
-  else { bodyShadow(b,sc,(v===3?6:5)*(b.storeys===2?1.45:1),P.rects.concat(b.big?[[-w/2-9,-1,9,d/2+1]]:[])); if(P.shed) bodyShadow(b,sc,2.6,[P.shed],true); }
+  else { bodyShadow(b,sc,(v===3?6:5)*(b.storeys===2?1.45:1),P.rects.concat(b.big?[[-w/2-9,-1,9,d/2+1]]:[])); if(P.shed) bodyShadow(b,sc,2.6,[P.shed],true); if(v===3&&b.up) bodyShadow(b,sc,9.5,[modernUp(b,main)]); }
   ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc);
   if(b.big){ ctx.fillStyle=shade(b.col,-55); ctx.fillRect(-w/2-9.6,-1.6,10,d/2+2.2); ctx.fillStyle=shade(b.col,-16); ctx.fillRect(-w/2-9,-1,9,d/2+1);
     ctx.fillStyle=shade(b.col,-30); ctx.fillRect(-w/2-9,d/2-1.2,9,1.2); }
@@ -5779,7 +5781,15 @@ function drawHouse(b){
   // an L: the wing goes in first, tucked under the front block's roof
   if(P.rects[1]) roof(P.rects[1],1.6);
   roof(main);
-  if(v!==3){ const cx=main[0]+main[2]*.75, cy=main[1]+main[3]*.25-1.6;
+  const hs=houseKind(b), fy=main[1]+main[3];
+  // a modern house's upper storey, set back, its shadow falling on the roof below
+  if(v===3&&b.up){ const [ux,uy,uw,ud]=modernUp(b,main), [lsx,lsy]=sunPlan(b); ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(ux+lsx*4,uy+lsy*4,uw,ud); flatRoof(uw,ud,b.col,ux+uw/2,uy+ud/2); }
+  // dormers on a cottage's front slope; the porch roof over each front door (a flat canopy on a modern house); the
+  // party wall across the roof of a pair of semis
+  if(hs==="cottage"&&v!==3) for(const x of dormers(main)) miniGable(b,x,fy-main[3]*.3,3.4,3.2);
+  for(const x of houseDoors(b,main)){ if(v===3){ ctx.fillStyle="#cfccc5"; ctx.fillRect(x-3.5,fy,7,2.4); ctx.fillStyle="#e3e0da"; ctx.fillRect(x-3.3,fy,6.6,2); } else miniGable(b,x,fy+1.4,4.6,2.8); }
+  if(hs==="semi"&&v!==3){ ctx.strokeStyle=shade(b.col,-45); ctx.lineWidth=.5; ctx.beginPath(); ctx.moveTo(main[0]+main[2]/2,main[1]+.3); ctx.lineTo(main[0]+main[2]/2,fy-.3); ctx.stroke(); }
+  if(v!==3){ const cx=hs==="semi"?main[0]+main[2]/2-1.5:main[0]+main[2]*.75, cy=hs==="semi"?main[1]+main[3]/2-1.5:main[1]+main[3]*.25-1.6;
     // solar panels on the back slope, clear of the chimney
     if(b.solar&&main[2]>=main[3]){ const r=v===1?0:main[3]/2, px=main[0]+r*.6+.6, pw=(main[2]-2*r*.6-1.2)*.7, py=main[1]+main[3]*.08, ph=main[3]*.3;
       ctx.fillStyle="#1f2a3d"; ctx.fillRect(px-.25,py-.25,pw+.5,ph+.5); ctx.fillStyle="#2c3c58"; ctx.fillRect(px,py,pw,ph);
@@ -5796,27 +5806,64 @@ function drawHouse(b){
   if(dv){ let i=0; for(const c of b.cars) if(c.state==="home"&&i<dv.pads.length){ const q=dv.pads[i++]; parked(c,q.x,q.y,q.a); } }
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
 }
-// a house in 3D: one or two storeys of walls under a hipped, gabled or flat roof, an L's wing with its own lower roof,
-// the front door under a porch, a chimney, solar panels lying on the back slope, the garage beside it with its door to
-// the drive, and the timber shed in the back garden
+// a house in 3D: one or two storeys of walls in its own material under a hipped, gabled or flat roof (low on a ranch,
+// steep with dormers on a cottage), an L's wing with its own lower roof, the front door (one to each of a pair of semis)
+// under a porch, a chimney, solar panels lying on the back slope, the garage beside it with its door to the drive, the
+// timber shed in the back garden; a modern one with bands of glass, a flat roof and sometimes an upper storey set back
 function b3House(b,P){
-  const w=b.w, d=b.d, v=b.v, main=P.rects[0], two=b.storeys===2, H=two?13.1:6.9, roof=v===1?"gable":v===3?"flat":"hip";
-  const rise=q=>clamp(Math.min(q[2],q[3])/2*(roof==="gable"?.7:.62),2.4,6.4), fy=main[1]+main[3];
-  // the front door goes in the window bay nearest the middle, away from the drive's side
-  const k=Math.round((-main[0]-3.5)/7+(b.flip?-.3:.3)), dx=clamp(main[0]+3.5+7*k,main[0]+3,main[0]+main[2]-3), dr=[[dx-2,dx+2]];
-  const o={roof,H,rise:rise(main),base:"#8d877d",doors:dr}; if(v===3) Object.assign(o,{rc:"#cfccc4",par:.9,pc:"#e9e6df"});
-  bodyShadow(b,1,5,[main],false,o);
-  if(P.rects[1]) bodyShadow(b,1,5,[P.rects[1]],false,Object.assign({},o,{rise:rise(P.rects[1]),doors:null}));
-  if(b.big){ const g=[-w/2-9,-1,9,d/2+1]; bodyShadow(b,1,3,[g],false,{roof:v===3?"flat":"hip",H:6.4,rise:2.6,base:"#8d877d",doors:[[g[0]+.8,g[0]+8.2]],rc:v===3?"#cfccc4":undefined,par:v===3?.6:undefined});
+  const w=b.w, d=b.d, v=b.v, main=P.rects[0], hs=houseKind(b), two=b.storeys===2, H=two?13.1:6.9, roof=v===1?"gable":v===3?"flat":"hip";
+  const k0=hs==="ranch"?.42:hs==="cottage"?.92:.62, rise=q=>clamp(Math.min(q[2],q[3])/2*k0*(roof==="gable"?1.1:1),2.2,8.4), fy=main[1]+main[3];
+  const wm=b.wm||["render","brick","siding"][b.id%3], wall=v===3?(wm==="timber"?"timber":"office2"):HTILE[wm]||"house", rm=SLATE.has(b.col)?"slate":"tile";
+  const dxs=houseDoors(b,main), o={roof,H,rise:rise(main),wall,rm,base:"#8d877d",doors:dxs.map(x=>[x-2,x+2])};
+  if(v===3) Object.assign(o,{rc:"#cfccc4",par:.9,pc:wm==="timber"?"#d9d6cf":"#ecebe6",fins:false});
+  B3(b,main,o);
+  if(P.rects[1]) B3(b,P.rects[1],Object.assign({},o,{rise:rise(P.rects[1]),doors:null}));
+  if(v===3&&b.up) B3(b,modernUp(b,main),Object.assign({},o,{H:13.4,wall:wm==="timber"?"office2":"timber",wc:wm==="timber"?"#ecebe6":"#b48a62",doors:null}));
+  if(b.big){ const g=[-w/2-9,-1,9,d/2+1]; B3(b,g,{roof:v===3?"flat":"hip",H:6.4,rise:2.6,wall,rm,base:"#8d877d",doors:[[g[0]+.8,g[0]+8.2]],rc:v===3?"#cfccc4":undefined,par:v===3?.6:undefined});
     d3(b,{k:"gdoor",x0:g[0]+1.2,x1:g[0]+7.8,y:d/2,h:4.6,col:"#efede8"}); }
   if(P.shed){ const [x,y,ww,hh]=P.shed; bodyShadow(b,1,2.6,[P.shed],true,{roof:"gable",H:4.2,rise:1.5,ov:.35,wall:"wood",wc:"#9a7c60",rc:"#5e4a3a",rm:"roofing",along:true});
     d3(b,{k:"door",x:x+ww/2,y:y+hh,w:1.8,h:3.2,lamp:false,col:"#6d5640"}); }
-  d3(b,{k:"door",x:dx,y:fy,w:2.4,h:5,col:pick2(["#3d4f63","#5b3f2e","#7a2e2a","#2f4a3a","#f1efe9"],b.id)},
-    v===3?{k:"slab",x:dx-3.5,y:fy,w:7,d:2.4,z:6.2,h:.4,col:"#e9e6df"}:{k:"porch",x:dx,y:fy,w:4.6,d:2.8,h:5.9,roof:roof==="gable"?"gable":"hip",rc:b.col});
-  if(v!==3){ const cx=main[0]+main[2]*.75, cy=main[1]+main[3]*.25-1.6; d3(b,{k:"chim",x:cx+.3,y:cy+.3,w:2.4,d:2.4,col:"#a8735f"});
+  dxs.forEach((x,i)=>d3(b,{k:"door",x,y:fy,w:2.4,h:5,col:pick2(["#3d4f63","#5b3f2e","#7a2e2a","#2f4a3a","#f1efe9"],b.id+i*2)},
+    v===3?{k:"slab",x:x-3.5,y:fy,w:7,d:2.4,z:6.2,h:.4,col:"#e9e6df"}:{k:"porch",x,y:fy,w:4.6,d:2.8,h:5.9,roof:roof==="gable"?"gable":"hip",rc:b.col,rm}));
+  if(v!==3){ const semi=hs==="semi", cx=semi?main[0]+main[2]/2-1.5:main[0]+main[2]*.75, cy=semi?main[1]+main[3]/2-1.5:main[1]+main[3]*.25-1.6;
+    d3(b,{k:"chim",x:cx+.3,y:cy+.3,w:2.4,d:2.4,col:wm==="stone"?"#b9b2a4":"#a8735f"});
+    if(hs==="cottage") for(const x of dormers(main)) d3(b,{k:"dormer",i:0,s:1,x,w:3.4,col:b.wc||"#ece6da",rc:b.col,rm});
     if(b.solar&&main[2]>=main[3]) d3(b,{k:"rpan",i:0,s:-1,f0:.12,f1:.72,a0:0,a1:.72}); }
-  else { const x0=main[0], y0=main[1]; d3(b,{k:"panels",x:x0+2.4,y:y0+2.4,w:main[2]*.42,d:main[3]*.36},{k:"panels",x:x0+2.4+main[2]*.46,y:y0+2.4,w:main[2]*.42,d:main[3]*.36}); }
+  else { const q=b.up?modernUp(b,main):main; d3(b,{k:"panels",x:q[0]+2,y:q[1]+2,w:q[2]-4,d:q[3]*.45}); }
 }
+// what a house is built as: a bungalow, a long low ranch, a cottage with a steep roof and dormers, two storeys, a pair of
+// semis, or a modern one with a flat roof; and what its walls are (render, brick, boards, timber or stone) in muted real
+// colours. Decided as it's built on its plot
+const HMAT={render:["#f1ebe0","#e9e0d1","#f3f0ea","#e6dfd4","#e2e6e8","#efe4d6","#dfe3dc"],brick:["#b8735a","#a9654f","#c98a6c","#9e6a55","#b97e62","#c4a08a"],
+  siding:["#d9e2e6","#cfd8dd","#e8e2d2","#c2c9b4","#9fb0bd","#d6ccb4","#e6e1d8","#b9c4c9"],timber:["#b88b62","#a57a55","#8f6a4c","#c49a6c"],stone:["#d9d3c7","#cfc6b4","#c8c2b6"]};
+const HTILE={render:"house",brick:"brick",siding:"siding",timber:"timber",stone:"stone"};
+const HWALLS={bungalow:[["brick",40],["render",35],["siding",20],["stone",5]],ranch:[["siding",45],["brick",35],["timber",20]],cottage:[["render",45],["stone",35],["brick",20]],
+  two:[["brick",40],["render",30],["siding",30]],semi:[["brick",60],["render",40]],modern:[["render",65],["timber",35]]};
+const SLATE=new Set(["#5d6066","#6e7178","#4a4f57","#58636e","#8a8279"]);
+const wpick=L=>{ let n=0; for(const q of L) n+=q[1]; let r=Math.random()*n; for(const q of L){ r-=q[1]; if(r<0) return q[0]; } return L[0][0]; };
+function houseStyle(b,S){
+  const R=Math.random;
+  b.hs=b.v===3?"modern":b.storeys===2?(b.w>=17&&R()<.33?"semi":"two"):b.v===1?(R()<.65?"cottage":"ranch"):(R()<(b.big?.3:.12)?"ranch":"bungalow");
+  if(b.hs==="semi") b.ell=false;
+  if(b.hs==="ranch"){ const w=Math.min(S.w-5-(b.big?12:0),rnd(21,24)); if(w>b.w) b.w=w; }
+  if(b.hs==="modern") b.up=b.w>=17&&R()<.55;
+  b.wm=wpick(HWALLS[b.hs]); b.wc=pick(HMAT[b.wm]);
+}
+const houseKind=b=>b.hs||(b.v===3?"modern":b.storeys===2?"two":b.v===1?"cottage":"bungalow");
+// where a house's front doors go: in the middle of a window bay (the bays are centred along the front), the one nearest
+// the middle on the side away from the drive, or one to each of a pair of semis
+function houseDoors(b,main){
+  const nb=Math.max(1,Math.round(main[2]/7)), off=(main[2]-nb*7)/2, c=k=>main[0]+off+3.5+7*k;
+  if(houseKind(b)==="semi"&&nb>=2) return nb%2?[c(0),c(nb-1)]:[c(nb/2-1),c(nb/2)];
+  const m=(nb-1)/2; return [c(nb%2?m:m+(b.flip?-.5:.5))];
+}
+// a cottage's dormers, over the window bays either side of the middle
+const dormers=main=>[main[0]+main[2]*.27,main[0]+main[2]*.73];
+// a modern house's upper storey: over the back of the house on the side away from the drive
+function modernUp(b,main){ const uw=main[2]*.6; return [b.flip?main[0]:main[0]+main[2]-uw,main[1],uw,main[3]*.68]; }
+// a little gabled roof seen from above with its ridge running front to back: a porch or a dormer
+function miniGable(b,x,y,w,h){ ctx.fillStyle=shade(b.col,-55); ctx.fillRect(x-w/2-.3,y-h/2-.3,w+.6,h+.6);
+  ctx.fillStyle=shade(b.col,sunOn(b,-1,0)*34-4); ctx.fillRect(x-w/2,y-h/2,w/2,h); ctx.fillStyle=shade(b.col,sunOn(b,1,0)*34-4); ctx.fillRect(x,y-h/2,w/2,h); }
 const pick2=(a,i)=>a[i%a.length];
 // a house's plan on its own frame: one block, or an L with a wing going back on one side (inside the same footprint, so
 // it takes no more room), and where its shed stands in the back garden
@@ -6106,20 +6153,33 @@ function lot(b,sc,x0,y0,w,h,n,col){
 // ----- the grown buildings in 3D. In 3D each drawing hands over its blocks with what they're made of (see look3 in the
 // 3D view) and the details that stand out from them (d3), in place of its shadow, all on the building's own plan -----
 const B3=(b,q,o)=>bodyShadow(b,1,1,[q],false,o);
-// the kinds of shop, each with its own sign (its row in the sign pictures), wall colour and awning
-const SHOPK={grocer:{row:0,wall:"#ebe5d6",awn:"#3d6b4a"},cafe:{row:1,wall:"#e9dfd0",awn:"#5d4636"},bakery:{row:2,wall:"#efe6d8",awn:"#8a4a40"},
-  pharmacy:{row:3,wall:"#eef0ee",awn:"#3f7f5a"},hardware:{row:4,wall:"#ddd6c8",awn:"#a8613a"},restaurant:{row:5,wall:"#e4ddd2",awn:"#33363a"},
-  supermarket:{row:6,wall:"#e8e9ea",awn:null},fuel:{row:7,wall:"#f0efeb",awn:null}};
-const SHOPKS=["grocer","cafe","bakery","pharmacy","hardware","restaurant","supermarket"];
+// the kinds of shop, each with its own sign (its row in the sign pictures and its colour), wall colour and awning
+const SHOPK={grocer:{row:0,sc:"#35603f",wall:"#ebe5d6",awn:"#3d6b4a"},cafe:{row:1,sc:"#4b372b",wall:"#e9dfd0",awn:"#5d4636"},bakery:{row:2,sc:"#7b3230",wall:"#efe6d8",awn:"#8a4a40"},
+  pharmacy:{row:3,sc:"#2f7d50",wall:"#eef0ee",awn:null},hardware:{row:4,sc:"#b45b2c",wall:"#ddd6c8",awn:null},restaurant:{row:5,sc:"#26282b",wall:"#e4ddd2",awn:"#33363a"},
+  supermarket:{row:6,sc:"#25476d",wall:"#e8e9ea",awn:null},fuel:{row:7,sc:"#bf3a2c",wall:"#f0efeb",awn:null}};
+const SHOPKS=["grocer","cafe","bakery","pharmacy","hardware","restaurant"];
 const shopKind=b=>b.kind&&SHOPK[b.kind]?b.kind:SHOPKS[b.id%SHOPKS.length];
-// a shop: one tall storey with its window along the car park, its sign over the window (and an awning on the smaller
-// ones), a parapet round the flat roof
+// what a shop grown on its plot sells: a supermarket only on a big plot, a fuel station on one deep enough for a forecourt
+function shopStyle(b){ b.kind=wpick([["grocer",16],["cafe",16],["bakery",12],["pharmacy",12],["hardware",10],["restaurant",14],["supermarket",b.w>=44?24:0],["fuel",b.w>=26&&b.d>=34?12:0]]); }
+// a fuel station's canopy over its pumps, out on the forecourt
+const fuelCanopy=b=>[-b.w/2+5,6,b.w-10,Math.min(13,b.d/2-10)];
+// a shop: one tall storey with its window along the car park, its sign over the window (and an awning on some), a
+// parapet round the flat roof; tables and umbrellas out front of a cafe or a restaurant; a fuel station's kiosk with its
+// canopy over the pumps
 function b3Shop(b,rects,by){
-  const K=SHOPK[shopKind(b)], m=rects[0], x0=m[0], x1=m[0]+m[2], cx=(x0+x1)/2, sw=Math.min(m[2]*.62,22);
-  rects.forEach((q,i)=>B3(b,q,{roof:"flat",H:i?9.2:10.8,wall:"render",wc:K.wall,gf:i?0:7.4,par:1.1,pc:K.wall,rc:"#b9b6ae",base:"#7a756c"}));
-  d3(b,{k:"sign",x0:cx-sw/2,x1:cx+sw/2,y:by,z:7.9,h:2.3,row:K.row});
-  if(K.awn&&(b.v%3===1||K.row===1||K.row===2||K.row===5)) d3(b,{k:"awn",x0:x0+1.2,x1:x1-1.2,y:by,z:5.4,out:2.8,drop:1.1,col:K.awn});
+  const k=shopKind(b), K=SHOPK[k], m=rects[0], x0=m[0], x1=m[0]+m[2], cx=(x0+x1)/2, sw=Math.min(m[2]*.62,k==="supermarket"?30:22), fy=m[1]+m[3];
+  rects.forEach((q,i)=>B3(b,q,{roof:"flat",H:i?9.2:k==="supermarket"?12.4:10.8,wall:"render",wc:K.wall,gf:i?0:7.4,par:1.1,pc:K.wall,rc:"#b9b6ae",base:"#7a756c"}));
+  d3(b,{k:"sign",x0:cx-sw/2,x1:cx+sw/2,y:fy,z:7.9,h:k==="supermarket"?3:2.3,row:K.row});
+  if(K.awn&&(b.v%3===1||SHOPAWN.has(k))) d3(b,{k:"awn",x0:x0+1.2,x1:x1-1.2,y:fy,z:5.4,out:2.8,drop:1.1,col:K.awn});
+  // roof lights where the drawing has them (a shop with an awning has its plant up there instead)
+  if(k!=="fuel"&&!(K.awn&&(b.v%3===1||SHOPAWN.has(k)))) for(let i=0;i<(b.v%3===2?2:4);i++) d3(b,{k:"box",x:-b.w/2+5+i*12,y:-b.d/2+5,w:8,d:4.5,h:.7,m:"glass",col:"#dfe9f0"});
+  if(k==="cafe"||k==="restaurant") for(let i=0;i<3;i++) d3(b,{k:"umb",x:x0+4+i*Math.min(6,(m[2]-8)/2),y:fy+1.9,r:1.6,h:4,z:0,col:k==="cafe"?"#e9e1cf":"#8f2f2a"});
+  if(k==="fuel"){ const [x,y,w,h]=fuelCanopy(b), n=2;
+    d3(b,{k:"slab",x,y,w,d:h,z:9.6,h:1.4,m:"white",col:"#f1f0ec",fs:63},{k:"box",x:x-.05,y:y+h-.05,w:w+.1,d:.1,z:9.6,h:1.4,col:K.sc},{k:"sign",x0:x+w/2-5,x1:x+w/2+5,y:y+h,z:9.65,h:1.3,row:7,edge:"#bf3a2c"});
+    for(let i=0;i<n;i++){ const px=x+w*(i+1)/(n+1); d3(b,{k:"posts",at:[[px,y+h*.25],[px,y+h*.75]],h:9.6,z:0,r:.35,col:"#d9d8d3"},{k:"slab",x:px-.9,y:y+1.2,w:1.8,d:h-2.4,z:0,h:.4,col:"#cfccc4"});
+      for(const q of [.3,.7]) d3(b,{k:"box",x:px-.6,y:y+h*q-.7,w:1.2,d:1.4,z:.4,h:3.4,col:"#e9e7e2"},{k:"box",x:px-.62,y:y+h*q-.72,w:1.24,d:1.44,z:3,h:.8,col:K.sc}); } }
 }
+const SHOPAWN=new Set(["grocer","cafe","bakery","restaurant"]);
 // a row of shops under one long roof: each its own height and colour, with its own sign and awning over a shared walk
 function b3Center(b,n,uw,y0,sd){
   for(let i=0;i<n;i++){ const x=-b.w/2+2+i*uw, k=(b.id*3+i*5)%BRANDS.length;
@@ -6346,21 +6406,31 @@ function drawDest(b){
     if(LOD){ for(const k of [-1,1]){ const p=toMap(b,k*(w/2-3)*sc,26*sc); tree(p.x,p.y,4*sc); const q=toMap(b,k*(w/2-3)*sc,10*sc); tree(q.x,q.y,3.6*sc); } }
     fillBays(b,sc,park,here);
   } else if(b.type==="shop"){
-    const by=3, v=b.v%3;
-    lot(b,sc,-w/2,by,w,d/2-by,6); stalls(-w/2,w,6,by+7.5);
-    const rects=v===2?[[-w/2,-d/2,w*.62,by+d/2],[-w/2+w*.62,-d/2,w*.38,by+d/2-9]]:[[-w/2,-d/2,w,by+d/2]];
-    if(rec3d) b3Shop(b,rects,by); else bodyShadow(b,sc,7,rects);
+    // a shop of its kind: its awning and sign colours and what stands out front, or a fuel station's kiosk at the back of
+    // its forecourt with the canopy over the pumps
+    const by=3, v=b.v%3, k=shopKind(b), K=SHOPK[k], fuel=k==="fuel", aw=K.awn&&(v===1||SHOPAWN.has(k)), C=fuel&&fuelCanopy(b);
+    lot(b,sc,-w/2,by,w,d/2-by,fuel?0:6); stalls(-w/2,w,fuel?4:6,by+7.5);
+    const rects=fuel?[[-w/2+2,-d/2+2,Math.min(w*.5,26),by+d/2-2]]:v===2?[[-w/2,-d/2,w*.62,by+d/2],[-w/2+w*.62,-d/2,w*.38,by+d/2-9]]:[[-w/2,-d/2,w,by+d/2]];
+    if(rec3d) b3Shop(b,rects,by); else { bodyShadow(b,sc,7,rects); if(C) bodyShadow(b,sc,4,[C]); }
     ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(th); ctx.scale(sc,sc);
     for(const [x,y,ww,hh] of rects){ ctx.fillStyle=T.dark; roundRect(x,y,ww,hh,1.5); ctx.fill(); ctx.fillStyle=T.col; ctx.fillRect(x+1.8,y+1.8,ww-3.6,hh-3.6); }
-    if(v===1){ // a striped awning along the front
-      for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#ffffff":T.awn||T.light; ctx.fillRect(-w/2+2+i*(w-4)/9,by-5,(w-4)/9,4.4); }
+    if(C&&!rec3d){ const [x,y,ww,hh]=C; ctx.fillStyle=K.sc; ctx.fillRect(x-.4,y-.4,ww+.8,hh+.8); ctx.fillStyle="#f1f0ec"; ctx.fillRect(x+.8,y+.8,ww-1.6,hh-1.6);
+      ctx.strokeStyle="rgba(0,0,0,.08)"; ctx.lineWidth=.4; ctx.beginPath(); for(let q=x+4;q<x+ww-1;q+=4){ ctx.moveTo(q,y+.8); ctx.lineTo(q,y+hh-.8); } ctx.stroke(); }
+    if(fuel){ ctx.fillStyle=K.sc; ctx.fillRect(rects[0][0]+2,by-2.6,rects[0][2]-4,2.6); box(rects[0][0]+4,-d/2+6,6,4.5,"#ecebe6","#b9b7b0",1.6); }
+    else if(aw){ // a striped awning along the front, out over the pavement
+      if(!rec3d) for(let i=0;i<9;i++){ ctx.fillStyle=i%2?"#f3efe4":K.awn; ctx.fillRect(-w/2+2+i*(w-4)/9,by-1.4,(w-4)/9,3.6); }
+      ctx.fillStyle=K.sc; ctx.fillRect(-w/2+3,by-3.4,w-6,1.6);
       box(-w/2+6,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8); box(w/2-16,-d/2+5,10,6,"#ecebe6","#b9b7b0",1.8);
     } else {
       ctx.fillStyle=T.light; ctx.globalAlpha=.6; for(let i=0;i<(v===2?2:4);i++) ctx.fillRect(-w/2+5+i*12,-d/2+5,8,4.5); ctx.globalAlpha=1;
       for(let i=0;i<(v===2?2:4);i++) sheen(-w/2+5+i*12,-d/2+5,8,4.5,b.id,-w/2,w);
       box(-w/2+7,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); box(-w/2+16,-6,6,4.5,"#ecebe6","#b9b7b0",1.6); if(v===0) box(w/2-13,-d/2+12,7,5,"#ecebe6","#b9b7b0",1.8);
-      ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=T.awn||T.dark; ctx.fillRect(-7,by-2.6,14,2.6);
+      ctx.fillStyle="#fff"; ctx.fillRect(-w/2+3,by-2.6,w-6,2.6); ctx.fillStyle=K.sc; ctx.fillRect(k==="supermarket"?-12:-7,by-2.6,k==="supermarket"?24:14,2.6);
     }
+    // tables under umbrellas out front of a cafe or a restaurant, crates of fruit and veg by a grocer's door
+    if(!rec3d&&(k==="cafe"||k==="restaurant")) for(let i=0;i<3;i++){ const x=-w/2+4+i*Math.min(6,(w-8)/2); ctx.fillStyle="rgba(30,36,22,.18)"; ctx.beginPath(); ctx.arc(x+.6,by+2.5,1.6,0,7); ctx.fill();
+      ctx.fillStyle=k==="cafe"?"#e9e1cf":"#8f2f2a"; ctx.beginPath(); ctx.arc(x,by+1.9,1.6,0,7); ctx.fill(); ctx.fillStyle="rgba(255,255,255,.35)"; ctx.beginPath(); ctx.arc(x-.4,by+1.5,.6,0,7); ctx.fill(); }
+    if(!rec3d&&k==="grocer") ["#d9752f","#7da53f","#c9433a","#e0b13a"].forEach((c,i)=>{ ctx.fillStyle="#8a6a48"; ctx.fillRect(w/2-14+i*2.6,by+.4,2.3,1.8); ctx.fillStyle=c; ctx.fillRect(w/2-13.8+i*2.6,by+.6,1.9,1.4); });
     ctx.restore();
   } else if(b.type==="office"){
     const by=7, tower=b.v%2===1;
@@ -7172,8 +7242,10 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
   // a to b on the plan with its outside towards (nx,ny); doors are the stretches along it kept clear
   function wall3(B,a,b,nx,ny,z0,z1,tile,col,L,det,side,vOff,doors){
     const len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<.05) return; const tx=(b[0]-a[0])/len, ty=(b[1]-a[1])/len, FS=FSIZE[tile]||[8,8], U=FS[0]*NB, V=FS[1]*NB, v0=(z0-(vOff||0))/V, v1=(z1-(vOff||0))/V;
+    // on a house the window bays are centred along the wall
+    const W=WINS[tile], bw=FS[0], fh=FS[1], hw=W&&W.length===1, nb=hw?Math.max(1,Math.round(len/bw)):Math.floor(len/bw+.02), off=hw?(len-nb*bw)/2:0;
     mat(B,tile,tile==="office"?.32:.88);
-    fq(B,[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1],[a[0],a[1],z1],[0,v0],[len/U,v0],[len/U,v1],[0,v1],col,nx,ny,0);
+    fq(B,[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1],[a[0],a[1],z1],[-off/U,v0],[(len-off)/U,v0],[(len-off)/U,v1],[-off/U,v1],col,nx,ny,0);
     const P=(s,o,z)=>[a[0]+tx*s+nx*o,a[1]+ty*s+ny*o,z];
     // a box standing out from the wall, s along it, z up, o out from it, with only the faces asked for: 1 top, 2 front,
     // 4 underneath, 8 and 16 the ends
@@ -7183,12 +7255,11 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
       if(fs&4) fq(B,P(s0,o0,za),P(s1,o0,za),P(s1,o1,za),P(s0,o1,za),[0,0],[1,0],[1,1],[0,1],c,0,0,-1);
       if(fs&8) fq(B,P(s0,o0,za),P(s0,o1,za),P(s0,o1,zb),P(s0,o0,zb),[0,0],[1,0],[1,1],[0,1],c,-tx,-ty,0);
       if(fs&16) fq(B,P(s1,o0,za),P(s1,o1,za),P(s1,o1,zb),P(s1,o0,zb),[0,0],[1,0],[1,1],[0,1],c,tx,ty,0); };
-    const bw=FS[0], fh=FS[1], nb=Math.floor(len/bw+.02), nf=Math.ceil((z1-(vOff||0))/fh)+1, clear=(s0,s1)=>!(doors||[]).some(d=>s1>d[0]-.4&&s0<d[1]+.4);
-    const W=WINS[tile], flats=(tile==="apts"||tile==="aptb")&&L.balc&&len>=12&&(L.balc>1||side===0||side===2);
+    const nf=Math.ceil((z1-(vOff||0))/fh)+1, clear=(s0,s1)=>!(doors||[]).some(d=>s1>d[0]-.4&&s0<d[1]+.4), flats=(tile==="apts"||tile==="aptb")&&L.balc&&len>=12&&(L.balc>1||side===0||side===2);
     // close up, a sill under each window and a head over it, standing out from the wall
     if(W&&det>1&&L.frames!==false){ mat(B,"white",.6);
-      for(let f=0;f<nf;f++) for(let k=0;k<nb;k++) for(const w of W){ const s0=k*bw+w[0]*bw, s1=k*bw+w[1]*bw, za=(vOff||0)+(f+w[2])*fh, zb=(vOff||0)+(f+w[3])*fh, t=.3;
-        if(zb+t>z1-.3||za<z0+.2||!clear(s0,s1)||flats&&f>0) continue;
+      for(let f=0;f<nf;f++) for(let k=0;k<nb;k++) for(const w of W){ const s0=off+k*bw+w[0]*bw, s1=off+k*bw+w[1]*bw, za=(vOff||0)+(f+w[2])*fh, zb=(vOff||0)+(f+w[3])*fh, t=.3;
+        if(zb+t>z1-.3||za<z0+.2||s0<.7||s1>len-.7||!clear(s0,s1)||flats&&f>0) continue;
         wb(s0-t-.25,s1+t+.25,za-.36,za,0,.6,TRIM.sill,7); wb(s0-t,s1+t,zb,zb+t,0,.3,TRIM.frame,6); } }
     // balconies on the flats: a slab at each floor with a glass front and a rail, across each bay
     if(flats&&det){
@@ -7335,6 +7406,17 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
         const [y0,z0]=at(d.f0), [y1,z1]=at(d.f1), pt=(l,dd,z)=>p.along?[l,dd,z]:[dd,l,z], ox=p.along?0:d.s, oy=p.along?d.s:0, e=.18;
         mat(B,"white",.6); fq(B,pt(l0-e,y0,z0-.06),pt(l1+e,y0,z0-.06),pt(l1+e,y1,z1-.06),pt(l0-e,y1,z1-.06),[0,0],[1,0],[1,1],[0,1],[.14,.16,.2],ox,oy,1);
         mat(B,d.m||"solar",.3); const u=(l1-l0)/3.4, v=Math.hypot(y1-y0,z1-z0)/3.4; fq(B,pt(l0,y0,z0),pt(l1,y0,z0),pt(l1,y1,z1),pt(l0,y1,z1),[0,0],[u,0],[u,v],[0,v],W0,ox,oy,1); break; }
+      case "dormer": { // a dormer window standing out of the front or back slope of a roof: its cheeks in the wall's colour,
+        // a window in a white frame, and its own little gabled roof
+        const p=blocks[d.i||0]&&blocks[d.i||0].pr; if(!p||!p.along) break; const r=p.Ht-p.eave, sg=d.s>0?1:-1, De=sg>0?p.D1:p.D0, f=.36, dF=De+(p.Dm-De)*f, z0=p.eave+r*f, h=d.h||3.4;
+        const x0=d.x-d.w/2, x1=d.x+d.w/2, ya=Math.min(dF,p.Dm), yb=Math.max(dF,p.Dm), yy=dF+sg*.04;
+        mat(B,"render",.9); bx(B,x0,ya,x1,yb,z0-.8,z0+h,col,8,sg>0?26:28);
+        mat(B,"white",.6); fq(B,[x0+.25,yy,z0+.1],[x1-.25,yy,z0+.1],[x1-.25,yy,z0+h-.25],[x0+.25,yy,z0+h-.25],[0,0],[1,0],[1,1],[0,1],TRIM.frame,0,sg,0);
+        mat(B,"glass",.2); fq(B,[x0+.55,yy+sg*.03,z0+.4],[x1-.55,yy+sg*.03,z0+.4],[x1-.55,yy+sg*.03,z0+h-.55],[x0+.55,yy+sg*.03,z0+h-.55],[0,0],[.5,0],[.5,1],[0,1],TRIM.glassR,0,sg,0);
+        pitched3(B,x0,ya,x1,yb,z0+h,{roof:"gable",rise:d.w*.42,ov:.3,oe:sg>0?[0,.4]:[.4,0],rc:LC(d.rc||"#6b6159"),rm:d.rm||"tile",wall:"render",wc:col,along:false,ridge:false},det); break; }
+      case "umb": { // a table under a parasol
+        mat(B,"white",.6); bx(B,d.x-.09,d.y-.09,d.x+.09,d.y+.09,z,z+d.h,[.85,.84,.8],0,30); cylP(B,d.x,d.y,.9,z+1.9,z+2.1,[.86,.85,.82],8,true);
+        lathe(B,d.x,d.y,[[d.r,z+d.h-.25],[d.r*.92,z+d.h],[0,z+d.h+.75]],col,8); break; }
       case "porch": { // a porch over a front door: a little roof on two posts, with a step up to it
         const x0=d.x-d.w/2, x1=d.x+d.w/2, y0=d.y, y1=d.y+d.d, h=d.h||5.6, rc=LC(d.rc||"#6b6159"); mat(B,"white",.6);
         for(const x of [x0+.35,x1-.35]) bx(B,x-.22,y1-.57,x+.22,y1-.13,0,h,TRIM.frame,0,30);
