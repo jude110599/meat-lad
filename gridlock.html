@@ -106,6 +106,10 @@ body.dark #buildBar .cnt{background:#2b2f36;border-color:#40454f}
 #buildBar button.poor{opacity:.45}
 #buildBar .st{font-size:11.5px;font-weight:600;color:var(--soft);display:flex;align-items:center;gap:8px;padding:0 4px;white-space:nowrap}
 #buildBar .st .low{color:var(--bad)}
+#buildBar button.chip.sg{gap:5px;padding:0 9px}
+#buildBar button.chip.sg .gl{width:14px;height:14px;opacity:.85}
+#buildBar button.chip.sg.sel,body.dark #buildBar button.chip.sg.sel{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+@media (max-width:440px){#buildBar button.chip.sg .gl{display:none}#buildBar button.chip.sg{padding:0 7px}}
 @media (max-width:440px){#buildBar .zl,#buildBar .zcap{display:none}#buildBar .zs{display:inline}}
 #scoreN.neg{color:#d0392b}
 @media (max-width:480px){ body.city #popPill{display:flex} body.city #weekPill{display:none} body.city #scoreL{display:none} }
@@ -503,7 +507,7 @@ body.dark #demPill .dq i{background:rgba(255,255,255,.12)}
     <svg viewBox="0 0 26 26"><path d="M4 12.5 13 5l9 7.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linejoin="round" stroke-linecap="round"/><path d="M6.5 11v10h13V11" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linejoin="round"/><rect x="11" y="15" width="4" height="6" fill="currentColor"/></svg>
     <span id="buildLb">Build</span>
   </button>
-  <button class="tool cityonly" data-tool="build" data-tab="svc" title="Services (8): fire, police, hospitals, schools, daycare, road depots and parking">
+  <button class="tool cityonly" data-tool="build" data-tab="svc" title="Services (8): fire, police, hospitals, schools, garbage, road depots and parking">
     <svg id="icSvc" viewBox="0 0 26 26"><path d="M13 3 4.5 6.5v6c0 5 3.6 8.6 8.5 10.5 4.9-1.9 8.5-5.5 8.5-10.5v-6z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linejoin="round"/><path d="M13 9v8M9 13h8" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
     Services
   </button>
@@ -699,6 +703,10 @@ const BT={
   metrostn:{svc:true,w:36,d:30,r:24,col:"#74508a",name:"metro station",names:"metro stations"},
   daycare: {svc:true,w:24,d:22,r:17,col:"#e06aa6",name:"daycare",names:"daycares"},
   depot:   {svc:true,w:48,d:38,r:31,col:"#f08c1a",name:"road depot",names:"road depots"},
+  // rubbish: a landfill tips it and fills up, an incinerator burns it for a little power, a recycling center sorts it
+  landfill:{svc:true,w:120,d:96,r:77,col:"#8a7653",name:"landfill",names:"landfills"},
+  incin:   {svc:true,w:84,d:64,r:53,col:"#6b7279",name:"incinerator",names:"incinerators"},
+  recycle: {svc:true,w:90,d:64,r:55,col:"#4f8063",name:"recycling center",names:"recycling centers"},
   parking: {svc:true,w:44,d:36,r:28,col:"#6d7f8f",name:"parking lot",names:"parking lots"},
   garage:  {svc:true,w:40,d:36,r:27,col:"#8f8b82",name:"parking garage",names:"parking garages"},
   park:    {svc:true,w:50,d:40,r:32,col:"#6fbf4f",name:"park",names:"parks"},
@@ -2249,7 +2257,7 @@ function arrive(c){
     if(d.type==="plant"&&k==="parts") d.raw=Math.min(6,d.raw+1.5);
     if(d.type==="warehouse"&&k==="goods") d.stock=Math.min(12,d.stock+1);
     const lp=c.purpose.lot; c.purpose=null; c.state="park"; c.park=c.truck?rnd(TPARK[0],TPARK[1]):rnd(PARK[0],PARK[1]); c.at=lp||d; c.walk=lp?d:null; c.parkT=t; c.atDi=c.tDi; c.rt=null;
-  } else { c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.svc?rnd(1,3):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
+  } else { if(c.load) svcUnload(c); c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.svc?rnd(1,3):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
 }
 function goHome(c){
   c.walk=null;
@@ -2288,7 +2296,7 @@ function updateCars(dt){
     const sg=segs.get(lg.seg); c.up=!!(sg&&sg.over); c.h=c.up?elevAt(sg,clamp(((c.x-nodes.get(sg.a).x)*sg.ux+(c.y-nodes.get(sg.a).y)*sg.uy)/sg.len,0,1)):0; }
   for(const c of cars){
     if(c.state==="home"){ c.cool-=dt; continue; }
-    if(c.state==="park"){ c.park-=dt; if(c.park<=0){ if(c.bus) busGo(c); else goHome(c); } continue; }
+    if(c.state==="park"){ c.park-=dt; if(c.park<=0){ if(c.bus) busGo(c); else if(!(c.next&&svcNext(c))) goHome(c); } continue; }
     const rt=c.rt, lg=rt.legs[c.leg];
     let limitV=(c.s<=lg.s1?lg.v:30)*(c.siren?1.3:c.truck?.82:1), maxS=rt.len+5;
     c.ringNode=0;
@@ -2459,7 +2467,7 @@ function ghostAt(type,w,ignore){
   return {type,x,y,ang,r:T.r,w:T.w,d:T.d,snapped,ok:!why,why};
 }
 const WHY={edge:"That's too close to the edge of the map.",land:"Buildings need dry, flat land. Not on the water or the hills.",bld:"There's another building in the way.",
-  road:"That's on top of a road. Put it beside one.",smoke:"Too close to a factory or power plant. Nobody wants to live in the smoke, so keep homes and smoky places apart.",
+  road:"That's on top of a road. Put it beside one.",smoke:"Too close to a factory, a power plant, a landfill or an incinerator. Nobody wants to live there, so keep homes and smoky places apart.",
   nowater:"That has to go right on the shore of a lake or river, with its back to the water.",cash:"Not enough money for that. Taxes come in at the end of every month.",
   noise:"Too close to a highway. Nobody wants to live right next to all that traffic noise.",
   far:"Too close to homes. A nuclear power plant has to stand well away from where people live.",spin:"Too close to another wind turbine. Their blades need room to turn."};
@@ -3816,7 +3824,7 @@ function closeDown(d,why){
   const L=d.lot, nm=BT[d.type].name; closedN++;
   if(!why&&d.noPark&&t-d.noPark<40) why="park";
   deleteBld(d,true); if(L){ L.b=null; L.cool=t+60; }
-  if(t-closeHintT>40){ closeHintT=t; setHint((/^[aeiou]/.test(nm)?"An ":"A ")+nm+(why==="dry"?" closed down. It went too long without power or water.":why==="tax"?" closed down. Business taxes are too high.":why==="park"?" closed down. Its customers had nowhere to park, so build a parking lot or garage nearby.":" closed down. People couldn't get there in time, so look at the traffic near it."),5); }
+  if(t-closeHintT>40){ closeHintT=t; setHint((/^[aeiou]/.test(nm)?"An ":"A ")+nm+(why==="dry"?" closed down. It went too long without power or water.":why==="tax"?" closed down. Business taxes are too high.":why==="park"?" closed down. Its customers had nowhere to park, so build a parking lot or garage nearby.":why==="trash"?" closed down. Its rubbish piled up and nobody came to take it away.":" closed down. People couldn't get there in time, so look at the traffic near it."),5); }
   effects.push({k:"ring",x:d.x,y:d.y,c:"#e2493a",t:0,life:1.2,r:d.r});
 }
 // the little bars beside each zone that say how keen the town is
@@ -3957,14 +3965,26 @@ const SVC={
   garden:{name:"Botanical garden",short:"Garden",cost:2600,up:26,R:560,fun:9,tour:2,tab:"parks",done:"Botanical garden built. Homes for a long way round are happier, and it draws tourists.",tip:"Botanical garden: a great glasshouse full of plants, flower beds and a fountain. Homes for a long way round are happier, and it draws tourists."},
   stadium:{name:"Stadium",short:"Stadium",cost:12000,up:120,R:1100,fun:10,tour:3,tab:"parks",done:"Stadium built. On match days the stands fill up and visitors pour into town.",tip:"Stadium: covered stands round a floodlit pitch. Most of the town is happier, and on match days visitors pour in and fill the hotels."},
   depot: {name:"Road depot",short:"Roads",cost:1100,up:30,R:1000,cars:2,done:"Road depot built. Its trucks fix worn roads inside the blue circle.",tip:"Road depot: its trucks fix roads nearby that traffic has worn out. Worn roads are slow."},
+  landfill:{name:"Landfill",short:"Landfill",cost:1400,up:30,R:950,cars:3,cap:6000,done:"Landfill built. Its garbage trucks empty the bins inside the blue circle, and it slowly fills up.",tip:"Landfill: cheap, and its garbage trucks empty the bins nearby. It slowly fills up, and it's smelly, so homes keep their distance."},
+  incin: {name:"Incinerator",short:"Incinerator",cost:4200,up:70,R:950,cars:3,pow:70,burn:1.6,done:"Incinerator built. Its garbage trucks empty the bins inside the blue circle, and burning it all makes a little power.",tip:"Incinerator: its garbage trucks empty the bins nearby, and burning it all makes a little power. It never fills up, but it's smoky, so homes keep their distance."},
+  recycle:{name:"Recycling center",short:"Recycling",cost:3000,up:55,R:850,cars:3,burn:1.1,done:"Recycling center built. Its trucks empty the bins inside the blue circle and sort it all to be used again.",tip:"Recycling center: its trucks empty the bins nearby and sort it all to be used again. It never fills up, and it's clean enough to sit near homes."},
   busdepot:{name:"Bus depot",short:"Bus depot",cost:1800,up:25,tab:"transit",done:"Bus depot built. Now put bus stops beside your busy roads and join them up with Bus line.",tip:"Bus depot: home to the buses. Each bus line takes its buses from the nearest depot, up to 16 in each."},
   metrostn:{name:"Metro station",short:"Metro station",cost:2400,up:30,tab:"transit",done:"Metro station built. Build another, then tap Metro line and tap the stations in order.",tip:"Metro station: stairs down to trains that run underground, quick and out of the traffic. People within a long walk leave the car at home. Join stations up with Metro line."}
 };
 const SKEYS=Object.keys(SVC);
-const SVC_COLS={parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",gas:"#9aa3ab",nuclear:"#c8c4b8",solar:"#3b5f93",wind:"#c9d3da",water:"#5aa7d8",pump:"#3f8fc2",treat:"#4f8fb0",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#a8665a",highschool:"#a88f7f",college:"#b4a58c",daycare:"#e06aa6",depot:"#f08c1a",busdepot:"#8e9aa3",playground:"#c4862c",courts:"#4f7c68",dogpark:"#8a6a4a",sportsfield:"#8a6a58",garden:"#5f8f6f",stadium:"#7a8288",metrostn:"#8a8f96"};
+const SVC_COLS={landfill:"#8a7653",incin:"#6b7279",recycle:"#4f8063",parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",gas:"#9aa3ab",nuclear:"#c8c4b8",solar:"#3b5f93",wind:"#c9d3da",water:"#5aa7d8",pump:"#3f8fc2",treat:"#4f8fb0",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#a8665a",highschool:"#a88f7f",college:"#b4a58c",daycare:"#e06aa6",depot:"#f08c1a",busdepot:"#8e9aa3",playground:"#c4862c",courts:"#4f7c68",dogpark:"#8a6a4a",sportsfield:"#8a6a58",garden:"#5f8f6f",stadium:"#7a8288",metrostn:"#8a8f96"};
 const VEH={fire:{len:16,wid:7,col:"#d62f22",cab:"#c02218",truck:true},police:{len:11.5,wid:6,col:"#f4f4f2",truck:false,doors:"#20305c"},clinic:{len:13,wid:6.6,col:"#f7f7f5",cab:"#f7f7f5",truck:true,stripe:"#e2493a"},
-  school:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},highschool:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},depot:{len:14,wid:6.6,col:"#f08c1a",cab:"#e8e6df",truck:true}};
-const isSvc=b=>!!(BT[b.type]&&BT[b.type].svc), SMOKY=new Set(["factory","power"]);
+  school:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},highschool:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},depot:{len:14,wid:6.6,col:"#f08c1a",cab:"#e8e6df",truck:true},
+  // garbage trucks: a compactor body behind the cab and an amber beacon (g picks the body and the markings)
+  landfill:{len:16,wid:7,col:"#e2e1db",cab:"#3f6a50",truck:true,g:"garb"},incin:{len:16,wid:7,col:"#e2e1db",cab:"#3f6a50",truck:true,g:"garb"},recycle:{len:16,wid:7,col:"#5d8a6c",cab:"#e9e8e2",truck:true,g:"garb"}};
+// the Services bar in groups, so it stays tidy on a phone: each group's name, its drawing and the services in it
+const SGRP=[["safety","Safety","police",["fire","police"]],["health","Health","clinic",["clinic","cemetery","cremat"]],["edu","Schools","school",["daycare","school","highschool","college"]],
+  ["trash","Garbage","bin",["landfill","incin","recycle"]],["post","Post","post",["postoffice","sorting"]],["roads","Roads","depot",["depot","parking","garage"]]];
+const grpOf=k=>(SGRP.find(g=>g[3].includes(k))||SGRP[SGRP.length-1])[0];
+let svcGrp="safety";
+// their budgets in Finance
+Object.assign(BUDK,{trash:"Garbage"}); Object.assign(SVC_BUD,{landfill:"trash",incin:"trash",recycle:"trash"}); for(const k in BUDK) if(budget[k]===undefined) budget[k]=1;
+const isSvc=b=>!!(BT[b.type]&&BT[b.type].svc), SMOKY=new Set(["factory","power","landfill","incin"]);
 // a nuclear plant keeps homes this far away; wind turbines face into the wind (it blows the smoke off the other way) and
 // stand this far apart so their blades clear each other
 const FAR={nuclear:230}, WIND_A=Math.atan2(2.5,-5), TURB=46;
@@ -3985,7 +4005,8 @@ function useOf(b){
 function cityUtils(){
   cityComp();
   const sup={pow:new Map(),wat:new Map()}; utilStat={pow:[0,0],wat:[0,0]};
-  for(const b of blds){ const S=SVC[b.type]; if(!S||!S.util||!b.acc) continue; const c=compOf(b.acc), m=sup[S.util]; const cap=S.cap*outK(budOf(b.type)); m.set(c,(m.get(c)||0)+cap); utilStat[S.util][1]+=cap; }
+  // (an incinerator adds a little power while it's burning)
+  for(const b of blds){ const S=SVC[b.type]; if(!S||!(S.util||S.pow)||!b.acc) continue; const u=S.util||"pow", c=compOf(b.acc), m=sup[u]; const cap=(S.util?S.cap:S.pow*(b.burnK||0))*outK(budOf(b.type)); m.set(c,(m.get(c)||0)+cap); utilStat[u][1]+=cap; }
   for(const b of blds){ const u=useOf(b); b.noPow=b.noWat=false; if(!u||!b.acc) continue;
     const c=compOf(b.acc);
     for(const q of ["pow","wat"]){ const m=sup[q], left=m.get(c)||0; utilStat[q][0]+=u;
@@ -4010,7 +4031,7 @@ function cityHappy(){
     const hs=hasCov(b,"highschool"), co=hasCov(b,"college"), nc=b.cars.length||1; if(hs) h+=6*qe; if(co) h+=6*qe;
     en+=nc; if(hs||co||hasCov(b,"school")) ea+=nc; eh+=nc*((hs?.55:0)+(co?.45:0));
     let f=0; for(const k of FUNK) if(hasCov(b,k)) f+=SVC[k].fun; h+=Math.min(14,f)*qk;
-    if((b.crime||0)>.5) h-=12; if(b.sick) h-=6; if(b.fire) h-=20;
+    if((b.crime||0)>.5) h-=12; if(b.sick) h-=6; if(b.fire) h-=20; if((b.trash||0)>1) h-=b.trash>2?14:8;
     for(const f of sm) if(Math.hypot(f.x-b.x,f.y-b.y)<POLL*1.4){ h-=10; break; }
     b.happy=clamp(h,0,100); sum+=b.happy*(b.cars.length||1); n+=b.cars.length||1;
     // people move out of a home that stays miserable
@@ -4018,15 +4039,19 @@ function cityHappy(){
   }
   happyAvg=n?sum/n:0; eduStat={any:en?ea/en:0,hi:en?eh/en*Math.min(1.25,qe):0};
 }
-function leaveHome(b){ const L=b.lot; deleteBld(b,true); if(L){ L.b=null; L.cool=t+90; } effects.push({k:"ring",x:b.x,y:b.y,c:"#9a958a",t:0,life:1.2,r:b.r});
-  if(t-closeHintT>40){ closeHintT=t; setHint(taxR>=16?"A family moved out over the high taxes. Tap your money to open Finance and bring the home tax down.":"A family moved out because they were unhappy. Homes want power, water and services nearby.",5); } }
+function leaveHome(b,why){ const L=b.lot; deleteBld(b,true); if(L){ L.b=null; L.cool=t+90; } effects.push({k:"ring",x:b.x,y:b.y,c:"#9a958a",t:0,life:1.2,r:b.r});
+  if(t-closeHintT>40){ closeHintT=t; setHint(why==="trash"?"A family moved out because nobody came to empty their bins. Garbage trucks need a landfill, incinerator or recycling center in reach.":taxR>=16?"A family moved out over the high taxes. Tap your money to open Finance and bring the home tax down.":"A family moved out because they were unhappy. Homes want power, water and services nearby.",5); } }
 
 // fires, illness and crime, and the trucks, ambulances and police cars that answer them
 function svcTick(dt){
   if(!city) return;
-  const n=blds.length;
+  const n=blds.length, gone=[];
+  // the bins start filling once the town has got going
+  if(!trashOn&&people>=60&&t>150) trashOn=true;
   for(const b of blds){
-    if(isSvc(b)) continue;
+    if(isSvc(b)){ if(SVC[b.type]&&(SVC[b.type].burn||b.type==="landfill")) svcWork(b,dt); continue; }
+    if(trashOn&&!b.cons){ b.trash=(b.trash||0)+dt*GARB_K*(.8+.4*hash(b.id,17)); if(b.trash>=GARB_LEAVE) gone.push(b);
+      if(!firstTrash&&b.trash>1){ firstTrash=true; setHint(blds.some(s=>GARB.has(s.type))?"Rubbish is piling up where the garbage trucks don't reach. Build another landfill nearby, or raise the Garbage budget.":"Rubbish is piling up. Tap Services, then Garbage, and build a landfill so trucks come to empty the bins.",7); } }
     // fire: rarer where a fire station is near, never in a brand new town
     if(!b.fire&&t>100&&Math.random()<dt/(16000*(hasCov(b,"fire")?2.6:1))){ b.fire={t0:t,truck:null}; if(!firstFire){ firstFire=true; setHint(blds.some(s=>s.type==="fire")?"A fire! A fire truck is on its way. Fires nobody reaches in time burn the building down.":"A fire! Build a fire station nearby, from Services, so its trucks can put fires out before buildings burn down.",6); } }
     if(b.fire&&!b.fire.out&&t-b.fire.t0>FIRE_BURN) burnDown(b);
@@ -4035,6 +4060,7 @@ function svcTick(dt){
     if(b.sick&&!b.sick.amb&&t-b.sick.t0>120) b.sick=null;    // they get over it in the end, but they remember
     b.crime=clamp((b.crime||0)+dt/(hasCov(b,"police")?2400*outK(budget.police):700),0,1);
   }
+  for(const b of gone) trashOut(b);
   svcDT-=dt; if(n&&svcDT<=0){ svcDT=.3; svcDispatch(); }
 }
 function burnDown(b){
@@ -4074,6 +4100,8 @@ function svcDispatch(){
       if(tg){ const spot=roadSpot(tg), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:spot,kind:"fix"}],null); if(pl){ tg.fixing=c; c.purpose={d:spot,kind:"fix",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
     else if((s.type==="school"||s.type==="highschool")&&Math.random()<.25){ const c=freeVeh(s); if(!c) continue; const hs=blds.filter(b=>isHome(b)&&b.acc&&Math.hypot(b.x-s.x,b.y-s.y)<svcR(s.type)); if(!hs.length) continue;
       const tg=pick(hs), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"bus"}],null); if(pl){ c.purpose={d:tg,kind:"bus",svc:true}; c.siren=false; startDrive(c,s,pl); } }
+    // a garbage truck sets off for the fullest bins in reach, unless there's nowhere left to tip what it brings back
+    else if(GARB.has(s.type)){ if(s.cons||s.full||(s.stock||0)>=GARB_STOCK) continue; for(let k=0;k<2;k++){ const c=freeVeh(s), tg=c&&trashNear(s,s.x,s.y,0); if(!tg||!trashGo(c,s,s.acc,tg)) break; } }
   }
 }
 // a service vehicle that won't get there after all: the job goes back on the list for another
@@ -4081,7 +4109,8 @@ function svcDrop(c){ const p=c.purpose, d=p.d; c.siren=false;
   if(p.kind==="fire"&&d.fire&&d.fire.truck===c) d.fire.truck=null;
   else if(p.kind==="sick"&&d.sick&&d.sick.amb===c) d.sick.amb=null;
   else if(p.kind==="crime"&&d.patrol===c) d.patrol=null;
-  else if(p.kind==="fix"&&d.spot&&d.spot.fixing===c) d.spot.fixing=null; }
+  else if(p.kind==="fix"&&d.spot&&d.spot.fixing===c) d.spot.fixing=null;
+  else if(p.kind==="trash"&&d.tTruck===c) d.tTruck=null; }
 // a service vehicle gets where it was going
 function svcArrive(c){
   const d=c.purpose.d, k=c.purpose.kind; c.siren=false;
@@ -4091,6 +4120,10 @@ function svcArrive(c){
   else if(k==="crime"){ d.patrol=null; for(const b of blds) if(Math.hypot(b.x-d.x,b.y-d.y)<90) b.crime=0; c.park=5; }
   // a repair crew patches the stretch it's sent to and the roads joining it at either end
   else if(k==="fix"){ const s=d.spot; if(s){ s.fixing=null; if(segs.has(s.id)){ s.cond=1; for(const id of [s.a,s.b]){ const n=nodes.get(id); if(n) for(const q of n.segs){ const g=segs.get(q); if(g&&g.cond!==undefined&&g.cond<.72) g.cond=1; } } } } c.park=8; }
+  // a garbage truck empties the bins all along the street, not just the ones it was sent for
+  else if(k==="trash"){ let n=0; if(d.tTruck===c) d.tTruck=null;
+    for(const q of blds){ const v=q.trash||0; if(v<.15||q.tTruck&&q!==d||(c.load||0)>=GARB_CAP||Math.hypot(q.x-d.x,q.y-d.y)>72) continue; c.load=(c.load||0)+v*trashW(q); q.trash=0; n++; }
+    c.stops=(c.stops||0)+1; c.next=true; c.park=1.2+n*.4; }
   else c.park=3;
   c.purpose=null; c.state="park"; c.at=d; c.atDi=c.tDi; c.rt=null;
 }
@@ -4107,6 +4140,49 @@ function cityCover(){
     for(const q of st) if((q.s.sand?svcD(q.s,b.x,b.y):Math.hypot(q.s.x-b.x,q.s.y-b.y))<q.R) m[q.i]=1; }
 }
 const hasCov=(b,kind)=>!!(b.cov&&b.cov[RIDX[kind]]);
+// ---------- rubbish ----------
+// Once the town gets going every home and business slowly fills its bins. Garbage trucks from a landfill, an
+// incinerator or a recycling center in reach come round to empty them, a street at a time. Bins nobody empties pile
+// up: the notice goes up, people get unhappy, and in the end they move out (or the business closes). A landfill tips
+// what its trucks bring back and slowly fills up; an incinerator burns it and makes a little power; a recycling center
+// sorts it to be used again. Those two never fill up, but each can only take so much at once
+const GARB=new Set(["landfill","incin","recycle"]), GARB_K=1/170, GARB_LEAVE=3.4, GARB_CAP=24, GARB_STOCK=120;
+let trashOn=false, firstTrash=false, tipHint=0;
+const trashW=b=>.6+Math.min(16,useOf(b))*.25;
+const garbCov=b=>hasCov(b,"landfill")||hasCov(b,"incin")||hasCov(b,"recycle");
+// the fullest bins in a depot's reach that no other truck is on its way to; from a truck out on its round (near), the
+// nearest of them
+function trashNear(s,x,y,near){ const R=svcR(s.type); let best=null, bv=0;
+  for(const b of blds){ const v=b.trash||0; if(v<.45||b.tTruck||!b.acc||b.cons||b.tNo&&t-b.tNo<30) continue;
+    if(Math.hypot(b.x-s.x,b.y-s.y)>R) continue; const dd=Math.hypot(b.x-x,b.y-y); if(near&&dd>near) continue;
+    const q=v-dd/(near?160:900); if(!best||q>bv){ best=b; bv=q; } }
+  return best; }
+// send a garbage truck off from where it is (its depot, or the last street it emptied) to a building's bins
+function trashGo(c,from,acc,tg){ const pl=planRoute({seg:acc.seg,t:acc.t},[{b:tg,kind:"trash"}],null); if(!pl){ tg.tNo=t; return false; }
+  tg.tTruck=c; c.purpose={d:tg,kind:"trash",svc:true}; c.siren=false; startDrive(c,from,pl,from===c.home?undefined:acc); return true; }
+// a garbage truck that's emptied one street's bins goes on to the next street nearby, until it's full or its round is done
+function svcNext(c){ const s=c.home, a=c.at; c.next=false;
+  if(!s||!GARB.has(s.type)||!a||!a.acc||(c.load||0)>=GARB_CAP*.8||(c.stops||0)>=6) return false;
+  const tg=trashNear(s,a.x,a.y,320); return !!tg&&trashGo(c,a,a.acc,tg); }
+// back at its depot a garbage truck tips its load: onto the landfill, or into the incinerator's or recycling center's hall
+function svcUnload(c){ const s=c.home, S=s&&SVC[s.type], q=c.load||0; c.load=0; c.stops=0; if(!S) return;
+  if(s.type==="landfill") s.fill=Math.min(S.cap,(s.fill||0)+q); else if(S.burn) s.stock=(s.stock||0)+q; }
+// incinerators and recycling centers work through what's been brought in; a landfill's heaps grow as it fills
+function svcWork(b,dt){ const S=SVC[b.type];
+  if(S.burn){ const on=(b.stock||0)>0; if(on){ const k=S.burn*outK(budOf(b.type))*dt; b.stock=Math.max(0,b.stock-k); b.done=(b.done||0)+k; } b.burnK=clamp((b.burnK||0)+(on?dt:-dt)*.05,0,1); }
+  if(b.type==="landfill"){ const f=(b.fill||0)/S.cap, v=Math.min(5,Math.floor(f*6)); if((b.v||0)!==v) b.v=v; b.full=f>=1;
+    if(tipHint<1&&f>=.9){ tipHint=1; setHint("A landfill is nearly full. Build another, or an incinerator or recycling center, which never fill up.",6); }
+    if(tipHint<2&&b.full){ tipHint=2; setHint("A landfill is full, so its trucks have stopped. Build another landfill, an incinerator or a recycling center.",6); } } }
+// bins left so long the people give up on the place: a family moves out, or a business closes
+function trashOut(b){ if(!blds.includes(b)) return; if(isHome(b)) leaveHome(b,"trash"); else closeDown(b,"trash"); }
+// a new town: nothing's in the bins yet
+function svcReset(){ trashOn=firstTrash=false; tipHint=0; }
+// what a rubbish building's card says about how it's doing
+function svcCard(b,S,sts){
+  if(b.type==="landfill") sts.push(istat(Math.round((b.fill||0)/S.cap*100)+"%","full"));
+  else if(b.type==="incin") sts.push(istat(Math.round(S.pow*(b.burnK||0)*outK(budOf(b.type))),"power made"));
+  else if(b.type==="recycle") sts.push(istat(Math.floor((b.done||0)/GARB_CAP),"loads recycled"));
+}
 // ---------- education ----------
 // How much of the town has a school in reach, and a high school or college. A town of educated people draws
 // offices, and needs a little less smoky industry
@@ -4121,7 +4197,7 @@ function eduTips(){
   return false;
 }
 // everything the schools and transport keep track of, back to nothing for a new game
-function civicReset(){ eduStat={any:0,hi:0}; eduTip=0;
+function civicReset(){ eduStat={any:0,hi:0}; eduTip=0; svcReset();
   stops=[]; lines=[]; stopId=lineId=1; trv++; transitMode=null; linePend=null; transitT=0; transitTip=0; lineSel=null; tStat={month:0,last:0,m:1,total:0}; depK=-1; stadK=-1; matchHint=false; metK=-1; }
 
 // ---------- public transport: bus depots, bus stops, bus lines and the buses on them ----------
@@ -4724,8 +4800,127 @@ function drawSvc(b){
     for(let i=0;i<4;i++){ ctx.fillStyle=i%2?"#fff":"#f08c1a"; ctx.beginPath(); ctx.moveTo(-w/2+6+i*4,d/2-4); ctx.lineTo(-w/2+7.4+i*4,d/2-7); ctx.lineTo(-w/2+8.8+i*4,d/2-4); ctx.fill(); }
     ctx.restore();
     vans([w*.05,w*.32],d/2-8,Math.PI/2);
+  } else if(GARB.has(b.type)) return drawWaste(b);
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// ---------- rubbish: the landfill, the incinerator and the recycling center ----------
+// a heap with a flat top seen from above: its shadow, its four slopes lit or shaded by which way they face, and the top
+// (in 3D it stands up for real, see mound in the 3D view)
+function heap2(x,y,w,d,i,h,col,ux,uy){ if(h<=.05) return; const C=[[x,y],[x+w,y],[x+w,y+d],[x,y+d]], I=[[x+i,y+i],[x+w-i,y+i],[x+w-i,y+d-i],[x+i,y+d-i]], N=[[0,-1],[1,0],[0,1],[-1,0]];
+  shRect(x+i,y+i,w-2*i,d-2*i,0,h,ux,uy);
+  for(let k=0;k<4;k++){ const a=C[k], q=C[(k+1)%4], c=I[(k+1)%4], e=I[k]; ctx.fillStyle=shade(col,-(N[k][0]*ux+N[k][1]*uy)*30); ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(q[0],q[1]); ctx.lineTo(c[0],c[1]); ctx.lineTo(e[0],e[1]); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle=shade(col,8); ctx.fillRect(x+i,y+i,w-2*i,d-2*i); }
+// how high the landfill's two heaps stand at each stage of filling up: the old one grassed over, the one being tipped
+const TIP_A=[0,0,4,7,10,12], TIP_B=[2,3.5,5,6.5,8,9.5];
+const JUNK=["#2e3135","#4f6684","#d8d6cf","#56705a","#8a7254","#6b6f74","#a8a294"];
+function drawWaste(b){
+  const sc=growth(b,.5), w=b.w, d=b.d, [ux,uy]=sunPlan(b), home=b.cars.filter(c=>c.state==="home"), M3=rec3d&&rec3d.models;
+  const tr=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc); };
+  const R=(x,y,w2,d2,c)=>{ ctx.fillStyle=c; ctx.fillRect(x,y,w2,d2); }, box=(x,y,w2,h2,c2,e2,hh)=>rbox(x,y,w2,h2,ux,uy,hh,c2,e2);
+  // the trucks at home stand nose out in their bays
+  const vans=(xs,y)=>{ if(!LOD) return; home.forEach((c,i)=>{ if(i<xs.length){ const p=toMap(b,xs[i]*sc,y*sc); parked(c,p.x,p.y,b.ang); } }); };
+  const bays=(x0,y0,n,bw,dd)=>{ ctx.strokeStyle=dark?"rgba(255,255,255,.35)":"rgba(255,255,255,.8)"; ctx.lineWidth=.6; ctx.beginPath(); for(let i=0;i<=n;i++){ ctx.moveTo(x0+i*bw,y0); ctx.lineTo(x0+i*bw,y0+dd); } ctx.stroke(); };
+  const trees=pts=>{ if(!LOD) return; for(const [x,y,r] of pts){ const p=toMap(b,x*sc,y*sc); tree(p.x,p.y,r*sc); } };
+  const grass=dk("#9fc77a",.9), pave=dk("#cfcbc0",.9);
+  if(b.type==="landfill"){
+    // a fenced tip: two great heaps at the back (the old one grassed over, rubbish being tipped and pressed down on the
+    // other, a ramp up to it), and by the gate the office, the weighbridge, a pond for the run-off and the trucks' bays
+    const v=b.v||0, A=[-55,-43,50,62], Bq=[-1,-43,56,62], hA=TIP_A[v], hB=TIP_B[v], iA=Math.min(14,hA*1.5), iB=Math.min(13,hB*1.4), of=[-36,30,16,8];
+    lot(b,sc,-w/2,-d/2,w,d,0,dk("#bdb39b",.9));
+    tr(); R(-w/2,-d/2,w,5,grass); R(-w/2,-d/2,5,d-22,grass); R(w/2-5,-d/2,5,d-22,grass); R(-w/2,d/2-22,w,22,pave); bays(18,d/2-15,3,11,12);
+    ctx.fillStyle=dk("#9a9686",.9); ctx.beginPath(); ctx.ellipse(-48,d/2-12,8.5,6,0,0,7); ctx.fill(); ctx.fillStyle="#5f7a72"; ctx.beginPath(); ctx.ellipse(-48,d/2-12,7.4,5,0,0,7); ctx.fill();
+    ctx.fillStyle=dk("#a79d86",.9); ctx.fillRect(40,Bq[1]+Bq[3]-4,8,d/2-22-(Bq[1]+Bq[3]-4));
+    // the next cell, dug and lined ready for when the open one is full
+    if(!hA){ R(A[0],A[1],A[2],A[3],dk("#a39a84",.9)); R(A[0]+3,A[1]+3,A[2]-6,A[3]-6,"#4c524e"); ctx.strokeStyle="rgba(255,255,255,.12)"; ctx.lineWidth=.4; ctx.beginPath();
+      for(let x=A[0]+9;x<A[0]+A[2]-4;x+=8){ ctx.moveTo(x,A[1]+3); ctx.lineTo(x,A[1]+A[3]-3); } ctx.stroke(); }
+    R(-14,31,20,7,"#5d6165"); R(-14,31,20,.6,"#c9a23a"); R(-14,37.4,20,.6,"#c9a23a");
+    if(!rec3d){ heap2(A[0],A[1],A[2],A[3],iA,hA,dk("#86a660",.9),ux,uy); heap2(Bq[0],Bq[1],Bq[2],Bq[3],iB,hB,"#8d8472",ux,uy);
+      // the rubbish being spread on the top of the open heap, and the ramp up
+      for(let i=0;i<46;i++){ const x=Bq[0]+iB+2+hash(b.id+i,5)*(Bq[2]-2*iB-4), y=Bq[1]+iB+2+hash(i,b.id+9)*(Bq[3]-2*iB-4); ctx.fillStyle=JUNK[i%JUNK.length]; ctx.fillRect(x,y,.9+hash(i,3),.7+hash(3,i)); }
+      ctx.fillStyle="#a39a88"; ctx.beginPath(); ctx.moveTo(41,d/2-22); ctx.lineTo(47,d/2-22); ctx.lineTo(47,Bq[1]+Bq[3]-iB); ctx.lineTo(41,Bq[1]+Bq[3]-iB); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle="rgba(90,96,100,.55)"; ctx.lineWidth=.45; ctx.beginPath(); ctx.moveTo(-w/2+1,d/2-22); ctx.lineTo(-w/2+1,-d/2+1); ctx.lineTo(w/2-1,-d/2+1); ctx.lineTo(w/2-1,d/2-22); ctx.stroke();
+      // the compactor on top of the heap
+      ctx.fillStyle="rgba(30,36,22,.25)"; ctx.fillRect(16+ux*2,-14+uy*2,9,5); R(16,-14,9,5,"#c7a23f"); R(21.6,-13.6,2.8,4.2,"#3a4652"); R(15,-14.6,1.4,6.2,"#3d3d3b"); R(24.4,-14.6,1.4,6.2,"#3d3d3b"); }
+    roofBlock(of[0],of[1],of[2],of[3],"#a9a79f","#77756f");
+    ctx.restore();
+    if(rec3d) b3Landfill(b,A,Bq,hA,hB,iA,iB,of); else bodyShadow(b,sc,2,[of]);
+    vans([24,35,46],d/2-9); trees([[-w/2+4,d/2-26,4.2],[w/2-4,d/2-26,4],[-w/2+3,-d/2+3,4.4],[w/2-3,-d/2+3,4.2],[-20,-d/2+2.5,3.6],[22,-d/2+2.5,3.8]]);
+  } else if(b.type==="incin"){
+    // a waste-to-energy plant: the tall boiler house and the long hall the trucks tip into, its slim stack and the two
+    // flue-gas scrubbers, and the offices by the gate with the trucks' bays out front
+    const q=[-38,-28,44,28], hb=[6,-28,16,24], th=[-38,0,30,12], of=[12,14,26,11], st={x:32,y:-20}, tk=[[27,-5],[36,-5]];
+    lot(b,sc,-w/2,-d/2,w,d,0,dk("#cbc7bd",.9));
+    tr(); bays(-38,d/2-13,3,11,12); R(-w/2,d/2-1.6,w,1.6,grass);
+    if(!rec3d){ for(const [x,y] of tk){ ctx.fillStyle="rgba(30,36,22,.22)"; ctx.beginPath(); ctx.arc(x+ux*5,y+uy*5,2.8,0,7); ctx.fill(); }
+      ctx.strokeStyle="rgba(30,36,22,.22)"; ctx.lineWidth=5; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(st.x,st.y); ctx.lineTo(st.x+ux*18,st.y+uy*18); ctx.stroke(); ctx.lineCap="butt"; }
+    roofBlock(q[0],q[1],q[2],q[3],"#c9ced1","#8d9399"); ctx.fillStyle="rgba(255,255,255,.2)"; for(let x=q[0]+2;x<q[0]+q[2]-1;x+=2.4) ctx.fillRect(x,q[1]+.8,.5,q[3]-1.6);
+    roofBlock(hb[0],hb[1],hb[2],hb[3],"#a4abb0","#6f767c"); roofBlock(th[0],th[1],th[2],th[3],"#b8bfc3","#80878d"); roofBlock(of[0],of[1],of[2],of[3],"#a9a7a1","#77756f");
+    if(!rec3d){ ctx.strokeStyle="#959ca1"; ctx.lineWidth=2.2; ctx.beginPath(); ctx.moveTo(hb[0]+hb[2],-16); ctx.lineTo(st.x,st.y); ctx.stroke();
+      for(const [x,y] of tk){ ctx.fillStyle="#a9aeb2"; ctx.beginPath(); ctx.arc(x,y,2.9,0,7); ctx.fill(); ctx.fillStyle="#d3d6d8"; ctx.beginPath(); ctx.arc(x-.5,y-.5,2.2,0,7); ctx.fill(); }
+      ctx.fillStyle="#b9bcbd"; ctx.beginPath(); ctx.arc(st.x,st.y,2.7,0,7); ctx.fill(); ctx.fillStyle="#4a4e52"; ctx.beginPath(); ctx.arc(st.x,st.y,1.8,0,7); ctx.fill();
+      box(hb[0]+3,hb[1]+3,6,4,"#d4d8db","#9aa0a5",1.4); }
+    ctx.restore();
+    if(rec3d) b3Incin(b,q,hb,th,of,tk); else { bodyShadow(b,sc,9,[q]); bodyShadow(b,sc,12,[hb]); bodyShadow(b,sc,5,[th]); bodyShadow(b,sc,3.6,[of]); }
+    const p=toMap(b,st.x*sc,st.y*sc); if(M3) M3.push({k:"stk",x:p.x,y:p.y,a:0,s:1.05});
+    b.chim={x:p.x,y:p.y,on:(b.burnK||0)>.2};
+    vans([-32,-21,-10],d/2-7); trees([[w/2-4,d/2-4,3.4],[-w/2+4,-d/2+4,3.6]]);
+  } else if(b.type==="recycle"){
+    // a recycling center: the sorting shed under its green metal roof, concrete bays of baled paper, plastic and metal
+    // with the belt up from them, skips for glass and garden waste, and the office by the gate with its sign
+    const q=[-42,-29,52,30], of=[-42,10,18,9], bx0=14, by0=-29, bw=9.2, sk=[[16,"#3f6b52"],[25,"#3b5f86"],[34,"#7a6f5f"]];
+    lot(b,sc,-w/2,-d/2,w,d,0,dk("#cfcbc0",.9));
+    tr(); bays(-14,d/2-13,3,10,12); R(-w/2,d/2-1.6,w,1.6,grass);
+    roofBlock(q[0],q[1],q[2],q[3],"#6f8a78","#4c5f52"); ctx.fillStyle="rgba(255,255,255,.14)"; for(let x=q[0]+2;x<q[0]+q[2]-1;x+=2.4) ctx.fillRect(x,q[1]+.8,.5,q[3]-1.6);
+    roofBlock(of[0],of[1],of[2],of[3],"#a9a7a1","#77756f");
+    if(!rec3d){ ctx.fillStyle="#bdb9b0"; for(let i=0;i<4;i++) ctx.fillRect(bx0+i*bw-.5,by0,1,18); ctx.fillRect(bx0-.5,by0,3*bw+1,1);
+      [["#a48d68","#b39b74"],["#4d6a86","#5d7894"],["#8b9094","#7c8186"]].forEach((c,i)=>{ for(let j=0;j<4;j++){ ctx.fillStyle=c[j%2]; ctx.fillRect(bx0+i*bw+1.2+(j%2)*3.6,by0+2+(j>>1)*3.2,3.2,2.8); } });
+      for(const [x,c] of sk){ ctx.fillStyle="rgba(30,36,22,.22)"; ctx.fillRect(x+ux*1.2,4+uy*1.2,7,4); ctx.fillStyle=c; ctx.fillRect(x,4,7,4); ctx.fillStyle="rgba(0,0,0,.25)"; ctx.fillRect(x+.6,4.6,5.8,2.8); }
+      ctx.strokeStyle="#7d8a92"; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(q[0]+q[2],-18); ctx.lineTo(bx0+bw*1.5,-12); ctx.stroke(); }
+    ctx.restore();
+    if(rec3d) b3Recycle(b,q,of,bx0,by0,bw,sk); else { bodyShadow(b,sc,6.6,[q]); bodyShadow(b,sc,3,[of]); }
+    vans([-9,1,11],d/2-7); trees([[-w/2+4,-d/2+4,3.6],[w/2-4,d/2-4,3.4],[w/2-4,-d/2+5,3.8]]);
   }
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// the landfill in 3D: the two heaps, the ramp, what's being tipped and the compactor on top, the fence round the back,
+// the office cabin and the sign on its posts by the gate
+function b3Landfill(b,A,Bq,hA,hB,iA,iB,of){ const w=b.w, d=b.d, G=(x,y,w2,d2,h,col,z)=>gbox(b,x,y,w2,d2,h,col,z);
+  if(hA>0) d3(b,{k:"mound",x:A[0],y:A[1],w:A[2],d:A[3],ins:iA,h:hA,z:0,m:"grass",un:12,col:"#86a660"});
+  d3(b,{k:"mound",x:Bq[0],y:Bq[1],w:Bq[2],d:Bq[3],ins:iB,h:hB,z:0,m:"gravel",un:10,col:"#958b78"},
+    {k:"beam",x0:44,y0:d/2-22,z0:0,x1:44,y1:Bq[1]+Bq[3]-iB,z1:hB,w:6,h:.5,col:"#a39a88"});
+  const tx=Bq[0]+iB, ty=Bq[1]+iB, tw=Bq[2]-2*iB, td=Bq[3]-2*iB;
+  for(const [fx,fy,r] of [[.2,.3,5],[.55,.22,4.2],[.8,.5,5.4],[.35,.72,4.6]]) d3(b,{k:"lathe",x:tx+tw*fx,y:ty+td*fy,pr:[[r,0],[r*.7,1.4],[r*.3,2.3],[0,2.6]],n:9,z:hB,m:"gravel",un:6,col:"#7f776a"});
+  for(let i=0;i<22;i++){ const x=tx+2+hash(b.id+i,5)*(tw-4), y=ty+2+hash(i,b.id+9)*(td-4), s=.8+hash(i,3)*1.1; G(x,y,s,s*.8,.7+hash(3,i)*.6,JUNK[i%JUNK.length],hB); }
+  // the compactor: its body and cab, the glass, and the spiked steel drums it rolls on
+  G(16,-14,9,5,1.6,"#c7a23f",hB+1); G(21.4,-13.6,3.2,4.2,2.4,"#c7a23f",hB+2.6); G(21.7,-13.3,2.6,3.6,1.6,"#3a4652",hB+2.9); G(14.6,-14.8,1.8,6.6,2,"#3d3d3b",hB); G(23.6,-14.8,1.8,6.6,2,"#3d3d3b",hB);
+  for(const [x0,y0,x1,y1] of [[-w/2+1,d/2-22,-w/2+1,-d/2+1],[-w/2+1,-d/2+1,w/2-1,-d/2+1],[w/2-1,-d/2+1,w/2-1,d/2-22]]) d3(b,{k:"rail",x0,y0,x1,y1,z:0,h:2.2,col:"#7b8286"});
+  B3(b,of,{roof:"flat",H:4.4,wall:"ind",wc:"#dcd8cc",par:.3,pc:"#cfcbc0",rc:"#9a9890",base:"#77726a",doors:[[-30.4,-27.6]]});
+  d3(b,{k:"door",x:-29,y:of[1]+of[3],w:2.2,h:3.6,col:"#4a5a66",lamp:false},{k:"posts",at:[[9.5,d/2-3],[20.5,d/2-3]],h:3.6,z:0,r:.25,col:"#6f757a"},{k:"sign",x0:8,x1:22,y:d/2-3.3,z:3.6,h:2.2,row:2,set:3});
+}
+// the incinerator in 3D: the hall and the taller boiler house in metal cladding, the tipping hall with its roller
+// doors, the flue from the boiler to the stack, the two scrubbers, and the offices with the sign
+function b3Incin(b,q,hb,th,of,tk){
+  B3(b,q,{roof:"low",H:20,rise:2.4,wall:"metal",wc:"#cfd4d6",rc:"#8c949a",rm:"metal",base:"#6f6a62",along:true});
+  B3(b,hb,{roof:"flat",H:30,wall:"metal",wc:"#aab1b6",par:.4,pc:"#a3aaaf",rc:"#959ba0",base:"#6f6a62"});
+  B3(b,th,{roof:"flat",H:12,wall:"metal",wc:"#bcc4c8",par:.4,pc:"#b2babe",rc:"#9aa1a6",base:"#6f6a62",doors:[[-35,-27],[-23,-15]]});
+  const fy=th[1]+th[3]; for(const x of [-35,-23]) d3(b,{k:"gdoor",x0:x,x1:x+8,y:fy,h:8,m:"roller",un:4,vn:4,col:"#c9ccce"});
+  d3(b,{k:"tube",x0:hb[0]+hb[2]-.5,y0:-16,z0:24,x1:31,y1:-19,z1:24,r:1.4,n:12,col:"#9aa1a6"},{k:"box",x:hb[0]+3,y:hb[1]+3,w:6,d:4,h:2,col:"#d4d8db"});
+  for(const [x,y] of tk) d3(b,{k:"cyl",x,y,r:2.9,h:14,z:0,top:"dome",n:16,col:"#d3d6d8"},{k:"cyl",x,y,r:3.2,h:.8,z:0,n:16,col:"#9ea3a6"},{k:"tube",x0:x,y0:y-2.6,z0:11,x1:x,y1:-12,z1:11,r:.6,col:"#9aa1a6"});
+  B3(b,of,{roof:"flat",H:8.6,wall:"office2",wc:"#e6e3dc",par:.8,pc:"#d9d6cf",rc:"#a9a7a1",base:"#77726a",doors:[[23,27]]});
+  d3(b,{k:"door",x:25,y:of[1]+of[3],w:3.6,h:5.2,col:"#3b4a58",lamp:false},{k:"sign",x0:14,x1:36,y:of[1]+of[3],z:6,h:2.2,row:0,set:3});
+}
+// the recycling center in 3D: the sorting shed with its roller doors, the concrete bays of bales, the belt up into
+// the shed on its legs, the skips, and the office with its sign
+function b3Recycle(b,q,of,bx0,by0,bw,sk){ const G=(x,y,w2,d2,h,col,z)=>gbox(b,x,y,w2,d2,h,col,z), fy=q[1]+q[3];
+  B3(b,q,{roof:"low",H:15,rise:2.4,wall:"ind",wc:"#d8d4c8",rc:"#6e8a77",rm:"metal",base:"#6f6a62",along:true,doors:[[-36,-28],[-20,-12]]});
+  for(const x of [-36,-20]) d3(b,{k:"gdoor",x0:x,x1:x+8,y:fy,h:7.5,m:"roller",un:4,vn:4,col:"#c9ccce"});
+  G(bx0-.5,by0,3*bw+1,1,3.6,"#bdb9b0"); for(let i=0;i<4;i++) G(bx0+i*bw-.5,by0,1,18,3.6,"#bdb9b0");
+  [["#a48d68","#b39b74"],["#4d6a86","#5d7894"],["#8b9094","#7c8186"]].forEach((c,i)=>{ for(let j=0;j<4;j++) G(bx0+i*bw+1.2+(j%2)*3.6,by0+2+(j>>1)*3.2,3.2,2.8,2.2,c[j%2]);
+    for(let j=0;j<2;j++) G(bx0+i*bw+1.2+j*3.6,by0+2,3.2,2.8,2.2,c[(j+1)%2],2.2); });
+  d3(b,{k:"beam",x0:bx0+bw*1.5,y0:-12,z0:1.6,x1:q[0]+q[2]+.2,y1:-18,z1:11,w:1.6,h:.7,col:"#7d8a92"},{k:"posts",at:[[bx0+2,-14],[bx0-2,-16]],h:5,z:0,r:.2,col:"#7d8a92"});
+  for(const [x,c] of sk){ G(x,4,7,4,.5,c); G(x,4,.5,4,2.4,c,.5); G(x+6.5,4,.5,4,2.4,c,.5); G(x,4,7,.5,2.4,c,.5); G(x,7.5,7,.5,2.4,c,.5); G(x+.5,4.5,6,3,1.6,"#6c665c",.5); }
+  B3(b,of,{roof:"flat",H:7,wall:"office2",wc:"#e9e6df",par:.7,pc:"#dcd9d2",rc:"#a9a7a1",base:"#77726a",doors:[[-30,-26.4]]});
+  d3(b,{k:"door",x:-28.2,y:of[1]+of[3],w:3,h:5,col:"#3b5a48",lamp:false},{k:"sign",x0:-41,x1:-31,y:of[1]+of[3],z:4.6,h:1.8,row:1,set:3});
 }
 // ---------- more parks: playgrounds, sports courts, dog parks, sports fields, botanical gardens and stadiums ----------
 // Each makes the homes in reach happier like any park; the garden and the stadium draw tourists too. Everything that
@@ -5082,15 +5277,18 @@ const NOTE={fire:{c:"#c8452f",t:"On fire",d:"Fire trucks come from a fire statio
   park:{c:"#3b6dba",t:"Nowhere to park",d:"Build a parking lot or a garage nearby."},
   crime:{c:"#4b5462",t:"Crime",d:"A police station nearby keeps crime down."},
   homes:{c:"#56677d",t:"No homes nearby",d:"Join its road up to where people live."},
-  smoke:{c:"#6b6e72",t:"Too smoky",d:"Nobody wants to live this close to factory smoke."}};
+  smoke:{c:"#6b6e72",t:"Too smoky",d:"Nobody wants to live this close to factory smoke or a landfill."},
+  trash:{c:"#7a6a48",t:"Rubbish piling up",d:"Garbage trucks come from a landfill, an incinerator or a recycling center nearby."},
+  tipfull:{c:"#7a6a48",t:"Landfill full",d:"It can't take any more. Build another landfill, an incinerator or a recycling center."}};
 // how close a place is to shutting down, or its people to moving out: 0 fine, 1 gone
-function urgency(b){ return clamp(Math.max(b.pins&&!isSvc(b)?(b.over||0)/(OVER_LIMIT*1.5):0,(b.dry||0)/150,isHome(b)&&b.lot?(b.sad||0)/90:0),0,1); }
+function urgency(b){ return clamp(Math.max(b.pins&&!isSvc(b)?(b.over||0)/(OVER_LIMIT*1.5):0,(b.dry||0)/150,isHome(b)&&b.lot?(b.sad||0)/90:0,((b.trash||0)-1.6)/(GARB_LEAVE-1.6)),0,1); }
 // the most pressing thing a building needs, if anything
 function noteOf(b){
   if(b.cons) return null;
   if(b.fire&&!b.fire.out) return "fire";
   if(!b.acc) return "road";
   if(b.noPow) return "pow"; if(b.noWat) return "wat";
+  if(b.full) return "tipfull"; if((b.trash||0)>1) return "trash";
   // a business that's been full up a while: what it's waiting for most, or traffic if they're already on their way
   if(b.pins&&!isSvc(b)&&b.over>3){ let k=null, v=0;
     for(const q of KINDS){ const c=capOf(b,q); if(!c||b.type==="warehouse"&&q==="goods") continue; const f=b.pins[q]/c; if(f>v){ v=f; k=q; } }
@@ -5143,7 +5341,14 @@ const NGLY={
     g.fillStyle=c; g.beginPath(); g.ellipse(-3.6,.1,1.9,1.25,.12,0,7); g.ellipse(3.6,.1,1.9,1.25,-.12,0,7); g.fill(); },
   homes:(g,c)=>{ g.fillStyle="#fff"; g.beginPath(); g.moveTo(0,-7.6); g.lineTo(7.8,-.3); g.lineTo(5.5,-.3); g.lineTo(5.5,7.2); g.lineTo(-5.5,7.2); g.lineTo(-5.5,-.3); g.lineTo(-7.8,-.3); g.closePath(); g.fill();
     g.fillStyle=c; g.fillRect(-1.5,2.6,3,4.6); },
-  smoke:g=>{ g.fillStyle="#fff"; g.beginPath(); g.arc(-3.4,1.8,3.4,0,7); g.arc(1,-1,4.3,0,7); g.arc(4.6,2.3,3,0,7); g.fill(); nrr(g,-6.8,1.8,11.4,3.6,1.6); g.fill(); }
+  smoke:g=>{ g.fillStyle="#fff"; g.beginPath(); g.arc(-3.4,1.8,3.4,0,7); g.arc(1,-1,4.3,0,7); g.arc(4.6,2.3,3,0,7); g.fill(); nrr(g,-6.8,1.8,11.4,3.6,1.6); g.fill(); },
+  // a wheelie bin with its lid on
+  trash:(g,c)=>{ g.fillStyle="#fff"; nrr(g,-6.6,-6.6,13.2,2.6,1); g.fill(); nrr(g,-2.4,-8.6,4.8,2.4,.8); g.fill();
+    g.beginPath(); g.moveTo(-5.6,-3.4); g.lineTo(5.6,-3.4); g.lineTo(4.5,7.4); g.lineTo(-4.5,7.4); g.closePath(); g.fill();
+    g.fillStyle=c; g.fillRect(-2.8,-1.4,1.4,6.8); g.fillRect(1.4,-1.4,1.4,6.8); },
+  // a heap tipped right up to the bar
+  tipfull:(g,c)=>{ g.fillStyle="#fff"; g.beginPath(); g.moveTo(-8.2,7); g.lineTo(-4.6,-2.4); g.lineTo(4.6,-2.4); g.lineTo(8.2,7); g.closePath(); g.fill();
+    g.fillStyle=c; g.fillRect(-5.6,1.2,11.2,1.3); g.fillRect(-3.7,-1.1,7.4,1.1); g.fillStyle="#fff"; nrr(g,-7.2,-7.8,14.4,2.6,1.2); g.fill(); }
 };
 const NSPR={};
 // a notice's picture: a coloured disc in a white rim with a little point underneath, softly shadowed, its sign in white
@@ -5265,9 +5470,13 @@ function svcMarks(c,L,W){
   else if(k==="clinic"){ ctx.fillStyle="#e2493a"; ctx.fillRect(-L/2,-W/2,L*.72,.9); ctx.fillRect(-L/2,W/2-.9,L*.72,.9); ctx.fillRect(-L*.2-.6,-2,1.2,4); ctx.fillRect(-L*.2-2,-.6,4,1.2); bar(L/2-L*.22); }
   else if(k==="school"||k==="highschool"){ ctx.fillStyle="#2b2e33"; ctx.fillRect(-L/2+.6,-W/2,L*.7,.8); ctx.fillRect(-L/2+.6,W/2-.8,L*.7,.8); ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fillRect(-L/2+1,-.4,L*.68,.8); }
   else if(k==="depot"){ ctx.fillStyle="#2b2e33"; for(let i=0;i<3;i++) ctx.fillRect(-L/2+.4,-W/2+.6+i*(W-1.2)/3,.9,(W-1.2)/6); const on=performance.now()%700<350; ctx.fillStyle=on?"#ffb52e":"#b8741a"; ctx.beginPath(); ctx.arc(L/2-L*.12,0,1.1,0,7); ctx.fill(); if(on&&ultra) glow(L/2-L*.12,0,5,"255,180,40",.5); }
+  // a garbage truck: the ribs down its compactor body, the hopper at the back and the amber beacon on the cab
+  else if(VEH[k]&&VEH[k].g==="garb"){ ctx.fillStyle="rgba(0,0,0,.12)"; for(const f of [-.24,-.06,.12]) ctx.fillRect(f*L,-W/2,.45,W);
+    ctx.fillStyle="#5a5d60"; ctx.fillRect(-L/2,-W/2+.5,L*.1,W-1); ctx.fillStyle="#2a2c2e"; ctx.fillRect(-L/2,-W/2+1.3,L*.05,W-2.6);
+    ctx.fillStyle="#d9952e"; ctx.fillRect(L/2-L*.2,-.7,1.1,1.4); }
 }
 // a service vehicle, ready to go out from its station
-function svcCar(b,kind){ const V=VEH[kind], c=newCar(b,V.truck); Object.assign(c,{len:V.len,wid:V.wid,col:V.col,cab:V.cab||null,svc:kind,cool:rnd(.5,2)}); return c; }
+function svcCar(b,kind){ const V=VEH[kind], c=newCar(b,V.truck); Object.assign(c,{len:V.len,wid:V.wid,col:V.col,cab:V.cab||null,svc:kind,cool:rnd(.5,2),m:V.m||0}); return c; }
 // a burnt-out plot stays black for a while
 function drawScorch(L){ const k=clamp(1-(t-L.burnt)/90,0,1); if(k<=0) return; polyPath(L.poly); ctx.fillStyle="rgba(46,40,34,"+(.55*k)+")"; ctx.fill();
   for(let i=0;i<5;i++){ const a=hash(L.id,i)*6.28, r=L.r*.4*hash(i,L.id); ctx.fillStyle="rgba(25,22,20,"+(.5*k)+")"; ctx.beginPath(); ctx.arc(L.x+Math.cos(a)*r,L.y+Math.sin(a)*r,2.5+hash(L.id+i,3)*3,0,7); ctx.fill(); } }
@@ -5857,7 +6066,12 @@ const GLY={
   check:'<path d="m4.6 10.4 3.4 3.4 7.4-7.6" class="s"/>',
   cross:'<path d="m5.6 5.6 8.8 8.8M14.4 5.6l-8.8 8.8" class="s"/>',
   road:'<path d="M6.2 17 8.6 3M13.8 17 11.4 3" class="s"/><path d="M10 4.6v1.6M10 9.2v1.6M10 13.8v1.6" class="s"/>',
-  smile:'<circle cx="10" cy="10" r="7.6" class="s"/><path d="M7.4 8.2h.01M12.6 8.2h.01" class="d"/><path d="M6.8 12.2c1.8 2 4.6 2 6.4 0" class="s"/>'
+  smile:'<circle cx="10" cy="10" r="7.6" class="s"/><path d="M7.4 8.2h.01M12.6 8.2h.01" class="d"/><path d="M6.8 12.2c1.8 2 4.6 2 6.4 0" class="s"/>',
+  // rubbish: a wheelie bin, a landfill's heap, an incinerator's hall and stack with a flame, the recycling arrows
+  bin:'<path d="M3.8 5.6h12.4M8.3 5.6V3.8h3.4v1.8" class="s"/><path d="M5.3 5.6l1 10.8h7.4l1-10.8" class="s"/><path d="M8.6 8.6v5M11.4 8.6v5" class="s"/>',
+  landfill:'<path d="M2.6 16.2 6.6 8.4h6.8l4 7.8z" class="s"/><path d="M5.2 12.4h9.6" class="s"/><path d="M10 8.4V3.6l3.2 1.4L10 6.4" class="s"/>',
+  incin:'<path d="M3 16.6h14M4.6 16.6V9.4l3.6-2.2v2.2l3.4-2.2v9.4M13.8 16.6V3.4h2.4v13.2" class="s"/><path d="M8.1 15.2c-1.3 0-1.9-.8-1.9-1.7 0-1.1 1-1.6 1.3-2.8.9.6 2.4 1.5 2.4 2.8 0 .9-.6 1.7-1.8 1.7z" class="f"/>',
+  recycle:'<path d="M4.6 13.4 8.4 6.8M6.3 6.7l2.1.1.9 1.9M11.6 6.8l3.8 6.6M16 11.4l-.6 2-2.1.4M13.8 15.6H6.2M7.8 14l-1.6 1.6 1.6 1.6" class="s"/>'
 };
 // which drawing each zone, building and service uses
 const ZG={gas:"power",nuclear:"power",treat:"pump",res:"house",bighouse:"house",town:"house",dense:"apts",high:"tower",com:"shop",center:"shop",mall:"shop",off:"office",ind:"factory",plant:"factory",datacenter:"data",clinic:"clinic",highschool:"school",college:"school",playground:"park",dogpark:"park",garden:"bigpark",courts:"ball",sportsfield:"ball",stadium:"stadium",busdepot:"bus",stop:"bus",metrostn:"metro"};
@@ -5929,7 +6143,8 @@ function infoHTML(b){
     if(S.util){ const [us,cp]=utilStat[S.util]; sts.push(istat(Math.round(S.cap*outK(budOf(b.type))),S.util==="pow"?"power made":"water made")); h+='<div class="ist">'+sts.join("")+'</div><div class="ifoot">The town uses '+Math.round(us)+' of the '+Math.round(cp)+' '+(S.util==="pow"?"power":"water")+' it makes.</div>'; sts.length=0; }
     else if(S.R){ let n=0; const R=svcR(b.type); for(const q of blds) if(isHome(q)&&svcD(b,q.x,q.y)<R) n++; sts.push(istat(n,n===1?"home in reach":"homes in reach")); }
     if(S.bays) sts.push(istat(parkedN(b)+"/"+b.bays,"cars parked"));
-    if(b.stn){ sts.push(istat(b.stn.q.length,"waiting")); const n=lines.filter(L=>L.stops.includes(b.stn)).length; sts.push(istat(n,n===1?"line":"lines")); } }
+    if(b.stn){ sts.push(istat(b.stn.q.length,"waiting")); const n=lines.filter(L=>L.stops.includes(b.stn)).length; sts.push(istat(n,n===1?"line":"lines")); }
+    svcCard(b,S,sts); }
   if(sts.length) h+='<div class="ist">'+sts.slice(0,3).join("")+'</div>';
   if(b.pins&&!S&&!b.cons){ const ms=[], w=(b.over||0)/(OVER_LIMIT*1.5); let kw=null, fw=0;
     for(const q of KINDS){ const c=capOf(b,q); if(c&&!(b.type==="warehouse"&&q==="goods")&&b.pins[q]/c>fw){ fw=b.pins[q]/c; kw=q; } }
@@ -5943,7 +6158,8 @@ function infoHTML(b){
     if(useOf(b)){ c.push(ichip(b.noPow?"cross":"power","Power",b.noPow?"no":"on")); c.push(ichip(b.noWat?"cross":"pump","Water",b.noWat?"no":"on")); }
     if(!S){ const cov=(g,kk,lb)=>c.push(ichip(g,lb,hasCov(b,kk)?"on":"off"));
       cov("fire","fire","Fire"); cov("police","police","Police"); cov("clinic","clinic","Health");
-      if(home){ cov("school","school","School"); c.push(ichip("park","Parks",FUNK.some(q=>hasCov(b,q))?"on":"off")); } }
+      if(home){ cov("school","school","School"); c.push(ichip("park","Parks",FUNK.some(q=>hasCov(b,q))?"on":"off")); }
+      c.push(ichip("bin","Garbage",(b.trash||0)>1?"no":garbCov(b)?"on":"off")); }
     h+='<div class="isec">'+(S?"Status":"Services in reach")+'</div><div class="ich">'+c.join("")+'</div>'; }
   if(S&&S.tip) h+='<div class="ifoot">'+S.tip+'</div>';
   return h;
@@ -6025,11 +6241,19 @@ function dockSel(){
   document.querySelectorAll("#modeRow [data-tool]").forEach(b=>b.classList.toggle("sel",b.dataset.tool===tool));
   $("laneRow").classList.toggle("hide",tool!=="road"||roadMode==="lanes"); $("sideRow").classList.toggle("hide",tool!=="road"||roadMode!=="lanes");
 }
-const TAB_HINT={svc:"Services: fire stations, police, hospitals, schools, daycare, road depots and parking. Each one costs money to build and a little every month.",
+const TAB_HINT={svc:"Services: safety, health, schools, garbage and roads. Pick a group, then a building. Each one costs money to build and a little every month.",
   util:"Utilities: nothing grows without power and water. They reach everything joined to them by road. Coal is cheap but smoky, gas is cleaner, nuclear makes the most; sun and wind are clean but small.",
   parks:"Parks: parks, playgrounds, sports courts and fields, dog parks, gardens and a stadium make the homes around them happier. Beaches and marinas go on the shore. Beaches, marinas, gardens and the stadium draw tourists who fill hotels.",
   transit:"Transport: build a bus depot, put bus stops beside busy roads, then draw a bus line through them. Metro stations go beside roads too, and Metro line links them underground. People near a stop or station leave the car at home."};
 const svcTab=k=>SVC[k].tab||(SVC[k].util?"util":"svc");
+// the Services bar's groups along the top (the one in use follows whatever's picked to build), and what each holds
+const GRP_HINT={safety:"Safety: fire stations and police.",health:"Health: hospitals, and somewhere to lay people to rest.",edu:"Schools: daycare, elementary and high schools, and a college.",
+  trash:"Garbage: a landfill, an incinerator or a recycling center sends trucks to empty the bins nearby.",post:"Post: post offices and a sorting center bring the mail.",roads:"Roads: a road depot fixes worn roads; parking lots and garages give cars somewhere to go."};
+function svcGroups(bb){
+  if(SVC[placeSel]&&svcTab(placeSel)==="svc") svcGrp=grpOf(placeSel);
+  for(const [g,nm,ic,ks] of SGRP){ if(!ks.some(k=>SVC[k])) continue; const c=document.createElement("button"); c.className="chip sg"+(g===svcGrp?" sel":""); c.dataset.g=g; c.title=GRP_HINT[g];
+    c.innerHTML=gsvg(ic)+nm; c.onclick=()=>{ svcGrp=g; if(SVC[placeSel]&&grpOf(placeSel)!==g){ placeSel=null; ghost=null; } bb.dataset.key=""; updateUI(); setHint(GRP_HINT[g],4); }; bb.appendChild(c); }
+  const br=document.createElement("div"); br.className="br"; bb.appendChild(br); }
 // the Zone, Services, Utilities and Parks buttons each open their own bar in the City builder
 function openTab(k){
   if(!city){ setTool("build"); return; }
@@ -6103,7 +6327,8 @@ function updateUI(){
       const zc=(html,title,f,cl)=>{ const c=document.createElement("button"); c.className="chip"+(cl?" "+cl:""); c.innerHTML=html; c.title=title; c.onclick=f; bb.appendChild(c); };
       if(zpts&&zoneSel==="beach"){ zc("&#10003; Done","Lay the beach round these corners (Enter)",zoneDone,"go"); zc("Undo","Take back the last corner (Backspace)",zoneUndo); zc("Cancel","Drop these corners (Esc)",zoneCancel);
         const br0=document.createElement("div"); br0.className="br"; bb.appendChild(br0); }
-      for(const k of SKEYS.filter(q=>svcTab(q)===cityTab)){ const S=SVC[k], btn=document.createElement("button"), bch=k==="beach"; btn.className=(bch?zoneSel==="beach":placeSel===k)?"sel":""; btn.dataset.s=k; btn.title=S.tip;
+      if(cityTab==="svc") svcGroups(bb);
+      for(const k of SKEYS.filter(q=>svcTab(q)===cityTab&&(cityTab!=="svc"||grpOf(q)===svcGrp))){ const S=SVC[k], btn=document.createElement("button"), bch=k==="beach"; btn.className=(bch?zoneSel==="beach":placeSel===k)?"sel":""; btn.dataset.s=k; btn.title=S.tip;
         btn.innerHTML=zic(k,BT[k].col)+S.short+'<b>'+kmoney(S.cost)+(bch?"+":"")+'</b>';
         btn.onclick=bch?()=>{ placeSel=null; zoneSel="beach"; ghost=null; updateUI(); setHint(ZONES.beach.tip+" From "+money(S.cost)+", more for a longer beach.",6); }
           :()=>{ zoneSel=null; placeSel=k; transitMode=null; linePend=null; updateUI(); setHint(S.tip+" Costs "+money(S.cost)+", then "+money(S.up)+" a month.",5); }; bb.appendChild(btn); }
@@ -6887,7 +7112,7 @@ function drawLamps(){
 
 // smoke from the factory chimneys: it rises (so its shadow falls further away) and drifts off on the wind
 function drawSmoke(dt){
-  for(const b of blds){ if(b.type!=="factory"||!b.chim||b.cons||!inView(b.x,b.y,240)) continue;
+  for(const b of blds){ if((b.type!=="factory"&&b.type!=="incin")||!b.chim||b.cons||!inView(b.x,b.y,240)) continue;
     b.smk=(b.smk||0)+dt; const per=b.chim.on?.22:.6;
     while(b.smk>per){ b.smk-=per; if(smoke.length<700) smoke.push({x:b.chim.x,y:b.chim.y,h:0,age:0,life:5.5+frand()*3,r:2.6+frand()*1.6,vx:(frand()-.5)*3,vy:(frand()-.5)*3,on:b.chim.on}); } }
   if(!smoke.length) return;
@@ -9025,6 +9250,9 @@ function v3init(T){
     g.fillStyle=m===1?"#fff3d8":fg; let fs=78; g.font="700 "+fs+"px "+FONT; while(g.measureText(t).width>w*.86&&fs>30){ fs-=4; g.font="700 "+fs+"px "+FONT; }
     g.textAlign="center"; g.textBaseline="middle"; g.fillText(t,w/2,y+66); }); };
   tp("signs",signTile(SIGNS)); tp("signs2",signTile(SIGNS2));
+  // and the names over the rubbish, deathcare and post buildings
+  const SIGNS3=[["WASTE TO ENERGY","#3d4a52","#eef1f2"],["RECYCLING","#2f5e45","#f2f5ef"],["LANDFILL","#57503f","#f3efe6"],["CEMETERY","#3f4a3c","#efece2"],["CREMATORIUM","#4a4652","#efecf2"],["POST OFFICE","#9e3a30","#f8f4ec"],["MAIL CENTER","#9e3a30","#f8f4ec"],["",'#3a3d42','#f2f0ea']];
+  tp("signs3",signTile(SIGNS3));
   tp("heli",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#4f555c"; g.fillRect(0,0,w,h); grain(g,w,h,1500,.05);
     g.strokeStyle="#e8c341"; g.lineWidth=40; g.beginPath(); g.arc(512,512,400,0,7); g.stroke(); g.fillStyle="#f4f4f2"; g.fillRect(352,272,80,480); g.fillRect(592,272,80,480); g.fillRect(432,472,160,80); });
   tp("grass",(g,w,h,m)=>{ if(m===2){ g.fillRect(0,0,w,h); return; } if(m) return; g.fillStyle="#7da55a"; g.fillRect(0,0,w,h);
@@ -9409,7 +9637,7 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
         fq(B,[x1,y,z1],[x1,y+o*s,z0],[x1,y+o*s,z0-.7],[x1,y,z1-.01],[0,0],[.2,0],[.2,.2],[0,.2],col,1,0,0); break; }
       case "sign": { // a sign board on the front of a building, its lettering from the sign pictures
         const y=d.y, x0=d.x0, x1=d.x1, z0=z, z1=z+(d.h||1.8), r=d.row||0, s=d.s||1; mat(B,"white",.7); bx(B,x0-.15,s>0?y:y-.35,x1+.15,s>0?y+.35:y,z0-.15,z1+.15,LC(d.edge||"#3a3d42"));
-        mat(B,d.set===2?"signs2":"signs",.5); const v0=r/8+.004, v1=(r+1)/8-.004, yy=y+s*.37;
+        mat(B,d.set===3?"signs3":d.set===2?"signs2":"signs",.5); const v0=r/8+.004, v1=(r+1)/8-.004, yy=y+s*.37;
         if(s>0) fq(B,[x0,yy,z0],[x1,yy,z0],[x1,yy,z1],[x0,yy,z1],[.004,v0],[.996,v0],[.996,v1],[.004,v1],W0,0,1,0);
         else fq(B,[x1,yy,z0],[x0,yy,z0],[x0,yy,z1],[x1,yy,z1],[.004,v0],[.996,v0],[.996,v1],[.004,v1],W0,0,-1,0); break; }
       case "heli": { // a helipad, on a steel frame over the roof if it's lifted
@@ -9460,6 +9688,11 @@ if(wat>0.){ vec2 p=vWp.xz, g=vec2(.11,.05)*cos(dot(p,vec2(.11,.05))+wt*1.4)+vec2
       case "fanu": { // a cooling fan on a roof: a round housing with the fan inside it
         const r=d.r, q=r*.6; mat(B,"white",.6); lathe(B,d.x,d.y,[[r,z],[r,z+1.3],[r*.86,z+1.3],[r*.86,z+.9]],[.78,.8,.82],12);
         mat(B,"fan",.5); fq(B,[d.x-q,d.y-q,z+.95],[d.x+q,d.y-q,z+.95],[d.x+q,d.y+q,z+.95],[d.x-q,d.y+q,z+.95],[.001,.001],[.999,.001],[.999,.999],[.001,.999],W0,0,0,1); break; }
+      case "mound": { // a heap with a flat top (a landfill's rubbish, grassed over once it's done): four slopes up to the top
+        const x0=d.x, y0=d.y, x1=d.x+d.w, y1=d.y+d.d, i=d.ins, z1=z+d.h, u=d.un||8, P=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]], Q=[[x0+i,y0+i],[x1-i,y0+i],[x1-i,y1-i],[x0+i,y1-i]], N=[[0,-1],[1,0],[0,1],[-1,0]], sl=Math.hypot(i,d.h)/u;
+        mat(B,d.m||"gravel",.95);
+        for(let k=0;k<4;k++){ const a=P[k], q=P[(k+1)%4], c=Q[(k+1)%4], e=Q[k], L=Math.hypot(q[0]-a[0],q[1]-a[1])/u; fq(B,[a[0],a[1],z],[q[0],q[1],z],[c[0],c[1],z1],[e[0],e[1],z1],[0,0],[L,0],[L,sl],[0,sl],col,N[k][0],N[k][1],.5); }
+        fq(B,[Q[0][0],Q[0][1],z1],[Q[1][0],Q[1][1],z1],[Q[2][0],Q[2][1],z1],[Q[3][0],Q[3][1],z1],[0,0],[(d.w-2*i)/u,0],[(d.w-2*i)/u,(d.d-2*i)/u],[0,(d.d-2*i)/u],col,0,0,1); break; }
       case "slab": mat(B,d.m||"conc",d.ro||.85); bx(B,d.x,d.y,d.x+d.w,d.y+d.d,z,z+(d.h||.4),col,d.un||8,d.fs||63); break;
       case "quad": mat(B,d.m||"water",d.ro||.2); fq(B,[d.x,d.y,z],[d.x+d.w,d.y,z],[d.x+d.w,d.y+d.d,z],[d.x,d.y+d.d,z],[0,0],[d.w/(d.un||8),0],[d.w/(d.un||8),d.d/(d.un||8)],[0,d.d/(d.un||8)],col,0,0,1); break;
       case "gable": { // a little building of its own: a shed, a porch, a dormer
@@ -9949,11 +10182,17 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
   boxInto(trkG,.5,.51,.24,.46,-.25,.25,[.16,.16,.17]);
   for(const z of [-1,1]){ boxInto(trkG,.5,.512,.22,.3,z<0?-.44:.3,z<0?-.3:.44,lamp); boxInto(trkG,-.507,-.49,.18,.28,z<0?-.46:.3,z<0?-.3:.46,tail); }
   for(const x of [-.38,-.24,.36]){ loft(trkG,ring(x,.132,.0645,.132,.5),tyre); loft(trkG,ring(x,.132,.035,.072,.508),hub); }
+  // a garbage truck's body in its place: the compactor with its back corner rounded off, and as trim the tailgate hopper
+  // in dark grey with its open mouth, the ribs down the sides and a step at the back
+  const garbG=G0(), garbT=G0(), gry=[.36,.37,.38], rib=[.55,.56,.55];
+  loft(garbG,[[-.47,.15,.47],[.22,.15,.47],[.22,.93,.47],[.18,.97,.45],[-.38,.97,.45],[-.47,.9,.46]],W1);
+  loft(garbT,[[-.535,.12,.47],[-.465,.12,.47],[-.465,.93,.47],[-.5,.88,.46],[-.535,.62,.46]],gry); boxInto(garbT,-.545,-.535,.22,.46,-.38,.38,[.07,.07,.08]);
+  boxInto(garbT,-.57,-.535,.13,.17,-.42,.42,[.3,.3,.3]); for(const x of [-.3,-.1,.1]) for(const z of [-1,1]) boxInto(garbT,x,x+.022,.17,.93,z<0?-.486:.468,z<0?-.468:.486,rib);
   const carMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.4}), trimMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.3});
   const CAP=2048;
   const inst=(g,mat,shadow,plain)=>{ const m=new T.InstancedMesh(g,mat,CAP); m.instanceMatrix.setUsage(T.DynamicDrawUsage); if(!plain) m.setColorAt(0,new T.Color(1,1,1)); m.count=0; m.frustumCulled=false; m.castShadow=!!shadow; scene.add(m); return m; };
   const carIs=CK.map(k=>inst(geoOf(k[0]),carMat,true)), trimIs=CK.map(k=>inst(geoOf(k[1]),trimMat,true,true));
-  const boxI=inst(geoOf(boxG),carMat,true), cabI=inst(geoOf(cabG),carMat,true), trkI=inst(geoOf(trkG),trimMat,true,true);
+  const boxI=inst(geoOf(boxG),carMat,true), cabI=inst(geoOf(cabG),carMat,true), trkI=inst(geoOf(trkG),trimMat,true,true), garbI=inst(geoOf(garbG),carMat,true), garbTI=inst(geoOf(garbT),trimMat,true,true);
   const lampG=new T.BoxGeometry(1,1,1);
   const headI=inst(lampG,new T.MeshBasicMaterial({color:0xfff6dc})), tailI=inst(lampG,new T.MeshBasicMaterial({color:0xffffff})), barI=inst(lampG,new T.MeshBasicMaterial({color:0xffffff}));
   const CARH=3.3, TRKH=7.6;
@@ -9962,20 +10201,23 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
   function setC(m,i,hex){ const v=LC(hex), a=m.instanceColor.array; a[i*3]=v[0]; a[i*3+1]=v[1]; a[i*3+2]=v[2]; }
   let parkedList=[];
   function carsFrame(nk){
-    let nc=0, nb=0, nh=0, nt=0, nr=0; const nk5=CK.map(()=>0);
-    const bm=boxI.instanceMatrix.array, km=cabI.instanceMatrix.array, hm=headI.instanceMatrix.array, tm=tailI.instanceMatrix.array, rm=barI.instanceMatrix.array, ym=trkI.instanceMatrix.array;
+    let nc=0, nb=0, nh=0, nt=0, nr=0, nbx=0, ngb=0; const nk5=CK.map(()=>0);
+    const bm=boxI.instanceMatrix.array, km=cabI.instanceMatrix.array, hm=headI.instanceMatrix.array, tm=tailI.instanceMatrix.array, rm=barI.instanceMatrix.array, ym=trkI.instanceMatrix.array, gbm=garbI.instanceMatrix.array, gtm=garbTI.instanceMatrix.array;
     const lights=nk>.15, flash=performance.now()%420<210;
     const put=(c,x,y,a,h,moving,wm)=>{ if(c.bus||nc>=CAP||nb>=CAP) return; let [L,W]=carDims(c,wm), HH=c.truck?TRKH:CARH; const gy=h*OVH+hAt(x,y), ca=Math.cos(a), sa=Math.sin(a);
-      if(c.truck){ setM(bm,nb,x,gy,y,a,L,HH,W); setC(boxI,nb,c.col||"#f4f4f0"); setM(km,nb,x,gy,y,a,L,HH,W); setC(cabI,nb,c.cab||"#e2493a"); setM(ym,nb,x,gy,y,a,L,HH,W); nb++; }
-      else { const q=!c.svc&&c.len>=11&&c.m||0, K=CK[q], j=nk5[q]++; if(q){ L*=K[2]; HH*=K[3]; W=Math.min(W*K[4],wm||99); }
+      const V=c.svc&&VEH[c.svc], gb=V&&V.g==="garb";
+      if(c.truck){ if(gb){ setM(gbm,ngb,x,gy,y,a,L,HH,W); setC(garbI,ngb,c.col||"#e2e1db"); setM(gtm,ngb,x,gy,y,a,L,HH,W); ngb++; } else { setM(bm,nbx,x,gy,y,a,L,HH,W); setC(boxI,nbx,c.col||"#f4f4f0"); nbx++; }
+        setM(km,nb,x,gy,y,a,L,HH,W); setC(cabI,nb,c.cab||"#e2493a"); setM(ym,nb,x,gy,y,a,L,HH,W); nb++; }
+      else { const q=(c.svc?c.m:c.len>=11&&c.m)||0, K=CK[q], j=nk5[q]++; if(q){ L*=K[2]; HH*=K[3]; W=Math.min(W*K[4],wm||99); }
         setM(carIs[q].instanceMatrix.array,j,x,gy,y,a,L,HH,W); setC(carIs[q],j,c.col||"#888"); setM(trimIs[q].instanceMatrix.array,j,x,gy,y,a,L,HH,W); nc++; }
-      if(c.svc&&nr<CAP-1){ const top=c.truck?HH*.76:HH*.92; setM(rm,nr,x+ca*L*(c.truck?.38:-.04),gy+top+.3,y+sa*L*(c.truck?.38:-.04),a,1.3,.7,W*.75); setC(barI,nr,c.siren?(flash?"#3d7fff":"#ff2a1c"):"#c8ced6"); nr++; }
+      // the light bar on a service vehicle (a garbage truck has just an amber beacon, and some have none)
+      if(c.svc&&nr<CAP-1&&!(V&&V.nobar)){ const top=c.truck?HH*.76:HH*.92; setM(rm,nr,x+ca*L*(c.truck?.38:-.04),gy+top+.3,y+sa*L*(c.truck?.38:-.04),a,gb?.8:1.3,.7,W*(gb?.28:.75)); setC(barI,nr,c.siren?(flash?"#3d7fff":"#ff2a1c"):gb?"#d9952e":"#c8ced6"); nr++; }
       if(moving&&lights&&nh<CAP-2) for(const o of [-1,1]){ const ox=-sa*o*W*.34, oy=ca*o*W*.34; setM(hm,nh,x+ca*(L*.5+.05)+ox,gy+HH*(c.truck?.26:.41),y+sa*(L*.5+.05)+oy,a,.3,.7,1.2); nh++; }
       if(nt<CAP-2&&(c.braking||lights)) for(const o of [-1,1]){ const ox=-sa*o*W*.36, oy=ca*o*W*.36; setM(tm,nt,x-ca*(L*.5+.05)+ox,gy+HH*(c.truck?.23:.42),y-sa*(L*.5+.05)+oy,a,.3,.7,1.1); setC(tailI,nt,c.braking?"#ff3020":"#b81c12"); nt++; } };
     for(const c of cars){ if(c.state==="drive") put(c,c.x,c.y,c.ang,c.h||0,true); else if(c.svc&&c.state==="park") put(c,c.x,c.y,c.ang,0,false); }
     for(const q of parkedList) if(q.c.state!=="drive") put(q.c,q.x,q.y,q.a,0,false,q.wm);
     for(const w of works){ const d=crewAt(w); if(d!==null) for(const v of crew(w,d)) put(v,v.x,v.y,v.ang,0,true); }
-    for(const [m,n] of [...CK.map((k,i)=>[carIs[i],nk5[i]]),...CK.map((k,i)=>[trimIs[i],nk5[i]]),[boxI,nb],[cabI,nb],[trkI,nb],[headI,nh],[tailI,nt],[barI,nr]]){ m.count=n; m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
+    for(const [m,n] of [...CK.map((k,i)=>[carIs[i],nk5[i]]),...CK.map((k,i)=>[trimIs[i],nk5[i]]),[boxI,nbx],[garbI,ngb],[garbTI,ngb],[cabI,nb],[trkI,nb],[headI,nh],[tailI,nt],[barI,nr]]){ m.count=n; m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
     return nc+nb;
   }
 
@@ -10007,7 +10249,9 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
   const MDL={wt:merged(wt),tur:merged(tur),rot:merged(rot),
     ct:merged([[new T.LatheGeometry([[8.6,0],[7.9,6],[6.9,16],[6.1,28],[6,34],[6.3,40],[6.6,44]].map(q=>new T.Vector2(q[0],q[1])),28),"#d9d6cf"]]),
     ch:merged([[cyl(4.3,2.9,42,0,0,0,14),"#8b7363"],[cyl(3.2,3.2,1.6,36.5,0,0,14),"#ece8df"],[cyl(3.05,3.05,2,42,0,0,14),"#3f352e"]]),
-    dome:merged([[new T.SphereGeometry(7.4,20,10,0,Math.PI*2,0,Math.PI/2).scale(1,1.15,1),"#e9dfc4"],[cyl(7.6,7.6,1.2,0,0,0,20),"#b7ab8d"]])};
+    dome:merged([[new T.SphereGeometry(7.4,20,10,0,Math.PI*2,0,Math.PI/2).scale(1,1.15,1),"#e9dfc4"],[cyl(7.6,7.6,1.2,0,0,0,20),"#b7ab8d"]]),
+    // an incinerator's stack: slim pale concrete on a plinth, a dark band near the top and the open flue
+    stk:merged([[cyl(3.6,3.6,1.2,0,0,0,16),"#a9a59c"],[cyl(2.6,2.05,41.6,1.2,0,0,16),"#cfd0cc"],[cyl(2.12,2.12,1.6,35,0,0,16),"#7d8288"],[cyl(2.15,2.15,1.2,41.8,0,0,16),"#5d6166"]])};
   const mdlMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide}), mdlI={}, MCAP=96;
   // the rotors turn about their hubs in the vertex shader (and in their shadows too), by the clock the water uses
   const rotMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.5,side:T.DoubleSide}), rotDep=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking});
@@ -10462,7 +10706,7 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
     for(const c of front.cells.values()) if(c.rec){ for(const q of c.rec.parked) if(!seen.has(q.c)){ seen.add(q.c); P.push(q); } const T2=c.rec.trees; for(let i=0;i<T2.length;i+=3) tl.push(T2[i],T2[i+1],T2[i+2],-1);
       for(const q of c.rec.models||[]){ const k=q.k+Math.round(q.x)+","+Math.round(q.y); if(!seen.has(k)){ seen.add(k); M.push(q); } }
       for(const q of c.rec.props||[]){ const k="p"+q.k+Math.round(q.x*4)+","+Math.round(q.y*4)+","+Math.round(q.z||0); if(!seen.has(k)){ seen.add(k); Q.push(q); } } }
-    parkedList=P; treesSet(tl); modelsSet(M); propsSet(Q); stacks=M.filter(q=>q.k==="ch"||q.k==="ct");
+    parkedList=P; treesSet(tl); modelsSet(M); propsSet(Q); stacks=M.filter(q=>q.k==="ch"||q.k==="ct"||q.k==="stk");
       civSet(M);
   }
   // a fingerprint of everything drawn in each cell of a layer, to tell which ones changed
@@ -10777,6 +11021,12 @@ window.__gridlock={
   sicken:()=>{ const b=blds.find(b=>isHome(b)&&!b.sick); if(b) b.sick={t0:t,amb:null}; return !!b; },
   crime:v=>{ for(const b of blds) if(!isSvc(b)) b.crime=v; },
   wear:v=>{ for(const s of segs.values()) if(!s.hwy) s.cond=v; },
+  // rubbish: set every building's bins (v) to test the trucks, and what's piled up, out on the rounds and in the tips
+  waste:(v,f)=>{ if(v!==undefined&&v!==null){ trashOn=true; for(const b of blds) if(!isSvc(b)&&!b.cons) b.trash=v; } if(f!==undefined) for(const b of blds) if(b.type==="landfill") b.fill=f*SVC.landfill.cap;
+    const ts=blds.filter(b=>!isSvc(b)).map(b=>b.trash||0);
+    return {on:trashOn,n:ts.length,piled:ts.filter(v=>v>1).length,max:+Math.max(0,...ts).toFixed(2),avg:ts.length?+(ts.reduce((a,v)=>a+v,0)/ts.length).toFixed(2):0,
+      trucks:cars.filter(c=>c.svc&&GARB.has(c.svc)&&c.state!=="home").length,load:Math.round(cars.reduce((a,c)=>a+(c.load||0),0)),
+      tips:blds.filter(b=>GARB.has(b.type)).map(b=>({t:b.type,fill:Math.round(b.fill||0),stock:Math.round(b.stock||0),burn:+(b.burnK||0).toFixed(2),v:b.v||0,full:!!b.full})),pow:utilStat.pow.map(Math.round)}; },
   wet:(x,y)=>isWater(x,y)||isHill(x,y)?(isWater(x,y)?"w":"h"):"",
   svcCars:()=>cars.filter(c=>c.svc).map(c=>({k:c.svc,st:c.state,siren:!!c.siren,x:Math.round(c.x),y:Math.round(c.y),job:c.purpose&&c.purpose.kind})),
   zoneSel:k=>{ if(k!==undefined){ zoneSel=k; updateUI(); } return zoneSel; },
