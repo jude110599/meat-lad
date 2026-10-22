@@ -5953,7 +5953,7 @@ function infoHTML(b){
   if(L){ const k=L.why, N=NOTE[k];
     if(N) h+='<div class="inote"><img alt="" src="'+noteImg(k)+'"><div><b>'+N.t+'</b><span>'+N.d+'</span></div></div>';
     else h+='<div class="ifoot">'+(t<L.cool?"Cleared not long ago. Something new grows here soon.":"Ready to build on. Something grows here as soon as the town wants more "+z.name.toLowerCase()+".")+'</div>';
-    return h; }
+    return h+ivCard(L); }
   const u=urgency(b), k=b.nk, home=isHome(b), S=SVC[b.type];
   if(b.cons) h+='<div class="ifoot">Being built. People move in and it opens once it\'s finished.</div>';
   if(k){ const red=u>.35, N=NOTE[k]; h+='<div class="inote'+(red?" red":"")+'"><img alt="" src="'+noteImg(k,red)+'"><div><b>'+N.t+(red?(home&&!b.pins?", moving out soon":", closing soon"):"")+'</b><span>'+N.d+'</span></div></div>'; }
@@ -5974,6 +5974,7 @@ function infoHTML(b){
       ms.push(imeter({cust:"Customers",work:"Workers",goods:"Goods",raw:"Materials",parts:"Parts"}[q],v,v>=.66?"Plenty":v>=.33?"Running short":"Badly short")); }
     if(ms.length) h+='<div class="isec">What it needs</div>'+ms.join(""); }
   if(home&&b.happy!==undefined) h+=imeter("Happiness",b.happy/100,b.happy>=65?"Happy":b.happy>=45?"Getting by":"Unhappy");
+  if(!S&&!b.cons) h+=ivCard(b);
   if(!b.cons&&(!S||!S.util)){ const c=[];
     c.push(ichip(b.acc?"check":"cross","Road",b.acc?"on":"no"));
     if(useOf(b)){ c.push(ichip(b.noPow?"cross":"power","Power",b.noPow?"no":"on")); c.push(ichip(b.noWat?"cross":"pump","Water",b.noWat?"no":"on")); }
@@ -6049,9 +6050,9 @@ function drawSel3(){
 // for every 32 units), worked out every couple of seconds with the rest of the town, and the colours are made again
 // only when those change, so nothing is worked out over the whole map from one frame to the next.
 const IG=32;
-let IW=0, IH=0, ivPol=null, ivTmp=null, ivImg=null, ivCv=null, ivCvV=-1, ivVer=0, ivK=null, ivOpen=false, ivUI="", ivGame=null, ivCap=null, ivFK="", ivFT=-99;
+let IW=0, IH=0, ivLV=null, ivNear=null, ivWet=null, ivWetT=null, ivPol=null, ivTmp=null, ivImg=null, ivCv=null, ivCvV=-1, ivVer=0, ivK=null, ivOpen=false, ivUI="", ivGame=null, ivCap=null, ivFK="", ivFT=-99;
 // what puts smoke in the air: how much, and how far it spreads (it drifts a little way downwind)
-const POLLUTE={factory:[.75,230],power:[.85,300],plant:[.35,150],warehouse:[.15,110],gas:[.25,170]};
+const POLLUTE={factory:[.6,170],power:[.7,220],plant:[.3,120],warehouse:[.12,90],gas:[.2,130]};
 // muted map colours: bad to good, light to heavy smoke, in reach of a service, and traffic from flowing to jammed
 const IVR={ryg:["#b8503c","#dcae4c","#4f9356"],smog:["#ddd0ad","#a8875a","#5f4630"],cov:["#cfe0b4","#3f8a52"],flow:["#4f9356","#dcae4c","#b8503c"]};
 const IVC={ok:"#4f9356",no:"#b8503c",pow:"#d5a03a",wat:"#4a86b8",wsrc:"#2f5f8f",src:"#35648f",smog:"#6b5038",edu:["#b8503c","#dcae4c","#8fbb6e","#3f7f4e"]};
@@ -6069,6 +6070,7 @@ const ivCovB=V=>b=>V.cov.includes(b.type)?rgbOf(IVC.src):isSvc(b)||b.cons||V.hom
 // (a colour, or nothing to leave it plain), roads a stretch of road; key is what the key under it shows. A service's
 // reach takes one line: cov names the service (or services), and homes:true leaves the businesses out of it
 const IVIEWS=[
+  {k:"lv",n:"Land value",g:"tag",grp:0,gr:i=>ivNear[i]?[ramp(IVR.ryg,ivLV[i]*1.1-.05),.62*ivNear[i]/255]:null,bc:b=>!isSvc(b)&&!b.cons?ramp(IVR.ryg,(b.lval||0)*1.1-.05):null,key:{grad:IVR.ryg,lo:"Low",hi:"High"},tip:"Parks, services, shops, bus and metro stops and water nearby raise it. Smoke, noise and busy roads bring it down."},
   {k:"happy",n:"Happiness",g:"smile",grp:0,bc:b=>isHome(b)&&!b.cons&&b.happy!==undefined?ramp(IVR.ryg,(b.happy-25)/60):null,key:{grad:IVR.ryg,lo:"Unhappy",hi:"Happy"},tip:"Homes want power, water and services nearby, and clean, quiet streets."},
   {k:"pow",n:"Power",g:"power",grp:1,bc:b=>SVC[b.type]&&SVC[b.type].util==="pow"?rgbOf(IVC.pow):ivUses(b)?rgbOf(b.noPow?IVC.no:IVC.ok):null,key:{sw:[[IVC.ok,"Has power"],[IVC.no,"No power"],[IVC.pow,"Power plant"]]},tip:"Power reaches everything joined to a plant by road, until the plants run out."},
   {k:"wat",n:"Water",g:"pump",grp:1,bc:b=>SVC[b.type]&&SVC[b.type].util==="wat"?rgbOf(IVC.wsrc):ivUses(b)?rgbOf(b.noWat?IVC.no:IVC.wat):null,key:{sw:[[IVC.wat,"Has water"],[IVC.no,"No water"],[IVC.wsrc,"Water supply"]]},tip:"Water reaches everything joined to a water tower or pump by road, until they run dry."},
@@ -6090,6 +6092,7 @@ const IVIEWS=[
 const IVGRP=["Town","Utilities","Roads and environment","Education","Services"];
 const IVK={}; for(const V of IVIEWS) IVK[V.k]=V;
 const IVGLY={
+  tag:'<path d="M3.4 10.4V3.6h6.8l6.4 6.4-6.8 6.8z" class="s"/><path d="M7.1 7.3h.01" class="d"/>',
   car:'<path d="M3.6 13.8v-3.4l1.7-4.4h9.4l1.7 4.4v3.4z" class="s"/><path d="M3.8 10.4h12.4M6.2 13.8v1.9M13.8 13.8v1.9" class="s"/><path d="M6.6 12.1h.01M13.4 12.1h.01" class="d"/>',
   smog:'<path d="M6.2 13.4h8a2.9 2.9 0 0 0 .4-5.8 4.3 4.3 0 0 0-8.2-.6 3.2 3.2 0 0 0-.2 6.4z" class="s"/><path d="M6.4 16.8h.01M10 16.8h.01M13.6 16.8h.01" class="d"/>'
 };
@@ -6101,20 +6104,48 @@ function ivAt(F,x,y){ if(!F) return 0; const gx=clamp(x/IG-.5,0,IW-1.001), gy=cl
 function ivSplat(F,x,y,R,amt){ const i0=Math.max(0,Math.floor((x-R)/IG)), i1=Math.min(IW-1,Math.floor((x+R)/IG)), j0=Math.max(0,Math.floor((y-R)/IG)), j1=Math.min(IH-1,Math.floor((y+R)/IG)), r2=R*R;
   for(let j=j0;j<=j1;j++){ const dy=(j+.5)*IG-y, o=j*IW; for(let i=i0;i<=i1;i++){ const dx=(i+.5)*IG-x, d2=dx*dx+dy*dy; if(d2<r2) F[o+i]+=amt*(1-Math.sqrt(d2)/R); } } }
 function ivAlloc(){ const w=Math.ceil(MW/IG), h=Math.ceil(MH/IG); if(w===IW&&h===IH&&ivPol) return; IW=w; IH=h; const n=w*h;
-  ivPol=new Float32Array(n); ivTmp=new Float32Array(n); ivImg=new Uint8Array(n*4); ivCv=null; ivCvV=-1; ivFK=""; ivVer++; }
+  ivLV=new Float32Array(n); ivNear=new Uint8Array(n); ivPol=new Float32Array(n); ivTmp=new Float32Array(n); ivWetT=null; ivImg=new Uint8Array(n*4); ivCv=null; ivCvV=-1; ivFK=""; ivVer++; }
 // how busy each road is, from the cars on it now and how fast they're going, smoothed over a few looks
 function ivTraffic(){ const sum=new Map(), cnt=new Map();
   for(const c of cars){ if(c.state!=="drive"||!c.rt) continue; const lg=c.rt.legs[c.leg]; if(!lg) continue; sum.set(lg.seg,(sum.get(lg.seg)||0)+c.v); cnt.set(lg.seg,(cnt.get(lg.seg)||0)+1); }
   for(const s of segs.values()){ const n=cnt.get(s.id)||0, v=n?Math.min(1,sum.get(s.id)/n/spd(s)):1; s.ivq=(s.ivq||0)*.6+n*.4; s.ivv=(s.ivv===undefined?1:s.ivv)*.6+v*.4;
     const den=s.ivq*32/Math.max(32,s.len*totL(s)); s.ivt=clamp(Math.max((.8-s.ivv)/.55*Math.min(1,s.ivq/1.2),den/1.8),0,1); } }
-// the town's numbers on the grid: smoke from the factories and power plants. Worked out again when something's been
-// built, knocked down or changed, and every so often anyway
-function ivFields(force){ ivAlloc();
+// how close each square is to open water: worked out once for each map
+function ivWater(){ if(ivWetT===waterGrid&&ivWet) return; ivWetT=waterGrid; const n=IW*IH, d=new Float32Array(n);
+  for(let j=0;j<IH;j++) for(let i=0;i<IW;i++) d[j*IW+i]=isWater((i+.5)*IG,(j+.5)*IG)?0:1e9;
+  for(let j=0;j<IH;j++) for(let i=0;i<IW;i++){ const k=j*IW+i; if(i) d[k]=Math.min(d[k],d[k-1]+1); if(j) d[k]=Math.min(d[k],d[k-IW]+1); if(i&&j) d[k]=Math.min(d[k],d[k-IW-1]+1.4); if(j&&i<IW-1) d[k]=Math.min(d[k],d[k-IW+1]+1.4); }
+  for(let j=IH-1;j>=0;j--) for(let i=IW-1;i>=0;i--){ const k=j*IW+i; if(i<IW-1) d[k]=Math.min(d[k],d[k+1]+1); if(j<IH-1) d[k]=Math.min(d[k],d[k+IW]+1); if(i<IW-1&&j<IH-1) d[k]=Math.min(d[k],d[k+IW+1]+1.4); if(j<IH-1&&i) d[k]=Math.min(d[k],d[k+IW-1]+1.4); }
+  ivWet=new Float32Array(n); for(let k=0;k<n;k++) ivWet[k]=d[k]>0?clamp(1-(d[k]-1)/5,0,1):0; }
+// what makes land worth more: for each kind, how much it adds right beside it and how far that reaches
+const LV_SVC={fire:.06,police:.06,clinic:.08,school:.07,highschool:.06,college:.08,daycare:.05};
+const LV_SHOP={shop:[.035,220],center:[.07,300],mall:[.12,400],mixed:[.03,200],hotel:[.03,220]};
+// the town's numbers on the grid: smoke from the factories and power plants, and land value: up for parks, services,
+// shops, bus and metro stops and water nearby, down for smoke, noise and busy roads (and only shown near a road, where
+// there's land anyone could build on). Worked out again when something's been built, knocked down or changed, and
+// every so often anyway for the traffic
+function ivFields(force){ ivAlloc(); ivWater();
   const key=tver+"|"+rver+"|"+trv+"|"+MW, now=t;
   if(!force&&key===ivFK&&now-ivFT<8) return false; ivFK=key; ivFT=now;
   ivPol.fill(0); const wx=Math.cos(WIND_A+Math.PI), wy=Math.sin(WIND_A+Math.PI);
   for(const b of blds){ const P=POLLUTE[b.type]; if(!P||b.cons||!b.acc&&!SVC[b.type]) continue; const R=P[1]*(b.k?Math.sqrt(clamp(b.k,.6,2.5)):1); ivSplat(ivPol,b.x+wx*R*.3,b.y+wy*R*.3,R,P[0]*(b.noPow&&!SVC[b.type]?.4:1)); }
   for(let i=0;i<ivPol.length;i++) if(ivPol[i]>1) ivPol[i]=1;
+  // which squares are by a road someone could build along, and how busy the roads beside them are
+  ivNear.fill(0); const busy=ivTmp; busy.fill(0);
+  for(const s of segs.values()){ const A=nodes.get(s.a), B=nodes.get(s.b), hw=segHW(s), R=hw+150, tv=Math.min(1,(s.ivq||0)*40/Math.max(40,s.len)*.35+(s.hwy?.5:totL(s)>=6?.3:0));
+    const i0=Math.max(0,Math.floor((Math.min(A.x,B.x)-R)/IG)), i1=Math.min(IW-1,Math.floor((Math.max(A.x,B.x)+R)/IG)), j0=Math.max(0,Math.floor((Math.min(A.y,B.y)-R)/IG)), j1=Math.min(IH-1,Math.floor((Math.max(A.y,B.y)+R)/IG));
+    for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const d=projSeg((i+.5)*IG,(j+.5)*IG,A.x,A.y,B.x,B.y).d-hw; if(d>=150) continue; const k=j*IW+i;
+      if(!s.hwy&&!s.over){ const v=d<90?255:255*(150-d)/60; if(v>ivNear[k]) ivNear[k]=v; }
+      const q=tv*clamp(1-d/120,0,1); if(q>busy[k]) busy[k]=q; } }
+  const L=ivLV; L.fill(0);
+  for(const b of blds){ if(b.cons) continue; const S=SVC[b.type];
+    if(S&&S.fun) ivSplat(L,b.x,b.y,Math.min(svcR(b.type),560)*.8,.06+S.fun*.022);
+    else if(S&&LV_SVC[b.type]&&b.acc) ivSplat(L,b.x,b.y,Math.min(svcR(b.type),900)*.9,LV_SVC[b.type]);
+    else if(LV_SHOP[b.type]&&b.acc){ const q=LV_SHOP[b.type]; ivSplat(L,b.x,b.y,q[1],q[0]*Math.min(2,b.k||1)); } }
+  const onLine=new Set(); for(const ln of lines) for(const st of ln.stops) onLine.add(st);
+  for(const st of stops) if(onLine.has(st)) ivSplat(L,st.x,st.y,st.kind==="metro"?420:230,st.kind==="metro"?.16:.09);
+  for(let k=0;k<L.length;k++) L[k]=clamp(.12+.84*(1-Math.exp(-(L[k]+ivWet[k]*.2)*3))-ivPol[k]*.5-busy[k]*.25,0,1);
+  // and what each building stands on
+  for(const b of blds){ const q=b.lot||b; b.lval=ivAt(L,q.x,q.y); b.pll=ivAt(ivPol,b.x,b.y); }
   return true; }
 // every couple of seconds, with the town's growth: the traffic looked at, the numbers on the grid brought up to date,
 // and the info view showing coloured again
@@ -6188,6 +6219,9 @@ function ivDraw2d(){
       ctx.restore(); } }
   ivCap=null;
 }
+// on a plot's or a grown building's card: what the land there is worth
+function ivCard(b){ if(!ivLV||!ivFK) return ""; const v=b.poly?ivAt(ivLV,b.x,b.y):b.lval; if(v===undefined) return "";
+  return '<div class="isec">Land</div>'+imeter("Land value",v,v<.3?"Low":v<.45?"Fair":v<.6?"Good":v<.75?"High":"Prime"); }
 // ---------- UI ----------
 let tool="road";
 const ROAD_HINT={draw:"Drag to draw a road. Tap a road to switch it to the width picked above.",
@@ -11020,7 +11054,8 @@ window.__gridlock={
     return {svc:n,tourism,noPark:blds.filter(b=>b.noPark&&t-b.noPark<25).length,atLots:cars.filter(c=>c.state==="park"&&c.at&&PARKING.has(c.at.type)).length,walking:cars.filter(c=>c.walk).length,pow:utilStat.pow.map(Math.round),wat:utilStat.wat.map(Math.round),happy:Math.round(happyAvg),noPow:blds.filter(b=>b.noPow).length,noWat:blds.filter(b=>b.noWat).length,
       fires:blds.filter(b=>b.fire).length,sick:blds.filter(b=>b.sick).length,crime:blds.filter(b=>(b.crime||0)>.6).length,out:cars.filter(c=>c.svc&&c.state!=="home").length,
       sirens:cars.filter(c=>c.siren).length,worn:[...segs.values()].filter(s=>s.cond!==undefined&&s.cond<.6).length,burnt:lots.filter(L=>L.burnt).length}; },
-  iview:(k,o)=>{ if(k!==undefined) ivSet(k); if(o!==undefined){ ivOpen=!!o; ivPanel(); } return {k:ivK,open:ivOpen,ver:ivVer,list:IVIEWS.map(V=>V.k),tinted:blds.filter(b=>b.ivc).length,grid:[IW,IH]}; },
+  inspect:(x,y)=>{ if(x===null){ closeInfo(); return null; } inspectAt({x,y}); return infoB?$("infoPanel").innerText:null; },
+  iview:(k,o)=>{ if(k!==undefined) ivSet(k); if(o!==undefined){ ivOpen=!!o; ivPanel(); } return {k:ivK,open:ivOpen,ver:ivVer,list:IVIEWS.map(V=>V.k),tinted:blds.filter(b=>b.ivc).length,grid:[IW,IH],lv:(a=>a.length?[Math.min(...a),a.reduce((x,y)=>x+y,0)/a.length,Math.max(...a)].map(v=>+v.toFixed(2)):null)(blds.filter(b=>b.lval!==undefined&&!isSvc(b)).map(b=>b.lval))}; },
   civic:()=>({edu:{any:+eduStat.any.toFixed(2),hi:+eduStat.hi.toFixed(2)},dem:{off:+cityD.off.toFixed(2),ind:+cityD.ind.toFixed(2)}}),
   transit:()=>({stops:stops.length,lines:lines.map(L=>({id:L.id,kind:L.kind,loop:L.loop,stops:L.stops.length,want:L.want,buses:L.buses.length,load:L.kind==="metro"?L.buses.reduce((n,q)=>n+q.load.length,0):undefined,len:Math.round(linePath(L).len),gaps:L.path.gaps.length,riders:L.riders})),wait:stops.reduce((n,q)=>n+q.q.length,0),riders:tStat.total,month:tStat.month,
     buses:allBuses().map(c=>({st:c.state,load:c.load.length,x:Math.round(c.x),y:Math.round(c.y),to:c.purpose&&c.purpose.d&&c.purpose.d.id}))}),
