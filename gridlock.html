@@ -507,7 +507,7 @@ body.dark #demPill .dq i{background:rgba(255,255,255,.12)}
     <svg viewBox="0 0 26 26"><path d="M4 12.5 13 5l9 7.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linejoin="round" stroke-linecap="round"/><path d="M6.5 11v10h13V11" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linejoin="round"/><rect x="11" y="15" width="4" height="6" fill="currentColor"/></svg>
     <span id="buildLb">Build</span>
   </button>
-  <button class="tool cityonly" data-tool="build" data-tab="svc" title="Services (8): fire, police, hospitals, schools, garbage, road depots and parking">
+  <button class="tool cityonly" data-tool="build" data-tab="svc" title="Services (8): fire, police, hospitals, cemeteries, schools, garbage, post, road depots and parking">
     <svg id="icSvc" viewBox="0 0 26 26"><path d="M13 3 4.5 6.5v6c0 5 3.6 8.6 8.5 10.5 4.9-1.9 8.5-5.5 8.5-10.5v-6z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linejoin="round"/><path d="M13 9v8M9 13h8" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
     Services
   </button>
@@ -710,6 +710,9 @@ const BT={
   // deathcare: a cemetery fills up grave by grave, a crematorium never does
   cemetery:{svc:true,w:92,d:72,r:59,col:"#6f8a62",name:"cemetery",names:"cemeteries"},
   cremat:  {svc:true,w:56,d:44,r:36,col:"#9a917f",name:"crematorium",names:"crematoriums"},
+  // post: a post office's vans go round the streets, a sorting center sorts the mail for a whole city
+  postoffice:{svc:true,w:44,d:36,r:29,col:"#a8433a",name:"post office",names:"post offices"},
+  sorting: {svc:true,w:100,d:72,r:62,col:"#8f5a4e",name:"mail sorting center",names:"mail sorting centers"},
   parking: {svc:true,w:44,d:36,r:28,col:"#6d7f8f",name:"parking lot",names:"parking lots"},
   garage:  {svc:true,w:40,d:36,r:27,col:"#8f8b82",name:"parking garage",names:"parking garages"},
   park:    {svc:true,w:50,d:40,r:32,col:"#6fbf4f",name:"park",names:"parks"},
@@ -2260,7 +2263,7 @@ function arrive(c){
     if(d.type==="plant"&&k==="parts") d.raw=Math.min(6,d.raw+1.5);
     if(d.type==="warehouse"&&k==="goods") d.stock=Math.min(12,d.stock+1);
     const lp=c.purpose.lot; c.purpose=null; c.state="park"; c.park=c.truck?rnd(TPARK[0],TPARK[1]):rnd(PARK[0],PARK[1]); c.at=lp||d; c.walk=lp?d:null; c.parkT=t; c.atDi=c.tDi; c.rt=null;
-  } else { if(c.load) svcUnload(c); c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.svc?rnd(1,3):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
+  } else { if(c.load||c.stops) svcUnload(c); c.state="home"; c.rt=null; c.cool=c.home===outside?rnd(.5,1.5):c.svc?rnd(1,3):c.truck?rnd(3,6):rnd(REST[0],REST[1]); }
 }
 function goHome(c){
   c.walk=null;
@@ -3715,7 +3718,7 @@ function finCalc(trips,hap,pk,rid){
   out.roads=road*budget.roads;
   let biz=0, nB=0, nS={}; for(const b of blds){ const S=SVC[b.type];
     if(S){ const k=SVC_BUD[b.type]; if(k){ out[k]+=(b.up||S.up)*budget[k]; nS[k]=(nS[k]||0)+1; } else { out.parking+=S.up; nS.parking=(nS.parking||0)+1; } }
-    else if(!isHome(b)||b.type==="mixed"){ biz+=CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1); nB++; } }
+    else if(!isHome(b)||b.type==="mixed"){ biz+=CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1)*postK(b); nB++; } }
   out.transit+=transitOut()*budget.transit; if(lines.length) nS.transit=(nS.transit||0)+lines.length;
   // businesses pay on what they make and on every trip their customers and workers make
   const inc={homes:TAX_HOME*people*(.5+hap/100)*taxR/9, biz:(biz+TAX_TRIP*trips)*taxB/9, park:nS.parking?(pk||0)*parkFee*(1-parkTurn(parkFee))*3:0, fares:(rid===undefined?tStat.month:rid)*FARE};
@@ -3973,24 +3976,28 @@ const SVC={
   recycle:{name:"Recycling center",short:"Recycling",cost:3000,up:55,R:850,cars:3,burn:1.1,done:"Recycling center built. Its trucks empty the bins inside the blue circle and sort it all to be used again.",tip:"Recycling center: its trucks empty the bins nearby and sort it all to be used again. It never fills up, and it's clean enough to sit near homes."},
   cemetery:{name:"Cemetery",short:"Cemetery",cost:1600,up:28,R:900,cars:2,fills:120,done:"Cemetery built. Its hearses come for the people who pass away inside the blue circle, and it slowly fills up.",tip:"Cemetery: quiet lawns and a chapel. Its hearses come for those who pass away nearby, and families rest easier with one close. It fills up grave by grave."},
   cremat:{name:"Crematorium",short:"Crematorium",cost:3200,up:50,R:900,cars:3,burn:.06,hold:5,done:"Crematorium built. Its hearses come for the people who pass away inside the blue circle.",tip:"Crematorium: costs more than a cemetery, but it never fills up and takes little room. Its hearses come for those who pass away nearby."},
+  postoffice:{name:"Post office",short:"Post office",cost:900,up:20,R:700,cars:2,done:"Post office built. Its vans take the post round the homes and businesses inside the blue circle.",tip:"Post office: its vans take the post round the streets nearby. Homes in reach are a little happier, and businesses do a little more trade, so they pay a little more tax."},
+  sorting:{name:"Mail sorting center",short:"Sorting center",cost:3800,up:65,R:1400,cars:3,done:"Sorting center built. Its trucks take the mail to the post offices and businesses inside the blue circle.",tip:"Mail sorting center: a big hall where the city's mail is sorted. Its trucks reach a long way and keep the post offices busy; homes in reach are happier and businesses do more trade, more so with a post office close by too."},
   busdepot:{name:"Bus depot",short:"Bus depot",cost:1800,up:25,tab:"transit",done:"Bus depot built. Now put bus stops beside your busy roads and join them up with Bus line.",tip:"Bus depot: home to the buses. Each bus line takes its buses from the nearest depot, up to 16 in each."},
   metrostn:{name:"Metro station",short:"Metro station",cost:2400,up:30,tab:"transit",done:"Metro station built. Build another, then tap Metro line and tap the stations in order.",tip:"Metro station: stairs down to trains that run underground, quick and out of the traffic. People within a long walk leave the car at home. Join stations up with Metro line."}
 };
 const SKEYS=Object.keys(SVC);
-const SVC_COLS={cemetery:"#6f8a62",cremat:"#9a917f",landfill:"#8a7653",incin:"#6b7279",recycle:"#4f8063",parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",gas:"#9aa3ab",nuclear:"#c8c4b8",solar:"#3b5f93",wind:"#c9d3da",water:"#5aa7d8",pump:"#3f8fc2",treat:"#4f8fb0",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#a8665a",highschool:"#a88f7f",college:"#b4a58c",daycare:"#e06aa6",depot:"#f08c1a",busdepot:"#8e9aa3",playground:"#c4862c",courts:"#4f7c68",dogpark:"#8a6a4a",sportsfield:"#8a6a58",garden:"#5f8f6f",stadium:"#7a8288",metrostn:"#8a8f96"};
+const SVC_COLS={postoffice:"#a8433a",sorting:"#8f5a4e",cemetery:"#6f8a62",cremat:"#9a917f",landfill:"#8a7653",incin:"#6b7279",recycle:"#4f8063",parking:"#6d7f8f",garage:"#8f8b82",park:"#6fbf4f",bigpark:"#3f8f3a",plaza:"#c9b99a",beach:"#e8c66a",marina:"#2f8fc2",power:"#8d5a4a",gas:"#9aa3ab",nuclear:"#c8c4b8",solar:"#3b5f93",wind:"#c9d3da",water:"#5aa7d8",pump:"#3f8fc2",treat:"#4f8fb0",fire:"#d63a2c",police:"#2d4e9c",clinic:"#e9e9ee",school:"#a8665a",highschool:"#a88f7f",college:"#b4a58c",daycare:"#e06aa6",depot:"#f08c1a",busdepot:"#8e9aa3",playground:"#c4862c",courts:"#4f7c68",dogpark:"#8a6a4a",sportsfield:"#8a6a58",garden:"#5f8f6f",stadium:"#7a8288",metrostn:"#8a8f96"};
 const VEH={fire:{len:16,wid:7,col:"#d62f22",cab:"#c02218",truck:true},police:{len:11.5,wid:6,col:"#f4f4f2",truck:false,doors:"#20305c"},clinic:{len:13,wid:6.6,col:"#f7f7f5",cab:"#f7f7f5",truck:true,stripe:"#e2493a"},
   school:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},highschool:{len:17,wid:6.8,col:"#f2c12e",cab:"#f2c12e",truck:true},depot:{len:14,wid:6.6,col:"#f08c1a",cab:"#e8e6df",truck:true},
   // garbage trucks: a compactor body behind the cab and an amber beacon (g picks the body and the markings)
   landfill:{len:16,wid:7,col:"#e2e1db",cab:"#3f6a50",truck:true,g:"garb"},incin:{len:16,wid:7,col:"#e2e1db",cab:"#3f6a50",truck:true,g:"garb"},recycle:{len:16,wid:7,col:"#5d8a6c",cab:"#e9e8e2",truck:true,g:"garb"},
   // hearses: a long black estate (m picks its shape), no light bar
-  cemetery:{len:14,wid:6.2,col:"#1f2226",truck:false,m:5,nobar:true},cremat:{len:14,wid:6.2,col:"#1f2226",truck:false,m:5,nobar:true}};
+  cemetery:{len:14,wid:6.2,col:"#1f2226",truck:false,m:5,nobar:true},cremat:{len:14,wid:6.2,col:"#1f2226",truck:false,m:5,nobar:true},
+  // the post: a red van, and a white box truck with a red cab
+  postoffice:{len:12,wid:6.2,col:"#a8433a",truck:false,m:3,nobar:true,g:"post"},sorting:{len:16,wid:7,col:"#ecebe5",cab:"#a8433a",truck:true,nobar:true,g:"post"}};
 // the Services bar in groups, so it stays tidy on a phone: each group's name, its drawing and the services in it
 const SGRP=[["safety","Safety","police",["fire","police"]],["health","Health","clinic",["clinic","cemetery","cremat"]],["edu","Schools","school",["daycare","school","highschool","college"]],
   ["trash","Garbage","bin",["landfill","incin","recycle"]],["post","Post","post",["postoffice","sorting"]],["roads","Roads","depot",["depot","parking","garage"]]];
 const grpOf=k=>(SGRP.find(g=>g[3].includes(k))||SGRP[SGRP.length-1])[0];
 let svcGrp="safety";
 // their budgets in Finance
-Object.assign(BUDK,{trash:"Garbage"}); Object.assign(SVC_BUD,{landfill:"trash",incin:"trash",recycle:"trash",cemetery:"health",cremat:"health"}); for(const k in BUDK) if(budget[k]===undefined) budget[k]=1;
+Object.assign(BUDK,{trash:"Garbage",post:"Post"}); Object.assign(SVC_BUD,{landfill:"trash",incin:"trash",recycle:"trash",cemetery:"health",cremat:"health",postoffice:"post",sorting:"post"}); for(const k in BUDK) if(budget[k]===undefined) budget[k]=1;
 const isSvc=b=>!!(BT[b.type]&&BT[b.type].svc), SMOKY=new Set(["factory","power","landfill","incin"]);
 // a nuclear plant keeps homes this far away; wind turbines face into the wind (it blows the smoke off the other way) and
 // stand this far apart so their blades clear each other
@@ -4027,7 +4034,7 @@ function utilFor(L,sup){ const c=compOf(L.acc); return (sup.pow.get(c)||0)>=3&&(
 // how happy each home is: power and water first, then the services in reach, less crime, illness, smoke and noise
 function cityHappy(){
   let sum=0, n=0; const sm=blds.filter(f=>SMOKY.has(f.type)), q=k=>Math.min(1.25,outK(budget[k]));
-  const qf=q("fire"), qp=q("police"), qh=q("health"), qe=q("edu"), qk=q("parks");
+  const qf=q("fire"), qp=q("police"), qh=q("health"), qe=q("edu"), qk=q("parks"), qpo=q("post");
   // taxes too high and families leave even a nice home
   hapTax=taxHappy(taxR); const leave=HAPPY_LEAVE+Math.max(0,taxR-15)*6;
   let ea=0, eh=0, en=0;
@@ -4040,6 +4047,7 @@ function cityHappy(){
     let f=0; for(const k of FUNK) if(hasCov(b,k)) f+=SVC[k].fun; h+=Math.min(14,f)*qk;
     if((b.crime||0)>.5) h-=12; if(b.sick) h-=6; if(b.fire) h-=20; if((b.trash||0)>1) h-=b.trash>2?14:8;
     if(hasCov(b,"cemetery")||hasCov(b,"cremat")) h+=3*qh; if(b.dead&&t-b.dead.t0>DEAD_LATE) h-=14;
+    if(hasCov(b,"postoffice")||hasCov(b,"sorting")) h+=4*qpo;
     for(const f of sm) if(Math.hypot(f.x-b.x,f.y-b.y)<POLL*1.4){ h-=10; break; }
     b.happy=clamp(h,0,100); sum+=b.happy*(b.cars.length||1); n+=b.cars.length||1;
     // people move out of a home that stays miserable
@@ -4116,6 +4124,9 @@ function svcDispatch(){
       const tg=pick(hs), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"bus"}],null); if(pl){ c.purpose={d:tg,kind:"bus",svc:true}; c.siren=false; startDrive(c,s,pl); } }
     // a garbage truck sets off for the fullest bins in reach, unless there's nowhere left to tip what it brings back
     else if(GARB.has(s.type)){ if(s.cons||s.full||(s.stock||0)>=GARB_STOCK) continue; for(let k=0;k<2;k++){ const c=freeVeh(s), tg=c&&trashNear(s,s.x,s.y,0); if(!tg||!trashGo(c,s,s.acc,tg)) break; } }
+    // a post van sets off on its round now and then (more often at a post office a sorting center keeps supplied), and a
+    // sorting center's trucks the same, further afield
+    else if(POST.has(s.type)){ if(s.cons||Math.random()>(s.mailT&&t-s.mailT<300?.8:.45)) continue; const c=freeVeh(s), tg=c&&postNear(s,s.x,s.y,0); if(tg) postGo(c,s,s.acc,tg); }
   }
 }
 // a service vehicle that won't get there after all: the job goes back on the list for another
@@ -4125,7 +4136,8 @@ function svcDrop(c){ const p=c.purpose, d=p.d; c.siren=false;
   else if(p.kind==="crime"&&d.patrol===c) d.patrol=null;
   else if(p.kind==="fix"&&d.spot&&d.spot.fixing===c) d.spot.fixing=null;
   else if(p.kind==="trash"&&d.tTruck===c) d.tTruck=null;
-  else if(p.kind==="dead"&&d.dead&&d.dead.hs===c) d.dead.hs=null; }
+  else if(p.kind==="dead"&&d.dead&&d.dead.hs===c) d.dead.hs=null;
+  else if(p.kind==="post"&&d.pTruck===c) d.pTruck=null; }
 // a service vehicle gets where it was going
 function svcArrive(c){
   const d=c.purpose.d, k=c.purpose.kind; c.siren=false;
@@ -4141,6 +4153,10 @@ function svcArrive(c){
     c.stops=(c.stops||0)+1; c.next=true; c.park=1.2+n*.4; }
   // a hearse waits a while at the house, then takes them back to the cemetery or crematorium
   else if(k==="dead"){ if(d.dead){ d.dead=null; c.load=1; } c.park=7; }
+  // the post goes through every letterbox along the street; a sorting center's truck drops its sacks at the door (and at
+  // a post office, the mail for its vans)
+  else if(k==="post"){ if(d.pTruck===c) d.pTruck=null; const r=c.truck?30:70; for(const q of blds) if(!isSvc(q)&&Math.hypot(q.x-d.x,q.y-d.y)<r) q.postT=t;
+    d.postT=t; if(d.type==="postoffice") d.mailT=t; if(c.home) c.home.done=(c.home.done||0)+1; c.stops=(c.stops||0)+1; c.next=true; c.park=c.truck?5:2.5; }
   else c.park=3;
   c.purpose=null; c.state="park"; c.at=d; c.atDi=c.tDi; c.rt=null;
 }
@@ -4177,9 +4193,12 @@ function trashNear(s,x,y,near){ const R=svcR(s.type); let best=null, bv=0;
 // send a garbage truck off from where it is (its depot, or the last street it emptied) to a building's bins
 function trashGo(c,from,acc,tg){ const pl=planRoute({seg:acc.seg,t:acc.t},[{b:tg,kind:"trash"}],null); if(!pl){ tg.tNo=t; return false; }
   tg.tTruck=c; c.purpose={d:tg,kind:"trash",svc:true}; c.siren=false; startDrive(c,from,pl,from===c.home?undefined:acc); return true; }
-// a garbage truck that's emptied one street's bins goes on to the next street nearby, until it's full or its round is done
-function svcNext(c){ const s=c.home, a=c.at; c.next=false;
-  if(!s||!GARB.has(s.type)||!a||!a.acc||(c.load||0)>=GARB_CAP*.8||(c.stops||0)>=6) return false;
+// a garbage truck that's emptied one street's bins goes on to the next street nearby, until it's full or its round is
+// done; a post van likewise
+function svcNext(c){ const s=c.home, a=c.at; c.next=false; if(!s||!a||!a.acc) return false;
+  // (a post van does a few streets a round, a sorting center's truck a couple of drops)
+  if(POST.has(s.type)){ if((c.stops||0)>=(c.truck?2:3)) return false; const tg=postNear(s,a.x,a.y,360); return !!tg&&postGo(c,a,a.acc,tg); }
+  if(!GARB.has(s.type)||(c.load||0)>=GARB_CAP*.8||(c.stops||0)>=6) return false;
   const tg=trashNear(s,a.x,a.y,320); return !!tg&&trashGo(c,a,a.acc,tg); }
 // back at its depot a garbage truck tips its load: onto the landfill, or into the incinerator's or recycling center's hall
 // (and a hearse brings someone back to be buried or cremated)
@@ -4201,6 +4220,7 @@ function svcReset(){ trashOn=firstTrash=firstDead=false; fullHint={}; }
 function svcCard(b,S,sts){
   if(S.fills) sts.push(istat(Math.round((b.fill||0)/S.fills*100)+"%","full"));
   else if(b.type==="cremat") sts.push(istat(Math.floor(b.done||0),"cremations"));
+  else if(POST.has(b.type)) sts.push(istat(Math.floor(b.done||0),b.type==="sorting"?"drops made":"streets delivered"));
   else if(b.type==="incin") sts.push(istat(Math.round(S.pow*(b.burnK||0)*outK(budOf(b.type))),"power made"));
   else if(b.type==="recycle") sts.push(istat(Math.floor((b.done||0)/GARB_CAP),"loads recycled"));
 }
@@ -4214,6 +4234,24 @@ const deathCov=b=>hasCov(b,"cemetery")||hasCov(b,"cremat");
 // someone in a home passes away
 function died(b){ b.dead={t0:t,hs:null};
   if(!firstDead){ firstDead=true; setHint(blds.some(s=>DEATH.has(s.type))?"Someone in town has passed away. A hearse is on its way from the cemetery.":"Someone in town has passed away, and there's nowhere to lay them to rest. Tap Services, then Health, and build a cemetery.",6); } }
+// ---------- post ----------
+// A post office's vans go round the streets in reach a few at a time; a sorting center's trucks take the mail to the
+// post offices and the businesses for a long way round. Homes the post reaches are a little happier, and businesses it
+// reaches do a little more trade, so they pay a little more tax
+const POST=new Set(["postoffice","sorting"]);
+const postCov=b=>hasCov(b,"postoffice")||hasCov(b,"sorting");
+const postK=b=>1+((hasCov(b,"postoffice")?.03:0)+(hasCov(b,"sorting")?.03:0))*Math.min(1.25,outK(budget.post));
+// the next stop on a round: somewhere in reach the post hasn't been for a while, nearest first once a round has begun
+// (a sorting center's trucks go to post offices and businesses, not homes)
+function postNear(s,x,y,near){ const R=svcR(s.type), so=s.type==="sorting"; let best=null, bv=0;
+  for(const b of blds){ if(b===s||b.pTruck||!b.acc||b.cons||t-(b.postT||-1e3)<90||b.tNo&&t-b.tNo<30) continue;
+    if(isSvc(b)?!(so&&b.type==="postoffice"):so&&isHome(b)&&b.type!=="mixed") continue;
+    if(Math.hypot(b.x-s.x,b.y-s.y)>R) continue; const dd=Math.hypot(b.x-x,b.y-y); if(near&&dd>near) continue;
+    const q=Math.min(600,t-(b.postT||-1e3))/600-dd/(near?300:1500)+hash(b.id,t|0)*.2; if(!best||q>bv){ best=b; bv=q; } }
+  return best; }
+// send a post van (or a sorting center's truck) off from where it is to its next stop
+function postGo(c,from,acc,tg){ const pl=planRoute({seg:acc.seg,t:acc.t},[{b:tg,kind:"post"}],null); if(!pl){ tg.tNo=t; return false; }
+  tg.pTruck=c; c.purpose={d:tg,kind:"post",svc:true}; c.siren=false; startDrive(c,from,pl,from===c.home?undefined:acc); return true; }
 // ---------- education ----------
 // How much of the town has a school in reach, and a high school or college. A town of educated people draws
 // offices, and needs a little less smoky industry
@@ -4833,6 +4871,7 @@ function drawSvc(b){
     vans([w*.05,w*.32],d/2-8,Math.PI/2);
   } else if(GARB.has(b.type)) return drawWaste(b);
   else if(DEATH.has(b.type)) return drawDeath(b);
+  else if(POST.has(b.type)) return drawPost(b);
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
 }
 // ---------- rubbish: the landfill, the incinerator and the recycling center ----------
@@ -5015,6 +5054,50 @@ function drawDeath(b){
     const p=toMap(b,chm.x*sc,chm.y*sc); if(M3) M3.push({k:"ch",x:p.x,y:p.y,a:0,s:.4,b});
     b.chim={x:p.x,y:p.y};
     vans([11.9,17.7,23.5],d/2-7); trees([[-24,19,3],[22,-17,2.6],[10,-1,2.4],[-26,-20,3]]);
+  }
+  if(!b.acc&&animT-b.grow>1) needsRoad(b);
+}
+// ---------- the post office and the mail sorting center ----------
+function drawPost(b){
+  const sc=growth(b,.5), w=b.w, d=b.d, home=b.cars.filter(c=>c.state==="home");
+  const tr=()=>{ ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(b.ang-Math.PI/2); ctx.scale(sc,sc); };
+  const R=(x,y,w2,d2,c)=>{ ctx.fillStyle=c; ctx.fillRect(x,y,w2,d2); }, G=(x,y,w2,d2,h,col,z)=>gbox(b,x,y,w2,d2,h,col,z);
+  const vans=(xs,y)=>{ if(!LOD) return; home.forEach((c,i)=>{ if(i<xs.length){ const p=toMap(b,xs[i]*sc,y*sc); parked(c,p.x,p.y,b.ang); } }); };
+  const bays=(x0,y0,n,bw,dd)=>{ ctx.strokeStyle=dark?"rgba(255,255,255,.35)":"rgba(255,255,255,.8)"; ctx.lineWidth=.6; ctx.beginPath(); for(let i=0;i<=n;i++){ ctx.moveTo(x0+i*bw,y0); ctx.lineTo(x0+i*bw,y0+dd); } ctx.stroke(); };
+  const trees=pts=>{ if(!LOD) return; for(const [x,y,r] of pts){ const p=toMap(b,x*sc,y*sc); tree(p.x,p.y,r*sc); } };
+  const grass=dk("#9fc77a",.9), pave=dk("#cfcbc0",.9), red="#a8433a";
+  if(b.type==="postoffice"){
+    // a brick post office: the counter at the front under a red canopy and its sign, a pillar box on the pavement, the
+    // sorting room's roller door, and the vans' yard to one side
+    const q=[-20,-14,26,19];
+    lot(b,sc,-w/2,-d/2,w,d,0,pave);
+    tr(); R(-w/2,-d/2,w,3,grass); R(-w/2,-d/2,2.5,d-6,grass); R(8,-15,13,32,dk("#bdb9b0",.9)); bays(8.5,5,2,6,12);
+    roofBlock(q[0],q[1],q[2],q[3],"#b9b2a6","#8b8378"); rbox(-14,-10,6,4,0,0,1.4,"#d4d8db","#9aa0a5");
+    G(-17,5,13,2.8,.4,red,4.4); G(-20.6,12.4,1.3,1.3,2.4,"#b8392f");
+    if(!rec3d){ ctx.fillStyle="#b8392f"; ctx.beginPath(); ctx.arc(-20,13,.9,0,7); ctx.fill(); }
+    ctx.restore();
+    if(rec3d){ B3(b,q,{roof:"flat",H:8.5,wall:"brick",wc:"#a6604c",par:.7,pc:"#d6cfc2",rc:"#a9a7a1",base:"#77726a",doors:[[-12,-8],[0,5]]});
+      d3(b,{k:"door",x:-10,y:q[1]+q[3],w:3.2,h:3.6,col:"#3b4a58",lamp:false},{k:"gdoor",x0:0,x1:5,y:q[1]+q[3],h:4,m:"roller",un:3,vn:3,col:"#c9ccce"},
+        {k:"sign",x0:-18,x1:-2,y:q[1]+q[3],z:5.4,h:1.7,row:5,set:3}); }
+    else bodyShadow(b,sc,8.5,[q]);
+    vans([11.5,17.5],d/2-7); trees([[-20,-15,3],[3,-16,2.8],[-21,0,2.6]]);
+  } else {
+    // a mail sorting center: the long hall with a red band and a row of loading docks, the trucks backed up to them in
+    // the yard, the offices with the sign, and staff parking
+    const q=[-46,-32,62,38], of=[22,-6,26,16], fy=q[1]+q[3];
+    lot(b,sc,-w/2,-d/2,w,d,0,dk("#cbc7bd",.9));
+    tr(); R(20,-34,30,26,grass); R(-w/2,d/2-1.6,w,1.6,grass); R(22,13,26,21,pave); bays(23,14,4,6,11);
+    ctx.strokeStyle=dark?"rgba(255,255,255,.3)":"rgba(255,255,255,.7)"; ctx.lineWidth=.6; ctx.beginPath(); for(let x=-44;x<=10;x+=10){ ctx.moveTo(x,fy+1); ctx.lineTo(x,fy+17); } ctx.stroke();
+    roofBlock(q[0],q[1],q[2],q[3],"#c6cbce","#8d9399"); ctx.fillStyle="rgba(255,255,255,.18)"; for(let x=q[0]+2;x<q[0]+q[2]-1;x+=2.6) ctx.fillRect(x,q[1]+.8,.5,q[3]-1.6);
+    roofBlock(of[0],of[1],of[2],of[3],"#a9a7a1","#77756f"); for(const x of [-30,-6]) rbox(x,-24,7,5,0,0,1.6,"#d4d8db","#9aa0a5");
+    G(q[0],fy-.4,q[2],.5,1.2,red,9.6);
+    ctx.restore();
+    if(rec3d){ B3(b,q,{roof:"low",H:12,rise:1.8,wall:"metal",wc:"#dedbd3",rc:"#8f969c",rm:"metal",base:"#6f6a62",along:true,doors:[-42,-32,-22,-12,-2,8].map(x=>[x,x+6])});
+      for(const x of [-42,-32,-22,-12,-2,8]) d3(b,{k:"gdoor",x0:x,x1:x+6,y:fy,h:4.6,m:"roller",un:3,vn:3,col:"#c9ccce"});
+      B3(b,of,{roof:"flat",H:10,wall:"office2",wc:"#e6e3dc",par:.8,pc:"#d9d6cf",rc:"#a9a7a1",base:"#77726a",doors:[[30,34]]});
+      d3(b,{k:"door",x:32,y:of[1]+of[3],w:3.6,h:4.4,col:"#3b4a58",lamp:false},{k:"sign",x0:24,x1:46,y:of[1]+of[3],z:6.4,h:2.2,row:6,set:3}); }
+    else { bodyShadow(b,sc,12,[q]); bodyShadow(b,sc,10,[of]); }
+    vans([-39,-29,-19],fy+8.4); trees([[24,-30,3.6],[34,-28,3.2],[45,-30,3.4],[46,-14,3],[-48,-34,3]]);
   }
   if(!b.acc&&animT-b.grow>1) needsRoad(b);
 }
@@ -5581,6 +5664,9 @@ function svcMarks(c,L,W){
     ctx.fillStyle="#d9952e"; ctx.fillRect(L/2-L*.2,-.7,1.1,1.4); }
   // a hearse: chrome rails along the edges of its long roof
   else if(DEATH.has(k)){ ctx.fillStyle="rgba(200,204,208,.75)"; ctx.fillRect(-L*.42,-W/2+.9,L*.46,.3); ctx.fillRect(-L*.42,W/2-1.2,L*.46,.3); }
+  // the post: a red band down the truck's box, a pale stripe along the van
+  else if(VEH[k]&&VEH[k].g==="post"){ if(c.truck){ ctx.fillStyle="#a8433a"; ctx.fillRect(-L/2,-W/2,L*.72,.85); ctx.fillRect(-L/2,W/2-.85,L*.72,.85); }
+    else { ctx.fillStyle="rgba(240,214,140,.85)"; ctx.fillRect(-L/2+.6,-W/2+.15,L*.78,.35); ctx.fillRect(-L/2+.6,W/2-.5,L*.78,.35); } }
 }
 // a service vehicle, ready to go out from its station
 function svcCar(b,kind){ const V=VEH[kind], c=newCar(b,V.truck); Object.assign(c,{len:V.len,wid:V.wid,col:V.col,cab:V.cab||null,svc:kind,cool:rnd(.5,2),m:V.m||0}); return c; }
@@ -6181,7 +6267,11 @@ const GLY={
   recycle:'<path d="M4.6 13.4 8.4 6.8M6.3 6.7l2.1.1.9 1.9M11.6 6.8l3.8 6.6M16 11.4l-.6 2-2.1.4M13.8 15.6H6.2M7.8 14l-1.6 1.6 1.6 1.6" class="s"/>',
   // deathcare: a headstone with a cross and a smaller one beside it; a chapel of rest with its short chimney
   cemetery:'<path d="M4.4 16.4V8.2a3.6 3.6 0 0 1 7.2 0v8.2M8 7v5.2M6.2 8.8h3.6M2.6 16.4h14.8M13.8 16.4v-3.8a1.7 1.7 0 0 1 3.4 0v3.8" class="s"/>',
-  cremat:'<path d="M2.8 16.6h14.4M4.4 16.6v-6.4L10 6l5.6 4.2v6.4M12.8 8.1V3.4h2.2v6.4M8.4 16.6v-3.6h3.2v3.6" class="s"/>'
+  cremat:'<path d="M2.8 16.6h14.4M4.4 16.6v-6.4L10 6l5.6 4.2v6.4M12.8 8.1V3.4h2.2v6.4M8.4 16.6v-3.6h3.2v3.6" class="s"/>',
+  // the post: an envelope, a pillar box, a parcel
+  post:'<rect x="3" y="5.2" width="14" height="9.8" rx="1.3" class="s"/><path d="m3.6 6 6.4 5 6.4-5" class="s"/>',
+  postoffice:'<path d="M6 16.6V7.6a4 4 0 0 1 8 0v9M4.6 16.6h10.8M8 9.4h4M5.6 6.6h8.8" class="s"/>',
+  sorting:'<path d="M3.4 6.6 10 3.4l6.6 3.2v7L10 16.8l-6.6-3.2zM3.4 6.6 10 9.8l6.6-3.2M10 9.8v7M6.6 5l6.6 3.2" class="s"/>'
 };
 // which drawing each zone, building and service uses
 const ZG={gas:"power",nuclear:"power",treat:"pump",res:"house",bighouse:"house",town:"house",dense:"apts",high:"tower",com:"shop",center:"shop",mall:"shop",off:"office",ind:"factory",plant:"factory",datacenter:"data",clinic:"clinic",highschool:"school",college:"school",playground:"park",dogpark:"park",garden:"bigpark",courts:"ball",sportsfield:"ball",stadium:"stadium",busdepot:"bus",stop:"bus",metrostn:"metro"};
@@ -6248,7 +6338,7 @@ function infoHTML(b){
   const sts=[];
   if(home){ const n=b.cars.length; sts.push(istat(n,n===1?"household":"households")); if(b.happy!==undefined) sts.push(istat(Math.round(b.happy)+"%","happy"));
     sts.push(istat(money(TAX_HOME*n*(.5+(b.happy||50)/100)*taxR/9),"tax a month")); }
-  if(b.pins&&!S){ if(!home) sts.push(istat(money(CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1)*taxB/9),"tax a month")); if(b.bays) sts.push(istat(b.bays,b.bays===1?"parking space":"parking spaces")); }
+  if(b.pins&&!S){ if(!home) sts.push(istat(money(CITY_TAX_BIZ*(b.k||1)*(b.type==="mixed"?.6:1)*postK(b)*taxB/9),"tax a month")); if(b.bays) sts.push(istat(b.bays,b.bays===1?"parking space":"parking spaces")); }
   if(S){ sts.push(istat(money((b.up||S.up)*budOf(b.type)),"upkeep a month"));
     if(S.util){ const [us,cp]=utilStat[S.util]; sts.push(istat(Math.round(S.cap*outK(budOf(b.type))),S.util==="pow"?"power made":"water made")); h+='<div class="ist">'+sts.join("")+'</div><div class="ifoot">The town uses '+Math.round(us)+' of the '+Math.round(cp)+' '+(S.util==="pow"?"power":"water")+' it makes.</div>'; sts.length=0; }
     else if(S.R){ let n=0; const R=svcR(b.type); for(const q of blds) if(isHome(q)&&svcD(b,q.x,q.y)<R) n++; sts.push(istat(n,n===1?"home in reach":"homes in reach")); }
@@ -6270,7 +6360,8 @@ function infoHTML(b){
       cov("fire","fire","Fire"); cov("police","police","Police"); cov("clinic","clinic","Health");
       if(home){ cov("school","school","School"); c.push(ichip("park","Parks",FUNK.some(q=>hasCov(b,q))?"on":"off")); }
       c.push(ichip("bin","Garbage",(b.trash||0)>1?"no":garbCov(b)?"on":"off"));
-      if(home) c.push(ichip("cemetery","Cemetery",b.dead&&t-b.dead.t0>DEAD_LATE?"no":deathCov(b)?"on":"off")); }
+      if(home) c.push(ichip("cemetery","Cemetery",b.dead&&t-b.dead.t0>DEAD_LATE?"no":deathCov(b)?"on":"off"));
+      c.push(ichip("post","Post",postCov(b)?"on":"off")); }
     h+='<div class="isec">'+(S?"Status":"Services in reach")+'</div><div class="ich">'+c.join("")+'</div>'; }
   if(S&&S.tip) h+='<div class="ifoot">'+S.tip+'</div>';
   return h;
@@ -6352,7 +6443,7 @@ function dockSel(){
   document.querySelectorAll("#modeRow [data-tool]").forEach(b=>b.classList.toggle("sel",b.dataset.tool===tool));
   $("laneRow").classList.toggle("hide",tool!=="road"||roadMode==="lanes"); $("sideRow").classList.toggle("hide",tool!=="road"||roadMode!=="lanes");
 }
-const TAB_HINT={svc:"Services: safety, health, schools, garbage and roads. Pick a group, then a building. Each one costs money to build and a little every month.",
+const TAB_HINT={svc:"Services: safety, health, schools, garbage, post and roads. Pick a group, then a building. Each one costs money to build and a little every month.",
   util:"Utilities: nothing grows without power and water. They reach everything joined to them by road. Coal is cheap but smoky, gas is cleaner, nuclear makes the most; sun and wind are clean but small.",
   parks:"Parks: parks, playgrounds, sports courts and fields, dog parks, gardens and a stadium make the homes around them happier. Beaches and marinas go on the shore. Beaches, marinas, gardens and the stadium draw tourists who fill hotels.",
   transit:"Transport: build a bus depot, put bus stops beside busy roads, then draw a bus line through them. Metro stations go beside roads too, and Metro line links them underground. People near a stop or station leave the car at home."};
@@ -11117,7 +11208,7 @@ window.__gridlock={
       appr:approaches(n).map(p=>({seg:p.s.id,lanes:p.s.lanes,from:compass(p.d),set:laneSet(n,p.s)}))}; },
   openTune:id=>{ const n=nodes.get(id); if(n){ setTool("tune"); openTune(n); } return !!n; },
   turnOK:(nodeId,inSeg,outSeg)=>{ const n=nodes.get(nodeId); return turnOK(n,segs.get(inSeg),turnType(n,segs.get(inSeg),segs.get(outSeg))); },
-  route:(fromId,toId)=>{ const a=blds.find(q=>q.id===fromId), b=blds.find(q=>q.id===toId); if(!a||!b||!a.acc) return null; const pl=planRoute({seg:a.acc.seg,t:a.acc.t},[{b}],null); return pl&&{cost:+pl.cost.toFixed(2),legs:pl.legs.map(l=>l.seg.id)}; },
+  route:(fromId,toId,svc)=>{ const a=blds.find(q=>q.id===fromId), b=blds.find(q=>q.id===toId); if(!a||!b||!a.acc) return null; const sa={seg:a.acc.seg,t:a.acc.t}, pl=planRoute(sa,[{b}],null); return pl&&{cost:+pl.cost.toFixed(2),legs:pl.legs.map(l=>l.seg.id),ped:pl.legs.some(l=>l.seg.rt==="ped")}; },
   levelUp:()=>{ levelUp(); },
   city:()=>({money:Math.round(res.road),people,month,util:utilStat,happy:Math.round(happyAvg),monthT:+monthT.toFixed(1),lastIn,lastOut,lots:lots.length,empty:lots.filter(L=>!L.b).length,closed:closedN,
     grown:lots.filter(L=>L.b).map(L=>L.b.type).reduce((o,k)=>(o[k]=(o[k]||0)+1,o),{}),dem:Object.fromEntries(ZKEYS.map(k=>[k,+cityD[k].toFixed(2)])),tray:trayCount(),level}),
@@ -11155,6 +11246,9 @@ window.__gridlock={
     return {dead:ds.length,late:ds.filter(b=>t-b.dead.t0>DEAD_LATE).length,sent:ds.filter(b=>b.dead.hs).length,cov:blds.filter(b=>isHome(b)&&deathCov(b)).length,
       hearses:cars.filter(c=>c.svc&&DEATH.has(c.svc)).map(c=>c.state+(c.purpose?":"+c.purpose.kind:"")+(c.load?"+":"")),
       sites:blds.filter(b=>DEATH.has(b.type)).map(b=>({t:b.type,fill:+(b.fill||0).toFixed(1),stock:+(b.stock||0).toFixed(2),done:+(b.done||0).toFixed(2),burn:+(b.burnK||0).toFixed(2),v:b.v||0,full:!!b.full,busy:!!b.busy}))}; },
+  // post: how many homes and businesses it reaches, how many had post lately, and the vans and trucks out
+  post:()=>({cov:blds.filter(b=>!isSvc(b)&&postCov(b)).length,n:blds.filter(b=>!isSvc(b)).length,fresh:blds.filter(b=>!isSvc(b)&&t-(b.postT||-1e3)<200).length,
+    vans:cars.filter(c=>c.svc&&POST.has(c.svc)).map(c=>c.svc[0]+":"+c.state+(c.purpose?":"+c.purpose.kind:"")),sites:blds.filter(b=>POST.has(b.type)).map(b=>({t:b.type,done:b.done||0,mail:b.mailT?Math.round(t-b.mailT):null}))}),
   waste:(v,f)=>{ if(v!==undefined&&v!==null){ trashOn=true; for(const b of blds) if(!isSvc(b)&&!b.cons) b.trash=v; } if(f!==undefined) for(const b of blds) if(b.type==="landfill") b.fill=f*SVC.landfill.fills;
     const ts=blds.filter(b=>!isSvc(b)).map(b=>b.trash||0);
     return {on:trashOn,n:ts.length,piled:ts.filter(v=>v>1).length,max:+Math.max(0,...ts).toFixed(2),avg:ts.length?+(ts.reduce((a,v)=>a+v,0)/ts.length).toFixed(2):0,
