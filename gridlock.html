@@ -1885,6 +1885,7 @@ function juncCost(n,sIn,sOut,tt){
 }
 function cong(s){ return .55*(carsOn.get(s.id)||0)/Math.max(1,s.len*totL(s)/32); }
 // a search state is "just got to one end of a road": 2*road + 1 at its b end, + 0 at its a end
+let pedK=12;     // what a pedestrian street costs a route on top of its length (less for service vehicles)
 function dijkstra(acc,onlyNode){
   const M=segArr.length*2;
   if(DIST.length<M){ DIST=new Float64Array(M*2+16); PREV=new Int32Array(M*2+16); }
@@ -1899,8 +1900,9 @@ function dijkstra(acc,onlyNode){
       const s=segs.get(id); if(s===sIn&&deg>1) continue;          // no U-turns except at dead ends
       if(!dirL(s,u.id)) continue;                                  // the wrong way up a one-way road
       const tt=turnType(u,sIn,s); if(deg>=3&&!moveOK(u,sIn,s,tt)) continue;
-      // (cars keep off a pedestrian street unless the way round is a long one, or there's a door on it)
-      const k2=s.ix*2+(s.a===u.id?1:0), c=du+juncCost(u,sIn,s,tt)+s.len/spd(s)*(1+cong(s))+(s.rt==="ped"?12:0);
+      // (cars keep off a pedestrian street unless the way round is a long one, or there's a door on it; service
+      // vehicles much less so, see svcPlan)
+      const k2=s.ix*2+(s.a===u.id?1:0), c=du+juncCost(u,sIn,s,tt)+s.len/spd(s)*(1+cong(s))+(s.rt==="ped"?pedK:0);
       if(c<DIST[k2]){ DIST[k2]=c; PREV[k2]=k; h.push(c,k2); }
     }
   }
@@ -1937,6 +1939,11 @@ function makeLegs(sa,via,ea){
   return legs;
 }
 const accsOf=b=>b.accs&&b.accs.length?b.accs:b.acc?[b.acc]:[];
+// a service vehicle's route (fire, police, ambulance, garbage, hearse, post, repairs, the school bus): it may cut along
+// a pedestrian street when that's the way to the job, as it would in a real town. It only shies away from one a
+// little, and on a call-out with its siren on hardly at all
+function svcPlan(sa,targets,onlyNode,urgent){ pedK=urgent?.5:3; try{ return planRoute(sa,targets,onlyNode); } finally{ pedK=12; } }
+const carPlan=(c,sa,targets,onlyNode)=>c&&c.svc&&!c.bus?svcPlan(sa,targets,onlyNode,!!c.siren):planRoute(sa,targets,onlyNode);
 function planRoute(sa,targets,onlyNode){
   dijkstra(sa,onlyNode);
   let bestT=null, bestA=null, bs=Infinity;
@@ -2167,7 +2174,7 @@ function reanchor(c){
     if(p.d>segHW(s)+12) continue; const al=Math.abs(hx*s.ux+hy*s.uy), sc=p.d-al*8; if(sc<bd){ bd=sc; bs={s,t:clamp(p.t,.002,.998)}; } }
   if(!bs){ poof(c); return; }
   const dot=hx*bs.s.ux+hy*bs.s.uy, only=Math.abs(dot)>.5?(dot>0?bs.s.b:bs.s.a):null;
-  const pl=planRoute({seg:bs.s.id,t:bs.t},[{b:tgt}],only)||planRoute({seg:bs.s.id,t:bs.t},[{b:tgt}],null);
+  const pl=carPlan(c,{seg:bs.s.id,t:bs.t},[{b:tgt}],only)||carPlan(c,{seg:bs.s.id,t:bs.t},[{b:tgt}],null);
   if(!pl){ poof(c); return; }
   const v=c.v; startDrive(c,null,pl); c.v=v;
 }
@@ -2271,7 +2278,7 @@ function goHome(c){
   if(!from||!from.acc||!home.acc){ c.state="home"; c.cool=2; return; }
   // out the way it came in, or the other drive if that's quicker
   let pl=null, fa=null;
-  for(const a of accsOf(from)){ const q=planRoute({seg:a.seg,t:a.t},[{b:home}],null); if(q&&(!pl||q.cost+(a.di===c.atDi?0:4)<pl.cost)){ pl=q; fa=a; } }
+  for(const a of accsOf(from)){ const q=carPlan(c,{seg:a.seg,t:a.t},[{b:home}],null); if(q&&(!pl||q.cost+(a.di===c.atDi?0:4)<pl.cost)){ pl=q; fa=a; } }
   if(!pl){ c.state="home"; c.cool=2; return; }
   startDrive(c,from,pl,fa);
 }
@@ -2387,7 +2394,7 @@ function reroute(c){
   const A=nodes.get(s.a), dot=Math.cos(c.ang)*s.ux+Math.sin(c.ang)*s.uy; if(Math.abs(dot)<.7) return false;
   const tt=clamp(((c.x-A.x)*s.ux+(c.y-A.y)*s.uy)/s.len,.002,.998), ahead=dot>0?s.b:s.a, tgt=tgtOf(c);
   if(!tgt.acc) return false;
-  const pl=planRoute({seg:s.id,t:tt},[{b:tgt}],ahead); if(!pl) return false;
+  const pl=carPlan(c,{seg:s.id,t:tt},[{b:tgt}],ahead); if(!pl) return false;
   const old=rt.legs.slice(c.leg).map(L=>L.seg), nu=pl.legs.map(L=>L.seg.id);
   if(old.length===nu.length&&old.every((id,i)=>id===nu[i])) return false;
   // what the way it's going now costs, worked out the same way
@@ -4100,7 +4107,7 @@ function sendVeh(kind,tgt,why){
   let best=null;
   for(const s of blds){ if((kind.has?!kind.has(s.type):s.type!==kind)||!s.acc||s.full||s.busy) continue; const R=svcR(s.type); if(Math.hypot(s.x-tgt.x,s.y-tgt.y)>R*1.6) continue;
     const c=freeVeh(s); if(!c) continue;
-    const pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tgt,kind:why}],null); if(pl&&(!best||pl.cost<best.pl.cost)) best={s,c,pl}; }
+    const pl=svcPlan({seg:s.acc.seg,t:s.acc.t},[{b:tgt,kind:why}],null,why==="fire"||why==="sick"); if(pl&&(!best||pl.cost<best.pl.cost)) best={s,c,pl}; }
   if(!best) return null;
   best.c.purpose={d:tgt,kind:why,svc:true}; best.c.siren=why==="fire"||why==="sick"; startDrive(best.c,best.s,best.pl);
   return best.c;
@@ -4116,12 +4123,12 @@ function svcDispatch(){
   for(const s of blds){ if(!s.acc) continue;
     if(s.type==="police"){ const c=freeVeh(s); if(!c) continue; let tg=null, tc=.35;
       for(const b of blds){ if(b.crime>tc&&!b.patrol&&b.acc&&Math.hypot(b.x-s.x,b.y-s.y)<svcR("police")){ tc=b.crime; tg=b; } }
-      if(tg){ const pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"crime"}],null); if(pl){ tg.patrol=c; c.purpose={d:tg,kind:"crime",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
+      if(tg){ const pl=svcPlan({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"crime"}],null); if(pl){ tg.patrol=c; c.purpose={d:tg,kind:"crime",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
     else if(s.type==="depot"){ const c=freeVeh(s); if(!c) continue; let tg=null, tc=.72;
       for(const g of segs.values()){ if(g.fixing||g.over||g.hwy||(g.cond===undefined?1:g.cond)>=tc) continue; const A=nodes.get(g.a), B=nodes.get(g.b); if(projSeg(s.x,s.y,A.x,A.y,B.x,B.y).d>svcR("depot")) continue; tc=g.cond; tg=g; }
-      if(tg){ const spot=roadSpot(tg), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:spot,kind:"fix"}],null); if(pl){ tg.fixing=c; c.purpose={d:spot,kind:"fix",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
+      if(tg){ const spot=roadSpot(tg), pl=svcPlan({seg:s.acc.seg,t:s.acc.t},[{b:spot,kind:"fix"}],null); if(pl){ tg.fixing=c; c.purpose={d:spot,kind:"fix",svc:true}; c.siren=false; startDrive(c,s,pl); } } }
     else if((s.type==="school"||s.type==="highschool")&&Math.random()<.25){ const c=freeVeh(s); if(!c) continue; const hs=blds.filter(b=>isHome(b)&&b.acc&&Math.hypot(b.x-s.x,b.y-s.y)<svcR(s.type)); if(!hs.length) continue;
-      const tg=pick(hs), pl=planRoute({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"bus"}],null); if(pl){ c.purpose={d:tg,kind:"bus",svc:true}; c.siren=false; startDrive(c,s,pl); } }
+      const tg=pick(hs), pl=svcPlan({seg:s.acc.seg,t:s.acc.t},[{b:tg,kind:"bus"}],null); if(pl){ c.purpose={d:tg,kind:"bus",svc:true}; c.siren=false; startDrive(c,s,pl); } }
     // a garbage truck sets off for the fullest bins in reach, unless there's nowhere left to tip what it brings back
     else if(GARB.has(s.type)){ if(s.cons||s.full||(s.stock||0)>=GARB_STOCK) continue; for(let k=0;k<2;k++){ const c=freeVeh(s), tg=c&&trashNear(s,s.x,s.y,0); if(!tg||!trashGo(c,s,s.acc,tg)) break; } }
     // a post van sets off on its round now and then (more often at a post office a sorting center keeps supplied), and a
@@ -4191,7 +4198,7 @@ function trashNear(s,x,y,near){ const R=svcR(s.type); let best=null, bv=0;
     const q=v-dd/(near?160:900); if(!best||q>bv){ best=b; bv=q; } }
   return best; }
 // send a garbage truck off from where it is (its depot, or the last street it emptied) to a building's bins
-function trashGo(c,from,acc,tg){ const pl=planRoute({seg:acc.seg,t:acc.t},[{b:tg,kind:"trash"}],null); if(!pl){ tg.tNo=t; return false; }
+function trashGo(c,from,acc,tg){ const pl=svcPlan({seg:acc.seg,t:acc.t},[{b:tg,kind:"trash"}],null); if(!pl){ tg.tNo=t; return false; }
   tg.tTruck=c; c.purpose={d:tg,kind:"trash",svc:true}; c.siren=false; startDrive(c,from,pl,from===c.home?undefined:acc); return true; }
 // a garbage truck that's emptied one street's bins goes on to the next street nearby, until it's full or its round is
 // done; a post van likewise
@@ -4250,7 +4257,7 @@ function postNear(s,x,y,near){ const R=svcR(s.type), so=s.type==="sorting"; let 
     const q=Math.min(600,t-(b.postT||-1e3))/600-dd/(near?300:1500)+hash(b.id,t|0)*.2; if(!best||q>bv){ best=b; bv=q; } }
   return best; }
 // send a post van (or a sorting center's truck) off from where it is to its next stop
-function postGo(c,from,acc,tg){ const pl=planRoute({seg:acc.seg,t:acc.t},[{b:tg,kind:"post"}],null); if(!pl){ tg.tNo=t; return false; }
+function postGo(c,from,acc,tg){ const pl=svcPlan({seg:acc.seg,t:acc.t},[{b:tg,kind:"post"}],null); if(!pl){ tg.tNo=t; return false; }
   tg.pTruck=c; c.purpose={d:tg,kind:"post",svc:true}; c.siren=false; startDrive(c,from,pl,from===c.home?undefined:acc); return true; }
 // ---------- education ----------
 // How much of the town has a school in reach, and a high school or college. A town of educated people draws
@@ -11208,7 +11215,7 @@ window.__gridlock={
       appr:approaches(n).map(p=>({seg:p.s.id,lanes:p.s.lanes,from:compass(p.d),set:laneSet(n,p.s)}))}; },
   openTune:id=>{ const n=nodes.get(id); if(n){ setTool("tune"); openTune(n); } return !!n; },
   turnOK:(nodeId,inSeg,outSeg)=>{ const n=nodes.get(nodeId); return turnOK(n,segs.get(inSeg),turnType(n,segs.get(inSeg),segs.get(outSeg))); },
-  route:(fromId,toId,svc)=>{ const a=blds.find(q=>q.id===fromId), b=blds.find(q=>q.id===toId); if(!a||!b||!a.acc) return null; const sa={seg:a.acc.seg,t:a.acc.t}, pl=planRoute(sa,[{b}],null); return pl&&{cost:+pl.cost.toFixed(2),legs:pl.legs.map(l=>l.seg.id),ped:pl.legs.some(l=>l.seg.rt==="ped")}; },
+  route:(fromId,toId,svc)=>{ const a=blds.find(q=>q.id===fromId), b=blds.find(q=>q.id===toId); if(!a||!b||!a.acc) return null; const sa={seg:a.acc.seg,t:a.acc.t}, pl=svc?svcPlan(sa,[{b}],null,svc==="urgent"):planRoute(sa,[{b}],null); return pl&&{cost:+pl.cost.toFixed(2),legs:pl.legs.map(l=>l.seg.id),ped:pl.legs.some(l=>l.seg.rt==="ped")}; },
   levelUp:()=>{ levelUp(); },
   city:()=>({money:Math.round(res.road),people,month,util:utilStat,happy:Math.round(happyAvg),monthT:+monthT.toFixed(1),lastIn,lastOut,lots:lots.length,empty:lots.filter(L=>!L.b).length,closed:closedN,
     grown:lots.filter(L=>L.b).map(L=>L.b.type).reduce((o,k)=>(o[k]=(o[k]||0)+1,o),{}),dem:Object.fromEntries(ZKEYS.map(k=>[k,+cityD[k].toFixed(2)])),tray:trayCount(),level}),
