@@ -412,6 +412,10 @@ body.dark #demPill .dq i{background:rgba(255,255,255,.12)}
 .ivk .sw.lv i{width:100%;height:9px;border-radius:2px;margin-bottom:3px}
 .ivk p{margin:7px 0 0;font-size:12px;line-height:1.4;color:var(--soft)}
 @media (max-width:640px){ #ivKey p{display:none} }
+#infoPanel .im.lv i{display:flex;gap:3px;height:7px;background:none;border-radius:0}
+#infoPanel .im.lv b{flex:1;border-radius:2px;background:var(--chipB);overflow:hidden}
+#infoPanel .im.lv s.nx{opacity:.55}
+#infoPanel .ivwhy{margin:-3px 0 2px 100px;font-size:11.5px;font-weight:600;color:var(--soft)}
 /* the card for a building you tap */
 #infoPanel{position:fixed;right:calc(env(safe-area-inset-right) + 10px);top:calc(env(safe-area-inset-top) + 58px);width:306px;max-height:calc(100dvh - 200px);overflow:auto;z-index:6;
   background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:12px 14px 13px;font-size:13px;color:var(--ink);animation:infoIn .18s ease-out}
@@ -6056,6 +6060,7 @@ const POLLUTE={factory:[.6,170],power:[.7,220],plant:[.3,120],warehouse:[.12,90]
 // muted map colours: bad to good, light to heavy smoke, in reach of a service, and traffic from flowing to jammed
 const IVR={ryg:["#b8503c","#dcae4c","#4f9356"],smog:["#ddd0ad","#a8875a","#5f4630"],cov:["#cfe0b4","#3f8a52"],flow:["#4f9356","#dcae4c","#b8503c"]};
 const IVC={ok:"#4f9356",no:"#b8503c",pow:"#d5a03a",wat:"#4a86b8",wsrc:"#2f5f8f",src:"#35648f",smog:"#6b5038",edu:["#b8503c","#dcae4c","#8fbb6e","#3f7f4e"]};
+const IVLVC=["#cfc7b6","#a9c98d","#79b06a","#4f9356","#2f6b45"];
 const RGBM={}; const rgbOf=h=>RGBM[h]||(RGBM[h]=[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]);
 function ramp(R,v){ v=clamp(v,0,1)*(R.length-1); const i=Math.min(R.length-2,v|0), f=v-i, a=rgbOf(R[i]), b=rgbOf(R[i+1]); return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f]; }
 const ivUses=b=>!b.cons&&useOf(b)>0&&!(SVC[b.type]&&SVC[b.type].util);
@@ -6072,6 +6077,7 @@ const ivCovB=V=>b=>V.cov.includes(b.type)?rgbOf(IVC.src):isSvc(b)||b.cons||V.hom
 const IVIEWS=[
   {k:"lv",n:"Land value",g:"tag",grp:0,gr:i=>ivNear[i]?[ramp(IVR.ryg,ivLV[i]*1.1-.05),.62*ivNear[i]/255]:null,bc:b=>!isSvc(b)&&!b.cons?ramp(IVR.ryg,(b.lval||0)*1.1-.05):null,key:{grad:IVR.ryg,lo:"Low",hi:"High"},tip:"Parks, services, shops, bus and metro stops and water nearby raise it. Smoke, noise and busy roads bring it down."},
   {k:"happy",n:"Happiness",g:"smile",grp:0,bc:b=>isHome(b)&&!b.cons&&b.happy!==undefined?ramp(IVR.ryg,(b.happy-25)/60):null,key:{grad:IVR.ryg,lo:"Unhappy",hi:"Happy"},tip:"Homes want power, water and services nearby, and clean, quiet streets."},
+  {k:"lvls",n:"Levels",g:"lvl",grp:0,bc:b=>b.lot&&!isSvc(b)&&!b.cons?rgbOf(IVLVC[lvlOf(b)-1]):null,key:{lv:true,sw:IVLVC.map((c,i)=>[c,"Level "+(i+1)])},tip:"Buildings go up a level over a few months when the land is worth more, people are happy and services are in reach. Each level holds more people, jobs and tax."},
   {k:"pow",n:"Power",g:"power",grp:1,bc:b=>SVC[b.type]&&SVC[b.type].util==="pow"?rgbOf(IVC.pow):ivUses(b)?rgbOf(b.noPow?IVC.no:IVC.ok):null,key:{sw:[[IVC.ok,"Has power"],[IVC.no,"No power"],[IVC.pow,"Power plant"]]},tip:"Power reaches everything joined to a plant by road, until the plants run out."},
   {k:"wat",n:"Water",g:"pump",grp:1,bc:b=>SVC[b.type]&&SVC[b.type].util==="wat"?rgbOf(IVC.wsrc):ivUses(b)?rgbOf(b.noWat?IVC.no:IVC.wat):null,key:{sw:[[IVC.wat,"Has water"],[IVC.no,"No water"],[IVC.wsrc,"Water supply"]]},tip:"Water reaches everything joined to a water tower or pump by road, until they run dry."},
   {k:"traffic",n:"Traffic",g:"car",grp:2,roads:s=>s.ivt===undefined?null:ramp(IVR.flow,s.ivt),key:{grad:IVR.flow,lo:"Flowing",hi:"Jammed"},tip:"Red roads are jammed. More lanes, roundabouts, a second way round or a bus line help."},
@@ -6092,6 +6098,7 @@ const IVIEWS=[
 const IVGRP=["Town","Utilities","Roads and environment","Education","Services"];
 const IVK={}; for(const V of IVIEWS) IVK[V.k]=V;
 const IVGLY={
+  lvl:'<path d="M3.4 16.4h13.2M5.2 16.4v-3.2h3v3.2M8.5 16.4V9.6h3v6.8M11.8 16.4V5.4h3v11" class="s"/>',
   tag:'<path d="M3.4 10.4V3.6h6.8l6.4 6.4-6.8 6.8z" class="s"/><path d="M7.1 7.3h.01" class="d"/>',
   car:'<path d="M3.6 13.8v-3.4l1.7-4.4h9.4l1.7 4.4v3.4z" class="s"/><path d="M3.8 10.4h12.4M6.2 13.8v1.9M13.8 13.8v1.9" class="s"/><path d="M6.6 12.1h.01M13.4 12.1h.01" class="d"/>',
   smog:'<path d="M6.2 13.4h8a2.9 2.9 0 0 0 .4-5.8 4.3 4.3 0 0 0-8.2-.6 3.2 3.2 0 0 0-.2 6.4z" class="s"/><path d="M6.4 16.8h.01M10 16.8h.01M13.6 16.8h.01" class="d"/>'
@@ -6151,7 +6158,7 @@ function ivFields(force){ ivAlloc(); ivWater();
 // and the info view showing coloured again
 function insightTick(){
   if(ivGame!==blds){ ivGame=blds; ivK=null; ivOpen=false; ivUI=""; ivPanel(); }
-  ivTraffic(); ivFields(false);
+  ivTraffic(); ivFields(false); lvlTick();
   if(ivK) ivPaint();
 }
 // colour the ground picture and the buildings for the view showing
@@ -6220,8 +6227,64 @@ function ivDraw2d(){
   ivCap=null;
 }
 // on a plot's or a grown building's card: what the land there is worth
-function ivCard(b){ if(!ivLV||!ivFK) return ""; const v=b.poly?ivAt(ivLV,b.x,b.y):b.lval; if(v===undefined) return "";
-  return '<div class="isec">Land</div>'+imeter("Land value",v,v<.3?"Low":v<.45?"Fair":v<.6?"Good":v<.75?"High":"Prime"); }
+// and a grown building's level: five pips, the next one filling as it gets there, and what's holding it back
+function ivCard(b){ let h=""; const v=!ivLV||!ivFK?undefined:b.poly?ivAt(ivLV,b.x,b.y):b.lval;
+  if(b.lot&&!b.poly&&!isSvc(b)){ const L=lvlOf(b), w=lvlNeed(b), p=Math.round(clamp(b.lvp||0,0,1)*100);
+    h+='<div class="im lv"><span>Level '+L+'</span><i>'+[1,2,3,4,5].map(k=>'<b>'+(k<=L?'<s style="width:100%"></s>':k===L+1&&p?'<s class="nx" style="width:'+p+'%"></s>':'')+'</b>').join("")+'</i><em>'+(w==="top"?"Top level":w?"Held back":"Growing")+'</em></div>';
+    if(w&&w!=="top") h+='<div class="ivwhy">'+LVL_WHY[w]+'</div>'; }
+  if(v!==undefined) h+=imeter("Land value",v,v<.3?"Low":v<.45?"Fair":v<.6?"Good":v<.75?"High":"Prime");
+  return h?'<div class="isec">'+(b.poly?"Land":"Level and land")+'</div>'+h:""; }
+// ---------- building levels ----------
+// Grown buildings go up a level, 1 to 5, over a few months while the land under them is worth enough, the people
+// living there are happy, services reach them and they have a road, power and water. At each level a home takes in
+// more households and a business grows (more jobs, customers and tax, all through b.k), and it looks a little better:
+// a patio, solar panels or a shed for a house, a floor or two more on a block of flats, an office or a hotel. Levels
+// never go down. Worked out every couple of seconds with the rest of the town.
+// to get from each level to the next: land value, happiness, services in reach, and the months it takes
+const LVL={lv:[0,.28,.38,.5,.62],hap:[0,50,57,64,71],svc:[0,1,2,3,4],mo:[0,2,3,4,6]};
+const LVL_IND=new Set(["factory","warehouse","plant"]);
+const LVL_WHY={road:"Needs a road",pow:"Needs power",wat:"Needs water",fire:"On fire",svc:"Needs more services in reach",lv:"Needs land worth more",happy:"Needs happier people",short:"Short of what it needs",crime:"Too much crime"};
+let lvlT=-1, lvlHint=false;
+const lvlOf=b=>b.lvl||1;
+// the first thing keeping a grown building from its next level ("" if nothing is, "top" once it's at 5). Industry
+// doesn't mind what the land's worth
+function lvlNeed(b){ const L=lvlOf(b); if(L>=5) return "top";
+  if(!b.acc) return "road"; if(b.noPow) return "pow"; if(b.noWat) return "wat"; if(b.fire) return "fire";
+  const home=isHome(b); let n=0; for(const k of ["fire","police","clinic"]) if(hasCov(b,k)) n++;
+  if(home){ if(hasCov(b,"school")) n++; if(FUNK.some(k=>hasCov(b,k))) n++; }
+  if(n<(home?LVL.svc[L]:Math.min(3,LVL.svc[L]))) return "svc";
+  if(!LVL_IND.has(b.type)&&(b.lval||0)<LVL.lv[L]) return "lv";
+  if(home&&(b.happy||0)<LVL.hap[L]) return "happy";
+  if(b.pins&&(b.over||0)>OVER_LIMIT*.25) return "short";
+  if((b.crime||0)>.5) return "crime";
+  return ""; }
+// how deep a house's back garden is
+function lvlYard(b){ const S=b.lot&&b.lot.site; if(!S) return 0; if(b.front) return b.pool?16:9; return S.d/2+(b.x-S.x)*b.fx+(b.y-S.y)*b.fy-b.d/2; }
+// what a building gains on reaching level L
+function lvlGain(b,L){ const T=BT[b.type];
+  if(T.home){ const h0=b.lvh0||(b.lvh0=b.cars.length), ex=q=>q<2?0:Math.max(Math.round(h0*.1*(q-1)),(q-1)>>1), n=b.type==="house"?(L===4?1:0):ex(L)-ex(L-1);
+    for(let i=0;i<n;i++){ const c=newCar(b,false); c.cool=rnd(.5,4); b.cars.push(c); cars.push(c); } }
+  if(b.k){ if(!b.k0) b.k0=b.k; b.k=b.k0*(1+.15*(L-1)); if(b.cap) for(const q in T.cap) b.cap[q]=Math.max(3,Math.round(T.cap[q]*clamp(b.k0,.75,1.8)*(1+.12*(L-1)))); }
+  if(b.type==="house"){ const y=lvlYard(b), was=""+[b.patio,b.solar,b.shed,b.up];
+    if(L===2&&!b.pool&&y>=9) b.patio=true; else if(L===3&&b.v===3&&b.w>=17) b.up=true; else if(L===4&&!b.pool&&y>=13) b.shed=true;
+    if(was===""+[b.patio,b.solar,b.shed,b.up]&&b.v!==3) b.solar=true; }
+  else if(b.floors) b.floors+=b.tower||b.tall?2:b.type==="apts"?(L===2||L===4?1:0):(L===3||L===5?1:0); }
+// up a level, with a tag rising off it and a ring round it (unless there are lots at once)
+function lvlUp(b,quiet){ const L=lvlOf(b)+1; b.lvl=L; b.lvp=0; lvlGain(b,L); v3dyn=true;
+  if(quiet) return;
+  effects.push({k:"lvup",x:b.x,y:b.y,b,n:L,t:0,life:2.4},{k:"ring",x:b.x,y:b.y,c:"#4f9356",t:0,life:1.1,r:b.r});
+  if(!lvlHint){ lvlHint=true; setHint("A building went up a level. Land worth more, happy people and services in reach help buildings grow, with more people, jobs and tax. The Levels info view shows them all.",8); } }
+function lvlTick(){ const dt=lvlT<0?0:clamp(t-lvlT,0,10); lvlT=t; if(!dt) return; let fx=0;
+  for(const b of blds){ if(!b.lot||b.cons||isSvc(b)) continue; const L=lvlOf(b); if(L>=5) continue;
+    const r=dt/(LVL.mo[L]*MONTH);
+    if(lvlNeed(b)){ b.lvp=Math.max(0,(b.lvp||0)-r*.25); continue; }
+    b.lvp=(b.lvp||0)+r; if(b.lvp>=1) lvlUp(b,fx++>=4); } }
+// the tag that rises off a building as it goes up a level, and fades: a green pill with an arrow and the new level
+function lvlFx(e,f,s){ const a=Math.min(1,f*6,(1-f)*3); if(a<=0) return; const txt="Level "+e.n;
+  ctx.save(); ctx.translate(e.x,e.y-f*16*s); ctx.scale(s,s); ctx.globalAlpha=a; ctx.font="700 11px "+FONT; const w=ctx.measureText(txt).width+27, h=19;
+  roundRect(-w/2,-h,w,h,h/2); ctx.fillStyle="#2f6b45"; ctx.fill(); ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.strokeStyle="#fff"; ctx.lineWidth=1.8; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.beginPath(); ctx.moveTo(-w/2+8,-h/2+1.8); ctx.lineTo(-w/2+11.5,-h/2-1.7); ctx.lineTo(-w/2+15,-h/2+1.8); ctx.stroke();
+  ctx.fillStyle="#fff"; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.fillText(txt,-w/2+19,-h/2+.5); ctx.restore(); }
 // ---------- UI ----------
 let tool="road";
 const ROAD_HINT={draw:"Drag to draw a road. Tap a road to switch it to the width picked above.",
@@ -8980,6 +9043,7 @@ function draw(){
     else if(e.k==="puff"&&f>=0){ const R=e.big||0, m=R>12?7:4, S=dustSpr(1);
       for(let i=0;i<m;i++){ const a=i/m*6.283+R, d=(2+R*.55)*(.4+f*.8), r=(4+R*.4)*(.6+f*.9); ctx.globalAlpha=.6*(1-f)*(1-f*.4); ctx.drawImage(S,e.x+Math.cos(a)*d-r,e.y+Math.sin(a)*d-r-f*4,2*r,2*r); } ctx.globalAlpha=1; }
     else if(e.k==="plus"&&!city){ ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
+    else if(e.k==="lvup") lvlFx(e,f,1/cam.z);
     return true;
   });
   drawNotes();
@@ -10713,7 +10777,7 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
       for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const q=j*n+i; sig[q]=(sig[q]*31+h)%Q; } };
     const R4=v=>Math.round(v*4);
     for(const b of blds){ const f=b.fire, m=b.r+40;
-      add(b.x-m,b.y-m,b.x+m,b.y+m,b.id*131+b.type.length*7+(f?(f.out?3:5)+(f.truck&&f.truck.state==="park"?2:0):0)+(b.lot?11:0)+(b.floors||0)*13+Math.round((b.k||0)*10)*17+(b.v||0)*19+(moving&&moving.b===b?29:0)+(b.cons?workStage(b)*53+7:0)+R4(b.x)*7+R4(b.y)*3+Math.round(b.ang*100)); }
+      add(b.x-m,b.y-m,b.x+m,b.y+m,b.id*131+b.type.length*7+(f?(f.out?3:5)+(f.truck&&f.truck.state==="park"?2:0):0)+(b.lot?11:0)+(b.floors||0)*13+Math.round((b.k||0)*10)*17+(b.v||0)*19+(b.lvl||0)*61+(moving&&moving.b===b?29:0)+(b.cons?workStage(b)*53+7:0)+R4(b.x)*7+R4(b.y)*3+Math.round(b.ang*100)); }
     // (a plot that takes in a gap beside it changes shape)
     for(const L2 of lots) add(L2.x-L2.r,L2.y-L2.r,L2.x+L2.r,L2.y+L2.r,L2.id*37+(L2.b?L2.b.id*5+1:0)+(L2.burnt?Math.round((t-L2.burnt)/8)*3+2:0)+(t<L2.cool?7:0)+L2.kind.length*11+L2.poly.length*13+R4(L2.x)*7+R4(L2.y)*3+R4(L2.r));
     for(const s of segs.values()){ const A=nodes.get(s.a), B=nodes.get(s.b); if(!A||!B) continue; const m=widthOf(wkey(s))/2+16;
@@ -10990,6 +11054,7 @@ function v3overlay(){
   if(!city) for(const e of effects){ if(e.k!=="plus") continue; const f=e.t/e.life; if(f>=1) continue; if(!at(e.x,e.y,10+V3.hAt(e.x,e.y),e.x,e.y)) continue;
     ctx.globalAlpha=1-f; ctx.fillStyle=e.c; ctx.font="800 11px "+FONT; ctx.textAlign="center"; ctx.fillText("+1",e.x,e.y-f*16); ctx.globalAlpha=1; }
   if(city) transitBadges();
+  if(city) for(const e of effects){ if(e.k!=="lvup"||e.t>=e.life) continue; const k=at(e.x,e.y,V3.top(e.b)+V3.hAt(e.x,e.y)+3,e.x,e.y); if(k) lvlFx(e,e.t/e.life,1/k); }
   cam.z=sv; drawDust3(); if(city) drawSel3(); drawNotes();
   // labels from the overlays: price of a road, why a ghost can't go there, how many plots
   if(v3tagList.length){ ctx.setTransform(dpr,0,0,dpr,0,0); cam.z=1;
@@ -11055,6 +11120,7 @@ window.__gridlock={
       fires:blds.filter(b=>b.fire).length,sick:blds.filter(b=>b.sick).length,crime:blds.filter(b=>(b.crime||0)>.6).length,out:cars.filter(c=>c.svc&&c.state!=="home").length,
       sirens:cars.filter(c=>c.siren).length,worn:[...segs.values()].filter(s=>s.cond!==undefined&&s.cond<.6).length,burnt:lots.filter(L=>L.burnt).length}; },
   inspect:(x,y)=>{ if(x===null){ closeInfo(); return null; } inspectAt({x,y}); return infoB?$("infoPanel").innerText:null; },
+  levels:(n,loud)=>{ let fx=0; if(n) for(const b of blds){ if(!b.lot||b.cons||isSvc(b)) continue; const to=1+Math.floor(Math.random()*n); while(lvlOf(b)<to) lvlUp(b,!loud||fx++>=6); } const c=[0,0,0,0,0]; for(const b of blds) if(b.lot&&!isSvc(b)) c[lvlOf(b)-1]++; return {count:c,need:blds.filter(b=>b.lot&&!isSvc(b)&&!b.cons).reduce((o,b)=>{ const w=lvlNeed(b)||"ok"; o[w]=(o[w]||0)+1; return o; },{}),people,lvp:+(blds.reduce((a,b)=>a+(b.lvp||0),0)).toFixed(2)}; },
   iview:(k,o)=>{ if(k!==undefined) ivSet(k); if(o!==undefined){ ivOpen=!!o; ivPanel(); } return {k:ivK,open:ivOpen,ver:ivVer,list:IVIEWS.map(V=>V.k),tinted:blds.filter(b=>b.ivc).length,grid:[IW,IH],lv:(a=>a.length?[Math.min(...a),a.reduce((x,y)=>x+y,0)/a.length,Math.max(...a)].map(v=>+v.toFixed(2)):null)(blds.filter(b=>b.lval!==undefined&&!isSvc(b)).map(b=>b.lval))}; },
   civic:()=>({edu:{any:+eduStat.any.toFixed(2),hi:+eduStat.hi.toFixed(2)},dem:{off:+cityD.off.toFixed(2),ind:+cityD.ind.toFixed(2)}}),
   transit:()=>({stops:stops.length,lines:lines.map(L=>({id:L.id,kind:L.kind,loop:L.loop,stops:L.stops.length,want:L.want,buses:L.buses.length,load:L.kind==="metro"?L.buses.reduce((n,q)=>n+q.load.length,0):undefined,len:Math.round(linePath(L).len),gaps:L.path.gaps.length,riders:L.riders})),wait:stops.reduce((n,q)=>n+q.q.length,0),riders:tStat.total,month:tStat.month,
