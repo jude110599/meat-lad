@@ -2238,6 +2238,7 @@ function arrive(c){
   releaseAll(c);
   if(c.bus) return busArrive(c);
   if(c.svc==="taxidepot") return taxiArrive(c);
+  if(c.purpose&&c.purpose.fan) return fanArrive(c);
   if(c.purpose&&c.purpose.svc) return svcArrive(c);
   if(c.purpose&&parkOrDivert(c)) return;
   if(c.purpose){
@@ -4264,7 +4265,7 @@ const lineGap=L=>Math.max(5,(linePath(L).len/28+L.stops.length*6)/Math.max(1,L.w
 function transitTick(dt){
   if(month!==tStat.m){ tStat.last=tStat.month; tStat.month=0; tStat.m=month; for(const L of lines){ L.last=L.riders; L.riders=0; } tStat.txl=tStat.txm||0; tStat.txm=0; }
   metroTick(dt); tramMove();
-  transitT-=dt; if(transitT>0) return; transitT=.5; taxiTick();
+  transitT-=dt; if(transitT>0) return; transitT=.5; taxiTick(); fanTick();
   const bdeps=depotList(), tdeps=tramDepots();
   for(const L of lines){ if(L.kind==="metro") continue; const tram=L.kind==="tram", deps=tram?tdeps:bdeps;
     // buses (or trams) whose depot has gone, went with it
@@ -4311,7 +4312,7 @@ function tripPlan(h,d){
 // someone setting off from home for a place near another stop on a running line may take the bus, the tram or the
 // metro instead, changing lines on the way if they have to; or failing that, call a taxi
 function transitRide(c,h,d){
-  if(!c.purpose||!d.pins) return false;
+  if(!c.purpose||!(d.pins||c.purpose.fan)) return false;
   const best=tripPlan(h,d); if(!best) return taxiRide(c,h,d);
   // a short walk at both ends and most people leave the car at home; the tram is a smoother ride and the metro is
   // quicker, so even more take those. Having to change puts a few off
@@ -4870,6 +4871,30 @@ function b3TaxiDepot(b){ const fy=TXO[1]+TXO[3];
     {k:"box",x:-15,y:-14.6,w:16,d:.6,z:9.2,h:2.8,col:"#e7b324"},{k:"box",x:-15,y:-14.02,w:16,d:.12,z:9.9,h:.7,col:"#26282b"},
     {k:"posts",at:[[13.2,17.1],[17.2,17.1]],h:4.6,z:0,col:"#5d666e"},{k:"box",x:12.6,y:16.6,w:5.2,d:.6,z:4.4,h:2,col:"#e7b324"},{k:"box",x:12.6,y:17.18,w:5.2,d:.1,z:4.9,h:.5,col:"#26282b"});
 }
+
+// ---------- match day fans ----------
+// In the half minute before a match at the stadium, people from all over town set off for it. Most drive, park up at
+// the ground and stay till the final whistle, then all head home at once; those with a stop near home on a line that
+// runs to the stadium take the bus, tram or metro, and now and then one calls a cab. So a match day brings real crowds
+// onto the roads and the lines. (Matches come round every MATCH_P seconds and last MATCH_ON, as in parkTick)
+const MATCH_P=80, MATCH_ON=26, FAN_PRE=30, FAN_LATE=6;
+let fnK=-1, fnS=[], fnH=[];
+function fanTick(){
+  if(fnK!==tver){ fnK=tver; fnS=blds.filter(b=>b.type==="stadium"); fnH=fnS.length?blds.filter(isHome):[]; }
+  for(const b of fnS){ if(!b.acc||b.cons||!fnH.length) continue; const q=t+b.id*23, ph=q%MATCH_P, pre=ph>=MATCH_P-FAN_PRE;
+    if(!pre&&ph>=FAN_LATE) continue;
+    // a new match: how many come depends on the size of the town; they set off a few at a time, not all at once
+    const m=Math.floor(q/MATCH_P)+(pre?1:0); if(b.fanM!==m){ b.fanM=m; b.fanN=0; b.fanW=Math.round(clamp(people/12,10,60)); }
+    const want=b.fanW*Math.min(1,(pre?ph-(MATCH_P-FAN_PRE):ph+FAN_PRE)/(FAN_PRE*.7));
+    for(let k=0;k<8&&b.fanN<want;k++){ const h=fnH[Math.random()*fnH.length|0]; if(!h.acc||h.cons) continue;
+      const c=h.cars.find(v=>v.state==="home"&&v.cool<=0); if(!c) continue; b.fanN++;
+      c.purpose={d:b,kind:"fan",svc:true,fan:true};
+      if(transitRide(c,h,b)){ tStat.fanR=(tStat.fanR||0)+1; continue; }
+      const pl=planRoute({seg:h.acc.seg,t:h.acc.t},[{b}],null); if(pl) startDrive(c,h,pl); else c.purpose=null; } } }
+// a fan's car gets to the ground: parked up till the match is over (or, too late for it, straight back home)
+function fanArrive(c){ const d=c.purpose.d, ph=(t+d.id*23)%MATCH_P; c.purpose=null; c.rt=null;
+  c.state="park"; c.at=d; c.parkT=t; c.atDi=c.tDi; c.park=(ph<MATCH_ON?MATCH_ON-ph:ph>=MATCH_P-FAN_PRE?MATCH_P+MATCH_ON-ph:0)+rnd(.5,4);
+  tStat.fans=(tStat.fans||0)+1; }
 
 // ---------- drawing services ----------
 function drawSvc(b){
@@ -11229,6 +11254,8 @@ window.__gridlock={
     return {line:L.id,x:Math.round(q.x),y:Math.round(q.y),dwell:tr.dw>0,load:tr.load.length,sx:s&&Math.round(s.x),sy:s&&Math.round(s.y),behind:s&&s.behind,cars:trainCars(L,tr).map(c=>({x:Math.round(c.x),y:Math.round(c.y),al:+c.al.toFixed(2),cab:c.cab}))}; })),
   trams:()=>allBuses().filter(c=>c.tram).map(c=>({line:c.line&&c.line.id,st:c.state,load:c.load.length,x:Math.round(c.x),y:Math.round(c.y),to:c.purpose&&c.purpose.d&&c.purpose.d.id,
     secs:c.state==="home"?[]:tramSecs(c).map(q=>({x:Math.round(q.x),y:Math.round(q.y),a:+q.a.toFixed(2)}))})),
+  fans:()=>({cars:tStat.fans||0,rode:tStat.fanR||0,going:cars.filter(c=>c.state==="drive"&&c.purpose&&c.purpose.fan).length,at:cars.filter(c=>c.state==="park"&&c.at&&c.at.type==="stadium").length,
+    stad:blds.filter(b=>b.type==="stadium").map(b=>({id:b.id,acc:!!b.acc,cons:!!b.cons,v:b.v||0,ph:+((t+b.id*23)%MATCH_P).toFixed(1),n:b.fanN||0,w:b.fanW||0}))}),
   taxis:()=>({rides:tStat.taxi||0,deps:taxiDepots().map(d=>({id:d.id,acc:!!d.acc,cons:!!d.cons,cars:d.cars.map(v=>({st:v.state,leg:v.purpose&&v.purpose.leg||"",fare:!!v.fare,x:Math.round(v.x),y:Math.round(v.y)}))}))}),
   tdeps:()=>({budget:budget.transit,deps:tramDepots().map(d=>({id:d.id,cons:!!d.cons,acc:!!d.acc,cars:d.cars.length}))}),
   rails:()=>lines.filter(L=>L.kind==="tram").map(L=>({id:L.id,runs:railRuns(L).length,pts:railRuns(L).reduce((n,P)=>n+P.length,0),spur:!!L.spur,gaps:L.path.gaps.length})),
