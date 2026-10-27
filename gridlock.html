@@ -594,7 +594,7 @@ body.dark #demPill .dq i{background:rgba(255,255,255,.12)}
     <div class="gfx"><span>Theme<small>Dark mode turns the map and the menus dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     <div class="small" id="bestLine"></div>
     <div class="small" id="ctrlLine"></div>
-    <div class="small">Version 8.0</div>
+    <div class="small">Version 8.1</div>
     <button class="lnk" data-log>What's new</button>
   </div>
 </div>
@@ -609,7 +609,7 @@ body.dark #demPill .dq i{background:rgba(255,255,255,.12)}
     <div class="gfx"><span>Graphics<small>Ultra adds day and night, street lights, rain, smoke, birds, boats and people</small></span><div class="seg"><button data-gfx="normal">Normal</button><button data-gfx="ultra">Ultra</button></div></div>
     <div class="gfx"><span>View<small>3D stands the town up so you can turn it round and tilt it. Building works the same</small></span><div class="seg"><button data-view="2d">2D</button><button data-view="3d">3D</button></div></div>
     <div class="gfx"><span>Theme<small>Dark mode turns the map and the menus dark</small></span><div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
-    <div class="small">Version 8.0</div>
+    <div class="small">Version 8.1</div>
     <button class="lnk" data-log>What's new</button>
   </div>
 </div>
@@ -9877,26 +9877,37 @@ function step(dt){
   if(!over&&levelPending){ levelPending=false; levelUp(); }
 }
 function frame(now){
-  const dt=clamp((now-lastTs)/1000,0,.05); lastTs=now; const c0=performance.now();
-  if(running&&!paused){
-    animT+=dt; if(works.length) works=works.filter(w=>animT<w.t0+w.dur+.25);
-    if(!frozen){ const sdt=dt*speed, n=Math.ceil(sdt/.02); for(let i=0;i<n;i++) step(sdt/n); }
-    else for(const e of effects) e.t+=dt;      // puffs and rings from building still play out
-    if(hintT>0){ hintT-=dt; if(hintT<=0) hideHint(); }
-    if(score>0&&hintT===0&&!$("hint").classList.contains("hide")&&!viewing) hideHint();
-    $("weekFill").style.width=(city?monthT/MONTH*100:Math.min(100,lvTrips/lvNeed()*100))+"%";
-    tuneDots();
-  } else if(over&&res){ step(dt*.5); animT+=dt; }
-  if(cam.focus){ cam.x+=(cam.focus.x-cam.x)*Math.min(1,dt*3); cam.y+=(cam.focus.y-cam.y)*Math.min(1,dt*3); clampCam(); }
-  const kp=520*dt/cam.z; let kx=0, ky=0;
-  if(keys.ArrowLeft||keys.KeyA) kx--; if(keys.ArrowRight||keys.KeyD) kx++;
-  if(keys.ArrowUp||keys.KeyW) ky--; if(keys.ArrowDown||keys.KeyS) ky++;
-  // in 3D the keys move the way the view is turned
-  if(kx||ky){ if(v3live()){ const c=Math.cos(v3yaw), s=Math.sin(v3yaw); cam.x+=kp*(kx*c+ky*s); cam.y+=kp*(ky*c-kx*s); } else { cam.x+=kp*kx; cam.y+=kp*ky; } cam.focus=null; clampCam(); }
-  zoomEase(dt); zoneTick(); draw();
+  const dt=clamp((now-lastTs)/1000,0,.05); lastTs=now; const c0=performance.now(); let bad=false;
+  // an error in one part of a frame costs that part of that frame and nothing more: the loop always carries on
+  try{
+    if(running&&!paused){
+      animT+=dt; if(works.length) works=works.filter(w=>animT<w.t0+w.dur+.25);
+      if(!frozen){ const sdt=dt*speed, n=Math.ceil(sdt/.02); for(let i=0;i<n;i++) step(sdt/n); }
+      else for(const e of effects) e.t+=dt;      // puffs and rings from building still play out
+      if(hintT>0){ hintT-=dt; if(hintT<=0) hideHint(); }
+      if(score>0&&hintT===0&&!$("hint").classList.contains("hide")&&!viewing) hideHint();
+      $("weekFill").style.width=(city?monthT/MONTH*100:Math.min(100,lvTrips/lvNeed()*100))+"%";
+      tuneDots();
+    } else if(over&&res){ step(dt*.5); animT+=dt; }
+  }catch(e){ bad=true; loopFail(e); }
+  try{
+    if(cam.focus){ cam.x+=(cam.focus.x-cam.x)*Math.min(1,dt*3); cam.y+=(cam.focus.y-cam.y)*Math.min(1,dt*3); clampCam(); }
+    const kp=520*dt/cam.z; let kx=0, ky=0;
+    if(keys.ArrowLeft||keys.KeyA) kx--; if(keys.ArrowRight||keys.KeyD) kx++;
+    if(keys.ArrowUp||keys.KeyW) ky--; if(keys.ArrowDown||keys.KeyS) ky++;
+    // in 3D the keys move the way the view is turned
+    if(kx||ky){ if(v3live()){ const c=Math.cos(v3yaw), s=Math.sin(v3yaw); cam.x+=kp*(kx*c+ky*s); cam.y+=kp*(ky*c-kx*s); } else { cam.x+=kp*kx; cam.y+=kp*ky; } cam.focus=null; clampCam(); }
+    zoomEase(dt); zoneTick();
+  }catch(e){ bad=true; loopFail(e); }
+  try{ draw(); }catch(e){ bad=true; loopFail(e); }
+  loopErr=bad?loopErr+1:0;
   frameCpu=performance.now()-c0;
   requestAnimationFrame(frame);
 }
+// a game that hits an error keeps running; if it's the same error frame after frame, the player is told rather than left
+// looking at a frozen town
+function loopFail(e){ const m=String(e&&e.message||e); if(m!==loopMsg){ loopMsg=m; console.error(e); }
+  if(loopErr===30) setHint("The game hit a snag ("+m.slice(0,90)+"). Your town is safe. Reload the page to carry on.",30); }
 
 // ---------- 3D view: the same town stood up in three dimensions ----------
 // The map itself (ground, water, roads, plots and yards) is painted by the 2D code into a big picture that lies on the
@@ -9905,6 +9916,8 @@ function frame(now){
 // real 3D shapes. Every tool works just as it does in 2D.
 const V3URL=["https://unpkg.com/three@0.160.0/build/three.module.min.js","https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js"];
 let v3on=false, V3=null, v3load=null, v3dirty=true, v3dyn=true, rec3d=null, v3yaw=0, v3pitch=.92, v3yawTo=0, v3pitchTo=.92, v3fail=false;
+// when 3D goes wrong: what stopped it, when the graphics were taken away, the first shader error, frames drawn since 3D came on
+let v3bad=null, v3lostAt=0, v3shErr="", v3n=0, v3errN=0, v3readOK=true, loopErr=0, loopMsg="";
 let v3tags=null, v3tagList=[], frameCpu=0;
 try{ v3on=localStorage.getItem("gridlockView")==="3d"; }catch(e){}
 function v3live(){ return v3on&&!!V3; }
@@ -9927,6 +9940,7 @@ function v3hint(){ setHint(isTouch?"3D view. Twist two fingers to turn the town,
 // in 2D without a word
 function setView3d(on,quiet,auto){
   v3on=!!on; if(!auto) try{ localStorage.setItem("gridlockView",v3on?"3d":"2d"); }catch(e){}
+  if(v3on&&!auto){ v3bad=null; v3fail=false; v3n=0; v3errN=0; v3lostAt=0; }
   viewButtons();
   if(!v3on){ document.body.classList.remove("v3"); clampCam(); return; }
   if(V3){ document.body.classList.add("v3"); v3dirty=v3dyn=true; clampCam(); if(!quiet) v3hint(); return; }
@@ -9944,6 +9958,7 @@ let dark=false;
 try{ const v=localStorage.getItem("gridlockTheme"); dark=v?v==="dark":matchMedia("(prefers-color-scheme: dark)").matches; }catch(e){}
 // what changed in each version, newest first, for the What's new list
 const CHANGES=[
+  ["8.1", "Oct 27", ["If the 3D view can't draw on a phone, the town now drops back to 2D with a short note saying why, instead of leaving an empty sky. Tap 3D to try again.", "The game keeps running if something goes wrong in one frame, instead of freezing for good.", "When a phone takes its graphics memory back and gives it again, the 3D ground is painted afresh (it used to come back black)."]],
   ["8.0", "Oct 26", ["Garbage: homes and businesses fill their bins once the town has about 60 people. Build a landfill, an incinerator (which makes a little power) or a recycling center, and its trucks come round to empty them. Bins left full make people unhappy, and in the end they move out.", "Deathcare: a cemetery that fills grave by grave and a crematorium, each with hearses. Homes near one are happier.", "Post: a post office with red vans and a mail sorting center. Homes in reach are happier and businesses pay a little more tax.", "The Services bar is grouped into Safety, Health, Schools, Garbage, Post and Roads, and fire trucks, ambulances and other service vehicles may cut down pedestrian streets when the way round is long.", "Info views: the new layers button (or I) colours the map by land value, happiness, building levels, power, water, traffic, road wear, pollution, noise, education or any service's reach, in 3D and 2D.", "Land value: parks, services, shops, stops and water raise it, smoke and noise bring it down. It shows on plot and building cards.", "Building levels 1 to 5: well-served buildings on good land with happy people level up over a few months, gaining households, jobs, floors and finishes.", "Noise from busy roads, highways and industry bothers the homes nearby.", "Trams: a tram depot, tram stops and a Tram line tool. Lines lay rails along the roads and three-part trams share the road with cars.", "Taxis: a taxi depot whose yellow cabs fetch people from their door, so fewer drive.", "Metro trains are now real three-carriage trains, and people can change between lines at shared stations.", "Match days: fans travel to the stadium by car, bus, tram, metro or taxi, and all head home together after the final whistle.", "The Transport bar has Bus, Tram, Metro and Taxi tabs, so it stays tidy on a phone."]],
   ["7.9", "Oct 21", ["Real 3D buildings: every house, shop, office, factory and service is built from proper walls, roofs, windows, doors, porches and rooftop kit instead of raised boxes, so 3D looks as good as 2D.", "Houses come in many styles, colours and roofs, and shops are now real kinds: a bakery, cafe, restaurant, gas station, supermarket and more, each with its own sign and front.", "More ways to make power and water: coal, gas, nuclear, solar and wind turbines with turning blades, and a water tower, a pump house that really draws from the lake, and a big water treatment works.", "Streets have raised pavements and kerbs, zebra crossings at junctions, and far fewer manholes, set in the middle of the lane.", "New junctions where three or more ordinary roads meet get traffic lights on their own, free. The Lights tool still adds or removes them.", "Roads in 3D are real shapes now, with lane lines, kerbs, crossings, arrows and traffic lights on mast arms.", "Four new road types: Avenue and Boulevard with a planted, tree-lined middle, a cheap slow Gravel road, and a Pedestrian street.", "People walk the pavements, wait at the crossings and stroll and sit in the parks. Cars give way to anyone crossing.", "The metro: build stations from Transport, tap them to draw a line (or close it into a loop), and trains run underground. People within a long walk of a station leave the car at home."]],
   ["7.8", "Oct 21", ["Schools: build an Elementary school, a High school and a College from Services, each a real building with halls, a sports field, a clock tower or a library dome. Families near them are happier.", "An educated town brings in offices rather than smoky industry.", "Buses: a new Transport tab with a bus depot, bus stops and a Bus line tool. Tap stops or road edges to draw a line, then add or take away buses. Buses pull in at the kerb, pick people up and drop them off, and people near a stop leave the car at home. Fares are income, and Transport has its own row and budget in Finance.", "Six new parks: a playground, sports courts, a dog park, a sports field with floodlights, a botanical garden with a glasshouse, and a stadium that fills with a crowd on match days and brings in tourists.", "People stand about and play in the parks.", "Fire stations, police, hospitals, schools, daycare, road depots and parks reach about one and a half times further.", "On phones the eight buttons along the bottom all fit in one row."]],
@@ -9989,7 +10004,9 @@ function viewButtons(){
 // 3D was picked
 const CITY_YAW=-.62, CITY_PITCH=.84;
 function viewFor(){ let pref=null; try{ pref=localStorage.getItem("gridlockView"); }catch(e){}
-  const want=pref==="3d"||city&&pref!=="2d"&&!v3fail;
+  // a phone where 3D came out blank or broke starts in 2D until the next version, which tries again
+  let bad=null; try{ bad=localStorage.getItem("gridlockV3Bad"); }catch(e){}
+  const want=!(bad&&bad.split("|")[0]===CHANGES[0][0])&&(pref==="3d"||city&&pref!=="2d"&&!v3fail);
   if(city){ v3yaw=v3yawTo=CITY_YAW; v3pitch=v3pitchTo=CITY_PITCH; }
   if(want!==v3on) setView3d(want,true,pref!=="3d"&&pref!=="2d"); }
 function v3turn(d){ v3yawTo+=d; }
@@ -10004,7 +10021,13 @@ function v3init(T){
   const cv3=$("cv3");
   const mobile=isTouch||Math.min(window.innerWidth,window.innerHeight)<600;
   const R=new T.WebGLRenderer({canvas:cv3,antialias:!mobile,alpha:true,powerPreference:"high-performance"});
+  // can this phone read the picture back? (the check for a blank picture needs it): a red clear must read as red
+  try{ const gl=R.getContext(), px=new Uint8Array(4); R.setClearColor(0xff0000,1); R.clear(); gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px); v3readOK=px[0]>200&&px[3]>200; }catch(e){ v3readOK=false; }
   R.setClearColor(0x000000,0);
+  // a shader the phone won't take, or the phone taking the graphics back, is noted so the game can say what happened
+  R.debug.onShaderError=(gl,prog,vs,fs)=>{ if(v3shErr) return; try{ v3shErr=((gl.getProgramInfoLog(prog)||"")+" "+(gl.getShaderInfoLog(fs)||"")+" "+(gl.getShaderInfoLog(vs)||"")).replace(/\s+/g," ").trim().slice(0,110)||"link"; }catch(e){ v3shErr="error"; } console.error("3D shader:",v3shErr); };
+  cv3.addEventListener("webglcontextlost",e=>{ e.preventDefault(); v3lostAt=performance.now(); },false);
+  cv3.addEventListener("webglcontextrestored",()=>{ v3lostAt=0; v3n=0; v3dirty=v3dyn=true; restore(); },false);
   R.shadowMap.enabled=true; R.shadowMap.type=mobile?T.PCFShadowMap:T.PCFSoftShadowMap; R.shadowMap.autoUpdate=false;
   const scene=new T.Scene(), camera=new T.PerspectiveCamera(40,1,2,20000);
   scene.fog=new T.Fog(0xdfe7ee,1500,4000);
@@ -11770,6 +11793,9 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
   // a layer's cells, nearest the middle of the view first
   function order(L){ const out=[]; for(let j=0;j<NC;j++) for(let i=0;i<NC;i++){ const cx=L.ox+i, cy=L.oy+j; out.push([cx,cy,Math.hypot((cx+.5)*L.CW-cam.x,(cy+.5)*L.CW-cam.y),j*NC+i]); }
     return out.sort((a,b)=>a[2]-b[2]); }
+  // the ground picture lives on the card (its canvas is shrunk once it's there), so when the phone takes the graphics back
+  // and gives them again it is all painted afresh
+  function restore(){ front=mkLayer(); back=null; spare=null; mats.ground.map=mats.roof.map=front.tex; clearB(); }
   function swap(){
     spare=front; front=back; back=null;
     // the walls: kept where nothing changed, from the new picture's cells
@@ -12002,7 +12028,7 @@ float ln(float x,float c,float h,float f){ return clamp((h-abs(x-c))/f+.5,0.,1.)
     R.shadowMap.needsUpdate=rebuilt||painted>0||ck!==render.ck||(render.n=(render.n||0)+1)%(mobile?3:2)===0; render.ck=ck;
     R.render(scene,camera);
   }
-  return {R,sync,pick,project,render,hAt,
+  return {R,sync,pick,project,render,hAt,restore,
     top:b=>{ const e=bcache.get(b); return e?e.top:0; },
     stats:()=>({pc:pcN,pms:+pcMs.toFixed(1),blds:bcache.size,batches:groups.size,trees:KI.reduce((a,m)=>a+m.count,0),cars:ncars,parked:parkedList.length,tex:TEXP,dtex:DTEX,gms:+gms.toFixed(1),dms:+dms.toFixed(1),reg,lv:front.k,cells:front.cells.size,back:back?back.todo.length:-1,pr,ema:+ema.toFixed(1),calls:R.info.render.calls,tris:R.info.render.triangles,yaw:+v3yaw.toFixed(3),pitch:+v3pitch.toFixed(3)}),
     dbg:()=>{ const nd=need(); return {nd,core:core(front,nd),ox:front.ox,oy:front.oy,S:front.S,CW:front.CW,todo:front.todo.length,cov:covers(front,core(front,nd))}; }};
@@ -12030,11 +12056,43 @@ function v3overlay(){
   effects=effects.filter(e=>e.t<e.life);
   drawOutsidePointer();
 }
+// What the graphics card is, for a note the player can send on if 3D won't draw
+function v3info(){ let o=[]; try{ const R=V3&&V3.R, gl=R&&R.getContext(); if(gl){ const d=gl.getExtension("WEBGL_debug_renderer_info");
+    o.push(String(d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)).slice(0,40),"WebGL "+(R.capabilities.isWebGL2?2:1),R.capabilities.maxTextureSize+"px",gl.isContextLost()?"context lost":"context ok","screen "+vw+"x"+vh+"@"+dpr,"picture "+gl.drawingBufferWidth+"x"+gl.drawingBufferHeight,"camera "+[cam.x,cam.y,cam.z,v3yaw,v3pitch].map(v=>Math.round(v*100)/100).join("/")); } }catch(e){}
+  const m=/OS (\d+[_\d]*)/.exec(navigator.userAgent); if(m) o.push("iOS "+m[1].replace(/_/g,".")); if(v3shErr) o.push("shader: "+v3shErr); return o.join(", "); }
+// the first few places an error came from, as "name line:column"
+function where(e){ return String(e&&e.stack||"").split("\n").slice(0,5).map(l=>{ const m=/(\d+):(\d+)\)?\s*$/.exec(l), n=/^\s*(?:at\s+)?([\w$.]+)/.exec(l); return m?(n?n[1]+" ":"")+m[1]+":"+m[2]:""; }).filter(Boolean).slice(0,3).join(" < "); }
+// 3D must never leave the player looking at an empty sky or a frozen town. If drawing it throws, the picture comes out
+// blank or the phone takes the graphics back, the town goes back to 2D and says why. A blank or broken result is
+// remembered so the next start opens in 2D until the next version; tapping 3D tries again.
+function v3giveUp(why,e){
+  if(v3bad) return;
+  const msg=(e?(e.name||"Error")+": "+String(e.message||e).replace(/\s+/g," ").slice(0,80)+" @ "+where(e):"");
+  v3bad={why,msg,info:v3info()}; console.error("3D stopped:",why,msg,v3bad.info);
+  if(why!=="lost") try{ localStorage.setItem("gridlockV3Bad",CHANGES[0][0]+"|"+why); }catch(x){}
+  setView3d(false,true,true);
+  setHint(why==="lost"?"The phone took its graphics memory back, so 3D stopped and the town is back in 2D. Tap 3D to try again."
+    :"3D couldn't draw on this phone, so the town is back in 2D. Tap 3D to try once more. If it keeps happening, send a screenshot of this message: "+why+(msg?" - "+msg:"")+" ("+v3bad.info+")",25);
+}
+// a few frames after 3D comes on (and again later) read back some pixels low on the screen, where there's always ground:
+// if none was drawn the picture is blank
+function v3check(){
+  const n=++v3n; if(!v3readOK||n!==3&&n!==40&&n!==200) return;
+  const gl=V3.R.getContext(); if(!gl||gl.isContextLost()) return;
+  const W=gl.drawingBufferWidth, H=gl.drawingBufferHeight, px=new Uint8Array(4); let seen=0;
+  for(const q of [[.5,.1],[.25,.2],[.75,.2],[.5,.3],[.3,.4],[.7,.4]]){ gl.readPixels(Math.floor(W*q[0]),Math.floor(H*q[1]),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px); if(px[3]>0) seen++; }
+  if(!seen) return v3giveUp("blank");
+  if(n===40&&v3shErr) setHint("Part of the 3D view couldn't draw on this phone. Tap 2D if it looks wrong, and send a screenshot of this message: shader - "+v3info(),20);
+  if(n===200) try{ localStorage.removeItem("gridlockV3Bad"); }catch(x){}
+}
 function draw3d(){
   ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
   if(!res||!terrain) return;
-  V3.render();
-  v3overlay();
+  if(v3lostAt&&performance.now()-v3lostAt>3500) return v3giveUp("lost");
+  try{ V3.render(); v3errN=0; v3check(); }
+  catch(e){ if(++v3errN>=3) v3giveUp("error",e); else console.error(e); return; }
+  // (pins and badges are only for show: if they go wrong the picture still carries on)
+  try{ v3overlay(); }catch(e){ ctx.setTransform(1,0,0,1,0,0); console.error(e); }
 }
 
 // hooks used by automated checks; harmless in play
@@ -12172,6 +12230,8 @@ window.__gridlock={
   step:sec=>{ for(let k=0;k<sec*50;k++) step(.02); },
   screenOf:(x,y)=>scr(x,y),
   v3dbg:()=>V3&&V3.dbg(),
+  v3report:()=>v3bad,
+  v3break:k=>{ if(!V3) return false; const R=V3.R; if(k==="throw"){ V3.render=()=>{ throw new Error("test failure"); }; } else if(k==="blank"){ R.render=()=>{}; } else if(k==="lose"){ const x=R.getContext().getExtension("WEBGL_lose_context"); x&&x.loseContext(); } else if(k==="frame"){ step=()=>{ throw new Error("step failure"); }; } return true; },
   view3d:on=>{ if(on!==undefined) setView3d(on,true); return {on:v3on,live:v3live(),fail:v3fail,loading:!!v3load,stats:V3?V3.stats():null,cam:{x:+cam.x.toFixed(1),y:+cam.y.toFixed(1),z:+cam.z.toFixed(3),yaw:+v3yawTo.toFixed(3),pitch:+v3pitchTo.toFixed(3)}}; },
   pick:(sx,sy)=>toWorld(sx,sy),
   turn3d:(yaw,pitch)=>{ if(yaw!==undefined&&yaw!==null) v3yaw=v3yawTo=yaw; if(pitch) v3pitch=v3pitchTo=pitch; return {yaw:v3yaw,pitch:v3pitch}; },
