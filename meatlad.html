@@ -455,7 +455,7 @@ body.enh .homebtn{border-radius:999px}
   </div>
 
   <div class="screen hide" id="s-settings"><div class="page">
-    <div class="hdr"><button class="back" id="setBack">&lsaquo;</button><h2 class="disp">Settings</h2></div>
+    <div class="hdr"><button class="back" id="setBack">&lsaquo;</button><h2 class="disp" id="setTitle">Settings</h2></div>
     <div class="sect">Account</div>
     <div class="member" style="margin-bottom:10px">
       <div style="flex:1">
@@ -484,6 +484,20 @@ body.enh .homebtn{border-radius:999px}
       <div class="statbox" style="flex:1"><div class="v disp" id="setItems">0</div><div class="l">items</div></div>
     </div>
     <div class="note" style="margin-top:16px">Signed in from the main game-select page. Your progress and friends list are shared with Beetdown on the same account.</div>
+    <div class="spacer"></div>
+  </div></div>
+
+  <div class="screen hide" id="s-super"><div class="page">
+    <div class="hdr"><button class="back" id="supBack">&lsaquo;</button><h2 class="disp">Super menu</h2></div>
+    <div class="note" style="margin-bottom:12px">Changes are saved straight to this device's progress.</div>
+    <div class="stack">
+      <button class="btn" id="supLevels">Unlock all levels<small>every level open and marked cleared</small></button>
+      <button class="btn" id="supCosmetics">Unlock every cosmetic<small>meat, hats, shoes, eyes, faces and trails</small></button>
+      <button class="btn" id="supEditor">Unlock the level editor<small>skips the password</small></button>
+      <button class="btn" id="supCoins">Add 100 coins<small>for the coin cosmetics</small></button>
+      <button class="btn sub" id="supReset">Lock everything again<small>clears cleared levels and unlocked cosmetics</small></button>
+    </div>
+    <div class="note" id="supMsg" style="margin-top:14px;min-height:12px;color:var(--meat)"></div>
     <div class="spacer"></div>
   </div></div>
 
@@ -5721,6 +5735,44 @@ $("bPlayLv").onclick=function(){
   });
 })();
 $("bSettings").onclick=function(){audioOn();sfx.click();show("s-settings");renderSettings();};
+/* secret: tap the Settings title 15 times (a pause of over 5s starts the count again) */
+var supTaps=0,supTapT=0;
+$("setTitle").onclick=function(){
+  var now=Date.now();
+  if(now-supTapT>5000)supTaps=0;
+  supTapT=now;supTaps++;
+  if(supTaps>=15){ supTaps=0;sfx.unlock();show("s-super");toast("Super menu unlocked"); }
+  else sfx.click();
+};
+function supSay(msg){ $("supMsg").textContent=msg;toast(msg); }
+function allCosmeticIds(){
+  var ids=[],lists=[COLORS,HATS,SHOES,EYES,NOSES,MOUTHS,EARS,TRAILS];
+  lists.forEach(function(L){ L.forEach(function(it){ if(ids.indexOf(it.id)<0)ids.push(it.id); }); });
+  return ids;
+}
+$("supBack").onclick=function(){sfx.click();show("s-settings");renderSettings();};
+$("supLevels").onclick=function(){
+  save.cleared=[];
+  for(var i=0;i<LEVELS.length;i++)save.cleared.push(i);
+  queueSave();supSay("Every level is open and cleared.");
+};
+$("supCosmetics").onclick=function(){
+  save.unlocked=allCosmeticIds();
+  queueSave();supSay("All "+save.unlocked.length+" cosmetics unlocked.");
+};
+$("supEditor").onclick=function(){
+  if(editUnlocked){ supSay("The editor is already unlocked."); return; }
+  revealEditor();supSay("The level editor is unlocked.");
+};
+$("supCoins").onclick=function(){
+  save.coins=(save.coins|0)+100;queueSave();
+  supSay("+100 coins. You have "+save.coins+".");
+};
+$("supReset").onclick=function(){
+  if(!confirm("Lock everything again? This clears cleared levels and unlocked cosmetics on this device."))return;
+  save.cleared=[];save.unlocked=START.slice();queueSave();
+  supSay("Locked again. Start from level 1.");
+};
 $("setBack").onclick=function(){sfx.click();show("s-title");};
 (function(){ var gb=document.querySelectorAll(".gfxpick");
   for(var i=0;i<gb.length;i++)(function(b){ b.onclick=function(){ sfx.click();setEnh(b.getAttribute("data-g")==="1");renderSettings();
