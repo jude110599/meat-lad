@@ -87,6 +87,34 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 /* the guardian boss's own health bar — top-center, classic boss-fight placement, well away from
    the player's own HULL/SHIELD/BASE readout in the corner so the two are never confused for the
    same thing. Hidden entirely whenever there's no boss actually engaged (see updateHudSpace). */
+/* the squadron panel: bottom-left while any wingmen are airborne — each wingman's hull bar, the
+   current formation, and the big RELEASE / REFORM toggle */
+#fleetHud{position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));width:210px;z-index:6;
+  display:none;flex-direction:column;gap:5px;padding:9px 10px;border-radius:12px;pointer-events:auto;
+  background:linear-gradient(160deg,rgba(12,22,38,.88),rgba(5,10,18,.82));border:1px solid rgba(79,224,211,.35);
+  box-shadow:0 8px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05);backdrop-filter:blur(6px)}
+#fleetHud.show{display:flex}
+.fhHead{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.16em;font-weight:800;color:#4fe0d3}
+.fhHead span:last-child{color:var(--dim);letter-spacing:.08em}
+.fhRow{display:flex;align-items:center;gap:7px;font-size:9.5px;font-weight:700;color:var(--bone)}
+.fhRow span{width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fhRow i{flex:1;height:6px;border-radius:3px;background:rgba(0,0,0,.5);overflow:hidden}
+.fhRow b{display:block;height:100%;background:linear-gradient(90deg,#1a7a72,#4fe0d3)}
+#bRelease{margin-top:3px;height:34px;border-radius:9px;border:1px solid #ff6a3a;background:linear-gradient(160deg,#3a1408,#22100a);
+  color:#ffb08a;font:inherit;font-weight:900;font-size:11px;letter-spacing:.14em;cursor:pointer}
+#bRelease.free{border-color:#4fe0d3;background:linear-gradient(160deg,#0a2a2a,#06161a);color:#8ff0e8}
+#bRelease:active{transform:scale(.97)}
+.fmRow{display:flex;gap:6px}
+.fmBtn{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:8px 4px;
+  font:inherit;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+.fmBtn.sel{border-color:#4fe0d3;color:#8ff0e8;background:var(--panel2)}
+.fleetCard .fcModel{color:var(--dim);font-size:10px;letter-spacing:.06em;margin-left:4px}
+.fleetCard.armed{border-color:rgba(79,224,211,.55)}
+.fcHp{height:5px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden;margin:6px 0 8px}
+.fcHp i{display:block;height:100%;background:linear-gradient(90deg,#a3101c,var(--green))}
+.fcBtns{display:flex;flex-wrap:wrap;gap:6px}
+.fcBtns .hudbtn[disabled]{opacity:.35;pointer-events:none}
+.metalline svg{width:14px;height:14px;vertical-align:-3px}
 #bossHud{position:fixed;left:50%;top:14px;transform:translateX(-50%);width:340px;max-width:70vw;
   display:none;flex-direction:column;align-items:center;gap:4px;z-index:6;pointer-events:none}
 #bossHud.show{display:flex}
@@ -227,6 +255,10 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   cursor:pointer;font-weight:800}
 .upg .buy:active{background:var(--panel2)}
 .upg .buy[disabled]{opacity:.35;pointer-events:none}
+.tierHead{font-size:10px;letter-spacing:.2em;text-transform:uppercase;font-weight:800;color:var(--amber2);
+  margin:14px 2px 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.tierHead:first-child{margin-top:2px}
+.tierHead.done{color:var(--green)}
 .metalline{text-align:center;font-size:12px;font-weight:800;margin-bottom:9px;display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center}
 .metalline span{display:inline-flex;align-items:center;gap:4px}
 .metalline i{width:8px;height:8px;border-radius:2px;display:inline-block}
@@ -433,6 +465,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <button class="hudbtn" id="bPauseSpace">&#10073;&#10073;</button>
     </div>
   </div>
+  <div id="fleetHud">
+    <div class="fhHead"><span>WINGMEN</span><span id="fleetHudMode"></span></div>
+    <div id="fleetHudList"></div>
+    <button id="bRelease">RELEASE (X)</button>
+  </div>
   <div id="bossHud">
     <div class="bossName">THE SENTINEL</div>
     <div class="bar boss"><i id="bossHpFill"></i></div>
@@ -496,6 +533,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
           <button class="btn sub" id="bChangelogPause">Changelog</button>
           <button class="btn sub" id="bMute">Sound: on</button>
           <button class="btn sub" id="bDevice">Switch Device Mode</button>
+          <button class="btn sub" id="bGfx">Graphics: High</button>
           <button class="btn sub" id="bReturnTitle">Return to Title</button>
         </div>
       </div>
@@ -537,6 +575,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <div class="metalline"><i style="background:#ffb545"></i><span><b id="syParts">0</b> parts</span></div>
         <div id="syList"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="ovl hide" id="o-fleet">
+    <div class="card c-cyan" style="max-width:560px">
+      <div class="cardHead"><button id="bFleetClose" class="clX">&times;</button><h2><i></i>Fleet Command</h2><div class="panelTag">Hangar &amp; Robot Pilots</div></div>
+      <div class="cardBody"><div id="fleetList"></div></div>
     </div>
   </div>
 
@@ -593,7 +638,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="card">
       <div class="cardHead"><button id="bHubClose" class="clX">&times;</button><h2><i></i>Command Hub</h2><div class="panelTag">Colony Upgrades</div></div>
       <div class="cardBody">
-        <div class="metalline">Spend Parts and refined metal to unlock new buildings and belt tiers, permanently, for this colony.</div>
+        <div class="metalline">Milestones: spend Parts and refined goods to unlock new buildings, tier by tier, permanently for this colony.</div>
         <div id="hubList"></div>
         <button class="btn sub" id="bWardrobeOpen" style="margin-top:4px">Open Wardrobe — customize your look</button>
       </div>
@@ -1210,6 +1255,14 @@ function applyDeviceMode(){
   return mode;
 }
 applyDeviceMode();
+function setGfxLabel(){ var b=$("bGfx"); if(b)b.textContent="Graphics: "+(gfxHigh()?"High (shadows + reflections)":"Low (faster)"); }
+$("bGfx").onclick=function(){
+  GFX.quality=gfxHigh()?"low":"high";
+  try{ localStorage.setItem("conquestGfx",GFX.quality); }catch(e){}
+  surfaceScene.environment=gfxHigh()?worldEnv(currentWorld):null;
+  spaceScene.environment=gfxHigh()?spaceEnvTex:null;
+  setGfxLabel(); toast("Graphics: "+GFX.quality.toUpperCase());
+};
 $("bDevice").onclick=function(){
   var cur=document.body.classList.contains("pc-mode")?"pc":"mobile";
   var next=cur==="pc"?"mobile":"pc";
@@ -1287,6 +1340,446 @@ renderer.outputColorSpace=THREE.SRGBColorSpace;
    punch without having to individually retune every light and material in the game. */
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=1.3;
+
+/* ═════════════ GFX KIT (v2.0: procedural PBR textures, reflections, shadows, FX) ═════════════ */
+/* Everything here is generated at load time from code — no image files. Value-noise fBm builds
+   height fields, a Sobel pass turns those into normal maps, and the same fields drive roughness,
+   so a single material reads as real worn metal (seams, rivets, grime, scratches) or real ground
+   (pebbles, cracks, dust) instead of a flat speckle. "High" graphics also turns on real-time sun
+   shadows and image-based reflections; "Low" keeps the textures but skips both for weaker devices. */
+var GFX={quality:"high"};
+(function(){
+  var saved=null; try{ saved=localStorage.getItem("conquestGfx"); }catch(e){}
+  var coarse=window.matchMedia&&matchMedia("(pointer: coarse)").matches;
+  GFX.quality=saved==="low"||saved==="high"?saved:(coarse?"low":"high");
+})();
+function gfxHigh(){ return GFX.quality==="high"; }
+function nHash(x,y,z){
+  var h=(Math.imul(x|0,374761393)+Math.imul(y|0,668265263)+Math.imul(z|0,1440662683))|0;
+  h=Math.imul(h^(h>>>13),1274126177); h^=h>>>16;
+  return (h>>>0)/4294967296;
+}
+function nSmooth(t){ return t*t*(3-2*t); }
+/* tileable 2D value noise: lattice coordinates wrap at `per`, so a texture built from it repeats
+   with no visible seam */
+function vnoise2(x,y,per,seed){
+  var xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+  var x0=((xi%per)+per)%per, y0=((yi%per)+per)%per, x1=(x0+1)%per, y1=(y0+1)%per;
+  var a=nHash(x0,y0,seed), b=nHash(x1,y0,seed), c=nHash(x0,y1,seed), d=nHash(x1,y1,seed);
+  var u=nSmooth(xf), v=nSmooth(yf);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+}
+function fbm2(x,y,per,oct,seed){
+  var s=0,amp=0.5,f=1,norm=0;
+  for(var o=0;o<oct;o++){ s+=vnoise2(x*f,y*f,per*f,seed+o*17)*amp; norm+=amp; amp*=0.5; f*=2; }
+  return s/norm;
+}
+function vnoise3(x,y,z,seed){
+  var xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z), xf=x-xi, yf=y-yi, zf=z-zi;
+  var u=nSmooth(xf), v=nSmooth(yf), w=nSmooth(zf);
+  function h(i,j,k){ return nHash(xi+i,yi+j,(zi+k)*7919+seed); }
+  var x00=h(0,0,0)+(h(1,0,0)-h(0,0,0))*u, x10=h(0,1,0)+(h(1,1,0)-h(0,1,0))*u;
+  var x01=h(0,0,1)+(h(1,0,1)-h(0,0,1))*u, x11=h(0,1,1)+(h(1,1,1)-h(0,1,1))*u;
+  var y0=x00+(x10-x00)*v, y1=x01+(x11-x01)*v;
+  return y0+(y1-y0)*w;
+}
+function fbm3(x,y,z,oct,seed){
+  var s=0,amp=0.5,f=1,norm=0;
+  for(var o=0;o<oct;o++){ s+=vnoise3(x*f,y*f,z*f,seed+o*31)*amp; norm+=amp; amp*=0.5; f*=2.03; }
+  return s/norm;
+}
+/* height field (Float32Array, 0..1, size*size) -> tangent-space normal map canvas */
+function heightToNormalCanvas(hf,w,h,strength,wrap){
+  var cvs=document.createElement("canvas"); cvs.width=w; cvs.height=h;
+  var g=cvs.getContext("2d"), img=g.createImageData(w,h), d=img.data;
+  function at(x,y){
+    if(wrap){ x=(x+w)%w; y=(y+h)%h; } else { x=clamp(x,0,w-1); y=clamp(y,0,h-1); }
+    return hf[y*w+x];
+  }
+  for(var y=0;y<h;y++)for(var x=0;x<w;x++){
+    var dx=(at(x+1,y)-at(x-1,y))*strength, dy=(at(x,y+1)-at(x,y-1))*strength;
+    var nz=1/Math.sqrt(dx*dx+dy*dy+1);
+    var i=(y*w+x)*4;
+    d[i]=(-dx*nz*0.5+0.5)*255; d[i+1]=(dy*nz*0.5+0.5)*255; d[i+2]=nz*255; d[i+3]=255;
+  }
+  g.putImageData(img,0,0);
+  return cvs;
+}
+function canvasTex(cvs,repeat,srgb){
+  var t=new THREE.CanvasTexture(cvs);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(repeat)t.repeat.set(repeat,repeat);
+  if(srgb)t.colorSpace=THREE.SRGBColorSpace;
+  t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  return t;
+}
+/* worn industrial metal: a 4x4 grid of plates with recessed seams, rivet rows, per-plate tint
+   variation, edge wear, grime pooling in the seams, streaks and scratches. Returns {map,normal,rough}. */
+function makeMetalPanelTextures(size,seed){
+  size=size||512; seed=seed||3;
+  var n=size*size, hf=new Float32Array(n), col=new Float32Array(n), rough=new Float32Array(n);
+  var plates=4, ps=size/plates;
+  var plateTint=[]; for(var p=0;p<plates*plates;p++)plateTint.push(0.86+nHash(p,seed,9)*0.22);
+  for(var y=0;y<size;y++)for(var x=0;x<size;x++){
+    var i=y*size+x;
+    var px=x%ps, py=y%ps, pi=Math.floor(y/ps)*plates+Math.floor(x/ps);
+    var edge=Math.min(px,py,ps-1-px,ps-1-py);
+    var grime=fbm2(x/size*6,y/size*6,6,5,seed);
+    var fine=fbm2(x/size*32,y/size*32,32,3,seed+40);
+    var h=0.6+fine*0.06;
+    var c=0.62*plateTint[pi]+(fine-0.5)*0.12;
+    var r=0.55+grime*0.35;
+    if(edge<2){ h=0.15; c*=0.42; r=0.95; }             /* the seam itself */
+    else if(edge<5){ h=0.45+(edge-2)*0.05; c*=0.72+grime*0.2; r=0.85; } /* bevel + grime collecting along it */
+    else if(edge<8){ c*=1.08; r*=0.8; }                  /* worn bright edge where tools/boots scuff */
+    /* rivets along each plate's border */
+    var rs=ps/6, rx=(px-rs*0.5)%rs, ry=(py-rs*0.5)%rs;
+    var nearEdgeX=px>6&&px<ps-6&&(py<11||py>ps-12), nearEdgeY=py>6&&py<ps-6&&(px<11||px>ps-12);
+    if(nearEdgeX||nearEdgeY){
+      var cxr=nearEdgeX?(px-(Math.round((px-rs*0.5)/rs)*rs+rs*0.5)):(py-(Math.round((py-rs*0.5)/rs)*rs+rs*0.5));
+      var cyr=nearEdgeX?(py<11?py-7.5:py-(ps-8.5)):(px<11?px-7.5:px-(ps-8.5));
+      var rd=Math.sqrt(cxr*cxr+cyr*cyr);
+      if(rd<2.6){ h=0.75+(2.6-rd)*0.08; c*=1.12; r=0.4; }
+    }
+    /* grime blotches */
+    if(grime>0.62){ var gm=(grime-0.62)*2.2; c*=1-gm*0.45; r=Math.min(1,r+gm*0.3); }
+    hf[i]=h; col[i]=c; rough[i]=r;
+  }
+  /* vertical rust/oil streaks running down from a few plates */
+  for(var s=0;s<26;s++){
+    var sx=Math.floor(nHash(s,seed,77)*size), sy=Math.floor(nHash(s,seed,78)*size), len=20+nHash(s,seed,79)*90;
+    for(var k=0;k<len;k++){
+      var yy=(sy+k)%size, fade=(1-k/len)*0.22;
+      for(var ww=-1;ww<=1;ww++){ var xx=(sx+ww+size)%size, j=yy*size+xx; col[j]*=1-fade*(ww===0?1:0.5); }
+    }
+  }
+  /* bright fine scratches */
+  for(var sc=0;sc<60;sc++){
+    var ax=nHash(sc,seed,91)*size, ay=nHash(sc,seed,92)*size, ang=nHash(sc,seed,93)*Math.PI*2, ln=8+nHash(sc,seed,94)*40;
+    for(var t=0;t<ln;t++){
+      var qx=Math.floor(ax+Math.cos(ang)*t+size)%size, qy=Math.floor(ay+Math.sin(ang)*t+size)%size, q=qy*size+qx;
+      col[q]=Math.min(1,col[q]*1.25); rough[q]=0.25; hf[q]-=0.03;
+    }
+  }
+  function toCanvas(arr){
+    var cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
+    var g=cvs.getContext("2d"), img=g.createImageData(size,size), d=img.data;
+    for(var i2=0;i2<n;i2++){ var v=clamp(arr[i2],0,1)*255; d[i2*4]=v; d[i2*4+1]=v; d[i2*4+2]=v; d[i2*4+3]=255; }
+    g.putImageData(img,0,0); return cvs;
+  }
+  return {
+    map:canvasTex(toCanvas(col),2,true),
+    normal:canvasTex(heightToNormalCanvas(hf,size,size,6,true),2,false),
+    rough:canvasTex(toCanvas(rough),2,false)
+  };
+}
+/* natural ground: layered dust/soil fbm, scattered pebbles with tiny shadows, a crack network
+   (ridged noise) — grayscale so each world's own vertex colours tint it */
+function makeGroundTextures(size,seed){
+  size=size||512; seed=seed||11;
+  var n=size*size, hf=new Float32Array(n), col=new Float32Array(n);
+  for(var y=0;y<size;y++)for(var x=0;x<size;x++){
+    var i=y*size+x, u=x/size, v=y/size;
+    var base=fbm2(u*4,v*4,4,6,seed);
+    var mid=fbm2(u*16,v*16,16,4,seed+5);
+    var ridge=1-Math.abs(fbm2(u*8,v*8,8,4,seed+9)*2-1);
+    var crack=ridge>0.965?(ridge-0.965)*28:0;
+    var h=base*0.55+mid*0.35-crack*0.2;
+    var c=0.52+(base-0.5)*0.6+(mid-0.5)*0.3-crack*0.12;
+    hf[i]=h; col[i]=c;
+  }
+  for(var p=0;p<520;p++){
+    var px=nHash(p,seed,1)*size, py=nHash(p,seed,2)*size, pr=1+nHash(p,seed,3)*3.2, sh=0.7+nHash(p,seed,4)*0.5;
+    var r2=Math.ceil(pr+2);
+    for(var yy=-r2;yy<=r2;yy++)for(var xx=-r2;xx<=r2;xx++){
+      var dd=Math.sqrt(xx*xx+yy*yy), qx=(Math.floor(px)+xx+size)%size, qy=(Math.floor(py)+yy+size)%size, q=qy*size+qx;
+      if(dd<pr){ var bump=Math.sqrt(1-(dd/pr)*(dd/pr)); hf[q]=Math.max(hf[q],0.6+bump*0.25); col[q]=col[q]*0.4+sh*0.62*(0.75+bump*0.25); }
+      else if(dd<pr+1.6&&xx>0&&yy>0){ col[q]*=0.82; }
+    }
+  }
+  var cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
+  var g=cvs.getContext("2d"), img=g.createImageData(size,size), d=img.data;
+  for(var k=0;k<n;k++){ var cv=clamp(col[k],0,1)*255; d[k*4]=cv; d[k*4+1]=cv; d[k*4+2]=cv; d[k*4+3]=255; }
+  g.putImageData(img,0,0);
+  return {map:canvasTex(cvs,1,true),normal:canvasTex(heightToNormalCanvas(hf,size,size,5,true),1,false)};
+}
+var GFX_METAL=makeMetalPanelTextures(512,3);
+var GFX_GROUND=makeGroundTextures(512,11);
+/* image-based lighting: a small painted equirect sky (gradient + sun hotspot + soft horizon band)
+   prefiltered with PMREM, so every metallic surface actually reflects a sky instead of reading as
+   matte plastic. Re-painted per world so ice worlds reflect cold blue and lava worlds glow orange. */
+var gfxPmrem=new THREE.PMREMGenerator(renderer);
+function makeEnvFromColors(topHex,horizonHex,groundHex,sunHex,sunStrength){
+  var w=256,h=128, cvs=document.createElement("canvas"); cvs.width=w; cvs.height=h;
+  var g=cvs.getContext("2d");
+  var grad=g.createLinearGradient(0,0,0,h);
+  var top=new THREE.Color(topHex), hor=new THREE.Color(horizonHex), gr=new THREE.Color(groundHex);
+  grad.addColorStop(0,"#"+top.getHexString()); grad.addColorStop(0.48,"#"+hor.getHexString());
+  grad.addColorStop(0.52,"#"+gr.clone().lerp(hor,0.4).getHexString()); grad.addColorStop(1,"#"+gr.getHexString());
+  g.fillStyle=grad; g.fillRect(0,0,w,h);
+  var sc=new THREE.Color(sunHex);
+  var sg=g.createRadialGradient(w*0.3,h*0.28,0,w*0.3,h*0.28,h*0.35);
+  sg.addColorStop(0,"rgba("+Math.round(sc.r*255)+","+Math.round(sc.g*255)+","+Math.round(sc.b*255)+","+(sunStrength||1)+")");
+  sg.addColorStop(1,"rgba(0,0,0,0)");
+  g.globalCompositeOperation="lighter"; g.fillStyle=sg; g.fillRect(0,0,w,h);
+  /* a few bright panels so curved metal gets crisp highlights, like windows in a studio env */
+  g.fillStyle="rgba(255,255,255,.22)";
+  g.fillRect(w*0.62,h*0.18,w*0.08,h*0.14); g.fillRect(w*0.82,h*0.22,w*0.05,h*0.1);
+  var tex=new THREE.CanvasTexture(cvs);
+  tex.mapping=THREE.EquirectangularReflectionMapping; tex.colorSpace=THREE.SRGBColorSpace;
+  var rt=gfxPmrem.fromEquirectangular(tex);
+  tex.dispose();
+  return rt.texture;
+}
+/* additive fresnel shells: a thin rim haze on the planet disc plus a soft halo outside its limb */
+var ATMO_VS="varying vec3 vN; varying vec3 vV; void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }";
+function makeAtmoShell(radius,colorHex,inner,haloScale){
+  /* outer halo: a BackSide sphere haloScale x the planet. Seen from outside, its back faces fill the
+     ring between the planet limb and the halo edge; -dot(N,V) runs from `edge` at the limb down to 0
+     at the halo's own silhouette, so normalising by edge gives a glow that's brightest hugging the
+     planet and fades smoothly into space */
+  var edge=Math.sqrt(Math.max(0.01,1-1/((haloScale||1.1)*(haloScale||1.1))));
+  var mat=new THREE.ShaderMaterial({
+    uniforms:{c:{value:new THREE.Color(colorHex)},k:{value:inner?1.1:1.0},e:{value:edge}},
+    vertexShader:ATMO_VS,
+    fragmentShader:inner?
+      "uniform vec3 c; uniform float k; varying vec3 vN; varying vec3 vV; void main(){ float f=pow(1.0-max(dot(vN,vV),0.0),3.2); gl_FragColor=vec4(c*f*k,f); }":
+      "uniform vec3 c; uniform float k; uniform float e; varying vec3 vN; varying vec3 vV; void main(){ float d=clamp(-dot(vN,vV)/e,0.0,1.0); float f=pow(d,2.4); gl_FragColor=vec4(c*f*k,f); }",
+    transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:inner?THREE.FrontSide:THREE.BackSide
+  });
+  var m=new THREE.Mesh(new THREE.SphereGeometry(radius,64,40),mat);
+  m.userData.noShadow=true;
+  return m;
+}
+/* both shells for a planet of radius r */
+function addAtmosphere(group,r,colorHex,strength){
+  var inner=makeAtmoShell(r*1.012,colorHex,true); inner.material.uniforms.k.value=1.1*(strength||1); group.add(inner);
+  var outer=makeAtmoShell(r*1.1,colorHex,false,1.1); outer.material.uniforms.k.value=1.0*(strength||1); group.add(outer);
+  return {inner:inner,outer:outer};
+}
+/* equirect planet albedo + bump from 3D fbm sampled on the sphere itself (no seam, no pole pinch):
+   continents, ridged mountain chains, crater pocks, polar caps tinted from the world's own palette */
+function makePlanetTexturesHQ(floorHex,midHex,rockHex,opts){
+  opts=opts||{};
+  var w=opts.w||768,h=opts.h||384, seed=opts.seed||Math.floor(rnd(1,9999));
+  var cF=new THREE.Color(floorHex), cM=new THREE.Color(midHex), cR=new THREE.Color(rockHex);
+  var cvs=document.createElement("canvas"); cvs.width=w; cvs.height=h;
+  var g=cvs.getContext("2d"), img=g.createImageData(w,h), d=img.data;
+  var bcv=document.createElement("canvas"); bcv.width=w; bcv.height=h;
+  var bg=bcv.getContext("2d"), bimg=bg.createImageData(w,h), bd=bimg.data;
+  var craters=[]; for(var ci=0;ci<(opts.craters==null?40:opts.craters);ci++){
+    var cu=rnd(-1,1), ca=rnd(0,Math.PI*2), cr=Math.sqrt(1-cu*cu);
+    craters.push({x:Math.cos(ca)*cr,y:cu,z:Math.sin(ca)*cr,r:rnd(0.02,0.09)});
+  }
+  var tmp=new THREE.Color();
+  for(var y=0;y<h;y++){
+    var lat=(0.5-y/h)*Math.PI, cl=Math.cos(lat), sl=Math.sin(lat);
+    for(var x=0;x<w;x++){
+      var lon=x/w*Math.PI*2, px=cl*Math.cos(lon), py=sl, pz=cl*Math.sin(lon);
+      var cont=fbm3(px*1.6+5,py*1.6,pz*1.6,6,seed);
+      var ridge=1-Math.abs(fbm3(px*4,py*4,pz*4,4,seed+3)*2-1);
+      var det=fbm3(px*14,py*14,pz*14,3,seed+7);
+      var height=cont*0.7+ridge*ridge*0.25+det*0.08;
+      var cd=0;
+      for(var k=0;k<craters.length;k++){
+        var cc=craters[k], dx=px-cc.x, dy=py-cc.y, dz=pz-cc.z, dd=Math.sqrt(dx*dx+dy*dy+dz*dz)/cc.r;
+        if(dd<1.3){ cd+=dd<1?-(1-dd*dd)*0.25:Math.sin((dd-1)/0.3*Math.PI)*0.08; }
+      }
+      height+=cd*(opts.craterDepth==null?1:opts.craterDepth);
+      var t=clamp((height-0.38)/0.32,0,1);
+      if(t<0.5)tmp.copy(cF).lerp(cM,t*2); else tmp.copy(cM).lerp(cR,(t-0.5)*2);
+      var shade=0.82+det*0.36;
+      var pole=Math.abs(py);
+      if(opts.ice&&pole>0.78){ tmp.lerp(new THREE.Color(0xeaf4ff),clamp((pole-0.78)/0.1,0,1)*0.85); }
+      if(opts.lava&&ridge>0.86){ tmp.lerp(new THREE.Color(0xff6a1a),clamp((ridge-0.86)*7,0,1)); shade=1.25; }
+      if(opts.glow&&det>0.7){ tmp.lerp(new THREE.Color(opts.glow),(det-0.7)*2.2); }
+      var i=(y*w+x)*4;
+      d[i]=clamp(tmp.r*shade,0,1)*255; d[i+1]=clamp(tmp.g*shade,0,1)*255; d[i+2]=clamp(tmp.b*shade,0,1)*255; d[i+3]=255;
+      var hv=clamp(height,0,1)*255; bd[i]=hv; bd[i+1]=hv; bd[i+2]=hv; bd[i+3]=255;
+    }
+  }
+  g.putImageData(img,0,0); bg.putImageData(bimg,0,0);
+  var map=new THREE.CanvasTexture(cvs); map.colorSpace=THREE.SRGBColorSpace;
+  map.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  var bump=new THREE.CanvasTexture(bcv);
+  return {map:map,bump:bump};
+}
+/* ── real-time sun shadows (High graphics). One shadow-casting sun whose orthographic shadow box
+   follows whatever the camera is looking at, so detail near the player is always crisp. ── */
+renderer.shadowMap.enabled=gfxHigh();
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+function gfxMarkShadows(root){
+  root.traverse(function(o){
+    if(!o.isMesh||o.userData.noShadow)return;
+    var m=o.material; if(Array.isArray(m))m=m[0];
+    var lit=m&&(m.isMeshStandardMaterial||m.isMeshPhongMaterial||m.isMeshLambertMaterial);
+    o.receiveShadow=!!lit;
+    o.castShadow=!!lit&&!m.transparent;
+  });
+}
+/* ── pooled FX: fireballs, smoke, shockwaves, debris and flash lights. Lights are pooled and never
+   added/removed at runtime (changing the light count forces every material to recompile, a
+   visible hitch), only their intensity animates. ── */
+var fireTex=(function(){
+  var s=128, cvs=document.createElement("canvas"); cvs.width=s; cvs.height=s;
+  var g=cvs.getContext("2d"), img=g.createImageData(s,s), d=img.data;
+  for(var y=0;y<s;y++)for(var x=0;x<s;x++){
+    var dx=(x-s/2)/(s/2), dy=(y-s/2)/(s/2), r=Math.sqrt(dx*dx+dy*dy);
+    var nse=fbm2(x/s*5,y/s*5,5,4,21);
+    var a=clamp((1-r)*1.6-0.25+(nse-0.5)*0.9,0,1);
+    var i=(y*s+x)*4; d[i]=255; d[i+1]=255; d[i+2]=255; d[i+3]=a*255;
+  }
+  g.putImageData(img,0,0);
+  return new THREE.CanvasTexture(cvs);
+})();
+var smokeTex=(function(){
+  var s=128, cvs=document.createElement("canvas"); cvs.width=s; cvs.height=s;
+  var g=cvs.getContext("2d"), img=g.createImageData(s,s), d=img.data;
+  for(var y=0;y<s;y++)for(var x=0;x<s;x++){
+    var dx=(x-s/2)/(s/2), dy=(y-s/2)/(s/2), r=Math.sqrt(dx*dx+dy*dy);
+    var nse=fbm2(x/s*4,y/s*4,4,5,33);
+    var a=clamp((1-r)*1.3-0.2+(nse-0.5)*0.8,0,1)*0.85;
+    var v=150+nse*80, i=(y*s+x)*4; d[i]=v; d[i+1]=v; d[i+2]=v; d[i+3]=a*255;
+  }
+  g.putImageData(img,0,0);
+  return new THREE.CanvasTexture(cvs);
+})();
+var ringTex=(function(){
+  var s=128, cvs=document.createElement("canvas"); cvs.width=s; cvs.height=s;
+  var g=cvs.getContext("2d");
+  var grad=g.createRadialGradient(s/2,s/2,s*0.3,s/2,s/2,s/2);
+  grad.addColorStop(0,"rgba(255,255,255,0)"); grad.addColorStop(0.75,"rgba(255,255,255,.9)"); grad.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=grad; g.fillRect(0,0,s,s);
+  return new THREE.CanvasTexture(cvs);
+})();
+var fxList=[];
+var FX_FIRE_COLS=[new THREE.Color(0xfff6d8),new THREE.Color(0xffb347),new THREE.Color(0xff5a1a),new THREE.Color(0x5a1a0a)];
+function fxSprite(scene,tex,col,additive,pos,size){
+  var mat=new THREE.SpriteMaterial({map:tex,color:col,transparent:true,depthWrite:false,
+    blending:additive?THREE.AdditiveBlending:THREE.NormalBlending,rotation:rnd(0,6.28)});
+  var s=new THREE.Sprite(mat); s.position.copy(pos); s.scale.setScalar(size); scene.add(s);
+  return s;
+}
+function makeFxLights(scene){
+  var arr=[];
+  for(var i=0;i<3;i++){ var l=new THREE.PointLight(0xffa040,0,1,2); l.userData.free=true; scene.add(l); arr.push(l); }
+  return arr;
+}
+var fxLightsSurface=null, fxLightsSpace=null;
+function fxFlashLight(scene,pos,size,col){
+  if(!fxLightsSurface){ fxLightsSurface=makeFxLights(surfaceScene); fxLightsSpace=makeFxLights(spaceScene); }
+  var pool=scene===spaceScene?fxLightsSpace:fxLightsSurface;
+  var best=pool[0];
+  for(var i=0;i<pool.length;i++){ if(pool[i].intensity<best.intensity)best=pool[i]; }
+  best.position.copy(pos); best.color.set(col||0xffa040);
+  best.distance=size*10; best.userData.base=6*size*size;
+  best.intensity=best.userData.base; best.userData.t=0; best.userData.dur=0.5;
+}
+var camShake=0;
+function addCamShake(amount){ camShake=Math.min(camShake+amount,amount*2.2); }
+/* a full explosion: white-hot core flash, rolling fireball puffs that cool from yellow to deep red,
+   a crisp shockwave ring, dark smoke that lingers and rises, spinning debris chunks with ember
+   trails, and a real light flash that lights up nearby hulls and ground */
+function fxExplosion(scene,pos,size,opts){
+  opts=opts||{};
+  var gravity=scene===surfaceScene?-9.8*Math.max(1,size*0.15):0;
+  fxList.push({kind:"flash",scene:scene,mesh:fxSprite(scene,fireTex,0xfff0c8,true,pos,size*1.1),life:0.16,max:0.16,size:size*1.1,grow:1.4});
+  var fireN=opts.small?6:Math.round(10+Math.min(26,size*0.08+8));
+  for(var i=0;i<fireN;i++){
+    var dir=new THREE.Vector3(rnd(-1,1),rnd(-0.6,1),rnd(-1,1)).normalize();
+    var sp=size*rnd(0.4,1.4);
+    var p=pos.clone().addScaledVector(dir,size*rnd(0,0.25));
+    var life=rnd(0.7,1.5);
+    fxList.push({kind:"fire",scene:scene,mesh:fxSprite(scene,fireTex,0xffffff,i<3,p,size*rnd(0.35,0.7)),vel:dir.multiplyScalar(sp),
+      life:life,max:life,size:size*rnd(0.35,0.7),grow:rnd(1.6,2.6),drag:2.6});
+  }
+  if(!opts.small){
+    var ring=fxSprite(scene,ringTex,opts.ringCol||0xffd8a0,true,pos,size*0.3);
+    fxList.push({kind:"ring",scene:scene,mesh:ring,life:0.55,max:0.55,size:size*0.3,grow:size*5});
+  }
+  var smokeN=opts.small?3:Math.round(6+Math.min(12,size*0.04+4));
+  for(var j=0;j<smokeN;j++){
+    var sd=new THREE.Vector3(rnd(-0.6,0.6),rnd(0.2,1),rnd(-0.6,0.6)).normalize();
+    var sl=rnd(2.2,3.8);
+    fxList.push({kind:"smoke",scene:scene,mesh:fxSprite(scene,smokeTex,0x2a2420,false,pos.clone().addScaledVector(sd,size*0.2),size*rnd(0.4,0.8)),
+      vel:sd.multiplyScalar(size*rnd(0.25,0.6)),life:sl,max:sl,size:size*rnd(0.4,0.8),grow:rnd(2,3.2),drag:1.4,delay:rnd(0.05,0.25)});
+  }
+  if(!opts.noDebris){
+    var debN=opts.small?3:Math.round(6+Math.min(14,size*0.05));
+    var debMat=new THREE.MeshStandardMaterial({color:0x2a2c30,roughness:0.7,metalness:0.5,map:GFX_METAL.map});
+    for(var k=0;k<debN;k++){
+      var dsz=size*rnd(0.04,0.12);
+      var m=new THREE.Mesh(new THREE.BoxGeometry(dsz,dsz*rnd(0.3,0.8),dsz*rnd(0.5,1.2)),debMat);
+      m.position.copy(pos); scene.add(m);
+      var dv=new THREE.Vector3(rnd(-1,1),rnd(-0.3,1.2),rnd(-1,1)).normalize().multiplyScalar(size*rnd(0.8,2.2));
+      fxList.push({kind:"debris",scene:scene,mesh:m,vel:dv,spin:new THREE.Vector3(rnd(-8,8),rnd(-8,8),rnd(-8,8)),
+        life:rnd(1.2,2.2),max:2.2,grav:gravity,trailT:0,size:size});
+    }
+  }
+  fxFlashLight(scene,pos,size,opts.lightCol);
+  /* shake scales with how big the blast is AND how close it is to the camera */
+  var cd=camera.position.distanceTo(pos);
+  addCamShake(clamp(size/(cd*0.06+size)*(opts.shake==null?1:opts.shake),0,1)*Math.min(1.2,size*0.03+0.15));
+  if(!opts.silent){ noiz(clamp(0.25+size*0.004,0.25,1.2),clamp(0.08+size*0.0008,0.08,0.22),clamp(900-size,280,900)); tone(90,30,0.4,"sine",0.08); }
+}
+function updateFX(dt){
+  for(var i=fxList.length-1;i>=0;i--){
+    var f=fxList[i];
+    if(f.delay>0){ f.delay-=dt; f.mesh.visible=false; continue; }
+    f.mesh.visible=true;
+    f.life-=dt;
+    if(f.life<=0){
+      f.scene.remove(f.mesh);
+      if(f.mesh.material)f.mesh.material.dispose();
+      if(f.kind==="debris")f.mesh.geometry.dispose();
+      fxList.splice(i,1); continue;
+    }
+    var t=1-f.life/f.max;
+    if(f.vel){
+      f.mesh.position.addScaledVector(f.vel,dt);
+      if(f.drag)f.vel.multiplyScalar(Math.max(0,1-f.drag*dt));
+    }
+    if(f.kind==="fire"){
+      var ci=t*3, c0=Math.min(2,Math.floor(ci)), cf=ci-c0;
+      f.mesh.material.color.copy(FX_FIRE_COLS[c0]).lerp(FX_FIRE_COLS[c0+1],cf);
+      f.mesh.material.opacity=Math.pow(1-t,1.4)*(f.mesh.material.blending===THREE.AdditiveBlending?0.45:0.92);
+      f.mesh.scale.setScalar(f.size*(1+t*f.grow));
+      f.mesh.material.rotation+=dt*0.6;
+    } else if(f.kind==="flash"){
+      f.mesh.material.opacity=(1-t)*0.8; f.mesh.scale.setScalar(f.size*(1+t*f.grow));
+    } else if(f.kind==="ring"){
+      f.mesh.material.opacity=(1-t)*0.8; f.mesh.scale.setScalar(f.size+f.grow*t*0.2);
+    } else if(f.kind==="smoke"){
+      f.mesh.material.opacity=Math.sin(Math.min(1,t*1.4)*Math.PI)*0.55;
+      f.mesh.scale.setScalar(f.size*(1+t*f.grow));
+      f.mesh.material.rotation+=dt*0.25;
+      if(f.scene===surfaceScene)f.mesh.position.y+=dt*f.size*0.3;
+    } else if(f.kind==="debris"){
+      f.vel.y+=(f.grav||0)*dt;
+      f.mesh.rotation.x+=f.spin.x*dt; f.mesh.rotation.y+=f.spin.y*dt; f.mesh.rotation.z+=f.spin.z*dt;
+      if(f.scene===surfaceScene){
+        var gy=terrainHeight(f.mesh.position.x,f.mesh.position.z);
+        if(f.mesh.position.y<gy){ f.mesh.position.y=gy; f.vel.multiplyScalar(0.35); f.vel.y=Math.abs(f.vel.y)*0.3; f.spin.multiplyScalar(0.5); }
+      }
+      f.trailT-=dt;
+      if(f.trailT<=0&&f.life>0.5){
+        f.trailT=0.07;
+        var spawnP=f.scene===spaceScene?spawnThrustParticle:spawnSurfaceParticle;
+        spawnP(f.mesh.position.clone(),new THREE.Vector3(0,0,0),f.size*0.08,0xff8a30);
+      }
+    }
+  }
+  [fxLightsSurface,fxLightsSpace].forEach(function(pool){
+    if(!pool)return;
+    pool.forEach(function(l){
+      if(l.intensity<=0)return;
+      l.userData.t+=dt;
+      var k=1-l.userData.t/l.userData.dur;
+      l.intensity=k>0?l.userData.base*k*k:0;
+    });
+  });
+  camShake=Math.max(0,camShake-dt*2.2);
+}
 
 /* far plane bumped to comfortably cover the bigger SPACE_SIZE's farthest starfield/nebula decor
    (up to SPACE_SIZE*1.95) now that worlds are spread much farther apart */
@@ -1499,6 +1992,7 @@ function applyWorldAtmosphere(world){
   sun.color.set(s.sunCol); sun.intensity=s.sunI;
   rimLight.color.set(s.rimCol);
   ambient.color.set(s.ambCol);
+  surfaceScene.environment=gfxHigh()?worldEnv(world):null;
 }
 function restoreHomeAtmosphere(){
   surfaceScene.background.set(SKY_LOW);
@@ -1508,8 +2002,38 @@ function restoreHomeAtmosphere(){
   sun.color.set(0xffc9a0); sun.intensity=4.5;
   rimLight.color.set(0xb060ff);
   ambient.color.set(0x8f7dc9);
+  surfaceScene.environment=gfxHigh()?worldEnv(null):null;
 }
 
+/* ── per-world image-based lighting + the shadow-casting sun that follows the action ── */
+var envCache={};
+function worldEnv(world){
+  var id=world?world.id:"home";
+  if(!envCache[id]){
+    if(world)envCache[id]=makeEnvFromColors(world.sky.high,world.sky.rimCol,world.sky.low,world.sky.sunCol,0.9);
+    else envCache[id]=makeEnvFromColors(SKY_HIGH,0xc07a5a,0x3a2028,0xffd9b0,0.95);
+  }
+  return envCache[id];
+}
+var SUN_DIR=new THREE.Vector3(120,160,70).normalize();
+surfaceScene.add(sun.target);
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-48; sun.shadow.camera.right=48; sun.shadow.camera.top=48; sun.shadow.camera.bottom=-48;
+sun.shadow.camera.near=10; sun.shadow.camera.far=420;
+sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.04;
+var shadowMarkT=0;
+function gfxSurfaceFrame(dt){
+  var hi=gfxHigh();
+  if(renderer.shadowMap.enabled!==hi){ renderer.shadowMap.enabled=hi; surfaceScene.traverse(function(o){ if(o.material&&o.material.needsUpdate!==undefined)o.material.needsUpdate=true; }); }
+  sun.castShadow=hi;
+  if(!hi)return;
+  var tgt=(surfaceFlying&&pShip)?pShip.pos:player.position;
+  sun.target.position.set(tgt.x,tgt.y,tgt.z);
+  sun.position.set(tgt.x+SUN_DIR.x*200,tgt.y+SUN_DIR.y*200,tgt.z+SUN_DIR.z*200);
+  sun.target.updateMatrixWorld();
+  shadowMarkT-=dt;
+  if(shadowMarkT<=0){ shadowMarkT=1.2; gfxMarkShadows(surfaceScene); skyboxMesh.castShadow=false; skyboxMesh.receiveShadow=false; }
+}
 /* ═════════════ HIVE + MONSTERS (Verdant Hollow only) ═════════════ */
 var hiveRuntime=null, monsters=[], playerHp=100, playerMaxHp=100, monsterSpawnT=4;
 function buildHiveMesh(){
@@ -1571,6 +2095,7 @@ function damageHive(dmg){
   hiveRuntime.mesh.userData.core.material.emissiveIntensity=2.2;
   if(hiveRuntime.hp<=0){
     hiveRuntime.alive=false;
+    fxExplosion(surfaceScene,hiveRuntime.mesh.position.clone().add(new THREE.Vector3(0,2,0)),7,{ringCol:0xb07aff});
     toast("Hive destroyed!");
     sfx.build();
     surfaceScene.remove(hiveRuntime.mesh);
@@ -1581,6 +2106,7 @@ function damageHive(dmg){
 function damageMonster(m,dmg){
   m.hp-=dmg; m.hitT=0.12;
   if(m.hp<=0){
+    fxExplosion(surfaceScene,m.mesh.position.clone().add(new THREE.Vector3(0,0.5,0)),1.6,{small:true,ringCol:0xb07aff});
     surfaceScene.remove(m.mesh);
     monsters.splice(monsters.indexOf(m),1);
     stock.parts=(stock.parts||0)+1;
@@ -1664,7 +2190,7 @@ function ensureTurrets(world){
 function damageTurret(t,dmg){
   if(!t.alive)return;
   t.hp-=dmg;
-  if(t.hp<=0){ t.alive=false; surfaceScene.remove(t.mesh); toast("Turret destroyed"); }
+  if(t.hp<=0){ t.alive=false; fxExplosion(surfaceScene,t.mesh.position.clone().add(new THREE.Vector3(0,1,0)),3.5); surfaceScene.remove(t.mesh); toast("Turret destroyed"); }
 }
 function fireAlienBolt(t){
   if(!pShip)return;
@@ -2054,6 +2580,7 @@ function makeBombMesh(){
    then a few slower dark smoke puffs that linger a moment after the fire dies down. Used for
    both the ship's space bombs and the ones dropped on a world's surface. */
 function spawnExplosionFX(spawnFn,pos,radius){
+  fxExplosion(spawnFn===spawnThrustParticle?spaceScene:surfaceScene,pos,radius*(spawnFn===spawnThrustParticle?3:0.7));
   spawnFn(pos.clone(),new THREE.Vector3(0,0,0),radius*0.55,0xfff2c0);
   var fireN=Math.round(16+radius*1.6);
   for(var i=0;i<fireN;i++){
@@ -2233,30 +2760,16 @@ groundGeo.rotateX(-Math.PI/2);
   groundGeo.computeVertexNormals();
 })();
 /* a small tiled speckle/noise texture so the ground reads as real terrain detail instead of a flat fill */
-var groundTex=(function(){
-  var cvs=document.createElement("canvas"); cvs.width=256; cvs.height=256;
-  var g=cvs.getContext("2d");
-  g.fillStyle="#808080"; g.fillRect(0,0,256,256);
-  for(var i=0;i<2600;i++){
-    var x=Math.random()*256, y=Math.random()*256, r=rnd(0.4,1.6);
-    var shade=Math.floor(rnd(60,190));
-    g.fillStyle="rgba("+shade+","+shade+","+shade+","+rnd(0.15,0.4)+")";
-    g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();
-  }
-  for(var j=0;j<10;j++){
-    var px=Math.random()*256, py=Math.random()*256, pr=rnd(14,34);
-    var sh=Math.floor(rnd(70,150));
-    var grad=g.createRadialGradient(px,py,0,px,py,pr);
-    grad.addColorStop(0,"rgba("+sh+","+sh+","+sh+",0.18)");
-    grad.addColorStop(1,"rgba("+sh+","+sh+","+sh+",0)");
-    g.fillStyle=grad; g.beginPath(); g.arc(px,py,pr,0,Math.PI*2); g.fill();
-  }
-  var tex=new THREE.CanvasTexture(cvs);
-  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
-  tex.repeat.set(SURFACE_SIZE/6,SURFACE_SIZE/6);
-  return tex;
-})();
-var groundMat=new THREE.MeshStandardMaterial({vertexColors:true,map:groundTex,roughness:0.97,metalness:0});
+/* procedural ground set from the GFX kit (pebbles, cracks, dust layers + matching normal map),
+   tiled every 7 units so the detail reads at walking height */
+function groundTexSet(rep){
+  var m=GFX_GROUND.map.clone(), n=GFX_GROUND.normal.clone();
+  m.needsUpdate=true; n.needsUpdate=true; m.repeat.set(rep,rep); n.repeat.set(rep,rep);
+  return {map:m,normal:n};
+}
+var groundTexs=groundTexSet(SURFACE_SIZE/11);
+var groundTex=groundTexs.map;
+var groundMat=new THREE.MeshStandardMaterial({vertexColors:true,map:groundTex,normalMap:groundTexs.normal,normalScale:new THREE.Vector2(1.1,1.1),roughness:0.97,metalness:0,envMapIntensity:0.35});
 var groundMesh=new THREE.Mesh(groundGeo,groundMat);
 groundMesh.name="ground";
 surfaceScene.add(groundMesh);
@@ -2527,7 +3040,9 @@ var landingPodBeacon=null;
     }
     wGeo.setAttribute("color",new THREE.BufferAttribute(wcol,3));
     wGeo.computeVertexNormals();
-    var wMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,metalness:0});
+    var wTexs=groundTexSet(plateHalf*2/11);
+    var wMat=new THREE.MeshStandardMaterial({vertexColors:true,map:wTexs.map,normalMap:wTexs.normal,normalScale:new THREE.Vector2(1.4,1.4),
+      roughness:w.decor==="ice"?0.55:0.95,metalness:w.decor==="ice"?0.15:0,envMapIntensity:w.decor==="ice"?0.8:0.35});
     var wMesh=new THREE.Mesh(wGeo,wMat);
     wMesh.position.set(w.cx,0,w.cz);
     surfaceScene.add(wMesh);
@@ -2761,9 +3276,21 @@ var RES={
   frost_crystal:{nm:"Frost Crystal",col:0x9fe0f0}, magma_shard:{nm:"Magma Shard",col:0xff6a2a}, spore_pod:{nm:"Spore Pod",col:0x7aff6a},
   ice_core:{nm:"Ice Core",col:0xeaf7ff}, sulfur_vein:{nm:"Sulfur Vein",col:0xe8d840},
   obsidian_shard:{nm:"Obsidian Shard",col:0x9a5aff},
-  iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545}
+  iron:{nm:"Iron",col:0xe8eaf0}, copper:{nm:"Copper",col:0xff8a4c}, parts:{nm:"Parts",col:0xffb545},
+  /* v2.0 production chain — coal finally has a use (Foundry steel + Coal Generator fuel), and the
+     intermediate goods below feed the Robotics Bay and the new ships */
+  steel:{nm:"Steel Ingot",col:0x8c99a8}, wire:{nm:"Wire",col:0xe0a050}, circuit:{nm:"Circuit Board",col:0x3ac46a},
+  motor:{nm:"Motor",col:0x7a8ccf}, plating:{nm:"Hull Plating",col:0x5aa0d8}, robot:{nm:"Robot Pilot",col:0x4fe0d3},
+  xenite:{nm:"Xenite Core",col:0xff4fd8}
 };
 var RES_ICONS={
+  steel:'<svg viewBox="0 0 24 24"><path d="M3 15l4-6h14l-4 6Z" fill="#8c99a8" stroke="#3a4450" stroke-width="1"/><path d="M3 15h14v3H3Z" fill="#5a6470"/><path d="M17 15l4-6v3l-4 6Z" fill="#6a7480"/></svg>',
+  wire:'<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="8" fill="none" stroke="#e0a050" stroke-width="2.4"/><ellipse cx="12" cy="12" rx="4.5" ry="4.5" fill="none" stroke="#b07020" stroke-width="2"/><circle cx="12" cy="12" r="1.6" fill="#3a2a10"/></svg>',
+  circuit:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5" fill="#1a6a3a" stroke="#0a3a1a" stroke-width="1"/><path d="M6 9h5v3h4M6 15h3v-2M14 16h4M17 8v5" stroke="#ffd06a" stroke-width="1.1" fill="none"/><rect x="10" y="11" width="4" height="4" fill="#1a1a1a"/></svg>',
+  motor:'<svg viewBox="0 0 24 24"><rect x="4" y="7" width="12" height="10" rx="2" fill="#7a8ccf" stroke="#2a3a6a" stroke-width="1"/><rect x="16" y="10.5" width="5" height="3" fill="#c0c8d8"/><path d="M6 7v10M9 7v10M12 7v10" stroke="#4a5a9a" stroke-width="1"/></svg>',
+  plating:'<svg viewBox="0 0 24 24"><path d="M4 6l16-2v14L4 20Z" fill="#5aa0d8" stroke="#1a4a7a" stroke-width="1"/><circle cx="7" cy="8" r="1" fill="#1a4a7a"/><circle cx="17" cy="7" r="1" fill="#1a4a7a"/><circle cx="7" cy="17" r="1" fill="#1a4a7a"/><circle cx="17" cy="16" r="1" fill="#1a4a7a"/></svg>',
+  robot:'<svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="9" rx="2" fill="#eaf2ff" stroke="#2a3a4a" stroke-width="1"/><rect x="8" y="7" width="8" height="2.5" rx="1" fill="#ff4fd8"/><rect x="7" y="14" width="10" height="7" rx="1.5" fill="#4fe0d3" stroke="#1a5a5a" stroke-width="1"/><path d="M12 1v3" stroke="#9aa4b0" stroke-width="1.2"/></svg>',
+  xenite:'<svg viewBox="0 0 24 24"><path d="M12 2l6 6-2 12h-8L6 8Z" fill="#ff4fd8" stroke="#6a0a5a" stroke-width="1"/><path d="M12 2v18M6 8h12" stroke="#ffb0f0" stroke-width=".8"/></svg>',
   iron_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#b5b5c2" stroke="#5a5a62" stroke-width="1"/></svg>',
   copper_ore:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#ff9d5c" stroke="#7a3810" stroke-width="1"/></svg>',
   coal:'<svg viewBox="0 0 24 24"><path d="M4 15l3-8 6-2 6 3 2 7-4 5H8Z" fill="#8a8a92" stroke="#1c1c20" stroke-width="1"/></svg>',
@@ -2784,13 +3311,21 @@ function costStr(cost){
   }).join(' &nbsp;+&nbsp; ');
 }
 var stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,obsidian_shard:0,iron:0,copper:0,parts:0};
+for(var rk0 in RES)if(stock[rk0]==null)stock[rk0]=0;
 /* gates the Hub's unlockable buildings/belt tier out of the Build menu until the player has
    actually paid to unlock them at the Hub console */
 var UPGRADES={
   belt2:{nm:"Conveyor Belt Mk.2",ds:"Unlocks the Mk.2 belt tier — twice the throughput, and it can upgrade an existing Mk.1 belt in place.",cost:{parts:20,iron:15}},
-  refinery:{nm:"Refinery",ds:"Unlocks the Refinery — a dedicated exotic-ore processing line with better yield than running ore through a Constructor.",cost:{parts:30,copper:20}}
+  refinery:{nm:"Refinery",ds:"Unlocks the Refinery — a dedicated exotic-ore processing line with better yield than running ore through a Constructor.",cost:{parts:30,copper:20}},
+  /* v2.0 milestones — each one opens up the next step of the chain, Satisfactory-style:
+     coal -> steel -> wire/circuits/motors -> robot pilots -> a hangar full of ships under your command */
+  foundry:{tier:2,nm:"Foundry",ds:"Tier 2 — Industrialization. Smelts iron ore with coal into Steel Ingots, the backbone of every heavy recipe.",cost:{parts:20,iron:25,copper:10}},
+  assembler:{tier:2,nm:"Assembler",ds:"Tier 2 — Industrialization. A two-armed assembly cell that turns copper and steel into Wire, Circuit Boards, Motors and Hull Plating.",cost:{parts:30,steel:15,copper:15}},
+  hangar:{tier:3,nm:"Hangar",ds:"Tier 3 — Fleet Logistics. Store up to four finished ships. New ships from the Shipyard roll straight in when you already have a flagship.",cost:{parts:40,steel:30,plating:4}},
+  robotics:{tier:3,nm:"Robotics Bay",ds:"Tier 3 — Fleet Logistics. Assembles Robot Pilots from circuits, motors and steel. A robot can fly any ship in your hangar.",cost:{parts:45,circuit:10,motor:6}},
+  fleetcmd:{tier:4,nm:"Fleet Command",ds:"Tier 4 — Armada. Assign robot pilots to hangar ships, pick who flies the next sortie and set their formation.",cost:{parts:60,circuit:15,plating:10}}
 };
-var unlocked={belt2:false,refinery:false};
+var unlocked={belt2:false,refinery:false,foundry:false,assembler:false,hangar:false,robotics:false,fleetcmd:false};
 function canAfford(cost){ for(var k in cost)if((stock[k]||0)<cost[k])return false; return true; }
 function payCost(cost){ for(var k in cost)stock[k]-=cost[k]; }
 
@@ -3002,13 +3537,13 @@ var BUILD_DEFS={
   miner:{nm:"Miner Mk.1",cat:"Production",ds:"A small industrial drill. Extracts ore from the deposit it's built on. Needs both a power cable and an output belt.",cost:{iron_ore:20},powerDraw:20,radius:3.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard"],accepts:[],mineRate:0.5,mineCap:120},
   miner2:{nm:"Miner Mk.2",cat:"Production",ds:"A large industrial drilling rig with multiple heads. Far higher yield than Mk.1, at a much higher power cost.",cost:{iron_ore:60,copper_ore:20},powerDraw:60,radius:4.0,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard"],accepts:[],mineRate:2,mineCap:240},
   smelter:{nm:"Smelter",cat:"Production",ds:"Refines raw ore into metal. Choose a recipe after placing it.",cost:{iron_ore:25},powerDraw:10,radius:3.2,produces:["iron","copper"],accepts:["iron_ore","copper_ore"]},
-  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein"]},
+  constructor:{nm:"Constructor",cat:"Production",ds:"Machines metal into ship parts. Choose a recipe after placing it.",cost:{iron_ore:20,copper_ore:10},powerDraw:12,radius:3.4,produces:[],accepts:["iron","copper","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","steel","xenite"]},
   storage:{nm:"Storage",cat:"Logistics",ds:"Buffers belted resources and slowly banks them.",cost:{iron_ore:15},powerDraw:0,radius:2.4,
-    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"]},
+    produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","steel","wire","circuit","motor","plating","robot","xenite"]},
   splitter:{nm:"Splitter",cat:"Logistics",ds:"One belt in, up to two belts out. Splits the incoming flow between whatever you connect.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","steel","wire","circuit","motor","plating","robot","xenite"]},
   merger:{nm:"Merger",cat:"Logistics",ds:"Up to two belts in, one belt out. Combines multiple lines into a single output.",cost:{iron_ore:12},powerDraw:0,radius:1.8,
-    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"]},
+    produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper"],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","steel","wire","circuit","motor","plating","robot","xenite"]},
   belt:{nm:"Conveyor Belt",cat:"Logistics",ds:"A belt segment. Select the tool, then pick a source building and a destination to run it between them.",cost:{iron_ore:3},tool:true,range:240},
   belt2:{nm:"Conveyor Belt Mk.2",cat:"Logistics",ds:"Twice the throughput of a Mk.1 belt. Aim at an existing Mk.1 belt and click to upgrade it in place — no need to remove it first — or connect two buildings like a normal belt.",cost:{iron:4,copper:2},tool:true,range:240,unlockable:true},
   hub:{nm:"Command Hub",cat:"Command",ds:"Your forward operations center. Once built, this is where you respawn. Interact to open the upgrade console and unlock new buildings and belt tiers.",cost:{iron:40,copper:20,parts:10},powerDraw:15,radius:5.5,uniq:true,produces:[],accepts:[]},
@@ -3017,10 +3552,22 @@ var BUILD_DEFS={
   workshop:{nm:"Workshop",cat:"Crafting",ds:"A cramped garage with a crafting bench. Interact to craft permanent gear upgrades.",cost:{iron_ore:30,copper_ore:10},powerDraw:0,radius:3.0,uniq:true,produces:[],accepts:[]},
   shiplauncher:{nm:"Shipment Launcher",cat:"Shipping",ds:"Buffers belted materials, then launches the whole load to a Shipment Hub you choose. Interact to see what's loaded and pick a destination.",cost:{iron_ore:35,copper_ore:15},powerDraw:15,radius:5.0,produces:[],accepts:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","parts"]},
   shiphub:{nm:"Shipment Hub",cat:"Shipping",ds:"Receives shipments from any Shipment Launcher aimed at it. Interact to see what's arrived, name it, or belt it out to your factory.",cost:{iron_ore:35,copper_ore:15},powerDraw:0,radius:5.6,produces:["iron_ore","copper_ore","coal","frost_crystal","magma_shard","spore_pod","ice_core","sulfur_vein","obsidian_shard","iron","copper","parts"],accepts:[]},
+  coalgen:{nm:"Coal Generator",cat:"Power",ds:"Burns coal for a big 75 MW of power. Belt coal into it, or interact and load it from your backpack. Stops generating the moment its fuel runs out.",cost:{iron_ore:30,copper_ore:15},powerDraw:0,radius:3.2,produces:[],accepts:["coal"],generates:75,fueled:true},
+  foundry:{nm:"Foundry",cat:"Production",ds:"Smelts iron ore together with coal into Steel Ingots. Belt both in (or load them from your backpack). Output with no belt attached goes straight to your stockpile.",cost:{iron:30,copper:10},powerDraw:16,radius:3.1,produces:["steel"],accepts:["iron_ore","coal","iron"],unlockable:true,autoBank:true},
+  assembler:{nm:"Assembler",cat:"Production",ds:"Two robot arms assemble Wire, Circuit Boards, Motors and Hull Plating. Pick a recipe, feed it by belt or from your backpack. Unbelted output goes straight to your stockpile.",cost:{iron:30,steel:10,copper:15},powerDraw:15,radius:3.4,produces:["wire","circuit","motor","plating"],accepts:["iron","copper","steel","wire"],unlockable:true,autoBank:true},
+  robotics:{nm:"Robotics Bay",cat:"Ship Production",ds:"Builds Robot Pilots from circuits, motors and steel. Robots fly the ships in your Hangar — assign them at Fleet Command.",cost:{steel:30,circuit:6,parts:20},powerDraw:22,radius:3.2,produces:["robot"],accepts:["circuit","motor","steel"],unlockable:true,autoBank:true},
+  hangar:{nm:"Hangar",cat:"Ship Production",ds:"Stores up to four finished ships, parked on its berths behind big sliding bay doors. When you launch, every ship you picked for the sortie flies out of here and forms up on you.",cost:{steel:40,iron:30,plating:6},powerDraw:10,radius:7.8,produces:[],accepts:[],unlockable:true},
+  fleetcmd:{nm:"Fleet Command",cat:"Command",ds:"The operations tower for your armada. Interact to assign robot pilots to hangar ships, choose who flies the next sortie and set the formation. One per colony.",cost:{steel:35,circuit:10,plating:8,parts:30},powerDraw:18,radius:3.6,uniq:true,produces:[],accepts:[],unlockable:true},
   landingpad:{nm:"Landing Pad",cat:"Ship Production",ds:"A marked pad with docking lights. Purely a landmark to aim for — flying low and slow anywhere flat still lands you, but this gives you a deliberate spot to fly in on, on any world.",cost:{iron_ore:20,copper_ore:8},powerDraw:0,radius:7,noCollide:true,produces:[],accepts:[]}
 };
-var BUILD_ORDER=["hub","foundation","wall","window","door","railing","plant","lightpost","floorlight","pylon","solar","cable","miner","miner2","smelter","constructor","refinery","storage","splitter","merger","belt","belt2","shipyard","landingpad","workshop","shiplauncher","shiphub"];
+var BUILD_ORDER=["hub","fleetcmd","foundation","wall","window","door","railing","plant","lightpost","floorlight","pylon","solar","coalgen","cable","miner","miner2","smelter","foundry","constructor","assembler","refinery","storage","splitter","merger","belt","belt2","shipyard","hangar","robotics","landingpad","workshop","shiplauncher","shiphub"];
 var BUILD_ICONS={
+  coalgen:'<svg viewBox="0 0 32 32"><rect x="4" y="14" width="18" height="12" fill="#2a2420"/><rect x="7" y="19" width="8" height="4" fill="#ff6a1a"/><rect x="22" y="4" width="4" height="22" fill="#3a3430"/></svg>',
+  foundry:'<svg viewBox="0 0 32 32"><path d="M7 12h18l-3 14H10Z" fill="#4a2e22"/><ellipse cx="16" cy="12" rx="9" ry="3" fill="#ffb030"/></svg>',
+  assembler:'<svg viewBox="0 0 32 32"><rect x="4" y="6" width="24" height="20" fill="none" stroke="#3a4a5e" stroke-width="2"/><path d="M8 24l4-8 4 2" stroke="#ffb545" stroke-width="2.4" fill="none"/></svg>',
+  robotics:'<svg viewBox="0 0 32 32"><rect x="10" y="6" width="12" height="9" rx="2" fill="#eaf2ff"/><rect x="9" y="16" width="14" height="10" rx="2" fill="#4fe0d3"/></svg>',
+  hangar:'<svg viewBox="0 0 32 32"><path d="M3 26V16a13 10 0 0 1 26 0v10Z" fill="#4a5664"/><rect x="9" y="17" width="14" height="9" fill="#1a2230"/></svg>',
+  fleetcmd:'<svg viewBox="0 0 32 32"><path d="M11 28l2-16h6l2 16Z" fill="#3a4656"/><rect x="10" y="10" width="12" height="4" fill="#ffb545"/><path d="M9 6a7 4 0 0 1 14 0" stroke="#d8dde6" stroke-width="2" fill="none"/></svg>',
   foundation:'<svg viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="2" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="4" y1="16" x2="28" y2="16" stroke="#1c2430" stroke-width="1"/><line x1="16" y1="4" x2="16" y2="28" stroke="#1c2430" stroke-width="1"/></svg>',
   wall:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><line x1="9" y1="11" x2="23" y2="11" stroke="#1c2430" stroke-width="1"/><line x1="9" y1="21" x2="23" y2="21" stroke="#1c2430" stroke-width="1"/></svg>',
   window:'<svg viewBox="0 0 32 32"><rect x="9" y="4" width="14" height="24" rx="1" fill="#384454" stroke="#1c2430" stroke-width="1.5"/><rect x="12" y="11" width="8" height="10" fill="#4fd3ff" opacity="0.75"/></svg>',
@@ -3047,6 +3594,19 @@ var BUILD_ICONS={
   refinery:'<svg viewBox="0 0 32 32"><rect x="7" y="13" width="18" height="13" rx="1.5" fill="#1a2233" stroke="#1c2430" stroke-width="1.4"/><rect x="11" y="4" width="4" height="10" fill="#3a4a5e"/><rect x="18" y="7" width="4" height="7" fill="#3a4a5e"/><circle cx="16" cy="19" r="3" fill="#9fe0f0"/></svg>'
 };
 var RECIPES={
+  foundry:[
+    {key:"steel",nm:"Steel Ingot",in:{iron_ore:3,coal:3},out:{steel:2},time:4},
+    {key:"steel_iron",nm:"Steel (from Iron)",in:{iron:2,coal:2},out:{steel:2},time:3}
+  ],
+  assembler:[
+    {key:"wire",nm:"Wire",in:{copper:1},out:{wire:2},time:1.6},
+    {key:"circuit",nm:"Circuit Board",in:{copper:2,wire:3},out:{circuit:1},time:4},
+    {key:"motor",nm:"Motor",in:{steel:2,wire:4},out:{motor:1},time:5},
+    {key:"plating",nm:"Hull Plating",in:{steel:3,iron:2},out:{plating:1},time:5}
+  ],
+  robotics:[
+    {key:"robot",nm:"Robot Pilot",in:{circuit:2,motor:1,steel:2},out:{robot:1},time:12}
+  ],
   smelter:[
     {key:"iron",nm:"Iron Ingot",in:{iron_ore:2},out:{iron:1},time:1.5},
     {key:"copper",nm:"Copper Ingot",in:{copper_ore:2},out:{copper:1},time:1.5}
@@ -3058,6 +3618,7 @@ var RECIPES={
     {key:"parts_spore",nm:"Biotech Parts",in:{copper:1,spore_pod:2},out:{parts:2},time:2.2},
     {key:"parts_ice",nm:"Cryo Parts",in:{iron:1,ice_core:2},out:{parts:2},time:2.2},
     {key:"parts_sulfur",nm:"Sulfur-Treated Parts",in:{copper:1,sulfur_vein:2},out:{parts:2},time:2.2},
+    {key:"parts_xenite",nm:"Xenite Quantum Parts",in:{steel:1,xenite:1},out:{parts:10},time:3},
     {key:"parts_grand",nm:"Alloy Composite Parts",in:{iron:1,copper:1,frost_crystal:1,magma_shard:1,spore_pod:1,ice_core:1,sulfur_vein:1},out:{parts:6},time:3.4}
   ],
   refinery:[
@@ -3089,32 +3650,13 @@ function cableAnchorWorld(b){
 /* Shared scuffed-metal detail texture, reused (via matStd) across every building/prop material
    in the game instead of flat colour fills. It's a plain grayscale panel so it multiplies with
    each material's own colour/tint rather than overriding it. */
-var panelTex=(function(){
-  var cvs=document.createElement("canvas"); cvs.width=128; cvs.height=128;
-  var g=cvs.getContext("2d");
-  g.fillStyle="#9a9a9a"; g.fillRect(0,0,128,128);
-  for(var i=0;i<420;i++){
-    var x=Math.random()*128, y=Math.random()*128, r=rnd(0.3,1.3);
-    var shade=Math.floor(rnd(70,215));
-    g.fillStyle="rgba("+shade+","+shade+","+shade+","+rnd(0.15,0.4)+")";
-    g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();
-  }
-  g.strokeStyle="rgba(30,30,30,.14)"; g.lineWidth=1;
-  for(var j=0;j<8;j++){
-    var sx=Math.random()*128, sy=Math.random()*128, ang=rnd(0,6.28), len=rnd(10,34);
-    g.beginPath(); g.moveTo(sx,sy); g.lineTo(sx+Math.cos(ang)*len,sy+Math.sin(ang)*len); g.stroke();
-  }
-  g.strokeStyle="rgba(255,255,255,.08)";
-  for(var k=0;k<6;k++){
-    var lx=Math.random()*128;
-    g.beginPath(); g.moveTo(lx,0); g.lineTo(lx,128); g.stroke();
-  }
-  var tex=new THREE.CanvasTexture(cvs);
-  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
-  tex.repeat.set(2,2);
-  return tex;
-})();
-function matStd(color,rough,metal){ return new THREE.MeshStandardMaterial({color:color,roughness:rough==null?0.6:rough,metalness:metal==null?0.2:metal,map:panelTex}); }
+/* the old 128px speckle is replaced by the GFX kit's worn-plate set (albedo + normal + roughness),
+   shared by every building/prop material through matStd */
+var panelTex=GFX_METAL.map;
+function matStd(color,rough,metal){
+  return new THREE.MeshStandardMaterial({color:color,roughness:Math.min(1,(rough==null?0.6:rough)*1.45),metalness:metal==null?0.2:metal,
+    map:panelTex,normalMap:GFX_METAL.normal,normalScale:new THREE.Vector2(0.9,0.9),roughnessMap:GFX_METAL.rough,envMapIntensity:0.9});
+}
 function boltRow(g,w,d,y,mat,n){
   n=n||4; mat=mat||matStd(0x1a2230,0.5,0.7);
   for(var i=0;i<n;i++){
@@ -3907,6 +4449,251 @@ function buildBuildingMesh(type){
       eye.position.y=2.15; g.add(eye);
       g.userData.glowMesh=eye;
     }
+  } else if(type==="coalgen"){
+    /* a combustion power plant: twin boiler drums over a firebox with a glowing grate window, a
+       tall smokestack, a turbine housing with a spinning flywheel and fat copper bus bars */
+    var cgBase=new THREE.Mesh(new THREE.BoxGeometry(5.2,0.4,3.6),matStd(0x1c2028,0.7,0.5));
+    cgBase.position.y=0.2; g.add(cgBase);
+    var cgHaz=hazardBar(5.25,0.16,3.65); cgHaz.position.y=0.44; g.add(cgHaz);
+    var firebox=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.8,2.6),matStd(0x2a2420,0.6,0.5));
+    firebox.position.set(-1.2,1.3,0); g.add(firebox);
+    var grateMat=new THREE.MeshStandardMaterial({color:0xff6a1a,emissive:0xff4a0a,emissiveIntensity:1.6});
+    var grate=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.6,0.05),grateMat);
+    grate.position.set(-1.2,0.95,1.33); g.add(grate);
+    g.userData.glowMesh=grate;
+    for(var gb=0;gb<4;gb++){
+      var bar=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.62,0.06),matStd(0x14100c,0.5,0.6));
+      bar.position.set(-1.65+gb*0.3,0.95,1.37); g.add(bar);
+    }
+    [-0.55,0.55].forEach(function(dz){
+      var drum=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,2.6,14),matStd(0x5a4a3a,0.45,0.6));
+      drum.rotation.z=Math.PI/2; drum.position.set(-1.2,2.75,dz); g.add(drum);
+      var cap1=new THREE.Mesh(new THREE.SphereGeometry(0.55,12,8,0,Math.PI*2,0,Math.PI/2),matStd(0x5a4a3a,0.45,0.6));
+      cap1.rotation.z=-Math.PI/2; cap1.position.set(0.1,2.75,dz); g.add(cap1);
+    });
+    var stack=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.6,4.6,12),matStd(0x3a3430,0.75,0.4));
+    stack.position.set(-2.1,3.6,-1.0); g.add(stack);
+    for(var sb=0;sb<3;sb++){
+      var band=new THREE.Mesh(new THREE.TorusGeometry(0.5-sb*0.03,0.05,6,16),matStd(0x8a3a1a,0.5,0.5));
+      band.rotation.x=Math.PI/2; band.position.set(-2.1,2.2+sb*1.3,-1.0); g.add(band);
+    }
+    g.userData.smokeAnchor=new THREE.Vector3(-2.1,6.0,-1.0);
+    var turb=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,1.6,16),matStd(0x2a3542,0.45,0.7));
+    turb.rotation.z=Math.PI/2; turb.position.set(1.35,1.4,0); g.add(turb);
+    /* flywheel on a horizontal shaft: the wheel lies in its wrapper's XZ plane and the wrapper is
+       tipped so that its local Y (the axis spinPart rotates around) points along world X */
+    var flyWrap=new THREE.Group(); flyWrap.position.set(2.2,1.4,0); flyWrap.rotation.z=-Math.PI/2; g.add(flyWrap);
+    var fly=new THREE.Group(); flyWrap.add(fly);
+    var wheel=new THREE.Mesh(new THREE.TorusGeometry(0.75,0.12,8,20),matStd(0xffb545,0.35,0.7));
+    wheel.rotation.x=Math.PI/2; fly.add(wheel);
+    for(var sp=0;sp<4;sp++){ var spoke=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.08,0.1),matStd(0x9aa4b0,0.4,0.7)); spoke.rotation.y=sp*Math.PI/4; fly.add(spoke); }
+    g.userData.spinPart=fly;
+    var busMat=matStd(0xc87a3a,0.3,0.9);
+    for(var bb=0;bb<3;bb++){ var bus=new THREE.Mesh(new THREE.BoxGeometry(0.12,1.2,0.12),busMat); bus.position.set(1.6+bb*0.35,2.6,-1.2); g.add(bus);
+      var ins=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.3,8),matStd(0xe8e0d0,0.4,0.1)); ins.position.set(1.6+bb*0.35,3.3,-1.2); g.add(ins); }
+    var cgStatMat=new THREE.MeshStandardMaterial({color:0x222222});
+    var cgStat=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),cgStatMat); cgStat.position.set(1.35,2.4,0.95); g.add(cgStat);
+    g.userData.statusMat=cgStatMat; g.userData.onCol=0x7bd94a; g.userData.onEm=0x4aff4a;
+    boltRow(g,5.0,3.4,0.42,null,6);
+    g.userData.cableAnchor=new THREE.Vector3(2.3,3.4,-1.2);
+  } else if(type==="foundry"){
+    /* a heavy arc foundry: a squat refractory crucible tipped on trunnions over a pour channel, two
+       electrode masts reaching down into it, a glowing slag spout and a gantry with a ladle hook */
+    var fBase=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.8,0.45,12),matStd(0x1a1612,0.8,0.4));
+    fBase.position.y=0.22; g.add(fBase);
+    var fHaz=hazardRing(2.65,0.2); fHaz.position.y=0.48; g.add(fHaz);
+    var cruc=new THREE.Mesh(new THREE.CylinderGeometry(1.7,1.3,2.4,14),matStd(0x4a2e22,0.85,0.25));
+    cruc.position.set(0,1.75,0); g.add(cruc);
+    var rim=new THREE.Mesh(new THREE.TorusGeometry(1.7,0.16,8,24),matStd(0x2a2420,0.5,0.7));
+    rim.rotation.x=Math.PI/2; rim.position.y=2.95; g.add(rim);
+    var meltMat=new THREE.MeshStandardMaterial({color:0xffb030,emissive:0xff7a10,emissiveIntensity:1.8,roughness:0.3});
+    var melt=new THREE.Mesh(new THREE.CircleGeometry(1.55,24),meltMat);
+    melt.rotation.x=-Math.PI/2; melt.position.y=2.9; g.add(melt);
+    g.userData.glowMesh=melt;
+    [-1,1].forEach(function(s){
+      var mast=new THREE.Mesh(new THREE.BoxGeometry(0.3,3.6,0.3),matStd(0x2a3542,0.5,0.7));
+      mast.position.set(s*2.2,2.3,0); g.add(mast);
+      var elec=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1.8,8),matStd(0x1a1a1a,0.6,0.4));
+      elec.position.set(s*0.6,3.6,0); g.add(elec);
+      var arm=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.22,0.22),matStd(0x2a3542,0.5,0.7));
+      arm.position.set(s*1.4,4.45,0); g.add(arm);
+    });
+    var spout=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.25,1.6),matStd(0x3a2a20,0.7,0.3));
+    spout.position.set(0,1.6,2.0); spout.rotation.x=0.35; g.add(spout);
+    var slag=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.06,1.4),meltMat);
+    slag.position.set(0,1.75,2.0); slag.rotation.x=0.35; g.add(slag);
+    var mold=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.5,0.9),matStd(0x22262c,0.6,0.6));
+    mold.position.set(0,0.7,2.8); g.add(mold);
+    var hood=new THREE.Mesh(new THREE.ConeGeometry(1.4,1.0,12,1,true),matStd(0x3a3632,0.6,0.5));
+    hood.position.set(0,5.2,0); g.add(hood);
+    var duct=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,2.2,10),matStd(0x3a3632,0.7,0.4));
+    duct.position.set(0.9,6.2,-0.6); duct.rotation.z=-0.5; g.add(duct);
+    g.userData.smokeAnchor=new THREE.Vector3(1.4,7.1,-0.6);
+    var fStatMat=new THREE.MeshStandardMaterial({color:0x222222});
+    var fStat=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.06),fStatMat); fStat.position.set(2.2,1.2,0.2); g.add(fStat);
+    g.userData.statusMat=fStatMat; g.userData.onCol=0xff9d3c; g.userData.onEm=0xff6a1a;
+    boltRow(g,3.2,3.2,0.46,null,6);
+    g.userData.cableAnchor=new THREE.Vector3(-2.2,3.9,0);
+  } else if(type==="assembler"){
+    /* a two-armed assembly cell: enclosed glass-walled work bay, twin articulated robot arms either
+       side of a turntable, overhead lighting rail, part bins and a control console */
+    var aBase=new THREE.Mesh(new THREE.BoxGeometry(5.0,0.35,4.0),matStd(0x232a34,0.7,0.5));
+    aBase.position.y=0.18; g.add(aBase);
+    var aHaz=hazardBar(5.05,0.14,4.05); aHaz.position.y=0.4; g.add(aHaz);
+    var frameMat=matStd(0x3a4a5e,0.45,0.7);
+    [[-2.3,-1.8],[2.3,-1.8],[-2.3,1.8],[2.3,1.8]].forEach(function(c){
+      var post=new THREE.Mesh(new THREE.BoxGeometry(0.22,3.4,0.22),frameMat); post.position.set(c[0],2.05,c[1]); g.add(post);
+    });
+    var roof=new THREE.Mesh(new THREE.BoxGeometry(4.9,0.25,3.9),frameMat); roof.position.y=3.8; g.add(roof);
+    var glassMat=new THREE.MeshStandardMaterial({color:0x9fd8ff,transparent:true,opacity:0.18,roughness:0.05,metalness:0.1});
+    var glassB=new THREE.Mesh(new THREE.BoxGeometry(4.5,3.2,0.04),glassMat); glassB.position.set(0,2.05,-1.8); glassB.userData.noShadow=true; g.add(glassB);
+    var lightRail=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.08,0.2),new THREE.MeshStandardMaterial({color:0xeaf6ff,emissive:0xbfe6ff,emissiveIntensity:1.3}));
+    lightRail.position.set(0,3.62,0); g.add(lightRail);
+    var turn=new THREE.Group();
+    var table=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,0.25,20),matStd(0x1a2230,0.4,0.7)); turn.add(table);
+    var work=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.3,0.5),matStd(0xffb545,0.4,0.6)); work.position.y=0.28; turn.add(work);
+    turn.position.set(0,0.9,0); g.add(turn);
+    var ped=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.5,0.6,10),matStd(0x2a3542,0.5,0.6)); ped.position.y=0.55; g.add(ped);
+    g.userData.spinPart=turn;
+    var armMat=matStd(0xffb545,0.4,0.55), jointMat=matStd(0x1a2230,0.45,0.7);
+    var arms=[];
+    [-1,1].forEach(function(s){
+      var arm=new THREE.Group();
+      var aB=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.45,0.4,12),jointMat); aB.position.y=0.2; arm.add(aB);
+      var up=new THREE.Group(); up.position.y=0.4;
+      var seg1=new THREE.Mesh(new THREE.BoxGeometry(0.28,1.5,0.28),armMat); seg1.position.y=0.75; up.add(seg1);
+      var elbow=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8),jointMat); elbow.position.y=1.5; up.add(elbow);
+      var fore=new THREE.Group(); fore.position.y=1.5;
+      var seg2=new THREE.Mesh(new THREE.BoxGeometry(0.22,1.1,0.22),armMat); seg2.position.y=0.55; fore.add(seg2);
+      var tool=new THREE.Mesh(new THREE.ConeGeometry(0.14,0.35,8),new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x4fd3ff,emissiveIntensity:1.2}));
+      tool.position.y=1.2; tool.rotation.x=Math.PI; fore.add(tool);
+      up.add(fore); arm.add(up);
+      arm.position.set(s*1.7,0.35,0.4); arm.rotation.y=s>0?Math.PI:0;
+      up.rotation.z=s*0.5; fore.rotation.z=-s*1.4;
+      g.add(arm); arms.push({up:up,fore:fore,s:s});
+    });
+    g.userData.robotArms=arms;
+    for(var bi=0;bi<3;bi++){ var bin=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.5,0.6),matStd([0x5a8a3a,0x3a5a8a,0x8a5a3a][bi],0.7,0.3)); bin.position.set(-1.6+bi*0.8,0.65,-1.35); g.add(bin); }
+    var cons=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.0,0.5),matStd(0x1a2230,0.5,0.6)); cons.position.set(2.0,0.85,1.4); cons.rotation.y=-0.4; g.add(cons);
+    var aScrMat=new THREE.MeshStandardMaterial({color:0x0a1a2a,emissive:0x2a8ad8,emissiveIntensity:1.1});
+    var aScr=new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.45),aScrMat); aScr.position.set(1.9,1.2,1.67); aScr.rotation.set(-0.4,-0.4,0); g.add(aScr);
+    g.userData.statusMat=aScrMat; g.userData.onCol=0x0a1a2a; g.userData.onEm=0x2a8ad8;
+    boltRow(g,4.8,3.8,0.38,null,6);
+    g.userData.cableAnchor=new THREE.Vector3(-2.3,3.6,1.8);
+  } else if(type==="robotics"){
+    /* robotics bay: a clean-room capsule where pilot robots are assembled — a vertical gantry lowers
+       a robot torso onto a charging cradle under a scanning light ring, with a finished-robot rack */
+    var rBase=new THREE.Mesh(new THREE.CylinderGeometry(2.8,3.0,0.4,16),matStd(0x1c222c,0.7,0.5));
+    rBase.position.y=0.2; g.add(rBase);
+    var rHaz=hazardRing(2.85,0.18); rHaz.position.y=0.42; g.add(rHaz);
+    var shell=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.6,3.6,20,1,true,0,Math.PI*1.35),matStd(0xd8dde6,0.35,0.4));
+    shell.material.side=THREE.DoubleSide; shell.position.y=2.2; shell.rotation.y=Math.PI*0.85; g.add(shell);
+    var dome=new THREE.Mesh(new THREE.SphereGeometry(2.4,20,10,0,Math.PI*2,0,Math.PI/2),matStd(0xd8dde6,0.35,0.4));
+    dome.position.y=4.0; g.add(dome);
+    var cradle=new THREE.Mesh(new THREE.CylinderGeometry(0.8,0.95,0.5,16),matStd(0x2a3542,0.45,0.7)); cradle.position.y=0.65; g.add(cradle);
+    var scanMat=new THREE.MeshStandardMaterial({color:0x4fe0d3,emissive:0x4fe0d3,emissiveIntensity:1.6,transparent:true,opacity:0.85});
+    var scan=new THREE.Mesh(new THREE.TorusGeometry(1.0,0.06,8,28),scanMat); scan.rotation.x=Math.PI/2; scan.position.y=1.6; g.add(scan);
+    g.userData.scanRing=scan;
+    var bot=new THREE.Group();
+    var torso=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.9,0.5),matStd(0x4fe0d3,0.4,0.5)); torso.position.y=0.45; bot.add(torso);
+    var head=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.4,0.45),matStd(0xeaf2ff,0.35,0.5)); head.position.y=1.12; bot.add(head);
+    var visor=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.12,0.03),new THREE.MeshStandardMaterial({color:0x111111,emissive:0xff4fd8,emissiveIntensity:1.5})); visor.position.set(0,1.14,0.24); bot.add(visor);
+    [-1,1].forEach(function(s){ var a=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.7,0.16),matStd(0x9aa4b0,0.4,0.6)); a.position.set(s*0.45,0.5,0); bot.add(a); });
+    bot.position.y=0.9; g.add(bot); g.userData.botPart=bot;
+    var gantry=new THREE.Mesh(new THREE.BoxGeometry(0.25,3.6,0.25),matStd(0x3a4a5e,0.45,0.7)); gantry.position.set(-1.6,2.2,-1.0); g.add(gantry);
+    var boom=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.22,0.22),matStd(0x3a4a5e,0.45,0.7)); boom.position.set(-0.75,3.8,-1.0); g.add(boom);
+    var claw=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.5,0.4),matStd(0xffb545,0.4,0.6)); claw.position.set(0,3.4,-1.0); g.add(claw);
+    g.userData.clawPart=claw;
+    var rack=new THREE.Mesh(new THREE.BoxGeometry(0.4,2.4,1.8),matStd(0x2a3542,0.5,0.6)); rack.position.set(2.2,1.6,0.8); g.add(rack);
+    for(var rb=0;rb<3;rb++){ var pod=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.5,0.4),matStd(0x4fe0d3,0.4,0.5)); pod.position.set(2.0,0.9+rb*0.7,0.8); g.add(pod); }
+    var rStatMat=new THREE.MeshStandardMaterial({color:0x222222});
+    var rStat=new THREE.Mesh(new THREE.SphereGeometry(0.18,10,8),rStatMat); rStat.position.set(0,6.4,0); g.add(rStat);
+    var mastR=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.9,6),matStd(0x9aa4b0)); mastR.position.y=5.9; g.add(mastR);
+    g.userData.statusMat=rStatMat; g.userData.onCol=0x4fe0d3; g.userData.onEm=0x4fe0d3;
+    g.userData.cableAnchor=new THREE.Vector3(-1.6,3.9,-1.0);
+  } else if(type==="hangar"){
+    /* a big arched hangar: ribbed barrel-vault roof, two-leaf sliding bay doors on the front, floor
+       markings for four ship berths (parked ships are added separately, see syncHangarShips),
+       floodlights, a control booth and a wind sock */
+    var hW=11, hD=12, hH=5.6;
+    var floor=new THREE.Mesh(new THREE.BoxGeometry(hW+1,0.3,hD+1),matStd(0x2e3846,0.75,0.4));
+    floor.position.y=0.15; g.add(floor);
+    var lineMat=new THREE.MeshStandardMaterial({color:0xffb545,emissive:0x5a3a08,emissiveIntensity:0.6,roughness:0.6});
+    [-2.6,2.6].forEach(function(lx){ [-2.8,2.8].forEach(function(lz){
+      var berth=new THREE.Mesh(new THREE.RingGeometry(1.9,2.05,24),lineMat); berth.rotation.x=-Math.PI/2; berth.position.set(lx,0.32,lz); g.add(berth);
+    }); });
+    var stripe=new THREE.Mesh(new THREE.BoxGeometry(0.25,0.02,hD),lineMat); stripe.position.set(0,0.31,0); g.add(stripe);
+    var vaultMat=matStd(0x4a5664,0.5,0.6);
+    var vaultGeo=new THREE.CylinderGeometry(hW/2,hW/2,hD,28,1,true,-Math.PI/2,Math.PI);
+    vaultGeo.rotateX(-Math.PI/2); vaultGeo.scale(1,hH/(hW/2),1);
+    var vault=new THREE.Mesh(vaultGeo,vaultMat);
+    vault.material.side=THREE.DoubleSide; vault.position.set(0,0.3,0);
+    g.add(vault);
+    var ribMat=matStd(0x2a3542,0.45,0.75);
+    for(var ri2=0;ri2<7;ri2++){
+      var rib=new THREE.Mesh(new THREE.TorusGeometry(hW/2,0.16,6,24,Math.PI),ribMat);
+      rib.position.set(0,0.3,-hD/2+ri2*(hD/6)); rib.scale.set(1,hH/(hW/2),1); g.add(rib);
+    }
+    var backWall=new THREE.Mesh(new THREE.CircleGeometry(hW/2,24,0,Math.PI),vaultMat);
+    backWall.position.set(0,0.3,-hD/2); backWall.scale.set(1,hH/(hW/2),1); backWall.material.side=THREE.DoubleSide; g.add(backWall);
+    var doorMatH=matStd(0x3a4450,0.5,0.6);
+    var leafL=new THREE.Group(), leafR=new THREE.Group();
+    [leafL,leafR].forEach(function(leaf,li){
+      var s=li===0?-1:1;
+      var panel=new THREE.Mesh(new THREE.BoxGeometry(hW/2-0.1,hH-0.3,0.25),doorMatH); panel.position.set(s*(hW/4),hH/2,0); leaf.add(panel);
+      var hs=hazardBar(hW/2-0.3,0.45,0.27); hs.position.set(s*(hW/4),0.6,0.02); leaf.add(hs);
+      for(var st=0;st<3;st++){ var rib2=new THREE.Mesh(new THREE.BoxGeometry(hW/2-0.4,0.12,0.32),matStd(0x2a3542,0.5,0.7)); rib2.position.set(s*(hW/4),1.6+st*1.3,0); leaf.add(rib2); }
+      var porthole=new THREE.Mesh(new THREE.CircleGeometry(0.32,16),new THREE.MeshStandardMaterial({color:0x0a1a2a,emissive:0x4fd3ff,emissiveIntensity:0.7}));
+      porthole.position.set(s*(hW/4),hH*0.62,0.14); leaf.add(porthole);
+      leaf.position.set(0,0.3,hD/2); g.add(leaf);
+    });
+    g.userData.hangarDoorL=leafL; g.userData.hangarDoorR=leafR; g.userData.hangarDoorW=hW/2;
+    var lintel=new THREE.Mesh(new THREE.BoxGeometry(hW+0.6,0.6,0.6),ribMat); lintel.position.set(0,hH+0.4,hD/2); g.add(lintel);
+    var floodMat=new THREE.MeshStandardMaterial({color:0xfff4d8,emissive:0xffe8b0,emissiveIntensity:1.4});
+    [-1,1].forEach(function(s){
+      var lamp=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.3,0.3),floodMat); lamp.position.set(s*(hW/2-0.6),hH+0.4,hD/2+0.35); g.add(lamp);
+      var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6),new THREE.MeshStandardMaterial({color:0xff4d3a,emissive:0xff2a1a,emissiveIntensity:1.5}));
+      beacon.position.set(s*(hW/2+0.1),hH+0.85,hD/2); g.add(beacon);
+    });
+    var booth=new THREE.Mesh(new THREE.BoxGeometry(1.8,2.2,1.8),matStd(0x2a3542,0.5,0.6)); booth.position.set(hW/2+1.4,1.4,hD/2-1.5); g.add(booth);
+    var hWin=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.6),new THREE.MeshStandardMaterial({color:0x0a1a2a,emissive:0x4fd3ff,emissiveIntensity:0.9}));
+    hWin.position.set(hW/2+1.4,1.9,hD/2-0.59); g.add(hWin);
+    g.userData.statusMat=hWin.material; g.userData.onCol=0x0a1a2a; g.userData.onEm=0x4fd3ff;
+    var sockPole=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,3,6),matStd(0x9aa4b0)); sockPole.position.set(-hW/2-1,1.8,hD/2); g.add(sockPole);
+    var sock=new THREE.Mesh(new THREE.ConeGeometry(0.25,1.1,8,1,true),new THREE.MeshStandardMaterial({color:0xff8a30,side:THREE.DoubleSide,roughness:0.8}));
+    sock.rotation.z=Math.PI/2; sock.position.set(-hW/2-0.45,3.2,hD/2); g.add(sock);
+    g.userData.swayPart=sock;
+    g.userData.cableAnchor=new THREE.Vector3(hW/2+1.4,2.6,hD/2-1.5);
+  } else if(type==="fleetcmd"){
+    /* fleet command: a stepped operations tower with a wraparound lit command deck, a big rotating
+       radar dish, a comms mast with blinking beacons and a holographic tactical table at its base */
+    var fcBase=new THREE.Mesh(new THREE.CylinderGeometry(3.2,3.5,0.5,8),matStd(0x1c222c,0.7,0.5));
+    fcBase.position.y=0.25; g.add(fcBase);
+    var fcHaz=hazardRing(3.25,0.2); fcHaz.position.y=0.52; g.add(fcHaz);
+    var t1=new THREE.Mesh(new THREE.CylinderGeometry(2.0,2.5,3.0,8),matStd(0x3a4656,0.5,0.6)); t1.position.y=2.0; g.add(t1);
+    var deckMat=new THREE.MeshStandardMaterial({color:0x0a1a2a,emissive:0xffb545,emissiveIntensity:1.0,roughness:0.2,metalness:0.4});
+    var deck=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.1,1.0,8),deckMat); deck.position.y=4.0; g.add(deck);
+    var deckRoof=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.5,0.3,8),matStd(0x2a3542,0.5,0.6)); deckRoof.position.y=4.65; g.add(deckRoof);
+    var t2=new THREE.Mesh(new THREE.CylinderGeometry(0.7,1.0,1.6,8),matStd(0x3a4656,0.5,0.6)); t2.position.y=5.6; g.add(t2);
+    var dishG=new THREE.Group();
+    var dish=new THREE.Mesh(new THREE.SphereGeometry(1.6,16,8,0,Math.PI*2,0,Math.PI*0.32),matStd(0xd8dde6,0.35,0.5));
+    dish.material.side=THREE.DoubleSide; dish.rotation.x=-Math.PI/2+0.5; dish.position.set(0,0.4,0.6); dishG.add(dish);
+    var feed=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.4,6),matStd(0x9aa4b0)); feed.rotation.x=1.1; feed.position.set(0,0.9,1.2); dishG.add(feed);
+    var yoke=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.8,0.5),matStd(0x2a3542,0.5,0.6)); yoke.position.y=0.1; dishG.add(yoke);
+    dishG.position.y=6.6; g.add(dishG);
+    g.userData.spinPart=dishG;
+    var mast=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.1,3.2,6),matStd(0x9aa4b0)); mast.position.set(1.3,6.4,-0.6); g.add(mast);
+    var bcnMat=new THREE.MeshStandardMaterial({color:0xff4d3a,emissive:0xff2a1a,emissiveIntensity:1.6});
+    var bcn=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),bcnMat); bcn.position.set(1.3,8.05,-0.6); g.add(bcn);
+    g.userData.beaconMat=bcnMat;
+    var tableH=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.1,0.8,16),matStd(0x1a2230,0.45,0.7)); tableH.position.set(0,0.9,3.0); g.add(tableH);
+    var holoMat=new THREE.MeshBasicMaterial({color:0x4fd3ff,transparent:true,opacity:0.45,blending:THREE.AdditiveBlending,depthWrite:false});
+    var holo=new THREE.Mesh(new THREE.ConeGeometry(0.9,1.4,16,1,true),holoMat); holo.position.set(0,2.0,3.0); holo.rotation.x=Math.PI; g.add(holo);
+    var holoPlanet=new THREE.Mesh(new THREE.SphereGeometry(0.28,12,8),new THREE.MeshBasicMaterial({color:0xffb545,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending}));
+    holoPlanet.position.set(0,2.2,3.0); g.add(holoPlanet);
+    g.userData.holoPart=holoPlanet;
+    g.userData.statusMat=deckMat; g.userData.onCol=0x0a1a2a; g.userData.onEm=0xffb545;
+    g.userData.cableAnchor=new THREE.Vector3(2.2,2.0,0);
   } else if(type==="lightpost"){
     var poleMat=matStd(0x2a3542,0.55,0.55);
     var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.14,3.6,8),poleMat);
@@ -4041,6 +4828,8 @@ function makeBuilding(type,x,z,rotY,node){
 }
 function destCapFor(b,res){
   if(b.type==="smelter"||b.type==="constructor")return 30;
+  if(b.type==="foundry"||b.type==="assembler"||b.type==="robotics")return 40;
+  if(b.type==="coalgen")return 50;
   if(b.type==="storage")return 60;
   if(b.type==="splitter"||b.type==="merger")return 16;
   if(b.type==="shiplauncher")return 40;
@@ -4050,6 +4839,8 @@ function destCapFor(b,res){
 function refundCost(cost){ for(var k in cost)stock[k]=(stock[k]||0)+cost[k]*0.5; }
 function removeBuilding(b){
   if(b.job){ toast("Can't remove — it's busy"); return; }
+  if(b.type==="hangar"&&fleet.length>fleetCapacity()-4){ toast("Fly or scrap the ships parked here before removing this Hangar"); return; }
+  if(b._parked)Object.keys(b._parked).forEach(function(id){ surfaceScene.remove(b._parked[id]); });
   belts.slice().forEach(function(bl){
     if(bl.from!==b&&bl.to!==b)return;
     surfaceScene.remove(bl.mesh); belts.splice(belts.indexOf(bl),1); refundCost(BUILD_DEFS.belt.cost);
@@ -4194,7 +4985,7 @@ function computePowerNetworks(){
   buildings.forEach(function(b){ nets[b.netId]=nets[b.netId]||{gen:0,draw:0}; });
   buildings.forEach(function(b){
     var d=BUILD_DEFS[b.type];
-    if(d.generates)nets[b.netId].gen+=d.generates;
+    if(d.generates&&(!d.fueled||b.burning))nets[b.netId].gen+=d.generates;
     if(d.powerDraw)nets[b.netId].draw+=d.powerDraw;
   });
   buildings.forEach(function(b){
@@ -4414,7 +5205,7 @@ function findBuildingNear(x,z,margin){
 }
 function buildingProduces(b){
   if(b.type==="miner"||b.type==="miner2")return b.node?[b.node.restype]:[];
-  if(b.type==="smelter"){ var r=activeRecipe(b); return r?Object.keys(r.out):[]; }
+  if(b.type==="smelter"||BUILD_DEFS[b.type].autoBank){ var r=activeRecipe(b); return r?Object.keys(r.out):[]; }
   if(b.type==="shiphub"){
     /* a Shipment Hub's "produces" is really "whatever anyone's ever shipped it" — connecting a
        belt used to always pick the first resource type in BUILD_DEFS.shiphub.produces (iron ore)
@@ -4474,7 +5265,11 @@ var PORT_SIDES={
   merger:{in:[{dir:{x:-1,z:0},off:-0.55},{dir:{x:-1,z:0},off:0.55}],out:[{dir:{x:1,z:0},off:0}]},
   shiplauncher:{in:[{dir:{x:-1,z:0},off:0}]},
   shiphub:{out:[{dir:{x:1,z:0},off:0}]},
-  refinery:{in:[{dir:{x:-1,z:0},off:-0.4},{dir:{x:-1,z:0},off:0.4}]}
+  refinery:{in:[{dir:{x:-1,z:0},off:-0.4},{dir:{x:-1,z:0},off:0.4}]},
+  coalgen:{in:[{dir:{x:-1,z:0},off:0}]},
+  foundry:{in:[{dir:{x:-1,z:0},off:-0.6},{dir:{x:-1,z:0},off:0.6}],out:[{dir:{x:1,z:0},off:0}]},
+  assembler:{in:[{dir:{x:-1,z:0},off:-0.6},{dir:{x:-1,z:0},off:0.6}],out:[{dir:{x:1,z:0},off:0}]},
+  robotics:{in:[{dir:{x:-1,z:0},off:-0.8},{dir:{x:-1,z:0},off:0},{dir:{x:-1,z:0},off:0.8}],out:[{dir:{x:1,z:0},off:0}]}
 };
 function portCapacity(b,side){ var d=PORT_SIDES[b.type]; return (d&&d[side])?d[side].length:0; }
 function usedPortSlots(b,side){
@@ -4539,6 +5334,34 @@ function makeBeltItemMesh(res){
     core.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
     core.scale.set(1,rnd(0.7,1.1),1);
     g.add(core);
+  } else if(res==="steel"){
+    var smat=new THREE.MeshStandardMaterial({color:col,roughness:0.35,metalness:0.85,map:GFX_METAL.map});
+    var beam=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.1,0.14),smat); g.add(beam);
+    var flange=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.03,0.2),smat); flange.position.y=0.06; g.add(flange);
+    var flange2=flange.clone(); flange2.position.y=-0.06; g.add(flange2);
+  } else if(res==="wire"){
+    var coil=new THREE.Mesh(new THREE.TorusGeometry(0.11,0.045,8,16),new THREE.MeshStandardMaterial({color:col,roughness:0.3,metalness:0.9}));
+    coil.rotation.x=Math.PI/2; g.add(coil);
+    var spool=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.12,10),new THREE.MeshStandardMaterial({color:0x3a2a10,roughness:0.7})); g.add(spool);
+  } else if(res==="circuit"){
+    var pcb=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.03,0.22),new THREE.MeshStandardMaterial({color:0x1a6a3a,roughness:0.5,metalness:0.2})); g.add(pcb);
+    var chip=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.03,0.1),new THREE.MeshStandardMaterial({color:0x111111,roughness:0.4})); chip.position.y=0.03; g.add(chip);
+    var trace=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.005,0.02),new THREE.MeshStandardMaterial({color:0xffd06a,emissive:0x5a3a00,metalness:0.9,roughness:0.3})); trace.position.set(0,0.018,0.07); g.add(trace);
+  } else if(res==="motor"){
+    var can=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.11,0.24,14),new THREE.MeshStandardMaterial({color:col,roughness:0.35,metalness:0.7}));
+    can.rotation.z=Math.PI/2; g.add(can);
+    var shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.12,8),new THREE.MeshStandardMaterial({color:0xd0d8e0,metalness:0.9,roughness:0.2}));
+    shaft.rotation.z=Math.PI/2; shaft.position.x=0.17; g.add(shaft);
+  } else if(res==="plating"){
+    var plate=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.04,0.26),new THREE.MeshStandardMaterial({color:col,roughness:0.4,metalness:0.75,map:GFX_METAL.map,normalMap:GFX_METAL.normal}));
+    plate.rotation.z=0.08; g.add(plate);
+  } else if(res==="robot"){
+    var rb=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.2,0.14),new THREE.MeshStandardMaterial({color:col,roughness:0.4,metalness:0.5})); rb.position.y=-0.02; g.add(rb);
+    var rh=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.12,0.13),new THREE.MeshStandardMaterial({color:0xeaf2ff,roughness:0.35,metalness:0.5})); rh.position.y=0.15; g.add(rh);
+    var rv=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.035,0.01),new THREE.MeshStandardMaterial({color:0x111111,emissive:0xff4fd8,emissiveIntensity:1.5})); rv.position.set(0,0.16,0.066); g.add(rv);
+  } else if(res==="xenite"){
+    var xm=new THREE.MeshStandardMaterial({color:col,emissive:0xb0209a,emissiveIntensity:0.9,roughness:0.15,metalness:0.4,flatShading:true});
+    var xc=new THREE.Mesh(new THREE.OctahedronGeometry(0.15,0),xm); xc.scale.set(0.8,1.3,0.8); g.add(xc);
   } else if(res==="iron"||res==="copper"){
     var mat=new THREE.MeshStandardMaterial({color:col,roughness:0.3,metalness:0.75});
     var bar=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.13,0.16),mat);
@@ -4807,7 +5630,7 @@ function updateBuildings(dt){
       b.mesh.userData.ioGlow.forEach(function(m){ m.emissiveIntensity=1.1*pulse; });
     }
     if(b.userData)return;
-    if(b.type==="smelter"||b.type==="constructor")b.recipeActive=false;
+    if(b.type==="smelter"||b.type==="constructor"||b.type==="coalgen")b.recipeActive=false;
     if((b.type==="miner"||b.type==="miner2")&&b.node&&powOk){
       var cap=d.mineCap,r=b.node.restype;
       b.out[r]=Math.min(cap,(b.out[r]||0)+d.mineRate*dt);
@@ -4842,6 +5665,32 @@ function updateBuildings(dt){
           if(b.targetMode==="target")b.producedCount=(b.producedCount||0)+r.out[pk]*mb;
           b.recipeActive=true;
           b.cycleT=((b.cycleT||0)+dt)%r.time;
+        }
+      }
+    } else if(b.type==="coalgen"){
+      /* one coal keeps the boiler lit for 4 seconds; burning is what computePowerNetworks reads */
+      b.burnT=b.burnT||0;
+      if(b.burnT<=0&&(b.in.coal||0)>=1){ b.in.coal-=1; b.burnT=4; }
+      if(b.burnT>0){ b.burnT-=dt; b.burning=true; b.recipeActive=true; } else { b.burning=false; }
+    } else if(d.autoBank&&powOk){
+      /* Satisfactory-style machine, plus one quality-of-life rule: an output with no belt hooked up
+         to carry it away goes straight into your stockpile instead of just clogging the machine */
+      var ar=activeRecipe(b);
+      b.recipeActive=false;
+      if(ar&&!(b.targetMode==="target"&&(b.producedCount||0)>=(b.targetQty||0))){
+        var apk=Object.keys(ar.out)[0];
+        var amb=dt/ar.time;
+        for(var ak in ar.in)amb=Math.min(amb,(b.in[ak]||0)/ar.in[ak]);
+        var belted={};
+        belts.forEach(function(bl){ if(bl.from===b)belted[bl.res]=true; });
+        for(var ak2 in ar.out){ if(belted[ak2])amb=Math.min(amb,Math.max(0,destCapFor(b,ak2)-(b.out[ak2]||0))/ar.out[ak2]); }
+        if(b.targetMode==="target")amb=Math.min(amb,Math.max(0,(b.targetQty||0)-(b.producedCount||0))/ar.out[apk]);
+        if(amb>0){
+          for(var ak3 in ar.in)b.in[ak3]-=ar.in[ak3]*amb;
+          for(var ak4 in ar.out){ if(belted[ak4])b.out[ak4]=(b.out[ak4]||0)+ar.out[ak4]*amb; else stock[ak4]=(stock[ak4]||0)+ar.out[ak4]*amb; }
+          if(b.targetMode==="target")b.producedCount=(b.producedCount||0)+ar.out[apk]*amb;
+          b.recipeActive=true;
+          b.cycleT=((b.cycleT||0)+dt)%ar.time;
         }
       }
     } else if(b.type==="shipyard"&&b.job){
@@ -4886,7 +5735,8 @@ function updateBuildings(dt){
     if(status){
       var active=powOk&&(d.generates||b.type==="storage"||b.type==="shipyard"&&b.job||
         ((b.type==="miner"||b.type==="miner2")&&b.node)||b.type==="smelter"||b.type==="constructor"||b.type==="refinery"||b.type==="pylon"||
-        b.type==="splitter"||b.type==="merger"||b.type==="workshop"||b.type==="shiplauncher"||b.type==="shiphub"||b.type==="hub");
+        b.type==="splitter"||b.type==="merger"||b.type==="workshop"||b.type==="shiplauncher"||b.type==="shiphub"||b.type==="hub"||
+        (b.type==="coalgen"&&b.burning)||(d.autoBank&&b.recipeActive)||b.type==="hangar"||b.type==="fleetcmd");
       if(b.overload){
         status.color.set(0xff4d3a); status.emissive.set(0xff2a1a);
       } else {
@@ -4895,7 +5745,7 @@ function updateBuildings(dt){
       }
     }
     if(b.mesh&&b.mesh.userData.glowMesh){
-      b.mesh.userData.glowMesh.material.emissiveIntensity=powOk?1.4:0.05;
+      b.mesh.userData.glowMesh.material.emissiveIntensity=b.type==="coalgen"?(b.burning?1.4+Math.sin(performance.now()/90)*0.3:0.05):(powOk?1.4:0.05);
     }
     if(b.mesh&&b.mesh.userData.spinPart&&b.powered)b.mesh.userData.spinPart.rotation.y+=dt*3;
     if(b.mesh&&b.mesh.userData.spinParts&&b.powered)b.mesh.userData.spinParts.forEach(function(sp){ sp.rotation.y+=dt*3; });
@@ -4925,6 +5775,23 @@ function updateBuildings(dt){
       ux.doorLeafR.position.x=ux.doorClosedX+offs;
       if(ux.doorLightMat)ux.doorLightMat.emissive.set(b._doorAnim>0.5?0x7bd94a:0xff4d5e);
     }
+    if(b.mesh&&b.mesh.userData.robotArms&&b.recipeActive){
+      var rt=performance.now()/1000;
+      b.mesh.userData.robotArms.forEach(function(a,ai){ a.up.rotation.z=a.s*(0.5+Math.sin(rt*2.2+ai*1.7)*0.35); a.fore.rotation.z=-a.s*(1.4+Math.sin(rt*3.1+ai)*0.4); });
+    }
+    if(b.mesh&&b.mesh.userData.scanRing){
+      var st2=performance.now()/1000;
+      b.mesh.userData.scanRing.position.y=b.recipeActive?1.0+((st2*0.8)%1)*1.6:1.6;
+      b.mesh.userData.scanRing.material.emissiveIntensity=b.recipeActive?1.8:0.3;
+      if(b.mesh.userData.clawPart)b.mesh.userData.clawPart.position.y=b.recipeActive?3.0+Math.sin(st2*1.6)*0.35:3.4;
+      if(b.mesh.userData.botPart)b.mesh.userData.botPart.rotation.y=b.recipeActive?st2*0.9:0;
+    }
+    if(b.mesh&&b.mesh.userData.holoPart){
+      var ht=performance.now()/1000;
+      b.mesh.userData.holoPart.position.y=2.2+Math.sin(ht*1.4)*0.12; b.mesh.userData.holoPart.rotation.y=ht;
+      if(b.mesh.userData.beaconMat)b.mesh.userData.beaconMat.emissiveIntensity=Math.sin(ht*4)>0.2?1.8:0.2;
+    }
+    if(b.type==="hangar"&&b.mesh){ if(!b._synced){ b._synced=true; syncHangarShips(); } updateHangarVisual(b,dt); }
     if(b.type==="plant"&&b.mesh){
       if(b.mesh.userData.swayPart)b.mesh.userData.swayPart.rotation.z=Math.sin(performance.now()/1100+b.x*3)*0.09;
       if(b.mesh.userData.spinPart)b.mesh.userData.spinPart.rotation.y+=dt*1.2;
@@ -5039,12 +5906,485 @@ function mountDockedShip(b){
 }
 function completeShip(b){
   if(!b||!b.job)return;
+  /* you already have a flagship: the new ship rolls into a Hangar berth instead of replacing it */
+  if(shipBuilt&&shipModelKey&&fleet.length<fleetCapacity()){
+    var newModel=b.job.model; b.job=null;
+    fleetAcceptShip(newModel); sfx.build(); saveGame();
+    return;
+  }
   shipModelKey=b.job.model; shipBuilt=true; b.job=null;
   mountDockedShip(b);
   toast("SHIP COMPLETE — "+SHIP_MODELS.filter(function(x){return x.key===shipModelKey;})[0].nm+" ready to launch");
   sfx.build();
   saveGame();
 }
+
+
+/* ═════════════ FLEET: HANGARS, ROBOT PILOTS, SORTIES, FORMATION FLYING ═════════════ */
+/* fleet = every ship you own besides the one you're flying. Each one lives on a berth in a Hangar
+   (four berths per hangar). A Robot Pilot assigned at Fleet Command lets a hangar ship fly on its
+   own; ships marked for the sortie launch with you, form up on your wing and fight. RELEASE (X, or
+   the HUD button) breaks formation so every wingman hunts targets on its own; press it again and
+   they regroup on you. */
+var fleet=[], fleetIdSeq=1, fleetFormation="vee", fleetFree=false;
+var wingmen=[];
+var FLEET_NAMES=["Kestrel","Halberd","Comet","Vigil","Ember","Talon","Nova","Wraith","Lance","Aurora","Specter","Rook","Viper","Atlas","Corsair","Zephyr"];
+function hangars(){ return buildings.filter(function(b){ return b.type==="hangar"; }); }
+function fleetCapacity(){ return hangars().length*4; }
+function fleetCmdBuilding(){ return buildings.filter(function(b){ return b.type==="fleetcmd"; })[0]||null; }
+function shipModelDef(key){ return SHIP_MODELS.filter(function(m){ return m.key===key; })[0]||SHIP_MODELS[0]; }
+function newFleetShip(model){
+  var st=SHIP_STATS[model]||SHIP_STATS.fighter;
+  var nm=FLEET_NAMES[(fleetIdSeq-1)%FLEET_NAMES.length]+((fleetIdSeq>FLEET_NAMES.length)?(" "+Math.ceil(fleetIdSeq/FLEET_NAMES.length)):"");
+  return {id:fleetIdSeq++,model:model,name:nm,robot:false,sortie:true,hp:st.maxhp,maxhp:st.maxhp};
+}
+/* where fleet ship i sits: hangar floor(i/4), berth i%4 (local berth offsets match the floor rings) */
+var BERTHS=[{x:-2.6,z:-2.8},{x:2.6,z:-2.8},{x:-2.6,z:2.8},{x:2.6,z:2.8}];
+function berthWorld(i){
+  var hs=hangars(); var h=hs[Math.floor(i/4)]; if(!h)return null;
+  var bl=BERTHS[i%4], sc=h.mesh.scale.x, c=Math.cos(h.rotY||0), s=Math.sin(h.rotY||0);
+  var lx=bl.x*sc, lz=bl.z*sc;
+  return {x:h.x+lx*c+lz*s, z:h.z-lx*s+lz*c, y:terrainHeight(h.x,h.z)+0.45*sc, rotY:h.rotY||0, hangar:h};
+}
+var PARKED_SCALE=1.35;
+function syncHangarShips(){
+  hangars().forEach(function(h){
+    h._parked=h._parked||{};
+    Object.keys(h._parked).forEach(function(id){
+      var f=fleet.filter(function(x){ return String(x.id)===id; })[0];
+      var stillHere=f&&!f.flying&&berthWorld(fleet.indexOf(f))&&berthWorld(fleet.indexOf(f)).hangar===h;
+      if(!stillHere){ surfaceScene.remove(h._parked[id]); delete h._parked[id]; }
+    });
+  });
+  fleet.forEach(function(f,i){
+    if(f.flying)return;
+    var bw=berthWorld(i); if(!bw)return;
+    var h=bw.hangar;
+    var m=h._parked[f.id];
+    if(!m||m.userData.model!==f.model){
+      if(m)surfaceScene.remove(m);
+      m=buildShipMesh(f.model,{noLights:true}); m.userData.model=f.model;
+      m.scale.setScalar(PARKED_SCALE); gfxMarkShadows(m);
+      surfaceScene.add(m); h._parked[f.id]=m;
+    }
+    m.position.set(bw.x,bw.y+0.9,bw.z); m.rotation.set(0,bw.rotY,0);
+  });
+}
+function updateHangarVisual(b,dt){
+  var ud=b.mesh.userData; if(!ud.hangarDoorL)return;
+  var pdx=player.position.x-b.x, pdz=player.position.z-b.z;
+  var near=Math.sqrt(pdx*pdx+pdz*pdz)<18&&!surfaceFlying;
+  var launching=wingmen.some(function(w){ return w.hangar===b&&(w.phase==="lift"||w.phase==="taxi"||w.phase==="dock"); });
+  b._doorT=b._doorT==null?0:b._doorT;
+  b._doorT+=(((near||launching)?1:0)-b._doorT)*Math.min(1,dt*2.2);
+  var off=ud.hangarDoorW*0.95*b._doorT;
+  ud.hangarDoorL.position.x=-off; ud.hangarDoorR.position.x=off;
+  if(ud.swayPart)ud.swayPart.rotation.y=Math.sin(performance.now()/700+b.x)*0.25;
+  /* parked ships get repaired and a slow idle bob of their landing lights */
+  if(b._parked)Object.keys(b._parked).forEach(function(id){
+    var f=fleet.filter(function(x){ return String(x.id)===id; })[0];
+    if(f&&f.hp<f.maxhp&&b.powered)f.hp=Math.min(f.maxhp,f.hp+dt*3);
+  });
+}
+/* the Shipyard hands finished ships to the fleet once you already have a flagship */
+function fleetAcceptShip(model){
+  if(fleet.length>=fleetCapacity())return false;
+  var f=newFleetShip(model); fleet.push(f);
+  syncHangarShips();
+  toast(shipModelDef(model).nm+" “"+f.name+"” rolled into the Hangar"+(fleetCmdBuilding()?" — assign it a robot pilot at Fleet Command":""));
+  return true;
+}
+function assignRobot(f){
+  if(!fleetCmdBuilding()){ toast("Build Fleet Command to assign pilots"); return; }
+  if(f.robot)return;
+  if((stock.robot||0)<1){ toast("No Robot Pilots in stock — build them at a Robotics Bay"); return; }
+  stock.robot-=1; f.robot=true; sfx.build(); toast("Robot pilot assigned to "+f.name);
+}
+function removeRobot(f){ if(!f.robot)return; f.robot=false; stock.robot=(stock.robot||0)+1; sfx.click(); toast("Pilot recalled from "+f.name); }
+/* swap your flagship with a hangar ship (the old flagship takes its berth, pilot and all) */
+function flyFleetShip(f){
+  if(state!=="fleet")return;
+  if(pShip&&(atOutpost||surfaceFlying)){ toast("Park at the colony and leave your ship first"); return; }
+  var old=shipModelKey;
+  shipModelKey=f.model; shipBuilt=true;
+  if(old){ f.model=old; var st=SHIP_STATS[old]; f.maxhp=st.maxhp; f.hp=st.maxhp; }
+  else fleet.splice(fleet.indexOf(f),1);
+  var sy=shipyard(); if(sy)mountDockedShip(sy);
+  syncHangarShips(); sfx.build(); toast(shipModelDef(shipModelKey).nm+" is now your flagship");
+}
+function sortieShips(){ return fleet.filter(function(f){ return f.robot&&f.sortie&&!f.flying&&f.hp>0; }); }
+
+/* ── formation geometry: offsets in the leader's frame (x right, y up, z forward) ── */
+function formationOffset(k,n,spacing){
+  var side=k%2===0?-1:1, rank=Math.floor(k/2)+1;
+  if(fleetFormation==="line")return {x:(k%2===0?-1:1)*rank*spacing*1.1,y:0,z:-spacing*0.15};
+  if(fleetFormation==="column")return {x:0,y:(k%2===0?1:-1)*spacing*0.1,z:-(k+1)*spacing*1.05};
+  if(fleetFormation==="ring"){ var a=(k/Math.max(1,n))*Math.PI*2; return {x:Math.cos(a)*spacing*1.4,y:Math.sin(a)*spacing*0.5,z:Math.sin(a)*spacing*0.6-spacing*0.5}; }
+  return {x:side*rank*spacing,y:rank*spacing*0.08,z:-rank*spacing*0.85};
+}
+function leaderFrame(){
+  var yaw=pShip?pShip.yaw:0;
+  return {fwd:new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw)),right:new THREE.Vector3(-Math.cos(yaw),0,Math.sin(yaw))};
+}
+function slotWorld(w,spacing){
+  var fr=leaderFrame(), o=formationOffset(w.slot,wingmen.length,spacing);
+  return pShip.pos.clone().addScaledVector(fr.right,o.x).addScaledVector(fr.fwd,o.z).add(new THREE.Vector3(0,o.y,0));
+}
+function makeWingman(f,scene){
+  var st=SHIP_STATS[f.model]||SHIP_STATS.fighter;
+  var mesh=buildShipMesh(f.model,{noLights:true});
+  /* a teal robot-pilot band on the hull so your wingmen never read as enemies at a glance */
+  var band=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.05,6,18),new THREE.MeshStandardMaterial({color:0x4fe0d3,emissive:0x4fe0d3,emissiveIntensity:1.2}));
+  band.rotation.x=Math.PI/2; band.position.set(0,0.1,-0.2); mesh.add(band);
+  scene.add(mesh);
+  f.flying=true;
+  return {f:f,mesh:mesh,scene:scene,pos:new THREE.Vector3(),vel:new THREE.Vector3(),yaw:0,pitch:0,roll:0,
+    hp:f.hp,maxhp:f.maxhp,dmg:st.dmg*0.75,rate:Math.max(0.35,st.rate*1.6),cd:rnd(0,1),spd:st.spd,surfSpd:st.surfSpd||70,
+    weapon:st.weapon||"bolt",slot:0,phase:"form",t:0,target:null,evadeT:0};
+}
+function reslotWingmen(){ wingmen.forEach(function(w,i){ w.slot=i; }); }
+function removeWingman(w,lost){
+  w.scene.remove(w.mesh);
+  wingmen.splice(wingmen.indexOf(w),1);
+  w.f.flying=false;
+  if(lost){
+    fleet.splice(fleet.indexOf(w.f),1);
+    toast(w.f.name+" was shot down — ship and pilot lost");
+  } else w.f.hp=Math.max(1,w.hp);
+  reslotWingmen(); syncHangarShips(); updateFleetHud();
+}
+/* every wingman back on its berth instantly (fleeing to the title, a retreat, a load...) */
+function recallAllWingmen(){
+  wingmen.slice().forEach(function(w){ removeWingman(w,false); });
+  fleet.forEach(function(f){ f.flying=false; });
+  syncHangarShips();
+}
+/* ── the fly-out: boarding your ship at the colony opens every hangar with a sortie ship in it,
+   the ships lift off their berths, taxi out through the bay doors and climb to join you ── */
+function beginHangarSortie(){
+  var list=sortieShips(); if(!list.length)return 0;
+  list.forEach(function(f){
+    var idx=fleet.indexOf(f), bw=berthWorld(idx); if(!bw)return;
+    var w=makeWingman(f,surfaceScene);
+    w.hangar=bw.hangar;
+    w.pos.set(bw.x,bw.y+0.9,bw.z); w.yaw=bw.rotY; w.phase="lift"; w.t=rnd(0,0.5)*0-wingmen.length*0.45;
+    w.mesh.scale.setScalar(PARKED_SCALE);
+    wingmen.push(w);
+  });
+  reslotWingmen(); syncHangarShips();
+  toast(list.length+" wingm"+(list.length===1?"an":"en")+" launching from the Hangar");
+  return list.length;
+}
+/* launching from the Shipyard goes straight to space, so the sortie gets a space-side fly-out:
+   the wingmen streak up out of the colony one after another and sweep into formation */
+function beginSpaceSortie(){
+  var list=sortieShips(); if(!list.length)return;
+  list.forEach(function(f,i){
+    var w=makeWingman(f,spaceScene);
+    w.pos.set(rnd(-60,60),0,rnd(-60,60)+40); w.yaw=Math.PI; w.phase="climb"; w.t=-i*0.35;
+    w.mesh.visible=false;
+    wingmen.push(w);
+  });
+  reslotWingmen();
+}
+function moveWingmenToScene(scene,spacing){
+  wingmen.forEach(function(w){
+    if(w.scene!==scene){ w.scene.remove(w.mesh); scene.add(w.mesh); w.scene=scene; }
+    w.mesh.visible=true; w.mesh.scale.setScalar(3);
+    w.phase="form"; w.vel.set(0,0,0);
+    if(pShip){ w.pos.copy(slotWorld(w,spacing)); w.pos.addScaledVector(leaderFrame().fwd,-spacing*2); w.yaw=pShip.yaw; }
+  });
+}
+function wingmenToSpace(){ moveWingmenToScene(spaceScene,SPACE_SPACING); }
+function wingmenToSurface(){ moveWingmenToScene(surfaceScene,SURF_SPACING); }
+/* touching down at the colony: the wingmen fly back into their hangar berths */
+function wingmenReturnHome(){
+  wingmen.forEach(function(w){
+    var bw=berthWorld(fleet.indexOf(w.f));
+    if(!bw){ w.phase="gone"; return; }
+    w.phase="return"; w.home=bw; w.hangar=bw.hangar;
+  });
+}
+var SPACE_SPACING=75, SURF_SPACING=17;
+function toggleFleetRelease(){
+  if(!wingmen.length){ toast("No wingmen flying — assign robot pilots at Fleet Command"); return; }
+  fleetFree=!fleetFree;
+  wingmen.forEach(function(w){ w.target=null; });
+  toast(fleetFree?"RELEASED — wingmen breaking formation to engage at will":"REFORM — wingmen returning to formation");
+  tone(fleetFree?520:380,fleetFree?880:300,0.18,"sawtooth",0.05);
+  updateFleetHud();
+}
+/* every hostile thing a wingman (or homing missile) can shoot at, in the current scene */
+function hostileTargets(scene){
+  var out=[];
+  if(scene===spaceScene){
+    enemyShips.forEach(function(e){ out.push({pos:e.mesh.position,r:e.big?260:40,ref:e,kind:"enemy"}); });
+    if(moonBoss)out.push({pos:moonBoss.mesh.position,r:200,ref:moonBoss,kind:"boss"});
+    if(typeof fortressTargets==="function")fortressTargets().forEach(function(t){ out.push(t); });
+  } else {
+    monsters.forEach(function(m){ out.push({pos:m.mesh.position,r:2,ref:m,kind:"monster"}); });
+    turrets.forEach(function(t){ if(t.alive)out.push({pos:t.mesh.position,r:2.5,ref:t,kind:"turret"}); });
+    if(hiveRuntime&&hiveRuntime.alive)out.push({pos:hiveRuntime.mesh.position,r:4,ref:hiveRuntime,kind:"hive"});
+    if(typeof npcTargets==="function")npcTargets().forEach(function(t){ out.push(t); });
+  }
+  return out;
+}
+function damageHostile(t,dmg){
+  if(t.kind==="enemy"){ var e=t.ref; e.hp-=dmg; e.hitT=0.12; if(e.hp<=0){ var ei=enemyShips.indexOf(e); if(ei>=0)killEnemyShip(e,ei); } }
+  else if(t.kind==="boss")damageMoonBoss(dmg);
+  else if(t.kind==="monster"){ if(monsters.indexOf(t.ref)>=0)damageMonster(t.ref,dmg); }
+  else if(t.kind==="turret")damageTurret(t.ref,dmg);
+  else if(t.kind==="hive")damageHive(dmg);
+  else if(t.damage)t.damage(dmg);
+}
+function hostileAlive(t){
+  if(!t)return false;
+  if(t.kind==="enemy")return enemyShips.indexOf(t.ref)>=0;
+  if(t.kind==="boss")return !!moonBoss&&moonBoss===t.ref;
+  if(t.kind==="monster")return monsters.indexOf(t.ref)>=0;
+  if(t.kind==="turret")return t.ref.alive;
+  if(t.kind==="hive")return t.ref.alive;
+  if(t.alive)return t.alive();
+  return false;
+}
+function nearestHostile(scene,pos,range){
+  var best=null,bd=range;
+  hostileTargets(scene).forEach(function(t){ var d=t.pos.distanceTo(pos)-(t.r||0)*0.5; if(d<bd){ bd=d; best=t; } });
+  return best;
+}
+function nearestWingmanTo(pos,range){
+  var best=null,bd=range;
+  wingmen.forEach(function(w){ if(w.phase!=="form")return; var d=w.pos.distanceTo(pos); if(d<bd){ bd=d; best=w; } });
+  return best;
+}
+function damageWingman(w,dmg){
+  w.hp-=dmg; w.hitT=0.15;
+  if(w.hp<=0){
+    fxExplosion(w.scene,w.pos.clone(),w.scene===spaceScene?45:4);
+    removeWingman(w,true);
+    updateFleetHud();
+  }
+}
+function wingmanFire(w,target){
+  var tp=target.pos.clone();
+  if(w.scene===spaceScene){
+    /* lead the target a little if it's a moving ship */
+    var dir=tp.sub(w.pos).normalize();
+    var spd=w.weapon==="rail"?24000:18000;
+    var bolt={x:w.pos.x+dir.x*20,y:w.pos.y+dir.y*20,z:w.pos.z+dir.z*20,vx:dir.x*spd,vy:dir.y*spd,vz:dir.z*spd,dmg:w.dmg,life:1.3,fromWing:true};
+    bolt.mesh=makeBoltMesh(0x4fe0d3,50,2.0);
+    bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
+    orientBoltMesh(bolt.mesh,bolt.vx,bolt.vz,bolt.vy);
+    pBolts.push(bolt);
+  } else {
+    /* low over a world the robots fire short hitscan pulses — a visible beam plus a small hit burst */
+    var from=w.pos.clone();
+    var to=tp.clone().add(new THREE.Vector3(rnd(-0.4,0.4),0.6,rnd(-0.4,0.4)));
+    var dvec=new THREE.Vector3().subVectors(to,from), len=Math.max(0.1,dvec.length());
+    var mat=new THREE.MeshBasicMaterial({color:0x4fe0d3,transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false});
+    var beam=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,len,6),mat);
+    beam.position.copy(from).addScaledVector(dvec,0.5);
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dvec.normalize());
+    surfaceScene.add(beam);
+    gunBeams.push({mesh:beam,life:0.12,max:0.12});
+    for(var i=0;i<4;i++)spawnSurfaceParticle(to.clone(),new THREE.Vector3(rnd(-2,2),rnd(0,2),rnd(-2,2)),rnd(0.3,0.6),0x8ff0ff);
+    damageHostile(target,w.dmg);
+  }
+  if(Math.random()<0.4)tone(820,420,0.05,"square",0.012);
+}
+function updateWingmen(dt){
+  if(!wingmen.length)return;
+  var inSpace=state==="space"||state==="launching";
+  var spacing=inSpace?SPACE_SPACING:SURF_SPACING;
+  for(var i=wingmen.length-1;i>=0;i--){
+    var w=wingmen[i];
+    if(w.scene!==(inSpace?spaceScene:surfaceScene)&&w.phase!=="lift"&&w.phase!=="taxi"&&w.phase!=="return"&&w.phase!=="dock")continue;
+    w.t+=dt; if(w.hitT>0)w.hitT-=dt;
+    var farOff=pShip?w.pos.distanceTo(pShip.pos)>(inSpace?1500:70):false;
+    var desiredYaw=w.yaw, thrust=0.6, maxSpd=inSpace?w.spd*(farOff?3:1.9):w.surfSpd*(farOff?2.6:1.6);
+    if(w.phase==="lift"){
+      /* rise off the berth on the landing thrusters, doors already rolling open */
+      if(w.t<0){ w.mesh.position.copy(w.pos); continue; }
+      var bwy=w.pos.y;
+      w.pos.y+=dt*2.2;
+      w.mesh.scale.setScalar(PARKED_SCALE);
+      if(w.pos.y>bwy&&w.t>1.3){ w.phase="taxi"; w.t=0; }
+      thrust=0.35;
+    } else if(w.phase==="taxi"){
+      /* nose out through the doors, growing to full flight scale as it clears the hangar, then climb */
+      var fwdH=new THREE.Vector3(Math.sin(w.yaw),0,Math.cos(w.yaw));
+      w.vel.copy(fwdH).multiplyScalar(Math.min(40,6+w.t*22));
+      w.pos.addScaledVector(w.vel,dt);
+      w.pos.y+=dt*(w.t>0.8?9:1.5);
+      w.mesh.scale.setScalar(PARKED_SCALE+(3-PARKED_SCALE)*clamp(w.t/1.6,0,1));
+      thrust=0.9;
+      if(w.t>2.4){ w.phase="form"; w.t=0; w.mesh.scale.setScalar(3); }
+    } else if(w.phase==="climb"){
+      if(w.t<0){ continue; }
+      w.mesh.visible=true;
+      var tgt=pShip?slotWorld(w,spacing):w.pos.clone().add(new THREE.Vector3(0,500,0));
+      var k=clamp(w.t/2.6,0,1), e=k*k*(3-2*k);
+      w.pos.lerp(tgt,Math.min(1,dt*(0.8+e*4)));
+      w.pos.y=Math.max(w.pos.y,e*(tgt.y));
+      thrust=1;
+      if(k>=1){ w.phase="form"; }
+      desiredYaw=pShip?pShip.yaw:w.yaw;
+    } else if(w.phase==="return"){
+      var hb=w.home, hdx=hb.x-w.pos.x, hdz=hb.z-w.pos.z, hd=Math.sqrt(hdx*hdx+hdz*hdz);
+      if(hd>3){
+        desiredYaw=Math.atan2(hdx,hdz);
+        var sp=Math.min(w.surfSpd,hd*1.5+6);
+        w.vel.set(hdx/hd*sp,0,hdz/hd*sp);
+        w.pos.addScaledVector(w.vel,dt);
+        w.pos.y+=((terrainHeight(w.pos.x,w.pos.z)+(hd>40?18:4))-w.pos.y)*Math.min(1,dt*1.5);
+        w.mesh.scale.setScalar(3-(3-PARKED_SCALE)*clamp(1-(hd-3)/30,0,1));
+      } else {
+        w.phase="dock"; w.t=0; desiredYaw=hb.rotY;
+      }
+    } else if(w.phase==="dock"){
+      desiredYaw=w.home.rotY;
+      w.pos.x+=(w.home.x-w.pos.x)*Math.min(1,dt*3); w.pos.z+=(w.home.z-w.pos.z)*Math.min(1,dt*3);
+      w.pos.y+=((w.home.y+0.9)-w.pos.y)*Math.min(1,dt*2);
+      w.mesh.scale.setScalar(PARKED_SCALE);
+      thrust=0.25;
+      if(w.t>1.6){ removeWingman(w,false); continue; }
+    } else {
+      /* formation or free flight */
+      var target=null;
+      if(fleetFree||!pShip){
+        if(!hostileAlive(w.target)||w.retarget<=0){ w.target=nearestHostile(w.scene,w.pos,inSpace?16000:140); w.retarget=rnd(2,4); }
+        w.retarget=(w.retarget||0)-dt;
+        target=w.target;
+      }
+      var desired;
+      var hpFrac=w.hp/w.maxhp;
+      if(target&&hpFrac>0.25){
+        /* attack run: close to standoff range, then orbit the target strafing it, breaking off
+           with a jink whenever it takes a hit */
+        var toT=new THREE.Vector3().subVectors(target.pos,w.pos);
+        var dist=toT.length(), standoff=inSpace?(target.r>150?target.r*1.6+300:520):(target.r>3?14:10);
+        var orbitDir=new THREE.Vector3(-toT.z,0,toT.x).normalize().multiplyScalar(w.slot%2?1:-1);
+        desired=target.pos.clone().addScaledVector(toT.clone().normalize(),-standoff).addScaledVector(orbitDir,standoff*0.6);
+        if(inSpace)desired.y=clamp(target.pos.y+(w.slot%3-1)*120,0,HOME_COMBAT_Y);
+        else desired.y=Math.max(target.pos.y+10+(w.slot%3)*3,terrainHeight(desired.x,desired.z)+8);
+        if(w.hitT>0)w.evadeT=0.6;
+        if(w.evadeT>0){ w.evadeT-=dt; desired.addScaledVector(orbitDir,standoff*1.2); }
+        desiredYaw=Math.atan2(toT.x,toT.z);
+        w.cd-=dt;
+        if(w.cd<=0&&dist<(inSpace?2600:60)){ wingmanFire(w,target); w.cd=w.rate*rnd(0.85,1.2); }
+      } else if(pShip&&!inSpace&&!surfaceFlying){
+        /* you're on foot: the squadron circles overhead as air cover */
+        var oa=w.t*0.35+w.slot*(Math.PI*2/Math.max(1,wingmen.length));
+        desired=new THREE.Vector3(player.position.x+Math.cos(oa)*24,0,player.position.z+Math.sin(oa)*24);
+        desired.y=terrainHeight(desired.x,desired.z)+16+(w.slot%2)*4;
+        desiredYaw=oa+Math.PI/2;
+        w.cd-=dt;
+        if(w.cd<=0){ var cand2=nearestHostile(w.scene,player.position,45); if(cand2){ wingmanFire(w,cand2); w.cd=w.rate*rnd(1,1.4); } }
+      } else if(pShip){
+        desired=slotWorld(w,spacing);
+        if(!inSpace)desired.y=Math.max(desired.y,terrainHeight(desired.x,desired.z)+4);
+        desiredYaw=pShip.yaw;
+        /* in formation they still shoot anything that crosses the leader's nose */
+        w.cd-=dt;
+        if(w.cd<=0){
+          var fr=leaderFrame(), cand=nearestHostile(w.scene,w.pos,inSpace?2400:55);
+          if(cand){ var tv=new THREE.Vector3().subVectors(cand.pos,w.pos).normalize(); if(tv.dot(fr.fwd)>0.55){ wingmanFire(w,cand); w.cd=w.rate*rnd(0.9,1.3); } }
+        }
+      } else desired=w.pos.clone();
+      /* critically-damped follow: match the leader's velocity plus a spring toward the slot, so
+         the formation stays tight even at full cruise speed */
+      var lead=(pShip&&!target&&(inSpace||surfaceFlying))?pShip.vel:new THREE.Vector3();
+      var err=new THREE.Vector3().subVectors(desired,w.pos);
+      var want=lead.clone().addScaledVector(err,inSpace?2.4:2.8);
+      if(want.length()>maxSpd)want.setLength(maxSpd);
+      w.vel.lerp(want,Math.min(1,dt*(inSpace?3:4)));
+      w.pos.addScaledVector(w.vel,dt);
+      if(inSpace){
+        w.pos.y=clamp(w.pos.y,-1,HOME_COMBAT_Y+20);
+        var tmpShip={pos:w.pos,vel:w.vel}; resolvePlanetCollision(tmpShip);
+        if(typeof resolveFortressCollision==="function")resolveFortressCollision(tmpShip);
+      } else {
+        var gy=terrainHeight(w.pos.x,w.pos.z);
+        if(w.pos.y<gy+3)w.pos.y=gy+3;
+        if(currentWorld){ var wr=currentWorld.zoneR-3; w.pos.x=clamp(w.pos.x,currentWorld.cx-wr,currentWorld.cx+wr); w.pos.z=clamp(w.pos.z,currentWorld.cz-wr,currentWorld.cz+wr); }
+      }
+      thrust=clamp(w.vel.length()/maxSpd*1.6,0.15,1);
+      if(w.vel.lengthSq()>4&&target)desiredYaw=Math.atan2(w.vel.x,w.vel.z)*0.5+desiredYaw*0.5;
+    }
+    var dyaw=((desiredYaw-w.yaw+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+    w.yaw+=dyaw*Math.min(1,dt*3);
+    w.roll+=(clamp(-dyaw*1.6,-0.9,0.9)-w.roll)*Math.min(1,dt*4);
+    w.mesh.position.copy(w.pos);
+    w.mesh.rotation.set(w.pitch,w.yaw,w.roll);
+    updateEngineFlames(w.mesh,dt,thrust,false);
+    updateShipNavLights(w.mesh);
+    if(Math.random()<0.35*thrust&&w.mesh.userData.engineGlow){
+      var eg=w.mesh.userData.engineGlow[ri(0,w.mesh.userData.engineGlow.length-1)];
+      var ewp=new THREE.Vector3(); eg.getWorldPosition(ewp);
+      var back=new THREE.Vector3(0,0,-1).applyQuaternion(w.mesh.quaternion).multiplyScalar(inSpace?rnd(18,40):rnd(3,6));
+      if(inSpace)spawnThrustParticle(ewp,back,rnd(1.4,2.6),0x4fe0d3); else spawnSurfaceParticle(ewp,back,rnd(0.2,0.35),0x4fe0d3);
+    }
+  }
+  if(fleetHudT<=0){ updateFleetHud(); fleetHudT=0.25; } else fleetHudT-=dt;
+}
+var fleetHudT=0;
+function updateFleetHud(){
+  var el=$("fleetHud"); if(!el)return;
+  var flying=wingmen.filter(function(w){ return w.phase!=="return"&&w.phase!=="dock"&&w.phase!=="gone"; });
+  var show=flying.length>0&&(state==="space"||state==="launching"||(state==="surface"&&(surfaceFlying||atOutpost)));
+  el.classList.toggle("show",show);
+  if(!show)return;
+  $("bRelease").textContent=fleetFree?"REFORM (X)":"RELEASE (X)";
+  $("bRelease").classList.toggle("free",fleetFree);
+  $("fleetHudList").innerHTML=flying.map(function(w){
+    var pc=clamp(w.hp/w.maxhp,0,1)*100;
+    return '<div class="fhRow"><span>'+w.f.name+'</span><i><b style="width:'+pc+'%"></b></i></div>';
+  }).join('');
+  $("fleetHudMode").textContent=fleetFree?"ENGAGING AT WILL":("FORMATION · "+fleetFormation.toUpperCase());
+}
+
+/* ── Fleet Command / Hangar panel ── */
+var fleetTab="command";
+function openFleet(tab){
+  if(state!=="surface")return;
+  resetMovementKeys();
+  fleetTab=tab||"command";
+  state="fleet"; $("o-fleet").classList.remove("hide"); renderFleet();
+}
+function closeFleet(){ if(state!=="fleet")return; state="surface"; $("o-fleet").classList.add("hide"); }
+function renderFleet(){
+  var cmd=!!fleetCmdBuilding();
+  var cap=fleetCapacity();
+  var html='<div class="metalline"><span>'+RES_ICONS.robot+'<b>'+Math.floor(stock.robot||0)+'</b> robot pilots</span>'+
+    '<span>Berths <b>'+fleet.length+' / '+cap+'</b></span>'+
+    '<span>Flagship <b>'+(shipModelKey?shipModelDef(shipModelKey).nm:"none")+'</b></span></div>';
+  if(!cmd)html+='<div class="upg"><div class="ds">Build <b>Fleet Command</b> (unlock it at the Hub) to assign robot pilots and pick a sortie. Until then hangar ships just sit on their berths.</div></div>';
+  html+='<div class="cat" style="margin:6px 2px 6px">Formation</div><div class="fmRow">'+
+    ["vee","line","column","ring"].map(function(f){ return '<button class="fmBtn'+(fleetFormation===f?" sel":"")+'" data-fm="'+f+'">'+f+'</button>'; }).join('')+'</div>';
+  html+='<div class="cat" style="margin:12px 2px 6px">Hangar ships</div>';
+  if(!fleet.length)html+='<div class="upg"><div class="ds">No ships in the hangar yet. Once you have a flagship, every new ship the Shipyard finishes rolls in here'+(cap?'':' — build a <b>Hangar</b> first')+'.</div></div>';
+  fleet.forEach(function(f){
+    var m=shipModelDef(f.model), pc=clamp(f.hp/f.maxhp,0,1);
+    html+='<div class="upg fleetCard'+(f.robot&&f.sortie?" armed":"")+'"><div class="top"><span class="nm">'+f.name+' <span class="fcModel">'+m.nm+'</span></span>'+
+      '<span class="stat">'+(f.flying?"FLYING":(f.robot?"PILOTED":"NO PILOT"))+'</span></div>'+
+      '<div class="fcHp"><i style="width:'+(pc*100)+'%"></i></div>'+
+      '<div class="fcBtns">'+
+      (cmd?(f.robot?'<button class="hudbtn" data-unpilot="'+f.id+'">Recall pilot</button>':'<button class="hudbtn accent" data-pilot="'+f.id+'" '+((stock.robot||0)<1?"disabled":"")+'>Assign robot</button>'):'')+
+      (cmd?'<button class="hudbtn'+(f.sortie?" accent":"")+'" data-sortie="'+f.id+'">'+(f.sortie?"&#10003; In sortie":"Not in sortie")+'</button>':'')+
+      '<button class="hudbtn" data-fly="'+f.id+'">Fly this ship</button>'+
+      '</div></div>';
+  });
+  html+='<div class="ds" style="margin-top:8px">Sortie ships with a pilot launch with you: board your flagship at the colony and they fly out of the hangar and form up, or launch from the Shipyard and they climb into formation in orbit. Press <b>X</b> (or RELEASE) in flight to let them break formation and attack anything nearby; press it again to regroup.</div>';
+  $("fleetList").innerHTML=html;
+  function byId(id){ return fleet.filter(function(x){ return String(x.id)===String(id); })[0]; }
+  $("fleetList").querySelectorAll("[data-pilot]").forEach(function(b){ b.onclick=function(){ var f=byId(this.getAttribute("data-pilot")); if(f)assignRobot(f); renderFleet(); }; });
+  $("fleetList").querySelectorAll("[data-unpilot]").forEach(function(b){ b.onclick=function(){ var f=byId(this.getAttribute("data-unpilot")); if(f&&!f.flying)removeRobot(f); renderFleet(); }; });
+  $("fleetList").querySelectorAll("[data-sortie]").forEach(function(b){ b.onclick=function(){ var f=byId(this.getAttribute("data-sortie")); if(f){ f.sortie=!f.sortie; sfx.click(); } renderFleet(); }; });
+  $("fleetList").querySelectorAll("[data-fly]").forEach(function(b){ b.onclick=function(){ var f=byId(this.getAttribute("data-fly")); if(f&&!f.flying)flyFleetShip(f); renderFleet(); }; });
+  $("fleetList").querySelectorAll("[data-fm]").forEach(function(b){ b.onclick=function(){ fleetFormation=this.getAttribute("data-fm"); sfx.click(); renderFleet(); }; });
+}
+$("bFleetClose").onclick=function(){ sfx.click(); closeFleet(); };
+$("bRelease").onclick=function(e){ e.stopPropagation(); toggleFleetRelease(); };
 
 /* ═════════════ SAVE / LOAD (persistent colony) ═════════════ */
 var SKEY="conquest3d-save-v1";
@@ -5055,6 +6395,8 @@ function loadMeta(){
 }
 function hasSave(){ try{ return !!localStorage.getItem(SKEY); }catch(e){ return false; } }
 function clearWorld(){
+  wingmen.slice().forEach(function(w){ w.scene.remove(w.mesh); }); wingmen=[];
+  buildings.forEach(function(b){ if(b._parked)Object.keys(b._parked).forEach(function(id){ surfaceScene.remove(b._parked[id]); }); });
   nodes.forEach(function(n){ surfaceScene.remove(n.mesh); }); nodes=[];
   buildings.forEach(function(b){ surfaceScene.remove(b.mesh); }); buildings=[];
   belts.forEach(function(bl){ surfaceScene.remove(bl.mesh); }); belts=[];
@@ -5102,7 +6444,9 @@ function saveGame(){
       flying:state==="space"?"space":(surfaceFlying?"surface":null),
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
       guardiansDefeated:WORLDS.map(function(w){return w.hasGuardian&&w.guardianDefeated?w.id:null;}).filter(function(x){return x;}),
-      unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets
+      unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets,
+      fleet:fleet.map(function(f){ return {id:f.id,model:f.model,name:f.name,robot:f.robot,sortie:f.sortie,hp:wingmen.filter(function(w){return w.f===f;})[0]?wingmen.filter(function(w){return w.f===f;})[0].hp:f.hp}; }),
+      fleetIdSeq:fleetIdSeq, fleetFormation:fleetFormation
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -5118,8 +6462,10 @@ function saveGame(){
 function newColony(){
   clearWorld();
   stock={iron_ore:0,copper_ore:0,coal:0,frost_crystal:0,magma_shard:0,spore_pod:0,ice_core:0,sulfur_vein:0,obsidian_shard:0,iron:0,copper:0,parts:0};
+  for(var rk1 in RES)if(stock[rk1]==null)stock[rk1]=0;
   shipBuilt=false; shipModelKey=null;
-  unlocked={belt2:false,refinery:false};
+  fleet=[]; fleetIdSeq=1; fleetFormation="vee"; fleetFree=false;
+  unlocked={belt2:false,refinery:false,foundry:false,assembler:false,hangar:false,robotics:false,fleetcmd:false};
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=[{name:"Default",color:0x384454,parts:{}}]; activePresetIdx=0;
@@ -5210,6 +6556,7 @@ function applySaveData(data){
   });
   shipBuilt=!!data.shipBuilt; shipModelKey=data.shipModelKey||null;
   unlocked=data.unlocked||{belt2:false,refinery:false};
+  ["foundry","assembler","hangar","robotics","fleetcmd"].forEach(function(k){ if(unlocked[k]==null)unlocked[k]=false; });
   playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454,parts:{}}];
@@ -5220,6 +6567,10 @@ function applySaveData(data){
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
+  fleet=(data.fleet||[]).map(function(f){ var st=SHIP_STATS[f.model]||SHIP_STATS.fighter; return {id:f.id,model:f.model,name:f.name,robot:!!f.robot,sortie:f.sortie!==false,hp:clamp(f.hp||st.maxhp,1,st.maxhp),maxhp:st.maxhp,flying:false}; });
+  fleetIdSeq=data.fleetIdSeq||(fleet.reduce(function(m,f){ return Math.max(m,f.id); },0)+1);
+  fleetFormation=data.fleetFormation||"vee"; fleetFree=false;
+  syncHangarShips();
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
   (data.discoveredWorlds||[]).forEach(function(id){ var w=worldById(id); if(w)w.discovered=true; });
   (data.guardiansDefeated||[]).forEach(function(id){ var w=worldById(id); if(w)w.guardianDefeated=true; });
@@ -5431,6 +6782,31 @@ var galaxyTex=(function(){
     spaceScene.add(s);
   }
 })();
+/* the system's star — it was only ever an invisible directional light. A real disc with a wide
+   corona and a couple of faint lens ghosts, parked far out along the light's own direction so the
+   planets' lit sides actually face something you can see. */
+(function(){
+  var cvs=document.createElement("canvas"); cvs.width=256; cvs.height=256;
+  var g=cvs.getContext("2d");
+  var grad=g.createRadialGradient(128,128,0,128,128,128);
+  grad.addColorStop(0,"rgba(255,255,255,1)"); grad.addColorStop(0.08,"rgba(255,250,235,1)");
+  grad.addColorStop(0.2,"rgba(255,220,170,.55)"); grad.addColorStop(0.5,"rgba(255,170,110,.12)"); grad.addColorStop(1,"rgba(255,140,80,0)");
+  g.fillStyle=grad; g.fillRect(0,0,256,256);
+  var tex=new THREE.CanvasTexture(cvs);
+  var dir=spaceSun.position.clone().normalize();
+  var sunSpr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,color:0xfff2dd,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:false,fog:false}));
+  sunSpr.scale.set(0.55,0.55,1);
+  sunSpr.renderOrder=-1;
+  spaceScene.add(sunSpr);
+  var corona=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,color:0xff9a5a,transparent:true,opacity:0.35,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:false}));
+  corona.scale.set(1.6,1.6,1); spaceScene.add(corona);
+  window.__cqSun={spr:sunSpr,cor:corona,dir:dir};
+})();
+function updateSpaceSun(){
+  var s=window.__cqSun; if(!s)return;
+  var p=camera.position.clone().addScaledVector(s.dir,380000);
+  s.spr.position.copy(p); s.cor.position.copy(p);
+}
 /* shared glow sprite texture for engine thrust particles */
 var sparkTex=(function(){
   var cvs=document.createElement("canvas"); cvs.width=64; cvs.height=64;
@@ -5562,28 +6938,14 @@ var homeBaseMesh=(function(){
 /* procedural planet surface texture — mottled continents/terrain blotches plus faint horizontal
    banding, built from the same three-colour palette each world already uses for its ground, so
    the space-view planet actually resembles the terrain you land on instead of a flat-shaded orb */
-function makePlanetTexture(floorHex,midHex,rockHex){
-  var size=512; /* planets got a lot bigger — a 256px texture stretched over one that huge read as blurry/blocky up close */
-  var cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
-  var g=cvs.getContext("2d");
-  function hx(h){ return "#"+("000000"+h.toString(16)).slice(-6); }
-  g.fillStyle=hx(midHex); g.fillRect(0,0,size,size);
-  for(var i=0;i<90;i++){
-    var x=Math.random()*size, y=Math.random()*size, r=rnd(5,30);
-    g.globalAlpha=rnd(0.3,0.7);
-    g.fillStyle=hx(Math.random()<0.5?floorHex:rockHex);
-    g.beginPath(); g.ellipse(x,y,r,r*rnd(0.4,0.85),rnd(0,6.28),0,6.28); g.fill();
-  }
-  g.globalAlpha=1;
-  for(var b=0;b<12;b++){
-    g.fillStyle=hx(Math.random()<0.5?floorHex:rockHex);
-    g.globalAlpha=rnd(0.05,0.14);
-    g.fillRect(0,Math.random()*size,size,rnd(3,12));
-  }
-  g.globalAlpha=1;
-  var tex=new THREE.CanvasTexture(cvs);
-  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
-  return tex;
+/* now backed by the GFX kit's sphere-sampled fbm generator (continents, ridged ranges, craters, a
+   matching bump map) instead of random ellipse blotches */
+var lastPlanetBump=null;
+var PLANET_TEX_OPTS={vesta:{ice:true,craters:20},ember:{lava:true,craters:12},verdance:{glow:0x3aff7a,craters:6},obsidian:{glow:0x8a4aff,craters:50,craterDepth:1.5}};
+function makePlanetTexture(floorHex,midHex,rockHex,opts){
+  var t=makePlanetTexturesHQ(floorHex,midHex,rockHex,opts);
+  lastPlanetBump=t.bump;
+  return t.map;
 }
 /* a shared wispy cloud-alpha texture, tinted/reused per world, layered above the surface and
    independently rotated a bit faster for a slow drifting-clouds parallax */
@@ -5607,9 +6969,10 @@ HOME_WORLD.mesh=(function(){
   /* was a blue Earth-like sphere with white clouds — doesn't match the actual rust/purple ground
      you land on (see groundGeo's dirt/rock/snow palette), and read as a plain white marble from
      a distance. Recolored to the same warm brown/purple/orange alien palette. */
-  var tex=makePlanetTexture(0xd98a4a,0x6a3a52,0x3a2440);
-  var core=new THREE.Mesh(new THREE.SphereGeometry(HOME_WORLD.radius,32,22),
-    new THREE.MeshStandardMaterial({map:tex,roughness:0.75,metalness:0.1}));
+  var tex=makePlanetTexture(0xd98a4a,0x6a3a52,0x3a2440,{craters:25});
+  var core=new THREE.Mesh(new THREE.SphereGeometry(HOME_WORLD.radius,96,64),
+    new THREE.MeshStandardMaterial({map:tex,bumpMap:lastPlanetBump,bumpScale:18,roughness:0.82,metalness:0.05}));
+  addAtmosphere(g,HOME_WORLD.radius,0xff9a6a,0.9);
   core.rotation.y=rnd(0,6.28);
   g.add(core);
   var clouds=new THREE.Mesh(new THREE.SphereGeometry(HOME_WORLD.radius*1.04,26,18),
@@ -5637,9 +7000,11 @@ HOME_WORLD.mesh=(function(){
    biome instead of just its palette. */
 WORLDS.forEach(function(w){
   var g=new THREE.Group();
-  var tex=makePlanetTexture(w.floor,w.mid,w.rock);
-  var core=new THREE.Mesh(new THREE.SphereGeometry(w.radius,32,22),
-    new THREE.MeshStandardMaterial({map:tex,color:w.col,roughness:0.85,metalness:0.08}));
+  var tex=makePlanetTexture(w.floor,w.mid,w.rock,PLANET_TEX_OPTS[w.id]||{});
+  var core=new THREE.Mesh(new THREE.SphereGeometry(w.radius,96,64),
+    new THREE.MeshStandardMaterial({map:tex,bumpMap:lastPlanetBump,bumpScale:22,color:new THREE.Color(w.col).lerp(new THREE.Color(0xffffff),0.55),roughness:0.85,metalness:0.08,
+      emissive:w.id==="ember"?0xff3a08:0x000000,emissiveMap:w.id==="ember"?tex:null,emissiveIntensity:w.id==="ember"?0.35:0}));
+  addAtmosphere(g,w.radius,w.atmoCol,w.id==="obsidian"?0.8:1.0);
   core.rotation.y=rnd(0,6.28);
   g.add(core);
   if(w.id==="vesta"){
@@ -5954,6 +7319,7 @@ function enterSurfaceFlight(world){
   pShip.vel.set(0,0,0);
   atOutpost=true; currentWorld=world; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
   beginArrivalDescent(gx,gz,hoverY,{cx:world.cx,cz:world.cz,wr:world.zoneR-3});
+  wingmenToSurface();
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(world);
   applyWorldAtmosphere(world);
@@ -5975,6 +7341,7 @@ function touchDown(){
   landedNormal=new THREE.Vector3(0,1,0);
   landingDustBurst(pShip.pos.clone(),new THREE.Vector3(0,1,0));
   var world=currentWorld;
+  if(!world&&wingmen.length)wingmenReturnHome();
   var px=pShip.pos.x, pz=pShip.pos.z+2.6;
   player.position.set(px,terrainHeight(px,pz),pz);
   player.rotation.y=pShip.yaw+Math.PI;
@@ -6004,6 +7371,7 @@ function enterHomeSurfaceFlight(){
   pShip.vel.set(0,0,0);
   atOutpost=true; currentWorld=null; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
   beginArrivalDescent(sp.x,sp.z,hoverY,null);
+  wingmenToSurface();
   player.visible=false; playerShadow.visible=false;
   syncBuildPlane(null);
   restoreHomeAtmosphere();
@@ -6023,7 +7391,8 @@ function boardParkedShip(){
   pShip.vel.set(0,0,0);
   surfaceFlying=true; landSettleT=0; pShip.liftedOff=false;
   $("mobActions").classList.remove("show");
-  toast("Aboard — climb high enough to break for space");
+  var launched=(!currentWorld&&!wingmen.length)?beginHangarSortie():0;
+  if(!launched)toast("Aboard — climb high enough to break for space");
   sfx.click();
 }
 function exitToSpace(){
@@ -6060,6 +7429,7 @@ function exitToSpace(){
       pShip.vel.set(Math.sin(pShip.yaw)*pShip.spd,0,Math.cos(pShip.yaw)*pShip.spd);
       pShip.mesh.position.copy(pShip.pos); pShip.mesh.rotation.set(0,pShip.yaw,0);
       state="space";
+      wingmenToSpace();
     } else {
       state="space";
     }
@@ -6074,7 +7444,8 @@ function launchFromLandedShip(){
   exitToSpace();
 }
 
-function buildShipMesh(model){
+function buildShipMesh(model,opts){
+  opts=opts||{};
   var g=new THREE.Group();
   /* used to be a permanently-lit bright blue ball regardless of whether the engine was actually
      doing anything — now a plain grey metal nozzle at rest, with updateEngineFlames driving its
@@ -6318,9 +7689,14 @@ function buildShipMesh(model){
     var core=new THREE.Sprite(coreMat);
     core.position.copy(glow.position);
     g.add(core);
-    var light=new THREE.PointLight(0x6fd8ff,0,16,2);
-    light.position.copy(glow.position);
-    g.add(light);
+    /* wingmen and parked hangar ships skip the per-engine point lights — every extra light in a
+       scene costs every lit material, and a full squadron would multiply that */
+    var light=null;
+    if(!opts.noLights){
+      light=new THREE.PointLight(0x6fd8ff,0,16,2);
+      light.position.copy(glow.position);
+      g.add(light);
+    }
     flames.push({outer:outer,inner:inner,core:core,light:light});
   });
   g.userData.engineFlames=flames;
@@ -6523,6 +7899,8 @@ function launchShip(){
   homeBase.hp=homeBase.maxhp;
   wave=0; waveState="clear"; waveTimer=4;
   closeShipyard();
+  recallAllWingmen();
+  beginSpaceSortie();
   var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
   camera.position.copy(pShip.pos).add(camOff);
   camera.lookAt(pShip.pos.x,pShip.pos.y+1,pShip.pos.z);
@@ -6533,6 +7911,7 @@ function launchShip(){
   beginLaunchAnim();
 }
 function returnToColony(){
+  recallAllWingmen();
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
   landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
@@ -6708,6 +8087,7 @@ function damagePShip(dmg){
   }
 }
 function killEnemyShip(e,i){
+  fxExplosion(spaceScene,e.mesh.position.clone(),e.big?160:38);
   spaceScene.remove(e.mesh); enemyShips.splice(i,1);
   var gain=ri(2,5); stock.parts+=gain;
 }
@@ -6790,7 +8170,7 @@ function updateLaunchAnim(dt){
 var THROTTLE_RATE=0.7, THROTTLE_WHEEL_STEP=0.08, SPEED_CATCHUP_RATE=0.9;
 function updateSpace(dt){
   updateSpaceParts(dt);
-  if(state==="launching"){ updateLaunchAnim(dt); return; }
+  if(state==="launching"){ updateLaunchAnim(dt); updateWingmen(dt); return; }
   shipBoosting=false;
   shipDiving=false;
   shipZooming=false;
@@ -6955,6 +8335,7 @@ function updateSpace(dt){
 
   ensureMoonBoss();
   updateMoonBoss(dt);
+  updateWingmen(dt);
 
   if(waveState==="clear"){
     waveTimer-=dt;
@@ -6972,7 +8353,10 @@ function updateSpace(dt){
   for(var i=enemyShips.length-1;i>=0;i--){
     var e=enemyShips[i];
     if(e.hitT>0)e.hitT-=dt;
+    if(e.ai){ updateEnemyAI(e,i,dt); continue; }
     var targetPos=(pShip&&pShip.alive)?pShip.pos:new THREE.Vector3(0,0,0);
+    var wtgt=nearestWingmanTo(e.mesh.position,900);
+    if(wtgt&&(!pShip||!pShip.alive||wtgt.pos.distanceTo(e.mesh.position)<pShip.pos.distanceTo(e.mesh.position)*0.8))targetPos=wtgt.pos;
     var dx=targetPos.x-e.mesh.position.x, dz=targetPos.z-e.mesh.position.z;
     var d=Math.sqrt(dx*dx+dz*dz);
     var ang=Math.atan2(dx,dz);
@@ -7000,7 +8384,7 @@ function updateSpace(dt){
       e.cd-=dt;
       if(e.cd<=0&&d<810){
         e.cd=rnd(1.2,1.8);
-        var ea=Math.atan2(pShip.pos.x-e.mesh.position.x,pShip.pos.z-e.mesh.position.z);
+        var ea=Math.atan2(targetPos.x-e.mesh.position.x,targetPos.z-e.mesh.position.z);
         var evx=Math.sin(ea)*360, evz=Math.cos(ea)*360;
         var ebolt={x:e.mesh.position.x,y:e.mesh.position.y,z:e.mesh.position.z,vx:evx,vz:evz,dmg:e.dmg,life:2.4};
         ebolt.mesh=makeBoltMesh(0xff4d5e,14,1.4);
@@ -7047,10 +8431,18 @@ function updateSpace(dt){
   for(var i3=eBolts.length-1;i3>=0;i3--){
     var eb=eBolts[i3]; eb.x+=eb.vx*dt; eb.z+=eb.vz*dt; eb.life-=dt;
     if(eb.mesh)eb.mesh.position.set(eb.x,eb.y,eb.z);
+    if(eb.vy)eb.y+=eb.vy*dt;
     var gone=eb.life<=0;
     if(pShip&&pShip.alive){
-      var pdx=eb.x-pShip.pos.x,pdz=eb.z-pShip.pos.z;
-      if(Math.sqrt(pdx*pdx+pdz*pdz)<8){ damagePShip(eb.dmg); gone=true; }
+      var pdx=eb.x-pShip.pos.x,pdz=eb.z-pShip.pos.z,pdy=eb.vy?eb.y-pShip.pos.y:0;
+      if(Math.sqrt(pdx*pdx+pdz*pdz+pdy*pdy)<(eb.hitR||8)+6){ damagePShip(eb.dmg); gone=true; }
+    }
+    if(!gone){
+      for(var wi=wingmen.length-1;wi>=0;wi--){
+        var ww=wingmen[wi]; if(ww.scene!==spaceScene)continue;
+        var wdx=eb.x-ww.pos.x,wdz=eb.z-ww.pos.z,wdy=eb.vy?eb.y-ww.pos.y:0;
+        if(Math.sqrt(wdx*wdx+wdz*wdz+wdy*wdy)<(eb.hitR||8)+14){ damageWingman(ww,eb.dmg); gone=true; break; }
+      }
     }
     if(gone){ if(eb.mesh)spaceScene.remove(eb.mesh); eBolts.splice(i3,1); }
   }
@@ -7205,6 +8597,7 @@ window.addEventListener("keydown",function(e){
     else if(state==="shiphub")closeShipHub();
     else if(state==="build")closeBuild();
     else if(state==="galaxy")closeGalaxy();
+    else if(state==="fleet")closeFleet();
     else togglePause();
   }
   if(k==="r"&&placing){ placeRotY+=Math.PI/2; updatePlacementGhost(mouse.x,mouse.y); }
@@ -7212,6 +8605,8 @@ window.addEventListener("keydown",function(e){
   if(k==="e"&&state==="surface"&&!placing)doInteract();
   if(k==="f"&&state==="surface"&&!placing)doPlaceOnBelt();
   if(k==="b"&&!placing)toggleBackpack();
+  if(k==="x"&&(state==="space"||(state==="surface"&&(surfaceFlying||wingmen.length))))toggleFleetRelease();
+  if(k==="f"&&state==="space"&&pShip&&pShip.alive&&typeof fireMissile==="function")fireMissile();
   if(k==="tab"){ e.preventDefault(); if(state==="surface")openBuild(); else if(state==="build")closeBuild(); }
   if("wasd".indexOf(k)>=0||k===" ")e.preventDefault();
 });
@@ -7570,7 +8965,7 @@ function renderShipyard(){
     html+='<div class="upg"><div class="top"><span class="nm">'+m.nm+(current?" — current":"")+'</span></div>'+
       '<div class="ds">'+m.ds+' &middot; HP '+m.stats.maxhp+' &middot; SPD '+m.stats.spd+' &middot; DMG '+m.stats.dmg+'</div>'+
       '<button class="buy" data-k="'+m.key+'" '+((b.job||!afford)?"disabled":"")+'>'+
-      ('Design — '+m.partsCost+' Parts'+oreLabel+(shipBuilt?" (replaces ship)":""))+'</button></div>';
+      ('Design — '+m.partsCost+' Parts'+oreLabel+(shipBuilt?(fleet.length<fleetCapacity()?" (goes to Hangar)":" (replaces ship)"):""))+'</button></div>';
   });
   if(b.job){
     var m2=SHIP_MODELS.filter(function(x){return x.key===b.job.model;})[0];
@@ -7599,10 +8994,41 @@ function openMachine(b){
   machineTarget=b; state="machine"; $("o-machine").classList.remove("hide"); renderMachine();
 }
 function closeMachine(){ if(state!=="machine")return; state="surface"; $("o-machine").classList.add("hide"); machineTarget=null; }
+/* hand-feeding: move whatever the current recipe (or a generator's fuel) needs from your backpack
+   into the machine's input buffer, up to its capacity — so a line can run before it's belted */
+function machineLoadFromStock(b){
+  var keys=b.type==="coalgen"?["coal"]:(activeRecipe(b)?Object.keys(activeRecipe(b).in):[]);
+  var moved=0;
+  keys.forEach(function(k){
+    var room=Math.max(0,destCapFor(b,k)-(b.in[k]||0)), amt=Math.min(room,Math.floor(stock[k]||0));
+    if(amt>0){ stock[k]-=amt; b.in[k]=(b.in[k]||0)+amt; moved+=amt; }
+  });
+  toast(moved>0?("Loaded "+moved+" items from your backpack"):"Nothing in your backpack this machine can use");
+  sfx.click();
+}
+function machineCollect(b){
+  var got=0;
+  Object.keys(b.out).forEach(function(k){ var amt=Math.floor(b.out[k]||0); if(amt>0){ stock[k]=(stock[k]||0)+amt; b.out[k]-=amt; got+=amt; } });
+  toast(got>0?("Collected "+got+" items"):"Output buffer is empty"); sfx.click();
+}
 function renderMachine(){
   var b=machineTarget; if(!b||buildings.indexOf(b)<0){ closeMachine(); return; }
   var d=BUILD_DEFS[b.type];
   $("mchTitle").textContent=d.nm;
+  if(b.type==="coalgen"){
+    var lblG=b.burning?{txt:"GENERATING 75 MW",col:"#7bd94a"}:{txt:"OUT OF FUEL",col:"#ff9d3c"};
+    $("mchStatus").innerHTML='<span style="color:'+lblG.col+';font-weight:700;letter-spacing:.06em">&#9679; '+lblG.txt+'</span>'+
+      '<span style="margin-left:auto">'+(b.cableConnected?"Cabled":"No cable attached")+'</span>';
+    var coalIn=Math.floor(b.in.coal||0);
+    var secs=Math.max(0,(b.burnT||0))+coalIn*4;
+    $("mchList").innerHTML='<div class="cat" style="margin:0 2px 6px">Fuel</div><div class="slotFlow"><div class="slot">'+RES_ICONS.coal+
+      '<div class="info"><span class="nm">Coal</span><span class="qty">'+coalIn+' / '+destCapFor(b,"coal")+'</span></div></div>'+
+      '<span class="slotArrow">&rarr;</span><div class="slot"><div class="info"><span class="nm">Burn time left</span><span class="qty">'+fmtEta(secs)+'</span></div></div></div>'+
+      '<div class="ds" style="margin-bottom:10px">One coal burns for 4 seconds. Mine coal with a Miner on a coal deposit and belt it in to keep the lights on.</div>'+
+      '<button class="buy" id="bMchLoad" style="margin-top:0">Load coal from backpack ('+Math.floor(stock.coal||0)+')</button>';
+    $("bMchLoad").onclick=function(){ machineLoadFromStock(b); renderMachine(); };
+    return;
+  }
   var st=machineStatus(b), lbl=MACHINE_STATUS_LABEL[st]||{txt:"—",col:"#8a92a5"};
   $("mchStatus").innerHTML='<span style="color:'+lbl.col+';font-weight:700;letter-spacing:.06em">&#9679; '+lbl.txt+'</span>'+
     '<span style="margin-left:auto">'+Math.round(b.netDraw||0)+' MW drawn &middot; '+Math.round(b.netGen||0)+' MW available</span>';
@@ -7623,7 +9049,7 @@ function renderMachine(){
         return '<div class="slot">'+RES_ICONS[k]+'<div class="info"><span class="nm">'+RES[k].nm+'</span><span class="qty">'+Math.floor(b.in[k]||0)+' / '+cap+'</span></div></div>';
       }).join('')+
       '<span class="slotArrow">&rarr;</span>'+
-      (d.produces.indexOf(pk)>=0?
+      (d.produces.indexOf(pk)>=0&&!(d.autoBank&&!belts.some(function(bl){return bl.from===b&&bl.res===pk;}))?
         '<div class="slot">'+RES_ICONS[pk]+'<div class="info"><span class="nm">'+RES[pk].nm+'</span><span class="qty">'+Math.floor(b.out[pk]||0)+' / '+destCapFor(b,pk)+'</span></div></div>'
         :'<div class="slot">'+RES_ICONS[pk]+'<div class="info"><span class="nm">'+RES[pk].nm+'</span><span class="qty">&rarr; Stock</span></div></div>'
       )+
@@ -7649,7 +9075,15 @@ function renderMachine(){
         (remaining>0?(' &middot; ETA '+fmtEta(remaining/perSec)):' &middot; complete')+'</div>';
     }
   }
+  if(b.recipe){
+    html+='<div style="display:flex;gap:6px;margin-top:10px">'+
+      '<button class="buy" style="margin-top:0" id="bMchLoad">Load inputs from backpack</button>'+
+      (Object.keys(b.out).length?'<button class="buy" style="margin-top:0" id="bMchCollect">Collect output</button>':'')+'</div>';
+    if(d.autoBank)html+='<div class="ds" style="margin-top:6px">Outputs without a belt attached go straight to your stockpile.</div>';
+  }
   $("mchList").innerHTML=html;
+  if($("bMchLoad"))$("bMchLoad").onclick=function(){ machineLoadFromStock(b); renderMachine(); };
+  if($("bMchCollect"))$("bMchCollect").onclick=function(){ machineCollect(b); renderMachine(); };
   var recBtns=$("mchList").querySelectorAll(".mchRecipe");
   for(var i=0;i<recBtns.length;i++)recBtns[i].onclick=function(){ b.recipe=this.getAttribute("data-k"); b.cycleT=0; b.producedCount=0; sfx.click(); renderMachine(); };
   var modeBtns=$("mchList").querySelectorAll("[data-mode]");
@@ -7807,10 +9241,17 @@ function unlockUpgrade(key){
   sfx.build(); toast(u.nm+" unlocked!"); saveGame();
   renderHubUpgrades();
 }
+var TIER_NAMES={1:"Tier 1 — Foundations",2:"Tier 2 — Industrialization",3:"Tier 3 — Fleet Logistics",4:"Tier 4 — Armada"};
 function renderHubUpgrades(){
-  var html="";
+  var html="", lastTier=0;
   Object.keys(UPGRADES).forEach(function(k){
     var u=UPGRADES[k], owned=unlocked[k], afford=canAfford(u.cost);
+    var tier=u.tier||1;
+    if(tier!==lastTier){
+      var tierDone=Object.keys(UPGRADES).filter(function(x){return (UPGRADES[x].tier||1)===tier;}).every(function(x){return unlocked[x];});
+      html+='<div class="tierHead'+(tierDone?" done":"")+'">'+TIER_NAMES[tier]+(tierDone?" &#10003;":"")+'</div>';
+      lastTier=tier;
+    }
     html+='<div class="upg"><div class="top" style="align-items:flex-start;gap:10px">'+
       (BUILD_ICONS[k]||'')+
       '<div style="flex:1;min-width:0"><span class="nm">'+u.nm+(owned?' <span style="color:var(--green)">&#9679; UNLOCKED</span>':'')+'</span>'+
@@ -7821,7 +9262,7 @@ function renderHubUpgrades(){
       '</div>';
   });
   $("hubList").innerHTML=html;
-  var icons=$("hubList").querySelectorAll(".upg > .top > svg");
+  var icons=$("hubList").querySelectorAll(".upg > .top > svg, .upg > .top > img");
   for(var j=0;j<icons.length;j++){ icons[j].style.width="56px"; icons[j].style.height="56px"; icons[j].style.flex="none"; }
   var btns=$("hubList").querySelectorAll("[data-unlock]");
   for(var i=0;i<btns.length;i++)btns[i].onclick=function(){ unlockUpgrade(this.getAttribute("data-unlock")); };
@@ -8218,7 +9659,8 @@ function placeOnBelt(bl){
 function interactTarget(){
   var best=null,bd=Infinity;
   buildings.forEach(function(b){
-    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="refinery"&&b.type!=="storage"&&b.type!=="workshop"&&b.type!=="shiplauncher"&&b.type!=="shiphub"&&b.type!=="hub"&&b.type!=="door")return;
+    if(b.type!=="shipyard"&&b.type!=="smelter"&&b.type!=="constructor"&&b.type!=="refinery"&&b.type!=="storage"&&b.type!=="workshop"&&b.type!=="shiplauncher"&&b.type!=="shiphub"&&b.type!=="hub"&&b.type!=="door"&&
+       b.type!=="coalgen"&&b.type!=="foundry"&&b.type!=="assembler"&&b.type!=="robotics"&&b.type!=="hangar"&&b.type!=="fleetcmd")return;
     var dx=b.x-player.position.x,dz=b.z-player.position.z,dd=Math.sqrt(dx*dx+dz*dz);
     var r=BUILD_DEFS[b.type].radius+3;
     if(dd<r&&dd<bd){bd=dd;best=b;}
@@ -8238,7 +9680,8 @@ function doInteract(){
   }
   var t=interactTarget();
   if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
-  if(t&&(t.type==="smelter"||t.type==="constructor"||t.type==="refinery")){ openMachine(t); pulseInteractPose(); return; }
+  if(t&&(t.type==="smelter"||t.type==="constructor"||t.type==="refinery"||t.type==="coalgen"||t.type==="foundry"||t.type==="assembler"||t.type==="robotics")){ openMachine(t); pulseInteractPose(); return; }
+  if(t&&(t.type==="hangar"||t.type==="fleetcmd")){ openFleet(t.type==="hangar"?"hangar":"command"); pulseInteractPose(); return; }
   if(t&&t.type==="storage"){ openStorage(t); pulseInteractPose(); return; }
   if(t&&t.type==="workshop"){ openWorkshop(); pulseInteractPose(); return; }
   if(t&&t.type==="shiplauncher"){ openShipLauncher(t); pulseInteractPose(); return; }
@@ -8273,6 +9716,7 @@ $("bResume").onclick=function(){ sfx.click(); togglePause(); };
 $("bPauseClose").onclick=function(){ sfx.click(); togglePause(); };
 function returnToTitle(){
   cancelPlacing();
+  recallAllWingmen();
   if(pausedFrom==="space"){
     if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
     enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
@@ -8404,6 +9848,7 @@ function resolveBuildingCollision(px,pz,actorRadius){
   return {x:px,z:pz};
 }
 function updateSurface(dt){
+  updateWingmen(dt);
   if(surfaceFlying){
     updateSurfaceFlight(dt);
     updateBuildings(dt);
@@ -8543,7 +9988,7 @@ function frame(now){
        it hidden in every other state so it can never get stuck showing over a menu or the ground
        after you leave space (it only gets un-hidden again by updatePlanetTargeting itself) */
     if(state!=="space")$("planetTarget").classList.add("hide");
-    var menuOpen=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
+    var menuOpen=state==="build"||state==="fleet"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
     var surfStates=state==="surface"||menuOpen||(state==="pause"&&pausedFrom==="surface");
     /* the throttle/speed gauges used to live inside #hudSpace, which is hidden the moment you're
        not in main space cruise — so they vanished the instant you dropped into low-altitude
@@ -8586,9 +10031,18 @@ function frame(now){
       camera.fov+=(wantFov-camera.fov)*Math.min(1,dt*7);
       camera.updateProjectionMatrix();
     }
+    updateFX(dt);
+    if(surfStates)gfxSurfaceFrame(dt);
+    var shook=camShake>0.002&&(surfStates||spaceStates);
+    var camSave=shook?camera.position.clone():null;
+    if(shook){
+      var amp=camShake*camShake*(spaceStates?14:0.55);
+      camera.position.x+=rnd(-1,1)*amp; camera.position.y+=rnd(-1,1)*amp; camera.position.z+=rnd(-1,1)*amp;
+    }
     if(surfStates)renderer.render(surfaceScene,camera);
-    else if(spaceStates)renderer.render(spaceScene,camera);
+    else if(spaceStates){ updateSpaceSun(); renderer.render(spaceScene,camera); }
     else if(state==="title")updateTitleDiorama(dt);
+    if(shook)camera.position.copy(camSave);
   }catch(err){
     console.error("conquest frame error:",err);
   }
@@ -8722,6 +10176,14 @@ function updateTitleDiorama(dt){
   renderer.render(titleScene,titleCamera);
 }
 
+surfaceScene.environment=worldEnv(null);
+var spaceEnvTex=makeEnvFromColors(0x0a1222,0x1c2444,0x04050a,0xdfe8ff,0.85);
+spaceScene.environment=spaceEnvTex;
+if(!gfxHigh()){ surfaceScene.environment=null; spaceScene.environment=null; }
+setGfxLabel();
+titleScene.environment=worldEnv(null);
+fxLightsSurface=makeFxLights(surfaceScene); fxLightsSpace=makeFxLights(spaceScene);
+gfxMarkShadows(surfaceScene);
 applyPlayerColors();
 loadMeta();
 renderBuildIcons();
@@ -8760,7 +10222,7 @@ window.__cq={
   tickFrameLoop:function(n,dt){
     dt=dt||1/60;
     for(var i=0;i<n;i++){
-      var menuOpenT=state==="build"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
+      var menuOpenT=state==="build"||state==="fleet"||state==="shipyard"||state==="machine"||state==="storage"||state==="galaxy"||state==="workshop"||state==="backpack"||state==="shiplauncher"||state==="shiphub"||state==="hub"||state==="wardrobe"||state==="colors";
       if(state==="surface"||menuOpenT)updateSurface(dt);
       if(state==="space"||state==="launching")updateSpace(dt);
     }
@@ -8841,6 +10303,11 @@ window.__cq={
       moonBoss:moonBoss?{x:moonBoss.mesh.position.x,z:moonBoss.mesh.position.z,hp:moonBoss.hp,max:moonBoss.max}:null};
   },
   setSpaceInput:function(o){ for(var k in o)keys[k]=o[k]; },
+  giveShip:function(m){ shipBuilt=true; shipModelKey=m||"fighter"; },
+  setPShipFull:function(x,y,z,yaw){ if(pShip){ pShip.pos.set(x,y,z); if(yaw!=null)pShip.yaw=yaw; pShip.vel.set(0,0,0); } },
+  dbgEval:function(src){ return eval(src); },
+  fxCam:function(dist,s){ var d=new THREE.Vector3(); camera.getWorldDirection(d); var sc=(state==="space"||pausedFrom==="space"&&state==="pause")?spaceScene:surfaceScene; fxExplosion(sc,camera.position.clone().addScaledVector(d,dist),s); },
+  fx:function(x,y,z,s){ fxExplosion(state==="space"?spaceScene:surfaceScene,new THREE.Vector3(x,y,z),s); },
   setSpaceMouse:function(x,y,down,btn){ mouse.x=x; mouse.y=y; mouse.downBtn=down?(btn==null?0:btn):-1; mouse.left=down&&(btn==null||btn===0); mouse.right=down&&btn===2; pcUpdateAimYaw(); },
   setSpaceMouseButtons:function(left,right){ mouse.left=!!left; mouse.right=!!right; mouse.downBtn=mouse.left?0:(mouse.right?2:-1); },
   debugTraceLastBolt:function(steps,dt){
