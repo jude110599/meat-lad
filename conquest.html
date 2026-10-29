@@ -254,6 +254,14 @@ h1.logo .b{color:var(--amber);display:block;text-shadow:0 4px 0 #6b3c05}
   color:var(--bone);padding:9px;font-family:inherit;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
   cursor:pointer;font-weight:800}
 .upg .buy:active{background:var(--panel2)}
+/* .buy / .ds used to be styled only inside .upg cards, so the machine panel's own buttons and notes
+   (production target, load/collect) fell back to raw browser buttons and huge default text */
+.cardBody .buy{margin-top:8px;width:100%;background:linear-gradient(160deg,var(--panel2),var(--panel));border:1px solid var(--line);
+  border-left:3px solid var(--steel);border-radius:7px;color:var(--bone);padding:9px;font-family:inherit;font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer;font-weight:800;transition:border-color .15s,background .15s}
+.cardBody .buy:hover{border-color:var(--amber2)}
+.cardBody .buy[disabled]{opacity:.4;pointer-events:none}
+.cardBody .ds{font-size:10.5px;color:var(--dim);line-height:1.55}
 .upg .buy[disabled]{opacity:.35;pointer-events:none}
 .tierHead{font-size:10px;letter-spacing:.2em;text-transform:uppercase;font-weight:800;color:var(--amber2);
   margin:14px 2px 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
@@ -6020,7 +6028,7 @@ function formationOffset(k,n,spacing){
   if(fleetFormation==="line")return {x:(k%2===0?-1:1)*rank*spacing*1.1,y:0,z:-spacing*0.15};
   if(fleetFormation==="column")return {x:0,y:(k%2===0?1:-1)*spacing*0.1,z:-(k+1)*spacing*1.05};
   if(fleetFormation==="ring"){ var a=(k/Math.max(1,n))*Math.PI*2; return {x:Math.cos(a)*spacing*1.4,y:Math.sin(a)*spacing*0.5,z:Math.sin(a)*spacing*0.6-spacing*0.5}; }
-  return {x:side*rank*spacing,y:rank*spacing*0.08,z:-rank*spacing*0.85};
+  return {x:side*rank*spacing,y:rank*spacing*0.1,z:-rank*spacing*0.45};
 }
 function leaderFrame(){
   var yaw=pShip?pShip.yaw:0;
@@ -6105,7 +6113,7 @@ function wingmenReturnHome(){
     w.phase="return"; w.home=bw; w.hangar=bw.hangar;
   });
 }
-var SPACE_SPACING=75, SURF_SPACING=17;
+var SPACE_SPACING=30, SURF_SPACING=15;
 function toggleFleetRelease(){
   if(!wingmen.length){ toast("No wingmen flying — assign robot pilots at Fleet Command"); return; }
   fleetFree=!fleetFree;
@@ -6294,10 +6302,14 @@ function updateWingmen(dt){
       /* critically-damped follow: match the leader's velocity plus a spring toward the slot, so
          the formation stays tight even at full cruise speed */
       var lead=(pShip&&!target&&(inSpace||surfaceFlying))?pShip.vel:new THREE.Vector3();
-      var err=new THREE.Vector3().subVectors(desired,w.pos);
+      /* the leader has already moved this tick, so aim one tick short of the slot — otherwise adding
+         the leader's velocity below parks every wingman a full frame's travel ahead of its slot */
+      var err=new THREE.Vector3().subVectors(desired,w.pos).addScaledVector(lead,-dt);
       var want=lead.clone().addScaledVector(err,inSpace?2.4:2.8);
       if(want.length()>maxSpd)want.setLength(maxSpd);
-      w.vel.lerp(want,Math.min(1,dt*(inSpace?3:4)));
+      /* in formation the velocity is set directly (leader velocity + spring) so the slot error
+         decays to zero even while the leader speeds up or slows down; attack runs ease in */
+      if(target)w.vel.lerp(want,Math.min(1,dt*(inSpace?3:4))); else w.vel.copy(want);
       w.pos.addScaledVector(w.vel,dt);
       if(inSpace){
         w.pos.y=clamp(w.pos.y,-1,HOME_COMBAT_Y+20);
