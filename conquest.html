@@ -115,7 +115,14 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch
 .fcBtns{display:flex;flex-wrap:wrap;gap:6px}
 .fcBtns .hudbtn[disabled]{opacity:.35;pointer-events:none}
 .metalline svg{width:14px;height:14px;vertical-align:-3px}
-#bossHud{position:fixed;left:50%;top:14px;transform:translateX(-50%);width:340px;max-width:70vw;
+#navMarkers{position:absolute;inset:0;pointer-events:none;z-index:5;display:none}
+.navMk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;opacity:.85}
+.navMk i{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #9fc6ff;display:block}
+.navMk span{font-size:9px;font-weight:800;letter-spacing:.1em;color:#cfe0ff;background:rgba(5,10,18,.7);padding:2px 7px;border-radius:6px;white-space:nowrap;border:1px solid rgba(159,198,255,.25)}
+.navMk.home i{border-bottom-color:#7bd94a} .navMk.home span{color:#bff0a0;border-color:rgba(123,217,74,.35)}
+.navMk.hostile i{border-bottom-color:#ff5a3a} .navMk.hostile span{color:#ffb09a;border-color:rgba(255,90,58,.45)}
+.navMk:not(.edge) i{transform:rotate(180deg)!important}
+#bossHud{position:fixed;left:50%;top:calc(78px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:480px;max-width:70vw;
   display:none;flex-direction:column;align-items:center;gap:4px;z-index:6;pointer-events:none}
 #bossHud.show{display:flex}
 .bossName{font-size:11px;font-weight:800;letter-spacing:.14em;color:#ff6a90;
@@ -470,6 +477,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <div class="bar base"><i id="spBaseFill"></i><span class="barlbl">BASE</span></div>
       </div>
       <div class="res" id="spWaveTxt">WAVE 0</div>
+      <button class="hudbtn accent hide" id="bMissile">Missile (F)</button>
       <button class="hudbtn" id="bPauseSpace">&#10073;&#10073;</button>
     </div>
   </div>
@@ -479,7 +487,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <button id="bRelease">RELEASE (X)</button>
   </div>
   <div id="bossHud">
-    <div class="bossName">THE SENTINEL</div>
+    <div class="bossName" id="bossName">THE SENTINEL</div>
     <div class="bar boss"><i id="bossHpFill"></i></div>
   </div>
   <div id="throttleHud">
@@ -495,6 +503,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     </div>
   </div>
 
+  <div id="navMarkers"></div>
   <div class="planetTarget hide" id="planetTarget">
     <div class="ptRing"><div class="ptRingInner"></div></div>
     <div class="ptName"></div>
@@ -1922,7 +1931,18 @@ var WORLDS=[
     floor:0x241a30,mid:0x1a1224,rock:0x0e0a18,
     ore:"obsidian_shard",oreNm:"Obsidian Shard",decor:"volcanic",
     sky:{low:0x1a1028,high:0x0a0614,sunCol:0xc0a0ff,sunI:3.6,rimCol:0x9a5aff,ambCol:0x4a2a6a},
-    discovered:false,hasHive:false,hasRing:true,hasGuardian:true,guardianDefeated:false }
+    discovered:false,hasHive:false,hasRing:true,hasGuardian:true,guardianDefeated:false },
+  /* Bastion Prime — the fortress world, far out past the rest of the system. Nearly three times
+     the size of any other planet, sealed under a shield and circled by an orbital gun ring; the
+     ring's reactors power the shield, so the ring has to go before anything can land (see
+     FORT / ensureFortress). Its ore, Xenite, feeds the richest parts recipe in the game. */
+  { id:"bastion", nm:"Bastion Prime",
+    sx:0,sz:-168000,radius:14000,col:0x9a8a7a,atmoCol:0xff7a3a,ringCol:0x3a3c44,
+    cx:0,cz:-45000,zoneR:300,
+    floor:0x3a3a44,mid:0x24242c,rock:0x121218,
+    ore:"xenite",oreNm:"Xenite Core",ore2:"coal",ore2Nm:"Coal",decor:"fortress",
+    sky:{low:0x2a1410,high:0x0e0606,sunCol:0xffc890,sunI:4.2,rimCol:0xff6a2a,ambCol:0x6a4a3a},
+    discovered:true,hasHive:false,hasRing:false,hasFortress:true,ringDestroyed:false }
 ];
 var HOME_WORLD={id:"home",nm:"Your Colony",sx:0,sz:0,radius:3150,isHome:true,discovered:true};
 function worldById(id){ return WORLDS.filter(function(w){return w.id===id;})[0]||null; }
@@ -3101,6 +3121,23 @@ var landingPodBeacon=null;
           var vein=new THREE.Mesh(new THREE.OctahedronGeometry(rnd(0.3,0.6),0),volGlassMat);
           vein.position.set(rnd(-0.6,0.6),rnd(0.4,0.9),rnd(-0.6,0.6));
           fg.add(vein);
+        }
+      } else if(w.decor==="fortress"){
+        /* bastion's surface: armored bunkers, broken pylons and fallen ring debris */
+        var fMat=Math.random()<0.5?volRockMat:matStd(0x2a2c34,0.5,0.75);
+        if(Math.random()<0.45){
+          var bunker=new THREE.Mesh(new THREE.BoxGeometry(rnd(2.5,5),rnd(1.2,2.4),rnd(2.5,5)),matStd(0x34363e,0.6,0.7));
+          bunker.position.y=0.6; fg.add(bunker);
+          var slit=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.18,0.05),new THREE.MeshStandardMaterial({color:0x200805,emissive:0xff5a2a,emissiveIntensity:1.2}));
+          slit.position.set(0,1.0,bunker.geometry.parameters.depth/2+0.03); fg.add(slit);
+        } else if(Math.random()<0.6){
+          var pyl=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.45,rnd(4,9),6),matStd(0x2a2c34,0.5,0.8));
+          pyl.position.y=pyl.geometry.parameters.height/2; pyl.rotation.z=rnd(-0.35,0.35); fg.add(pyl);
+          var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5),new THREE.MeshStandardMaterial({color:0x200000,emissive:0xff2a1a,emissiveIntensity:1.6}));
+          lamp.position.y=pyl.geometry.parameters.height; fg.add(lamp);
+        } else {
+          var chunk=new THREE.Mesh(new THREE.BoxGeometry(rnd(1.5,4),rnd(0.8,2),rnd(1,3)),fMat);
+          chunk.rotation.set(rnd(-0.6,0.6),rnd(0,6.28),rnd(-0.6,0.6)); chunk.position.y=0.5; fg.add(chunk);
         }
       } else {
         if(Math.random()<0.6){
@@ -4874,7 +4911,8 @@ var NODE_STYLE={
   spore_pod:{rockCol:0x1e3a20,crystalCol:0x7aff6a,emit:0x1a6a10,shape:"blob"},
   ice_core:{rockCol:0x1a3a52,crystalCol:0xeaf7ff,emit:0x3a9adf,shape:"chunk"},
   sulfur_vein:{rockCol:0x3a3418,crystalCol:0xe8d840,emit:0x9a8a10,shape:"blob"},
-  obsidian_shard:{rockCol:0x1a1024,crystalCol:0x9a5aff,emit:0x6a2aa0,shape:"shard"}
+  obsidian_shard:{rockCol:0x1a1024,crystalCol:0x9a5aff,emit:0x6a2aa0,shape:"shard"},
+  xenite:{rockCol:0x241a24,crystalCol:0xff4fd8,emit:0xb0209a,shape:"shard"}
 };
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
@@ -5864,6 +5902,9 @@ var SHIP_MODELS=[
      of parts (see commissionShip/renderShipyard), which in practice means actually having landed
      there and mined it yourself. Fires a railgun instead of the usual bolt/bomb — see weapon:"rail"
      and fireRailShot. */
+  /* the dedicated attack ship: twin plasma cannons that never stop and a pair of homing missiles on
+     F — built from the steel and hull plating the Foundry and Assembler make */
+  {key:"warhawk",nm:"Warhawk Gunship",ds:"Heavy attack ship. Rapid twin plasma cannons plus homing missiles (F, or the MISSILE button). Built to crack the orbital ring.",partsCost:40,oreCost:{steel:20,plating:8},buildTime:16,stats:{maxhp:260,spd:17,dmg:22,rate:.16}},
   {key:"vanguard",nm:"Vanguard",ds:"Railgun-armed guardian-killer, forged from Obsidian Shard. The strongest hull in the fleet.",partsCost:30,oreCost:{obsidian_shard:15},buildTime:14,stats:{maxhp:180,spd:18,dmg:48,rate:.6}}
 ];
 var shipBuilt=false, shipModelKey=null;
@@ -6397,6 +6438,598 @@ function renderFleet(){
 }
 $("bFleetClose").onclick=function(){ sfx.click(); closeFleet(); };
 $("bRelease").onclick=function(e){ e.stopPropagation(); toggleFleetRelease(); };
+$("bMissile").onclick=function(e){ e.stopPropagation(); if(state==="space")fireMissile(); };
+
+
+/* ═════════════ BASTION PRIME: THE FORTRESS WORLD ═════════════ */
+/* The biggest thing in the system. A planet the size of a small moon system wrapped in a shield
+   bubble, circled by an orbital gun ring so large your ship is a grain of rice next to it, with
+   carriers patrolling the ring and launching fighters. The shield is powered by eight reactor
+   cores built into the ring's outer rim: destroy all eight and the ring tears itself apart, the
+   shield fails, and the planet can finally be landed on. */
+var FORT=null;
+function fortressWorld(){ return worldById("bastion"); }
+/* tear down the live fortress so it rebuilds from the (possibly new) saved state next time it's near */
+function resetFortressRuntime(){
+  if(FORT){ spaceScene.remove(FORT.root); FORT=null; }
+  enemyShips.slice().forEach(function(e){ if(e.fortress){ spaceScene.remove(e.mesh); enemyShips.splice(enemyShips.indexOf(e),1); } });
+}
+var ringTexSet=(function(){
+  var w=1024,h=256, cvs=document.createElement("canvas"); cvs.width=w; cvs.height=h;
+  var g=cvs.getContext("2d");
+  var em=document.createElement("canvas"); em.width=w; em.height=h;
+  var ge=em.getContext("2d");
+  g.fillStyle="#3a3c42"; g.fillRect(0,0,w,h);
+  ge.fillStyle="#000"; ge.fillRect(0,0,w,h);
+  /* hull plates of varying size and tone */
+  for(var i=0;i<420;i++){
+    var px=Math.random()*w, py=Math.random()*h, pw=rnd(20,90), ph=rnd(10,50), sh=Math.floor(rnd(40,85));
+    g.fillStyle="rgb("+sh+","+(sh+2)+","+(sh+6)+")"; g.fillRect(px,py,pw,ph);
+    g.strokeStyle="rgba(0,0,0,.5)"; g.lineWidth=1; g.strokeRect(px,py,pw,ph);
+  }
+  /* trench lines and lit window strips */
+  for(var r=0;r<9;r++){
+    var y=Math.floor(h*(r+0.5)/9);
+    g.fillStyle="rgba(10,10,14,.85)"; g.fillRect(0,y-2,w,4);
+    for(var x=0;x<w;x+=6){
+      if(Math.random()<0.55){
+        var warm=Math.random()<0.8;
+        ge.fillStyle=warm?"rgba(255,190,110,"+rnd(0.5,1)+")":"rgba(140,220,255,"+rnd(0.5,1)+")";
+        ge.fillRect(x,y-1,3,2);
+        g.fillStyle="#1a1a1a"; g.fillRect(x,y-1,3,2);
+      }
+    }
+  }
+  /* red warning bands */
+  for(var b=0;b<4;b++){ var bx=Math.random()*w; g.fillStyle="#6a1a14"; g.fillRect(bx,0,10,h); ge.fillStyle="rgba(255,60,40,.55)"; ge.fillRect(bx+3,0,2,h); }
+  var map=new THREE.CanvasTexture(cvs); map.colorSpace=THREE.SRGBColorSpace; map.wrapS=map.wrapT=THREE.RepeatWrapping;
+  var emi=new THREE.CanvasTexture(em); emi.colorSpace=THREE.SRGBColorSpace; emi.wrapS=emi.wrapT=THREE.RepeatWrapping;
+  map.repeat.set(5,2); emi.repeat.set(5,2);
+  map.anisotropy=emi.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  return {map:map,emi:emi};
+})();
+function buildRingTurretMesh(){
+  var g=new THREE.Group();
+  var base=new THREE.Mesh(new THREE.CylinderGeometry(95,120,60,10),matStd(0x2a2c32,0.5,0.7)); g.add(base);
+  var pivot=new THREE.Group(); pivot.position.y=60; g.add(pivot);
+  var dome=new THREE.Mesh(new THREE.SphereGeometry(80,12,8,0,Math.PI*2,0,Math.PI/2),matStd(0x3a3c44,0.45,0.75)); pivot.add(dome);
+  var pitch=new THREE.Group(); pitch.position.y=30; pivot.add(pitch);
+  [-28,28].forEach(function(x){
+    var bar=new THREE.Mesh(new THREE.CylinderGeometry(12,16,240,8),matStd(0x1a1a20,0.45,0.8));
+    bar.rotation.x=Math.PI/2; bar.position.set(x,0,120); pitch.add(bar);
+    var tip=new THREE.Mesh(new THREE.CylinderGeometry(20,14,30,8),new THREE.MeshStandardMaterial({color:0x2a0a0a,emissive:0xff3020,emissiveIntensity:1.4}));
+    tip.rotation.x=Math.PI/2; tip.position.set(x,0,245); pitch.add(tip);
+  });
+  var eye=new THREE.Mesh(new THREE.SphereGeometry(22,8,6),new THREE.MeshStandardMaterial({color:0x1a0505,emissive:0xff2a1a,emissiveIntensity:1.6}));
+  eye.position.set(0,40,40); pivot.add(eye);
+  g.userData.pivot=pivot; g.userData.pitch=pitch; g.userData.eye=eye;
+  return g;
+}
+function buildReactorCoreMesh(){
+  var g=new THREE.Group();
+  var coreMat=new THREE.MeshStandardMaterial({color:0x2a0a30,emissive:0xff4fd8,emissiveIntensity:2.2,roughness:0.2});
+  var core=new THREE.Mesh(new THREE.SphereGeometry(230,24,16),coreMat); g.add(core);
+  var halo=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:0xff4fd8,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false}));
+  halo.scale.setScalar(1100); g.add(halo);
+  var cage=matStd(0x24262c,0.4,0.85);
+  for(var i=0;i<3;i++){ var r=new THREE.Mesh(new THREE.TorusGeometry(300,22,8,32),cage); r.rotation.set(i*Math.PI/3,i*0.7,0); g.add(r); }
+  var clamp1=new THREE.Mesh(new THREE.CylinderGeometry(90,140,520,10),cage); clamp1.rotation.z=Math.PI/2; clamp1.position.x=-320; g.add(clamp1);
+  g.userData.coreMat=coreMat; g.userData.halo=halo;
+  return g;
+}
+function buildCarrierMesh(){
+  var g=new THREE.Group();
+  var hull=matStd(0x3a3e48,0.45,0.75), dark=matStd(0x1c1e24,0.5,0.7), trim=matStd(0x6a1a14,0.5,0.5);
+  var body=new THREE.Mesh(new THREE.BoxGeometry(260,140,1000),hull); g.add(body);
+  var prow=new THREE.Mesh(new THREE.CylinderGeometry(0,150,380,4),hull); prow.rotation.x=Math.PI/2; prow.rotation.y=Math.PI/4; prow.position.z=690; prow.scale.set(1.2,1,0.6); g.add(prow);
+  var deck=new THREE.Mesh(new THREE.BoxGeometry(420,24,820),dark); deck.position.set(0,82,-40); g.add(deck);
+  var deckLine=new THREE.Mesh(new THREE.BoxGeometry(12,2,780),new THREE.MeshStandardMaterial({color:0xffb545,emissive:0xffa030,emissiveIntensity:1.2})); deckLine.position.set(0,95,-40); g.add(deckLine);
+  var bay=new THREE.Mesh(new THREE.BoxGeometry(180,80,8),new THREE.MeshStandardMaterial({color:0x200808,emissive:0xff5a2a,emissiveIntensity:1.6}));
+  bay.position.set(0,10,505); g.add(bay); g.userData.bay=bay;
+  var tower=new THREE.Mesh(new THREE.BoxGeometry(70,180,160),hull); tower.position.set(170,180,-180); g.add(tower);
+  var bridge=new THREE.Mesh(new THREE.BoxGeometry(80,30,90),new THREE.MeshStandardMaterial({color:0x0a1420,emissive:0x4fd3ff,emissiveIntensity:0.9})); bridge.position.set(170,260,-160); g.add(bridge);
+  var mast=new THREE.Mesh(new THREE.CylinderGeometry(4,6,160,6),dark); mast.position.set(170,350,-200); g.add(mast);
+  [-1,1].forEach(function(s){
+    var sponson=new THREE.Mesh(new THREE.BoxGeometry(90,90,600),hull); sponson.position.set(s*175,-30,-60); g.add(sponson);
+    var stripe=new THREE.Mesh(new THREE.BoxGeometry(4,30,560),trim); stripe.position.set(s*222,-30,-60); g.add(stripe);
+    for(var t=0;t<3;t++){ var gun=new THREE.Mesh(new THREE.CylinderGeometry(8,8,120,6),dark); gun.rotation.x=Math.PI/2; gun.position.set(s*220,20,180-t*200); g.add(gun); }
+  });
+  var engMat=new THREE.MeshStandardMaterial({color:0x101820,emissive:0x6fd8ff,emissiveIntensity:2.0});
+  var glows=[];
+  [[-80,-20],[80,-20],[-80,50],[80,50],[0,15]].forEach(function(p){
+    var noz=new THREE.Mesh(new THREE.CylinderGeometry(48,60,90,12),dark); noz.rotation.x=Math.PI/2; noz.position.set(p[0],p[1],-540); g.add(noz);
+    var gl=new THREE.Mesh(new THREE.CircleGeometry(42,16),engMat); gl.position.set(p[0],p[1],-586); gl.rotation.y=Math.PI; g.add(gl);
+    var plume=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:0x6fd8ff,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
+    plume.scale.setScalar(240); plume.position.set(p[0],p[1],-640); g.add(plume); glows.push(plume);
+  });
+  g.userData.plumes=glows;
+  var nav=new THREE.MeshStandardMaterial({color:0x200000,emissive:0xff2a1a,emissiveIntensity:1.8});
+  for(var n=0;n<6;n++){ var nl=new THREE.Mesh(new THREE.SphereGeometry(10,6,5),nav); nl.position.set(n%2?220:-220,70,400-n*160); g.add(nl); }
+  g.userData.navMat=nav;
+  return g;
+}
+/* the raider fighter: a proper interceptor silhouette instead of the old red diamond — swept
+   forward wings, twin glowing engines, a canopy and red running lights */
+function buildRaiderMesh(elite){
+  var g=new THREE.Group();
+  var hull=matStd(elite?0x3a2a44:0x4a2226,0.4,0.7), dark=matStd(0x14141a,0.5,0.7);
+  var glowMat=new THREE.MeshStandardMaterial({color:0x200404,emissive:elite?0xff4fd8:0xff3020,emissiveIntensity:1.8});
+  var body=new THREE.Mesh(new THREE.ConeGeometry(0.6,3.2,6),hull); body.rotation.x=Math.PI/2; body.position.z=0.4; g.add(body);
+  var spine=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.4,2.2),dark); spine.position.set(0,0.25,-0.3); g.add(spine);
+  var can=new THREE.Mesh(new THREE.SphereGeometry(0.32,10,6),new THREE.MeshStandardMaterial({color:0x100608,emissive:0xff2a1a,emissiveIntensity:0.6,roughness:0.1,metalness:0.6}));
+  can.scale.set(0.8,0.6,1.4); can.position.set(0,0.35,0.9); g.add(can);
+  [-1,1].forEach(function(s){
+    var wing=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.08,1.0),hull); wing.position.set(s*1.3,0,-0.4); wing.rotation.y=s*-0.45; g.add(wing);
+    var tipG=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.7,0.8),dark); tipG.position.set(s*2.3,0.1,-0.9); g.add(tipG);
+    var gun=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.2,5),dark); gun.rotation.x=Math.PI/2; gun.position.set(s*0.9,-0.1,0.7); g.add(gun);
+    var eng=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.22,1.0,8),dark); eng.rotation.x=Math.PI/2; eng.position.set(s*0.45,0,-1.4); g.add(eng);
+    var gl=new THREE.Mesh(new THREE.CircleGeometry(0.22,10),glowMat); gl.position.set(s*0.45,0,-1.92); gl.rotation.y=Math.PI; g.add(gl);
+  });
+  var plume=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:elite?0xff4fd8:0xff6030,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
+  plume.scale.setScalar(2.2); plume.position.set(0,0,-2.3); g.add(plume);
+  g.userData.plume=plume;
+  g.rotation.order="YXZ";
+  g.scale.setScalar(7);
+  return g;
+}
+function ensureFortress(){
+  if(FORT)return FORT;
+  var w=fortressWorld(); if(!w)return null;
+  var R=w.radius*1.5, tube=w.radius*0.12, ringY=2100;
+  var root=new THREE.Group(); root.position.set(w.sx,0,w.sz); spaceScene.add(root);
+  var ringG=new THREE.Group(); ringG.position.y=ringY; ringG.rotation.x=-Math.PI/2; root.add(ringG);
+  var ringMat=new THREE.MeshStandardMaterial({color:0xb8bcc8,map:ringTexSet.map,emissiveMap:ringTexSet.emi,emissive:0xffffff,emissiveIntensity:1.1,
+    normalMap:GFX_METAL.normal,metalness:0.7,roughness:0.5});
+  var ribMat=matStd(0x2a2c34,0.45,0.8);
+  var segs=[], N=24, arc=Math.PI*2/N;
+  for(var i=0;i<N;i++){
+    var sg=new THREE.Group(); sg.rotation.z=i*arc; ringG.add(sg);
+    var seg=new THREE.Mesh(new THREE.TorusGeometry(R,tube,28,40,arc),ringMat); sg.add(seg);
+    /* a structural collar at the start of each segment and a long antenna spar */
+    var rib=new THREE.Mesh(new THREE.TorusGeometry(tube*1.06,tube*0.09,8,28),ribMat);
+    rib.position.set(R,0,0); rib.rotation.y=Math.PI/2; sg.add(rib);
+    var spar=new THREE.Mesh(new THREE.BoxGeometry(tube*0.18,tube*0.18,tube*1.4),ribMat);
+    var mid=arc*0.5; spar.position.set(Math.cos(mid)*(R-tube*0.6),Math.sin(mid)*(R-tube*0.6),tube*1.1); sg.add(spar);
+    segs.push({g:sg,vel:new THREE.Vector3(),spin:new THREE.Vector3(),alive:true});
+  }
+  /* reactors on the outer rim, turret batteries on the top, outer and bottom faces */
+  var cores=[];
+  for(var c=0;c<8;c++){
+    var a=(c+0.5)/8*Math.PI*2;
+    var cm=buildReactorCoreMesh();
+    var cp=new THREE.Vector3(Math.cos(a)*(R+tube*0.95),ringY,Math.sin(a)*(R+tube*0.95));
+    cm.position.copy(cp); cm.rotation.y=-a; root.add(cm);
+    cores.push({mesh:cm,local:cp,hp:900,max:900,alive:true,ang:a});
+  }
+  var turrets=[];
+  for(var t=0;t<40;t++){
+    var ta=(t/40)*Math.PI*2+0.04, face=t%3;
+    var tm=buildRingTurretMesh();
+    var tp, up;
+    if(face===0){ tp=new THREE.Vector3(Math.cos(ta)*R,ringY+tube,Math.sin(ta)*R); up=new THREE.Vector3(0,1,0); }
+    else if(face===1){ tp=new THREE.Vector3(Math.cos(ta)*(R+tube),ringY,Math.sin(ta)*(R+tube)); up=new THREE.Vector3(Math.cos(ta),0,Math.sin(ta)); }
+    else { tp=new THREE.Vector3(Math.cos(ta)*R,ringY-tube,Math.sin(ta)*R); up=new THREE.Vector3(0,-1,0); }
+    tm.position.copy(tp); tm.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),up);
+    root.add(tm);
+    turrets.push({mesh:tm,local:tp,up:up,hp:180,max:180,alive:true,cd:rnd(0.5,3)});
+  }
+  /* the planetary shield: an animated hex-lattice fresnel bubble */
+  var shieldMat=new THREE.ShaderMaterial({
+    uniforms:{t:{value:0},a:{value:1},c:{value:new THREE.Color(0xff6a3a)}},
+    vertexShader:"varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); vP=position; gl_Position=projectionMatrix*mv; }",
+    fragmentShader:"uniform float t; uniform float a; uniform vec3 c; varying vec3 vN; varying vec3 vV; varying vec3 vP;"+
+      "void main(){ float f=pow(1.0-abs(dot(vN,vV)),2.5); vec3 p=normalize(vP)*40.0; vec2 h=vec2(p.x+p.y*0.5,p.y*0.866+p.z*0.3);"+
+      "vec2 g=abs(fract(h)-0.5); float hex=smoothstep(0.42,0.5,max(g.x,g.y)); float wave=0.5+0.5*sin(p.y*0.4+t*1.6);"+
+      "float alpha=(f*0.75+hex*0.14*wave)*a; gl_FragColor=vec4(c*(0.6+hex*0.8),alpha); }",
+    transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide
+  });
+  var shield=new THREE.Mesh(new THREE.SphereGeometry(w.radius*1.2,64,40),shieldMat);
+  shield.userData.noShadow=true;
+  root.add(shield);
+  var carriers=[];
+  for(var k=0;k<3;k++){
+    var cmsh=buildCarrierMesh(); root.add(cmsh);
+    carriers.push({mesh:cmsh,ang:k/3*Math.PI*2,orbitR:R+tube+5200,y:ringY+400*(k-1),hp:3200,max:3200,alive:true,launchT:rnd(3,8),cd:rnd(1,3),spd:0.012+k*0.002});
+  }
+  FORT={w:w,root:root,ringG:ringG,R:R,tube:tube,ringY:ringY,segs:segs,cores:cores,turrets:turrets,shield:shield,shieldMat:shieldMat,
+    carriers:carriers,collapseT:-1,shieldA:1,fighters:0,hudOn:false};
+  if(w.ringDestroyed)fortressApplyDestroyedState();
+  else if(w._savedState)fortressApplySavedState(w._savedState);
+  return FORT;
+}
+function fortressApplyDestroyedState(){
+  if(!FORT)return;
+  FORT.ringG.visible=false;
+  FORT.cores.forEach(function(c){ c.alive=false; c.mesh.visible=false; });
+  FORT.turrets.forEach(function(t){ t.alive=false; t.mesh.visible=false; });
+  FORT.shield.visible=false; FORT.shieldA=0; FORT.collapseT=-1;
+}
+function fortressApplySavedState(s){
+  if(!FORT||!s)return;
+  (s.cores||[]).forEach(function(hp,i){ var c=FORT.cores[i]; if(!c)return; c.hp=hp; if(hp<=0){ c.alive=false; c.mesh.visible=false; } });
+  (s.turrets||[]).forEach(function(al,i){ var t=FORT.turrets[i]; if(t&&!al){ t.alive=false; t.mesh.visible=false; } });
+  (s.carriers||[]).forEach(function(al,i){ var c=FORT.carriers[i]; if(c&&!al){ c.alive=false; c.mesh.visible=false; } });
+}
+function fortressSaveState(){
+  if(!FORT)return fortressWorld()&&fortressWorld()._savedState||null;
+  return {cores:FORT.cores.map(function(c){ return Math.max(0,Math.round(c.hp)); }),turrets:FORT.turrets.map(function(t){ return t.alive; }),carriers:FORT.carriers.map(function(c){ return c.alive; })};
+}
+function fortressWorldPos(local){ return local.clone().add(FORT.root.position); }
+function coresLeft(){ return FORT?FORT.cores.filter(function(c){ return c.alive; }).length:8; }
+/* everything on the fortress you (and your wingmen, and missiles) can shoot */
+function fortressTargets(){
+  if(!FORT)return [];
+  var out=[];
+  FORT.cores.forEach(function(c){ if(c.alive)out.push({pos:c.mesh.getWorldPosition(new THREE.Vector3()),r:330,kind:"core",ref:c,damage:function(d){ damageCore(c,d); },alive:function(){ return c.alive; }}); });
+  FORT.turrets.forEach(function(t){ if(t.alive)out.push({pos:t.mesh.getWorldPosition(new THREE.Vector3()),r:170,kind:"rturret",ref:t,damage:function(d){ damageRingTurret(t,d); },alive:function(){ return t.alive; }}); });
+  FORT.carriers.forEach(function(c){ if(c.alive)out.push({pos:c.mesh.position.clone().add(FORT.root.position),r:520,kind:"carrier",ref:c,damage:function(d){ damageCarrier(c,d); },alive:function(){ return c.alive; }}); });
+  return out;
+}
+function damageCore(c,d){
+  if(!c.alive)return;
+  c.hp-=d; c.hitT=0.15;
+  if(c.hp<=0){
+    c.alive=false;
+    var p=c.mesh.getWorldPosition(new THREE.Vector3());
+    fxExplosion(spaceScene,p,900,{ringCol:0xff4fd8,lightCol:0xff4fd8});
+    for(var i=0;i<4;i++)setTimeout(function(){ fxExplosion(spaceScene,p.clone().add(new THREE.Vector3(rnd(-500,500),rnd(-300,300),rnd(-500,500))),380,{silent:true}); },150+i*180);
+    c.mesh.visible=false;
+    var left=coresLeft();
+    toast(left>0?("REACTOR DESTROYED — "+left+" of 8 left"):"ALL REACTORS DOWN — THE RING IS COLLAPSING");
+    stock.parts+=15;
+    if(left===0)beginRingCollapse();
+    saveGame();
+  }
+}
+function damageRingTurret(t,d){
+  if(!t.alive)return;
+  t.hp-=d; t.hitT=0.12;
+  if(t.hp<=0){ t.alive=false; fxExplosion(spaceScene,t.mesh.getWorldPosition(new THREE.Vector3()),260); t.mesh.visible=false; stock.parts+=3; }
+}
+function damageCarrier(c,d){
+  if(!c.alive)return;
+  c.hp-=d; c.hitT=0.15;
+  if(c.hp<=0){
+    c.alive=false;
+    var p=c.mesh.position.clone().add(FORT.root.position);
+    for(var i=0;i<7;i++)(function(k){ setTimeout(function(){ fxExplosion(spaceScene,p.clone().add(new THREE.Vector3(rnd(-200,200),rnd(-100,100),rnd(-500,500))),k===6?1400:420,{silent:k%2===1}); if(k===6)c.mesh.visible=false; },k*220); })(i);
+    toast("CARRIER DESTROYED"); stock.parts+=40; saveGame();
+  }
+}
+function beginRingCollapse(){
+  if(!FORT)return;
+  FORT.collapseT=0;
+  FORT.segs.forEach(function(s,i){
+    /* segment groups live in the ring's own rotated frame, so drift them outward in that frame */
+    var a=(i+0.5)/FORT.segs.length*Math.PI*2, v=rnd(80,220);
+    s.vel.set(Math.cos(a)*v,Math.sin(a)*v,rnd(-60,60));
+    s.spin.set(rnd(-0.08,0.08),rnd(-0.08,0.08),rnd(-0.08,0.08));
+    s.boomT=rnd(0.3,5.5);
+  });
+  FORT.turrets.forEach(function(t){ if(t.alive){ t.alive=false; t.dieT=rnd(0.5,5); } });
+  addCamShake(1.2);
+}
+function finishRingCollapse(){
+  var w=fortressWorld();
+  w.ringDestroyed=true;
+  fortressApplyDestroyedState();
+  stock.parts+=200;
+  toast("THE ORBITAL RING IS GONE — Bastion Prime's shield is down. Fly in low and slow to land (+200 parts)");
+  sfx.build(); saveGame();
+}
+/* collisions: the ring tube is solid, and while the reactors live the shield bubble is too */
+function resolveFortressCollision(s){
+  if(!FORT)return;
+  var lx=s.pos.x-FORT.root.position.x, lz=s.pos.z-FORT.root.position.z, ly=s.pos.y;
+  if(FORT.ringG.visible&&FORT.collapseT<0){
+    var rho=Math.sqrt(lx*lx+lz*lz);
+    var dr=rho-FORT.R, dy=ly-FORT.ringY, d=Math.sqrt(dr*dr+dy*dy), minD=FORT.tube+40;
+    if(d<minD&&rho>1){
+      var push=(minD-d)/(d||1);
+      s.pos.x+=lx/rho*dr*push; s.pos.z+=lz/rho*dr*push; s.pos.y+=dy*push;
+      s.vel.multiplyScalar(0.3);
+    }
+  }
+  if(FORT.shieldA>0.05){
+    var sr=FORT.w.radius*1.2+40, d3=Math.sqrt(lx*lx+ly*ly+lz*lz);
+    if(d3<sr){
+      var p2=(sr-d3)/(d3||1);
+      s.pos.x+=lx*p2; s.pos.y+=ly*p2; s.pos.z+=lz*p2;
+      s.vel.multiplyScalar(-0.2);
+      if(s===pShip){
+        damagePShip(4);
+        if(!FORT._shieldToastT||FORT._shieldToastT<performance.now()){ FORT._shieldToastT=performance.now()+3000; toast("PLANETARY SHIELD — destroy the ring's reactor cores to bring it down"); }
+        spawnThrustParticle(s.pos.clone(),new THREE.Vector3(0,0,0),30,0xff6a3a);
+      }
+    }
+  }
+}
+function fireRingBolt(from,target,spd,dmg,col,len,rad){
+  var dir=new THREE.Vector3().subVectors(target,from).normalize();
+  var b={x:from.x,y:from.y,z:from.z,vx:dir.x*spd,vy:dir.y*spd,vz:dir.z*spd,dmg:dmg,life:5,hitR:26};
+  b.mesh=makeBoltMesh(col||0xff3a20,len||70,rad||6);
+  b.mesh.position.set(b.x,b.y,b.z); orientBoltMesh(b.mesh,b.vx,b.vz,b.vy);
+  eBolts.push(b);
+}
+function fortressAimPoint(from,spd){
+  /* aim at whoever is closest among you and your wingmen, leading the shot */
+  var tgt=null, td=1e12;
+  if(pShip&&pShip.alive){ tgt={pos:pShip.pos,vel:pShip.vel}; td=from.distanceTo(pShip.pos); }
+  wingmen.forEach(function(w){ if(w.scene!==spaceScene||w.phase!=="form")return; var d=from.distanceTo(w.pos); if(d<td*0.7){ td=d; tgt={pos:w.pos,vel:w.vel}; } });
+  if(!tgt)return null;
+  var tt=td/spd;
+  return {p:tgt.pos.clone().addScaledVector(tgt.vel,tt*0.85),d:td};
+}
+function updateFortress(dt){
+  var w=fortressWorld(); if(!w||!pShip)return;
+  var dx=pShip.pos.x-w.sx, dz=pShip.pos.z-w.sz, dist=Math.sqrt(dx*dx+dz*dz);
+  if(!FORT&&dist>120000)return;
+  ensureFortress();
+  var t=performance.now()/1000;
+  FORT.shieldMat.uniforms.t.value=t;
+  var near=dist<80000;
+  FORT.hudOn=dist<60000&&!w.ringDestroyed;
+  /* ring collapse sequence */
+  if(FORT.collapseT>=0){
+    FORT.collapseT+=dt;
+    FORT.segs.forEach(function(s){
+      s.g.position.addScaledVector(s.vel,dt);
+      s.g.rotation.x+=s.spin.x*dt; s.g.rotation.y+=s.spin.y*dt;
+      if(s.boomT!=null){ s.boomT-=dt; if(s.boomT<=0){ s.boomT=Math.random()<0.5?rnd(0.6,1.6):null;
+        s.g.updateWorldMatrix(true,false);
+        var half=Math.PI/FORT.segs.length;
+        var p=s.g.localToWorld(new THREE.Vector3(FORT.R*Math.cos(half),FORT.R*Math.sin(half),rnd(-FORT.tube,FORT.tube)*0.5));
+        fxExplosion(spaceScene,p,rnd(700,1300),{silent:Math.random()<0.6,shake:0.4}); } }
+    });
+    FORT.turrets.forEach(function(tu){ if(tu.dieT!=null){ tu.dieT-=dt; if(tu.dieT<=0){ tu.dieT=null; tu.mesh.visible=false; fxExplosion(spaceScene,tu.mesh.getWorldPosition(new THREE.Vector3()),300,{silent:true}); } } });
+    FORT.shieldA=Math.max(0,1-FORT.collapseT/4);
+    FORT.shieldMat.uniforms.a.value=FORT.shieldA*(0.6+Math.random()*0.4);
+    FORT.ringG.children.forEach(function(sg){ sg.children.forEach(function(m){ if(m.material&&m.material.emissiveIntensity!=null)m.material.emissiveIntensity=Math.max(0,1.1-FORT.collapseT*0.2)*(Math.random()<0.1?0.2:1); }); });
+    if(FORT.collapseT>8){ FORT.collapseT=-1; finishRingCollapse(); }
+    return;
+  }
+  if(w.ringDestroyed||!near)return;
+  FORT.cores.forEach(function(c){
+    if(!c.alive)return;
+    if(c.hitT>0)c.hitT-=dt;
+    c.mesh.userData.coreMat.emissiveIntensity=(c.hitT>0?4:2.2)+Math.sin(t*3+c.ang*4)*0.5;
+    c.mesh.userData.halo.material.opacity=0.45+Math.sin(t*2+c.ang)*0.12;
+  });
+  var hostileInRange=dist<FORT.R+12000;
+  FORT.turrets.forEach(function(tu){
+    if(!tu.alive)return;
+    var wp=tu.mesh.getWorldPosition(new THREE.Vector3());
+    var aim=fortressAimPoint(wp,2800);
+    if(!aim||aim.d>9000)return;
+    /* traverse: yaw the dome in the turret's own frame, pitch the barrels — never through the hull */
+    var inv=tu.mesh.quaternion.clone().invert();
+    var localDir=aim.p.clone().sub(wp).applyQuaternion(inv);
+    var piv=tu.mesh.userData.pivot, pit=tu.mesh.userData.pitch;
+    var wantYaw=Math.atan2(localDir.x,localDir.z);
+    var dyaw=((wantYaw-piv.rotation.y+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+    piv.rotation.y+=dyaw*Math.min(1,dt*2);
+    var horiz=Math.sqrt(localDir.x*localDir.x+localDir.z*localDir.z);
+    var wantPitch=-clamp(Math.atan2(localDir.y,horiz),-0.1,1.35);
+    pit.rotation.x+=(wantPitch-pit.rotation.x)*Math.min(1,dt*2);
+    tu.cd-=dt;
+    if(tu.cd<=0&&localDir.y>-200){
+      tu.cd=rnd(1.3,2.6);
+      fireRingBolt(wp.clone().addScaledVector(tu.up,90),aim.p,2800,7);
+      if(aim.d<4000)noiz(0.08,0.02,900);
+    }
+  });
+  FORT.carriers.forEach(function(cr){
+    if(!cr.alive)return;
+    if(cr.hitT>0)cr.hitT-=dt;
+    cr.ang+=cr.spd*dt;
+    var px=Math.cos(cr.ang)*cr.orbitR, pz=Math.sin(cr.ang)*cr.orbitR;
+    cr.mesh.position.set(px,cr.y,pz);
+    cr.mesh.rotation.y=Math.atan2(-Math.sin(cr.ang),Math.cos(cr.ang));
+    cr.mesh.userData.plumes.forEach(function(p,i){ p.material.opacity=0.55+Math.sin(t*9+i)*0.15; });
+    cr.mesh.userData.navMat.emissiveIntensity=Math.sin(t*3)>0?2:0.2;
+    var cwp=cr.mesh.position.clone().add(FORT.root.position);
+    cr.cd-=dt;
+    var aim=fortressAimPoint(cwp,3000);
+    if(aim&&aim.d<7000&&cr.cd<=0){ cr.cd=rnd(0.7,1.4); fireRingBolt(cwp.clone().add(new THREE.Vector3(rnd(-200,200),120,rnd(-300,300))),aim.p,3000,9,0xffa040,90,7); }
+    /* launch a flight of fighters from the bow bay while you're anywhere near the ring */
+    cr.launchT-=dt;
+    var fighters=enemyShips.filter(function(e){ return e.ai&&e.fortress; }).length;
+    if(cr.launchT<=0&&hostileInRange&&fighters<15){
+      cr.launchT=rnd(11,16);
+      var fwd=new THREE.Vector3(0,0,1).applyQuaternion(cr.mesh.quaternion);
+      for(var f=0;f<3;f++){
+        var bay=cwp.clone().addScaledVector(fwd,560+f*60).add(new THREE.Vector3(rnd(-40,40),rnd(-20,20),0));
+        spawnAIFighter(bay,fwd.clone().multiplyScalar(3500),true);
+      }
+      if(dist<25000)toast("Carrier launching fighters!");
+      cr.mesh.userData.bay.material.emissiveIntensity=4;
+    } else cr.mesh.userData.bay.material.emissiveIntensity=Math.max(1.6,cr.mesh.userData.bay.material.emissiveIntensity-dt*2);
+  });
+}
+/* ── advanced fighter AI: pursuit with target leading, overshoot-and-reverse dogfighting, evasive
+   jinks when hit, bracketing from both sides, and staying clear of planets and the ring ── */
+function spawnAIFighter(pos,vel,fortress,elite){
+  var mesh=buildRaiderMesh(elite);
+  mesh.position.copy(pos); spaceScene.add(mesh);
+  var hp=fortress?95:spEnemyHP(wave);
+  var e={mesh:mesh,hp:hp,max:hp,dmg:fortress?8:spEnemyDmg(wave),cd:rnd(1,2),hitT:0,ai:true,fortress:!!fortress,
+    vel:vel.clone(),mode:"pursue",modeT:0,side:Math.random()<0.5?-1:1,spd:fortress?4400:3600,yaw:Math.atan2(vel.x,vel.z),pitch:0,roll:0};
+  enemyShips.push(e);
+  return e;
+}
+function updateEnemyAI(e,idx,dt){
+  var pos=e.mesh.position;
+  /* pick a target: the player or the nearest wingman */
+  var tgt=null, td=1e12;
+  if(pShip&&pShip.alive){ tgt={pos:pShip.pos,vel:pShip.vel,w:null}; td=pos.distanceTo(pShip.pos); }
+  wingmen.forEach(function(w){ if(w.scene!==spaceScene||w.phase!=="form")return; var d=pos.distanceTo(w.pos); if(d<td*0.75){ td=d; tgt={pos:w.pos,vel:w.vel,w:w}; } });
+  if(e.fortress&&pShip){ var fw=fortressWorld(); if(fw){ var fdx=pShip.pos.x-fw.sx, fdz=pShip.pos.z-fw.sz; if(Math.sqrt(fdx*fdx+fdz*fdz)>70000){ spaceScene.remove(e.mesh); enemyShips.splice(idx,1); return; } } }
+  e.modeT-=dt;
+  if(e.hitT>0&&e.mode!=="evade"){ e.mode="evade"; e.modeT=rnd(0.6,1.1); e.jink=new THREE.Vector3(rnd(-1,1),rnd(-0.5,0.5),rnd(-1,1)).normalize(); }
+  var desiredDir;
+  if(!tgt){ desiredDir=e.vel.clone().normalize(); }
+  else {
+    var toT=new THREE.Vector3().subVectors(tgt.pos,pos), dist=toT.length();
+    var lead=tgt.pos.clone().addScaledVector(tgt.vel,clamp(dist/6000,0,1.2));
+    if(e.mode==="evade"){
+      desiredDir=e.jink.clone().addScaledVector(toT.normalize(),0.3).normalize();
+      if(e.modeT<=0)e.mode="pursue";
+    } else if(e.mode==="extend"){
+      /* overshot: extend away, then swing round for another pass */
+      desiredDir=e.vel.clone().normalize().add(new THREE.Vector3(-toT.z,0,toT.x).normalize().multiplyScalar(e.side*0.6)).normalize();
+      if(e.modeT<=0)e.mode="pursue";
+    } else {
+      /* pursue the lead point, offset to one side so a pack brackets you instead of stacking up */
+      var side=new THREE.Vector3(-toT.z,0,toT.x).normalize().multiplyScalar(e.side*Math.min(600,dist*0.25));
+      desiredDir=lead.add(side).sub(pos).normalize();
+      if(dist<520){ e.mode="extend"; e.modeT=rnd(1.4,2.4); e.side=-e.side; }
+    }
+    /* fire when the target sits inside a tight cone ahead */
+    e.cd-=dt;
+    var fwd=e.vel.clone().normalize();
+    var aimDir=new THREE.Vector3().subVectors(tgt.pos.clone().addScaledVector(tgt.vel,dist/2800),pos).normalize();
+    if(e.cd<=0&&dist<3200&&fwd.dot(aimDir)>0.93){
+      e.cd=rnd(0.55,1.0);
+      var b={x:pos.x+fwd.x*30,y:pos.y+fwd.y*30,z:pos.z+fwd.z*30,vx:aimDir.x*2800,vy:aimDir.y*2800,vz:aimDir.z*2800,dmg:e.dmg,life:2.2,hitR:10};
+      b.mesh=makeBoltMesh(0xff4d5e,30,1.8); b.mesh.position.set(b.x,b.y,b.z); orientBoltMesh(b.mesh,b.vx,b.vz,b.vy);
+      eBolts.push(b);
+    }
+  }
+  /* avoid the floor/ceiling of the combat band, the planets and the ring */
+  if(pos.y<300)desiredDir.y+=0.6; if(pos.y>HOME_COMBAT_Y-200)desiredDir.y-=0.6;
+  desiredDir.normalize();
+  var spd=e.spd*(e.mode==="extend"?1.15:1)*(tgt&&pos.distanceTo(tgt.pos)>8000?1.3:1);
+  var want=desiredDir.multiplyScalar(spd);
+  var turn=Math.min(1,dt*(e.mode==="evade"?3.2:1.8));
+  e.vel.lerp(want,turn);
+  pos.addScaledVector(e.vel,dt);
+  pos.y=clamp(pos.y,0,HOME_COMBAT_Y+20);
+  var tmp={pos:pos,vel:e.vel}; resolvePlanetCollision(tmp); resolveFortressCollision(tmp);
+  /* orient along velocity with a bank into the turn */
+  var hv=Math.sqrt(e.vel.x*e.vel.x+e.vel.z*e.vel.z);
+  var ny=Math.atan2(e.vel.x,e.vel.z);
+  var dyaw=((ny-e.yaw+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  e.yaw=ny; e.roll+=(clamp(-dyaw/Math.max(dt,0.001)*0.25,-1.1,1.1)-e.roll)*Math.min(1,dt*4);
+  e.pitch=-Math.atan2(e.vel.y,hv);
+  e.mesh.rotation.set(e.pitch,e.yaw,e.roll);
+  if(e.mesh.userData.plume)e.mesh.userData.plume.material.opacity=0.6+Math.random()*0.3;
+  if(Math.random()<0.25)spawnThrustParticle(pos.clone().addScaledVector(e.vel.clone().normalize(),-18),e.vel.clone().multiplyScalar(-0.05),rnd(2,3.5),e.fortress?0xff6030:0xff4d5e);
+}
+
+/* ── Warhawk weapons: alternating twin plasma cannons, plus homing missiles on F ── */
+var twinSide=1;
+function fireTwinBolt(spread){
+  var dir=pcFireDir(spread);
+  twinSide=-twinSide;
+  var right=new THREE.Vector3(-Math.cos(pShip.yaw),0,Math.sin(pShip.yaw));
+  var ox=right.x*7*twinSide, oz=right.z*7*twinSide;
+  var vx=dir.x*19000, vy=dir.y*19000, vz=dir.z*19000;
+  var bolt={x:pShip.pos.x+dir.x*4+ox,y:pShip.pos.y+dir.y*4-1,z:pShip.pos.z+dir.z*4+oz,vx:vx,vy:vy,vz:vz,dmg:pShip.dmg,life:1.3};
+  bolt.mesh=makeBoltMesh(0xffb545,60,2.4);
+  bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
+  orientBoltMesh(bolt.mesh,vx,vz,vy);
+  pBolts.push(bolt);
+  spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0xffb545,false);
+  tone(twinSide>0?240:220,90,0.07,"sawtooth",0.025);
+}
+var missiles=[], missileCd=0;
+function shipHasMissiles(){ return !!(pShip&&SHIP_STATS[shipModelKey]&&SHIP_STATS[shipModelKey].missiles); }
+function makeMissileMesh(){
+  var g=new THREE.Group();
+  var body=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.5,12,8),matStd(0xd8dde6,0.4,0.6)); body.rotation.x=Math.PI/2; g.add(body);
+  var nose=new THREE.Mesh(new THREE.ConeGeometry(1.2,4,8),new THREE.MeshStandardMaterial({color:0xff3020,emissive:0xff3020,emissiveIntensity:1})); nose.rotation.x=Math.PI/2; nose.position.z=8; g.add(nose);
+  var fl=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:0xffc070,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+  fl.scale.setScalar(14); fl.position.z=-8; g.add(fl);
+  return g;
+}
+function fireMissile(){
+  if(!shipHasMissiles()){ toast("This ship has no missiles — the Warhawk Gunship carries them"); return; }
+  if(missileCd>0)return;
+  missileCd=0.9;
+  var dir=pcFireDir(0);
+  var fwd=new THREE.Vector3(dir.x,dir.y,dir.z);
+  /* lock the hostile closest to where you're aiming */
+  var best=null,bs=-1;
+  hostileTargets(spaceScene).forEach(function(t){
+    var to=new THREE.Vector3().subVectors(t.pos,pShip.pos), d=to.length(); if(d>22000)return;
+    var score=to.normalize().dot(fwd)-d/60000;
+    if(to.dot(fwd)>0.6&&score>bs){ bs=score; best=t; }
+  });
+  [-1,1].forEach(function(s){
+    var m=makeMissileMesh();
+    var right=new THREE.Vector3(-Math.cos(pShip.yaw),0,Math.sin(pShip.yaw));
+    var p=pShip.pos.clone().addScaledVector(right,9*s).add(new THREE.Vector3(0,-4,0));
+    m.position.copy(p); spaceScene.add(m);
+    missiles.push({mesh:m,pos:p,vel:pShip.vel.clone().addScaledVector(fwd,2500).addScaledVector(right,s*600),target:best,life:5,dmg:140,arm:0.15});
+  });
+  noiz(0.35,0.06,1800); tone(180,520,0.3,"sawtooth",0.04);
+  toast(best?("MISSILES AWAY — locked on "+({core:"reactor core",rturret:"ring turret",carrier:"carrier",enemy:"fighter",boss:"the Sentinel"}[best.kind]||"target")):"MISSILES AWAY — no lock, dumb-firing");
+}
+function updateMissiles(dt){
+  if(missileCd>0)missileCd-=dt;
+  for(var i=missiles.length-1;i>=0;i--){
+    var m=missiles[i];
+    m.life-=dt; m.arm-=dt;
+    if(m.target&&!hostileAlive(m.target))m.target=null;
+    var spd=Math.max(m.vel.length(),12000);
+    if(m.target&&m.arm<=0){
+      var tp=m.target.kind==="enemy"?m.target.ref.mesh.position:m.target.pos;
+      var want=new THREE.Vector3().subVectors(tp,m.pos).normalize().multiplyScalar(14000);
+      m.vel.lerp(want,Math.min(1,dt*3.5));
+    } else m.vel.setLength(Math.min(14000,spd+dt*9000));
+    m.pos.addScaledVector(m.vel,dt);
+    m.mesh.position.copy(m.pos);
+    m.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),m.vel.clone().normalize());
+    if(Math.random()<0.8)spawnThrustParticle(m.pos.clone(),m.vel.clone().multiplyScalar(-0.03),rnd(5,9),Math.random()<0.5?0xffc070:0x8a8a8a);
+    var hitT=null;
+    hostileTargets(spaceScene).some(function(t){ var tp2=t.kind==="enemy"?t.ref.mesh.position:t.pos; if(tp2.distanceTo(m.pos)<(t.r||40)+60){ hitT=t; return true; } return false; });
+    if(hitT||m.life<=0){
+      fxExplosion(spaceScene,m.pos.clone(),hitT?(hitT.r>200?260:110):80);
+      if(hitT){
+        damageHostile(hitT,m.dmg);
+        /* splash damage to fighters packed around the impact */
+        enemyShips.slice().forEach(function(e){ if(e.mesh.position.distanceTo(m.pos)<380){ e.hp-=m.dmg*0.5; e.hitT=0.12; if(e.hp<=0){ var ei=enemyShips.indexOf(e); if(ei>=0)killEnemyShip(e,ei); } } });
+      }
+      spaceScene.remove(m.mesh); missiles.splice(i,1);
+    }
+  }
+}
+function clearMissiles(){ missiles.forEach(function(m){ spaceScene.remove(m.mesh); }); missiles=[]; }
+
+/* ── navigation markers: every world (and the fortress) gets a marker on screen — or pinned to the
+   screen edge with an arrow when it's behind you — with its name and distance ── */
+var navEls={};
+function updateNavMarkers(){
+  var wrap=$("navMarkers"); if(!wrap)return;
+  var show=state==="space"&&pShip&&pShip.alive;
+  wrap.style.display=show?"block":"none";
+  if(!show)return;
+  var all=WORLDS.concat([HOME_WORLD]);
+  all.forEach(function(w){
+    var el=navEls[w.id];
+    if(!el){ el=document.createElement("div"); el.className="navMk"+(w.hasFortress?" hostile":"")+(w.isHome?" home":""); el.innerHTML='<i></i><span></span>'; wrap.appendChild(el); navEls[w.id]=el; }
+    var wp=new THREE.Vector3(w.sx,0,w.sz);
+    var dist=Math.sqrt((w.sx-pShip.pos.x)*(w.sx-pShip.pos.x)+(w.sz-pShip.pos.z)*(w.sz-pShip.pos.z));
+    if(dist<w.radius*4.5){ el.style.display="none"; return; }
+    el.style.display="";
+    var v=wp.clone().project(camera);
+    var behind=v.z>1;
+    var sx=(v.x*0.5+0.5)*W, sy=(1-(v.y*0.5+0.5))*H;
+    if(behind){ sx=W-sx; sy=H-sy; }
+    var m=46, off=behind||sx<m||sx>W-m||sy<70||sy>H-m;
+    if(off){
+      var cx=W/2, cy=H/2, ddx=sx-cx, ddy=sy-cy;
+      var sc=Math.min((W/2-m)/Math.max(1,Math.abs(ddx)),(H/2-m-20)/Math.max(1,Math.abs(ddy)));
+      sx=cx+ddx*sc; sy=cy+ddy*sc;
+      el.querySelector("i").style.transform="rotate("+Math.atan2(ddy,ddx)+"rad)";
+    } else el.querySelector("i").style.transform="rotate(-1.57rad)";
+    el.classList.toggle("edge",off);
+    el.style.left=sx+"px"; el.style.top=sy+"px";
+    var nm=w.isHome?"HOME":(w.discovered||w.hasFortress?w.nm.toUpperCase():"UNKNOWN WORLD");
+    if(w.hasFortress&&!w.ringDestroyed)nm+=" · RING "+coresLeft()+"/8";
+    el.querySelector("span").textContent=nm+" · "+(dist/1000).toFixed(1)+"k";
+  });
+}
 
 /* ═════════════ SAVE / LOAD (persistent colony) ═════════════ */
 var SKEY="conquest3d-save-v1";
@@ -6458,7 +7091,8 @@ function saveGame(){
       guardiansDefeated:WORLDS.map(function(w){return w.hasGuardian&&w.guardianDefeated?w.id:null;}).filter(function(x){return x;}),
       unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets,
       fleet:fleet.map(function(f){ return {id:f.id,model:f.model,name:f.name,robot:f.robot,sortie:f.sortie,hp:wingmen.filter(function(w){return w.f===f;})[0]?wingmen.filter(function(w){return w.f===f;})[0].hp:f.hp}; }),
-      fleetIdSeq:fleetIdSeq, fleetFormation:fleetFormation
+      fleetIdSeq:fleetIdSeq, fleetFormation:fleetFormation,
+      fortress:{ringDestroyed:!!fortressWorld().ringDestroyed,state:fortressSaveState()}
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -6488,7 +7122,8 @@ function newColony(){
   atOutpost=false; currentWorld=null; surfaceFlying=false; arrivalAnim=null; landingAnim=null;
   shipCrashing=false; shipWrecked=false;
   syncBuildPlane(null);
-  WORLDS.forEach(function(w){ w.discovered=false; if(w.hasGuardian)w.guardianDefeated=false; });
+  WORLDS.forEach(function(w){ w.discovered=!!w.hasFortress; if(w.hasGuardian)w.guardianDefeated=false; if(w.hasFortress){ w.ringDestroyed=false; w._savedState=null; } });
+  resetFortressRuntime();
   if(moonBoss){ spaceScene.remove(moonBoss.mesh); moonBoss=null; }
   restoreHomeAtmosphere();
   if(pShip){ spaceScene.remove(pShip.mesh); surfaceScene.remove(pShip.mesh); pShip=null; }
@@ -6586,6 +7221,10 @@ function applySaveData(data){
   loadedPlayerPos=validSpawn(data.player)?data.player:null;
   (data.discoveredWorlds||[]).forEach(function(id){ var w=worldById(id); if(w)w.discovered=true; });
   (data.guardiansDefeated||[]).forEach(function(id){ var w=worldById(id); if(w)w.guardianDefeated=true; });
+  var fwL=fortressWorld(); fwL.discovered=true;
+  fwL.ringDestroyed=!!(data.fortress&&data.fortress.ringDestroyed);
+  fwL._savedState=data.fortress&&data.fortress.state||null;
+  resetFortressRuntime();
   atOutpost=!!data.atOutpost;
   syncBuildPlane(null);
   pendingLoadState=null;
@@ -6706,6 +7345,9 @@ function loadGame(){
    the ship-position clamp in updateSpace cuts off part of a planet's far side before you can
    actually fly all the way around it */
 var SPACE_SIZE=190000;
+/* Bastion Prime sits well past the old edge, so the ship's own movement clamp is now separate from
+   SPACE_SIZE (which still sizes the starfield/backdrop) */
+var SPACE_BOUND=200000;
 var spaceScene=new THREE.Scene();
 spaceScene.background=new THREE.Color(0x030509);
 spaceScene.add(new THREE.AmbientLight(0x4a5a8a,0.6));
@@ -6953,7 +7595,7 @@ var homeBaseMesh=(function(){
 /* now backed by the GFX kit's sphere-sampled fbm generator (continents, ridged ranges, craters, a
    matching bump map) instead of random ellipse blotches */
 var lastPlanetBump=null;
-var PLANET_TEX_OPTS={vesta:{ice:true,craters:20},ember:{lava:true,craters:12},verdance:{glow:0x3aff7a,craters:6},obsidian:{glow:0x8a4aff,craters:50,craterDepth:1.5}};
+var PLANET_TEX_OPTS={bastion:{glow:0xffa040,craters:8},vesta:{ice:true,craters:20},ember:{lava:true,craters:12},verdance:{glow:0x3aff7a,craters:6},obsidian:{glow:0x8a4aff,craters:50,craterDepth:1.5}};
 function makePlanetTexture(floorHex,midHex,rockHex,opts){
   var t=makePlanetTexturesHQ(floorHex,midHex,rockHex,opts);
   lastPlanetBump=t.bump;
@@ -7100,6 +7742,34 @@ WORLDS.forEach(function(w){
       deb.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
       g.add(deb);
     }
+  } else if(w.id==="bastion"){
+    /* a planet-wide fortress city: a dark armored crust, millions of city lights glowing through on
+       the night side, megastructure spires and a burnt-orange smog layer */
+    var lc=document.createElement("canvas"); lc.width=1024; lc.height=512;
+    var lg=lc.getContext("2d"); lg.fillStyle="#000"; lg.fillRect(0,0,1024,512);
+    for(var li=0;li<9000;li++){
+      var lx=Math.random()*1024, ly=Math.random()*512;
+      var cluster=fbm2(lx/1024*8,ly/512*4,8,3,77);
+      if(cluster<0.52)continue;
+      lg.fillStyle=Math.random()<0.85?"rgba(255,190,110,"+rnd(0.4,1)+")":"rgba(150,220,255,"+rnd(0.4,1)+")";
+      lg.fillRect(lx,ly,rnd(1,2.2),rnd(1,2));
+    }
+    for(var ln=0;ln<40;ln++){ lg.strokeStyle="rgba(255,170,90,.35)"; lg.lineWidth=1; lg.beginPath(); var sx0=Math.random()*1024, sy0=Math.random()*512; lg.moveTo(sx0,sy0); lg.lineTo(sx0+rnd(-200,200),sy0+rnd(-60,60)); lg.stroke(); }
+    var lightTex=new THREE.CanvasTexture(lc); lightTex.colorSpace=THREE.SRGBColorSpace;
+    core.material.emissiveMap=lightTex; core.material.emissive=new THREE.Color(0xffffff); core.material.emissiveIntensity=0.9;
+    core.material.metalness=0.5; core.material.roughness=0.6; core.material.needsUpdate=true;
+    var spireMat=new THREE.MeshStandardMaterial({color:0x2a2c34,roughness:0.4,metalness:0.8,emissive:0xff6a2a,emissiveIntensity:0.25});
+    for(var bi2=0;bi2<30;bi2++){
+      var ba=rnd(0,Math.PI*2), bp=rnd(-0.9,0.9), br=Math.sqrt(1-bp*bp);
+      var bdir=new THREE.Vector3(Math.cos(ba)*br,bp,Math.sin(ba)*br);
+      var bh=rnd(w.radius*0.04,w.radius*0.11);
+      var spire=new THREE.Mesh(new THREE.CylinderGeometry(w.radius*0.004,w.radius*0.018,bh,6),spireMat);
+      spire.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),bdir);
+      spire.position.copy(bdir).multiplyScalar(w.radius+bh*0.45); g.add(spire);
+    }
+    var smog=new THREE.Mesh(new THREE.SphereGeometry(w.radius*1.03,48,32),
+      new THREE.MeshBasicMaterial({map:cloudTex,color:0xff8a4a,transparent:true,opacity:0.22,depthWrite:false}));
+    g.add(smog); g.userData.clouds=smog;
   } else {
     /* verdance — an organic hive world: a hazy spore-cloud shell and a lumpy ring built from
        clustered growths instead of a clean, machined planetary ring */
@@ -7219,7 +7889,7 @@ function updatePlanetTargeting(dt){
   /* Obsidian Moon can't be locked onto at all while its guardian is still alive — near/lowEnough
      don't matter if the boss hasn't been dealt with yet, same way a door stays a door even once
      you're standing right in front of it. */
-  var guarded=!!(target.hasGuardian&&!target.guardianDefeated);
+  var guarded=!!(target.hasGuardian&&!target.guardianDefeated)||!!(target.hasFortress&&!target.ringDestroyed);
   var settling=near&&lowEnough&&!guarded;
   landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
@@ -7230,7 +7900,8 @@ function updatePlanetTargeting(dt){
     elTarget.style.left=sx+"px"; elTarget.style.top=sy+"px";
     var nameTxt=target.isHome?target.nm:(target.discovered?target.nm:"UNDISCOVERED WORLD");
     var hint="";
-    if(guarded)hint=" — DEFEAT THE GUARDIAN";
+    if(guarded&&target.hasFortress)hint=" — DESTROY THE ORBITAL RING ("+coresLeft()+" REACTORS LEFT)";
+    else if(guarded)hint=" — DEFEAT THE GUARDIAN";
     else if(settling)hint=" — LOCKING ON";
     else if(near&&!lowEnough)hint=" — DESCEND (Q)";
     else hint=" — FLY CLOSER TO LAND";
@@ -7637,6 +8308,36 @@ function buildShipMesh(model,opts){
     var navR=navLight(0x3fff70); navR.position.set(2.7,0.24,-1.0); g.add(navR);
     g.userData.engineGlow=[glowL,glowR];
     g.userData.navLights=[navL,navR];
+  } else if(model==="warhawk"){
+    /* Warhawk Gunship: a broad armored wedge with forward-swept wings, a twin plasma cannon under
+       each wing root, missile pods on the wingtips and two big engines — heavier and meaner than
+       anything else in the shipyard */
+    var hull=matStd(0x4a5262,0.35,0.7), trim=matStd(0xffb545,0.4,0.5), dark=matStd(0x14181e,0.5,0.7);
+    var body=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.7,3.2),hull); body.position.z=0.2; g.add(body);
+    var nose=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.65,1.6,4),hull); nose.rotation.x=Math.PI/2; nose.rotation.y=Math.PI/4; nose.position.z=2.6; nose.scale.set(1.3,1,0.7); g.add(nose);
+    var chin=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.3,1.2),dark); chin.position.set(0,-0.45,1.4); g.add(chin);
+    var chinGun=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,1.1,6),dark); chinGun.rotation.x=Math.PI/2; chinGun.position.set(0,-0.5,2.3); g.add(chinGun);
+    boltRow(g,1.1,2.8,0.37,dark,6);
+    var canopy=new THREE.Mesh(new THREE.SphereGeometry(0.36,10,7),canopyMat);
+    canopy.scale.set(0.9,0.55,1.5); canopy.position.set(0,0.45,1.15); g.add(canopy);
+    var canopyFrame=new THREE.Mesh(new THREE.TorusGeometry(0.3,0.035,5,12),trim); canopyFrame.rotation.x=Math.PI/2; canopyFrame.position.set(0,0.45,0.8); g.add(canopyFrame);
+    [-1,1].forEach(function(s){
+      var wing=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.12,1.4),hull); wing.position.set(s*1.85,-0.05,-0.1); wing.rotation.y=s*0.28; g.add(wing);
+      var stripe=hazardBar(2.4,0.1,0.35); stripe.position.set(s*1.85,0.03,0.1); stripe.rotation.y=s*0.28; g.add(stripe);
+      var cannon=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,2.0,8),dark); cannon.rotation.x=Math.PI/2; cannon.position.set(s*0.95,-0.25,1.2); g.add(cannon);
+      var muzzle=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.12,0.25,8),trim); muzzle.rotation.x=Math.PI/2; muzzle.position.set(s*0.95,-0.25,2.25); g.add(muzzle);
+      var pod=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.4,1.5),dark); pod.position.set(s*3.2,-0.1,0.3); pod.rotation.y=s*0.28; g.add(pod);
+      for(var mi=0;mi<2;mi++){ var mt=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.3,6),new THREE.MeshStandardMaterial({color:0xff3020,emissive:0xff3020,emissiveIntensity:0.8})); mt.rotation.x=Math.PI/2; mt.position.set(s*3.2+(mi?0.1:-0.1),-0.1,1.1); g.add(mt); }
+      var fin=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.9,1.0),trim); fin.position.set(s*0.7,0.6,-1.3); fin.rotation.z=s*-0.25; g.add(fin);
+      var eng=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.3,1.6,10),dark); eng.rotation.x=Math.PI/2; eng.position.set(s*0.62,-0.05,-1.5); g.add(eng);
+      var engRing=new THREE.Mesh(new THREE.TorusGeometry(0.34,0.05,5,14),trim); engRing.rotation.x=Math.PI/2; engRing.position.set(s*0.62,-0.05,-0.9); g.add(engRing);
+    });
+    var glowL=new THREE.Mesh(new THREE.SphereGeometry(0.32,8,6),accent); glowL.position.set(-0.62,-0.05,-2.35); g.add(glowL);
+    var glowR=glowL.clone(); glowR.position.x=0.62; g.add(glowR);
+    var navL=navLight(0xff3040); navL.position.set(-3.2,0.15,0.3); g.add(navL);
+    var navR=navLight(0x3fff70); navR.position.set(3.2,0.15,0.3); g.add(navR);
+    g.userData.engineGlow=[glowL,glowR];
+    g.userData.navLights=[navL,navR];
   } else {
     var hull=matStd(0x9fb4c9,0.4,0.55), trim=matStd(0x2a3f55,0.5,0.4), dark=matStd(0x131b26,0.5,0.6);
     var fuselageFront=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.4,6),hull);
@@ -7731,6 +8432,9 @@ function buildShipMesh(model,opts){
   return g;
 }
 function buildEnemyMesh(){
+  return buildRaiderMesh(false);
+}
+function buildEnemyMeshOld(){
   /* still built at its original tiny scale while player ships got 3x'd — next to a real ship
      these were barely a speck, easy to lose track of (and to land a hit on) at current distances */
   var g=new THREE.Group();
@@ -7796,7 +8500,8 @@ var SHIP_STATS={
   fighter:{maxhp:100,maxshield:35,spd:7371,dmg:12,rate:.36,accel:2268,clearance:1.65,surfSpd:85},
   frigate:{maxhp:160,maxshield:60,spd:5387,dmg:18,rate:.5,accel:1588,clearance:1.95,surfSpd:58},
   bomber:{maxhp:120,maxshield:30,spd:5670,dmg:38,rate:1.0,accel:1701,weapon:"bomb",clearance:4.05,surfSpd:65},
-  vanguard:{maxhp:200,maxshield:70,spd:6800,dmg:48,rate:.6,accel:2100,weapon:"rail",clearance:2.1,surfSpd:75}
+  vanguard:{maxhp:200,maxshield:70,spd:6800,dmg:48,rate:.6,accel:2100,weapon:"rail",clearance:2.1,surfSpd:75},
+  warhawk:{maxhp:260,maxshield:90,spd:6600,dmg:22,rate:.16,accel:2000,weapon:"twin",missiles:true,clearance:2.0,surfSpd:74}
 };
 function shipClearance(){ var s=shipModelKey&&SHIP_STATS[shipModelKey]; return s&&s.clearance!=null?s.clearance:0.5; }
 /* low-altitude flight over a landed world's own compact terrain (still a fixed 300-unit zoneR,
@@ -7923,7 +8628,7 @@ function launchShip(){
   beginLaunchAnim();
 }
 function returnToColony(){
-  recallAllWingmen();
+  recallAllWingmen(); clearMissiles();
   if(pShip){ spaceScene.remove(pShip.mesh); pShip=null; }
   landedPlanet=null; landProgress=0; landedNormal=null; $("planetTarget").classList.add("hide");
   enemyShips.forEach(function(e){ spaceScene.remove(e.mesh); }); enemyShips=[];
@@ -8056,6 +8761,9 @@ function bombBlast(b){
   if(hiveRuntime&&hiveRuntime.alive){
     var hdx=hiveRuntime.pos.x-b.x, hdz=hiveRuntime.pos.z-b.z;
     if(Math.sqrt(hdx*hdx+hdz*hdz)<R)damageHive(b.dmg*1.4);
+  }
+  if(FORT){
+    fortressTargets().forEach(function(ft){ if(ft.pos.distanceTo(new THREE.Vector3(b.x,b.y,b.z))<R+ft.r)ft.damage(b.dmg); });
   }
   if(moonBoss){
     /* the boss's own hull is ~200 units across (see the 200-unit bolt hit radius above) — a
@@ -8261,9 +8969,10 @@ function updateSpace(dt){
       var vertSpd=pShip.spd*0.05;
       if(keys.q)pShip.pos.y-=dt*vertSpd;
       if(keys.e)pShip.pos.y+=dt*vertSpd;
-      var half=SPACE_SIZE/2;
+      var half=SPACE_BOUND;
       pShip.pos.x=clamp(pShip.pos.x,-half,half); pShip.pos.z=clamp(pShip.pos.z,-half,half); pShip.pos.y=clamp(pShip.pos.y,-1,HOME_COMBAT_Y+20);
       resolvePlanetCollision(pShip);
+      resolveFortressCollision(pShip);
 
       if(!pc){
         var aim=spaceAimPoint();
@@ -8335,7 +9044,7 @@ function updateSpace(dt){
       var zoomT=pShip.zoomT||0;
       var spread=SPREAD_NORMAL+(SPREAD_ZOOM-SPREAD_NORMAL)*zoomT;
       var rateMult=1+zoomT*(ZOOM_RATE_MULT-1);
-      if(pShip.weapon==="bomb")dropBomb(); else if(pShip.weapon==="rail")fireRailShot(spread); else fireShipBolt(spread);
+      if(pShip.weapon==="bomb")dropBomb(); else if(pShip.weapon==="rail")fireRailShot(spread); else if(pShip.weapon==="twin")fireTwinBolt(spread); else fireShipBolt(spread);
       pShip.cd=pShip.rate*rateMult;
     }
     if(pShip.shieldRegenT>0)pShip.shieldRegenT-=dt;
@@ -8347,6 +9056,8 @@ function updateSpace(dt){
 
   ensureMoonBoss();
   updateMoonBoss(dt);
+  updateFortress(dt);
+  updateMissiles(dt);
   updateWingmen(dt);
 
   if(waveState==="clear"){
@@ -8429,6 +9140,13 @@ function updateSpace(dt){
         e2.hp-=b.dmg; e2.hitT=0.12; hit=true;
         if(e2.hp<=0)killEnemyShip(e2,j);
         break;
+      }
+    }
+    if(!hit&&FORT&&!fortressWorld().ringDestroyed){
+      var fts=fortressTargets();
+      for(var fi2=0;fi2<fts.length;fi2++){
+        var ft=fts[fi2], fdx=b.x-ft.pos.x, fdy=b.y-ft.pos.y, fdz=b.z-ft.pos.z;
+        if(fdx*fdx+fdy*fdy+fdz*fdz<ft.r*ft.r){ ft.damage(b.dmg); hit=true; break; }
       }
     }
     if(!hit&&moonBoss){
@@ -8555,8 +9273,17 @@ function updateHudSpace(){
   $("spBaseFill").style.width=(clamp(homeBase.hp/homeBase.maxhp,0,1)*100)+"%";
   $("spWaveTxt").textContent=waveState==="clear"?("NEXT WAVE "+Math.ceil(waveTimer)+"s"):("WAVE "+wave);
   $("vig").style.opacity=pShip.alive?Math.max(0,(1-hpPc)*0.6-0.05):0;
-  $("bossHud").classList.toggle("show",!!moonBoss);
-  if(moonBoss)$("bossHpFill").style.width=(clamp(moonBoss.hp/moonBoss.max,0,1)*100)+"%";
+  var fortHud=!moonBoss&&FORT&&FORT.hudOn;
+  $("bossHud").classList.toggle("show",!!moonBoss||!!fortHud);
+  if(moonBoss){ $("bossName").textContent="THE SENTINEL"; $("bossHpFill").style.width=(clamp(moonBoss.hp/moonBoss.max,0,1)*100)+"%"; }
+  else if(fortHud){
+    var chp=0,cmax=0; FORT.cores.forEach(function(cc){ chp+=Math.max(0,cc.hp); cmax+=cc.max; });
+    $("bossName").textContent=FORT.collapseT>=0?"ORBITAL RING — COLLAPSING":("BASTION ORBITAL RING · REACTORS "+coresLeft()+"/8 · CARRIERS "+FORT.carriers.filter(function(k){return k.alive;}).length+"/3");
+    $("bossHpFill").style.width=(clamp(chp/cmax,0,1)*100)+"%";
+  }
+  $("bMissile").classList.toggle("hide",!shipHasMissiles());
+  if(shipHasMissiles())$("bMissile").style.opacity=missileCd>0?".45":"1";
+  updateNavMarkers();
   var thrPc=clamp(pShip.throttle==null?0:pShip.throttle,0,1);
   $("thrFill").style.height=(thrPc*100)+"%";
   $("thrPct").textContent=Math.round(thrPc*100)+"%";
