@@ -1700,7 +1700,7 @@ function gfxMarkShadows(root){
     var m=o.material; if(Array.isArray(m))m=m[0];
     var lit=m&&(m.isMeshStandardMaterial||m.isMeshPhongMaterial||m.isMeshLambertMaterial);
     o.receiveShadow=!!lit;
-    o.castShadow=!!lit&&!m.transparent;
+    o.castShadow=!!lit&&!m.transparent&&!o.userData.noCast;
   });
 }
 /* ── pooled FX: fireballs, smoke, shockwaves, debris and flash lights. Lights are pooled and never
@@ -1929,10 +1929,156 @@ rimLight.position.set(-140,90,-110);
 surfaceScene.add(rimLight);
 
 /* cheap deterministic pseudo-noise (layered sine waves) — no external noise lib needed */
+/* ═════════════ TERRAIN v2.1: slope-blended ground, rock cliffs, lakes ═════════════ */
+/* every biome's look, used by the ground shader, the liquid in its lakes and the foliage */
+var BIOMES={
+  home:{floor:0x6a4030,mid:0x4a2c34,rock:0x5a4a50,peak:0x9a8ec2,rockTint:0x8a7068,liquid:"alien",waterY:-3.2},
+  vesta:{rockTint:0xa8b8c8,peak:0xf4faff,liquid:"ice",waterY:-2.2},
+  ember:{rockTint:0x3a2a26,peak:0x5a2a18,liquid:"lava",waterY:-2.6},
+  verdance:{rockTint:0x4a5a44,peak:0x2a6a30,liquid:"swamp",waterY:-2.2},
+  obsidian:{rockTint:0x3a3048,peak:0x8a6aff,liquid:"void",waterY:-3.0},
+  bastion:{rockTint:0x4a4a50,peak:0x6a6a70,liquid:"oil",waterY:-2.6}
+};
+function biomeOf(w){ return BIOMES[w?w.id:"home"]||BIOMES.home; }
+/* layered rock: horizontal strata bands, cracks and lichen-ish speckle, grayscale so each biome tints it */
+var GFX_ROCK=(function(){
+  var size=512, n=size*size, hf=new Float32Array(n), col=new Float32Array(n);
+  for(var y=0;y<size;y++)for(var x=0;x<size;x++){
+    var i=y*size+x, u=x/size, v=y/size;
+    var warp=fbm2(u*3,v*3,3,3,41)*0.25;
+    var strata=Math.sin((v+warp)*Math.PI*18)*0.5+0.5;
+    var grain=fbm2(u*24,v*24,24,3,43);
+    var big=fbm2(u*5,v*5,5,5,47);
+    var cr=1-Math.abs(fbm2(u*7,v*7,7,4,53)*2-1), crack=cr>0.94?(cr-0.94)*16:0;
+    var h=big*0.6+strata*0.18+grain*0.22-crack*0.5;
+    hf[i]=h; col[i]=clamp(0.38+big*0.32+strata*0.12+(grain-0.5)*0.2-crack*0.35,0,1);
+  }
+  var cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
+  var g=cvs.getContext("2d"), img=g.createImageData(size,size), d=img.data;
+  for(var k=0;k<n;k++){ var cv=col[k]*255; d[k*4]=cv; d[k*4+1]=cv; d[k*4+2]=cv; d[k*4+3]=255; }
+  g.putImageData(img,0,0);
+  return {map:canvasTex(cvs,1,true),normal:canvasTex(heightToNormalCanvas(hf,size,size,7,true),1,false)};
+})();
+/* very low frequency variation (patches of darker/lighter soil) sampled at world scale so the
+   tiling of the detail textures never shows */
+var GFX_MACRO=(function(){
+  var size=256, cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
+  var g=cvs.getContext("2d"), img=g.createImageData(size,size), d=img.data;
+  for(var y=0;y<size;y++)for(var x=0;x<size;x++){
+    var v=fbm2(x/size*6,y/size*6,6,5,61)*255, i=(y*size+x)*4; d[i]=v; d[i+1]=fbm2(x/size*14,y/size*14,14,3,67)*255; d[i+2]=v; d[i+3]=255;
+  }
+  g.putImageData(img,0,0);
+  var t=canvasTex(cvs,1,false); return t;
+})();
+/* patches a ground material so it: samples its detail textures in world space at two scales
+   (no visible repeat), blends to triplanar rock on steep slopes, darkens/lightens in big natural
+   patches, and lets the biome's peak colour cap the highest ground */
+function applyTerrainShader(mat,biome){
+  var U={uRock:{value:GFX_ROCK.map},uMacro:{value:GFX_MACRO},uRockTint:{value:new THREE.Color(biome.rockTint||0x807070)},
+    uPeak:{value:new THREE.Color(biome.peak||0xffffff)},uPeakH:{value:biome.peakH||16}};
+  mat.onBeforeCompile=function(sh){
+    for(var k in U)sh.uniforms[k]=U[k];
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vWPos; varying vec3 vWN;")
+      .replace("#include <worldpos_vertex>","#include <worldpos_vertex>\nvWPos=(modelMatrix*vec4(transformed,1.0)).xyz; vWN=normalize(mat3(modelMatrix)*objectNormal);");
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vWPos; varying vec3 vWN; uniform sampler2D uRock; uniform sampler2D uMacro; uniform vec3 uRockTint; uniform vec3 uPeak; uniform float uPeakH;")
+      .replace("#include <map_fragment>","")
+      .replace("#include <color_fragment>",["#include <color_fragment>",
+        "vec2 gUv=vWPos.xz/11.0;",
+        "vec3 g1=texture2D(map,gUv).rgb; vec3 g2=texture2D(map,gUv*0.27+vec2(0.31,0.17)).rgb;",
+        "vec3 groundC=mix(g1,g2,0.4);",
+        "vec3 bw=pow(abs(vWN),vec3(4.0)); bw/=(bw.x+bw.y+bw.z);",
+        "vec3 rockC=texture2D(uRock,vWPos.zy/14.0).rgb*bw.x+texture2D(uRock,vWPos.xz/14.0).rgb*bw.y+texture2D(uRock,vWPos.xy/14.0).rgb*bw.z;",
+        "vec4 mac=texture2D(uMacro,vWPos.xz*0.0021);",
+        "float slope=1.0-clamp(vWN.y,0.0,1.0);",
+        "float rockAmt=smoothstep(0.16,0.38,slope+(mac.g-0.5)*0.18);",
+        "vec3 groundCol=diffuseColor.rgb*groundC*2.0;",
+        "vec3 rockCol=uRockTint*rockC*2.0;",
+        "vec3 col=mix(groundCol,rockCol,rockAmt)*(0.72+mac.r*0.56);",
+        "float peak=smoothstep(uPeakH,uPeakH+6.0,vWPos.y+(mac.r-0.5)*6.0)*(1.0-rockAmt*0.6);",
+        "diffuseColor.rgb=mix(col,uPeak*(0.9+g1.r*0.2),peak);"
+      ].join("\n"));
+  };
+  mat.customProgramCacheKey=function(){ return "terrain2"; };
+  mat.userData.terrainU=U;
+  return mat;
+}
+/* the heightfield itself: the old rolling sines, plus fbm hills, ridged mountain chains and a
+   little surface noise, so the wilds have real valleys (where lakes form) and ridgelines */
 function terrainRaw(x,z){
-  return Math.sin(x*0.008+1.7)*Math.cos(z*0.007-0.4)*16
-       + Math.sin(x*0.021-0.9)*Math.sin(z*0.018+2.1)*7
-       + Math.sin(x*0.05+3.1)*Math.cos(z*0.047)*2.5;
+  var base=Math.sin(x*0.008+1.7)*Math.cos(z*0.007-0.4)*13
+         + Math.sin(x*0.021-0.9)*Math.sin(z*0.018+2.1)*5;
+  var hills=(fbm2(x*0.0105+40,z*0.0105+40,8192,4,7)-0.5)*18;
+  var r=1-Math.abs(fbm2(x*0.0042+9,z*0.0042+3,8192,4,13)*2-1);
+  var ridge=r*r*r*26;
+  var fine=(vnoise2(x*0.11,z*0.11,8192,3)-0.5)*1.1;
+  return base+hills+ridge+fine-7;
+}
+/* builds a vertex-coloured, slope-aware terrain plate (used for home and every world) */
+function buildTerrainPlate(cx,cz,half,seg,colorFn,biome){
+  var geo=new THREE.PlaneGeometry(half*2,half*2,seg,seg);
+  geo.rotateX(-Math.PI/2);
+  var pos=geo.attributes.position;
+  for(var i=0;i<pos.count;i++)pos.setY(i,terrainHeight(cx+pos.getX(i),cz+pos.getZ(i)));
+  geo.computeVertexNormals();
+  var nor=geo.attributes.normal, col=new Float32Array(pos.count*3), c=new THREE.Color();
+  for(var j=0;j<pos.count;j++){
+    var lx=pos.getX(j), lz=pos.getZ(j), h=pos.getY(j), ny=nor.getY(j);
+    colorFn(c,lx,lz,h,ny);
+    var sp=(nHash(j,7,3)-0.5)*0.05;
+    col[j*3]=clamp(c.r+sp,0,1); col[j*3+1]=clamp(c.g+sp,0,1); col[j*3+2]=clamp(c.b+sp,0,1);
+  }
+  geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+  var tx=groundTexSet(half*2/11);
+  var mat=new THREE.MeshStandardMaterial({vertexColors:true,map:tx.map,normalMap:tx.normal,normalScale:new THREE.Vector2(1.1,1.1),
+    roughness:biome.liquid==="ice"?0.6:0.95,metalness:biome.liquid==="ice"?0.12:0,envMapIntensity:biome.liquid==="ice"?0.7:0.3});
+  applyTerrainShader(mat,biome);
+  var mesh=new THREE.Mesh(geo,mat); mesh.position.set(cx,0,cz); mesh.receiveShadow=true;
+  return mesh;
+}
+/* liquids: an animated reflective water surface, a frozen ice sheet, glowing lava, swamp, void
+   and oil, each a big plane sitting at the biome's water line so it fills every valley */
+var waterNormalTex=(function(){
+  var size=256, hf=new Float32Array(size*size);
+  for(var y=0;y<size;y++)for(var x=0;x<size;x++)hf[y*size+x]=fbm2(x/size*8,y/size*8,8,4,71);
+  var t=canvasTex(heightToNormalCanvas(hf,size,size,3,true),1,false); return t;
+})();
+var lavaTex=(function(){
+  var size=256, cvs=document.createElement("canvas"); cvs.width=size; cvs.height=size;
+  var g=cvs.getContext("2d"), img=g.createImageData(size,size), d=img.data;
+  for(var y=0;y<size;y++)for(var x=0;x<size;x++){
+    var cr=1-Math.abs(fbm2(x/size*6,y/size*6,6,5,81)*2-1), hot=Math.pow(cr,6);
+    var i=(y*size+x)*4; d[i]=40+hot*215; d[i+1]=8+hot*150; d[i+2]=4+hot*40; d[i+3]=255;
+  }
+  g.putImageData(img,0,0); return canvasTex(cvs,1,true);
+})();
+var liquidMeshes=[];
+function buildLiquid(cx,cz,half,biome){
+  var kind=biome.liquid, mat;
+  var nm=waterNormalTex.clone(); nm.needsUpdate=true; nm.repeat.set(half/18,half/18);
+  if(kind==="lava"){
+    var lm=lavaTex.clone(); lm.needsUpdate=true; lm.repeat.set(half/40,half/40);
+    mat=new THREE.MeshStandardMaterial({color:0x1a0804,emissive:0xffffff,emissiveMap:lm,emissiveIntensity:1.4,roughness:0.85,metalness:0,normalMap:nm});
+  } else if(kind==="ice"){
+    mat=new THREE.MeshStandardMaterial({color:0xbfe6ff,roughness:0.12,metalness:0.2,normalMap:nm,normalScale:new THREE.Vector2(0.25,0.25),envMapIntensity:1.4});
+  } else {
+    var lc={alien:[0x0a3a3a,0x0a6a5a],swamp:[0x13240e,0x0a2a10],void:[0x140a24,0x3a1a6a],oil:[0x08080a,0x101014]}[kind]||[0x0a2a3a,0x0a3a4a];
+    mat=new THREE.MeshStandardMaterial({color:lc[0],emissive:lc[1],emissiveIntensity:kind==="alien"?0.35:(kind==="void"?0.5:0.05),roughness:kind==="swamp"?0.25:0.05,metalness:0.3,
+      normalMap:nm,normalScale:new THREE.Vector2(0.6,0.6),transparent:true,opacity:kind==="oil"?0.96:0.88,envMapIntensity:1.8});
+  }
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(half*2,half*2,1,1),mat);
+  m.rotation.x=-Math.PI/2; m.position.set(cx,biome.waterY,cz);
+  m.userData.noShadow=true; m.receiveShadow=true;
+  surfaceScene.add(m);
+  liquidMeshes.push({mesh:m,kind:kind,nm:nm,em:mat.emissiveMap||null});
+  return m;
+}
+function updateLiquids(dt){
+  var t=performance.now()/1000;
+  liquidMeshes.forEach(function(l){
+    if(l.kind==="ice")return;
+    l.nm.offset.set(t*0.012,t*0.008);
+    if(l.em){ l.em.offset.set(Math.sin(t*0.05)*0.02,t*0.004); l.mesh.material.emissiveIntensity=1.25+Math.sin(t*0.8)*0.15; }
+  });
 }
 /* a handful of fixed crater bowls, well out in the wild terrain — they fade in with the same
    smoothstep as everything else beyond the buildable clearing, so they can never dent the
@@ -2090,6 +2236,7 @@ function applyWorldAtmosphere(world){
   rimLight.color.set(s.rimCol);
   ambient.color.set(s.ambCol);
   surfaceScene.environment=gfxHigh()?worldEnv(world):null;
+  ensureFoliageFor(world);
 }
 function restoreHomeAtmosphere(){
   surfaceScene.background.set(SKY_LOW);
@@ -2120,6 +2267,8 @@ sun.shadow.camera.near=10; sun.shadow.camera.far=420;
 sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.04;
 var shadowMarkT=0;
 function gfxSurfaceFrame(dt){
+  ensureFoliageFor(currentWorld);
+  updateFoliage(dt); updateLiquids(dt);
   var hi=gfxHigh();
   if(renderer.shadowMap.enabled!==hi){ renderer.shadowMap.enabled=hi; surfaceScene.traverse(function(o){ if(o.material&&o.material.needsUpdate!==undefined)o.material.needsUpdate=true; }); }
   sun.castShadow=hi;
@@ -2847,42 +2996,27 @@ var spores=[];
 })();
 
 /* ground: height-displaced terrain with a flat buildable clearing, vertex-colored by height/slope */
-var groundSeg=140;
-var groundGeo=new THREE.PlaneGeometry(SURFACE_SIZE,SURFACE_SIZE,groundSeg,groundSeg);
-groundGeo.rotateX(-Math.PI/2);
-(function(){
-  var pos=groundGeo.attributes.position;
-  var colArr=new Float32Array(pos.count*3);
-  /* alien palette: warm rust regolith in the buildable clearing (kept readable against the
-     buildings), shifting to teal lichen on the wild rises and pale violet mineral crust up high */
-  var dirt=new THREE.Color(0x5c3a28), grass=new THREE.Color(0x2a6858), rock=new THREE.Color(0x4a4258), snow=new THREE.Color(0x9a8ec2);
-  for(var i=0;i<pos.count;i++){
-    var x=pos.getX(i), z=pos.getZ(i);
-    var h=terrainHeight(x,z);
-    pos.setY(i,h);
-    var c=new THREE.Color();
-    if(h<2)c.copy(dirt).lerp(grass,clamp(h/2+0.3,0,1));
-    else if(h<12)c.copy(grass).lerp(rock,clamp((h-2)/10,0,1));
-    else c.copy(rock).lerp(snow,clamp((h-12)/14,0,1));
-    var speck=rnd(-0.04,0.04);
-    c.r=clamp(c.r+speck,0,1); c.g=clamp(c.g+speck,0,1); c.b=clamp(c.b+speck,0,1);
-    colArr[i*3]=c.r; colArr[i*3+1]=c.g; colArr[i*3+2]=c.b;
-  }
-  groundGeo.setAttribute("color",new THREE.BufferAttribute(colArr,3));
-  groundGeo.computeVertexNormals();
-})();
-/* a small tiled speckle/noise texture so the ground reads as real terrain detail instead of a flat fill */
-/* procedural ground set from the GFX kit (pebbles, cracks, dust layers + matching normal map),
-   tiled every 7 units so the detail reads at walking height */
 function groundTexSet(rep){
   var m=GFX_GROUND.map.clone(), n=GFX_GROUND.normal.clone();
   m.needsUpdate=true; n.needsUpdate=true; m.repeat.set(rep,rep); n.repeat.set(rep,rep);
   return {map:m,normal:n};
 }
-var groundTexs=groundTexSet(SURFACE_SIZE/11);
+/* home ground: rust regolith on the flats, violet dust and teal lichen in the wilds, rock on every
+   slope (handled by the terrain shader), and pale mineral crust on the highest ridges */
+function homeGroundColor(col,lx,lz,h,ny){
+  var dirt=new THREE.Color(0x6a3e2a), dust=new THREE.Color(0x5a3a4a), lichen=new THREE.Color(0x2a5a50), crust=new THREE.Color(0x8a7aa8);
+  var d=Math.sqrt(lx*lx+lz*lz), wild=clamp((d-BUILD_ZONE_R)/90,0,1);
+  var p=fbm2(lx*0.02+5,lz*0.02+5,8192,3,31);
+  col.copy(dirt).lerp(dust,wild*clamp(p*1.6-0.3,0,1));
+  if(p>0.58)col.lerp(lichen,clamp((p-0.58)*4,0,1)*wild*0.8);
+  if(h<-2)col.multiplyScalar(0.8);
+  if(h>10)col.lerp(crust,clamp((h-10)/14,0,1));
+}
+var groundMesh=buildTerrainPlate(0,0,SURFACE_SIZE/2,220,homeGroundColor,BIOMES.home);
+var groundGeo=groundMesh.geometry, groundMat=groundMesh.material;
+var groundTexs={map:groundMat.map,normal:groundMat.normalMap};
 var groundTex=groundTexs.map;
-var groundMat=new THREE.MeshStandardMaterial({vertexColors:true,map:groundTex,normalMap:groundTexs.normal,normalScale:new THREE.Vector2(1.1,1.1),roughness:0.97,metalness:0,envMapIntensity:0.35});
-var groundMesh=new THREE.Mesh(groundGeo,groundMat);
+buildLiquid(0,0,SURFACE_SIZE/2,BIOMES.home);
 groundMesh.name="ground";
 surfaceScene.add(groundMesh);
 
@@ -3017,282 +3151,26 @@ var landingPodBeacon=null;
   surfaceScene.add(eq);
 })();
 
-/* rocks, crystal veins, alien flora, ruins and glowing pools — everything here is confined to
-   r > BUILD_ZONE_R*0.7 so none of it can ever encroach on the flat buildable clearing or the
-   sightlines around it. Density and distance both scale up further out for a proper sense of
-   an untouched wild beyond the colony perimeter. */
+/* every alien world is its own terrain plate (see buildTerrainPlate): its palette on the flats,
+   the biome's own rock on slopes, snow/ash/moss accents, and a liquid filling its valleys. The
+   plate runs out to the fog distance so its edge is never visible. Rocks, plants and trees live
+   in the foliage system (see FOLIAGE v2.1) and are only built the first time you visit. */
 (function(){
-  var rockMat=new THREE.MeshStandardMaterial({color:0x4a4452,roughness:0.92,metalness:0.08,flatShading:true});
-  var crystalMat=new THREE.MeshStandardMaterial({color:0x9a6aff,emissive:0x5a2aa0,emissiveIntensity:0.7,roughness:0.3,metalness:0.4,flatShading:true});
-  var crystalMat2=new THREE.MeshStandardMaterial({color:0x4adfff,emissive:0x0a6a8a,emissiveIntensity:0.65,roughness:0.3,metalness:0.4,flatShading:true});
-  /* ordinary boulders, a slice of them veined with glowing crystal shards */
-  for(var i=0;i<70;i++){
-    var a=rnd(0,Math.PI*2), r=rnd(BUILD_ZONE_R*0.85,SURFACE_SIZE*0.46);
-    var x=Math.cos(a)*r, z=Math.sin(a)*r;
-    var y=terrainHeight(x,z);
-    var rock=new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(2,7),0),rockMat);
-    rock.position.set(x,y+rnd(0.5,2),z);
-    rock.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
-    rock.scale.set(1,rnd(0.6,1.3),1);
-    surfaceScene.add(rock);
-    if(Math.random()<0.22){
-      var vein=new THREE.Mesh(new THREE.OctahedronGeometry(rnd(0.4,0.9),0),Math.random()<0.5?crystalMat:crystalMat2);
-      vein.position.set(x+rnd(-1.5,1.5),y+rnd(1,3.5),z+rnd(-1.5,1.5));
-      vein.rotation.set(rnd(0,6.28),rnd(0,6.28),rnd(0,6.28));
-      surfaceScene.add(vein);
-    }
-  }
-  /* tall angular cliff stacks further out, for a real skyline instead of just low boulders */
-  for(var ci=0;ci<16;ci++){
-    var ca=rnd(0,Math.PI*2), cr=rnd(SURFACE_SIZE*0.3,SURFACE_SIZE*0.47);
-    var cx=Math.cos(ca)*cr, cz=Math.sin(ca)*cr, cy=terrainHeight(cx,cz);
-    var cliff=new THREE.Group();
-    var tiers=Math.floor(rnd(2,4));
-    for(var ti=0;ti<tiers;ti++){
-      var tw=rnd(3,7)*(1-ti*0.22), th=rnd(6,14);
-      var tier=new THREE.Mesh(new THREE.ConeGeometry(tw,th,5),rockMat);
-      tier.position.set(rnd(-1.5,1.5),th/2+ti*0.5,rnd(-1.5,1.5));
-      tier.rotation.y=rnd(0,6.28);
-      cliff.add(tier);
-    }
-    cliff.position.set(cx,cy,cz);
-    surfaceScene.add(cliff);
-  }
-  /* the original glowing mushroom, plus a much taller "giant mushroom" variant with a spotted
-     cap and small hanging spore pods */
-  var stalkMat=new THREE.MeshStandardMaterial({color:0x2a5850,roughness:0.7});
-  var capMat=new THREE.MeshStandardMaterial({color:0x7a4ac0,emissive:0x2a1050,emissiveIntensity:0.45,roughness:0.5});
-  var giantCapMat=new THREE.MeshStandardMaterial({color:0x4a7aa0,emissive:0x1a3a58,emissiveIntensity:0.4,roughness:0.5});
-  var spotMat=new THREE.MeshStandardMaterial({color:0xffd8a0,emissive:0xff9a3c,emissiveIntensity:0.9});
-  var podMat=new THREE.MeshStandardMaterial({color:0xd0ff6a,emissive:0x6aa020,emissiveIntensity:0.6});
-  for(var j=0;j<50;j++){
-    var a2=rnd(0,Math.PI*2), r2=rnd(BUILD_ZONE_R*0.75,SURFACE_SIZE*0.42);
-    var x2=Math.cos(a2)*r2, z2=Math.sin(a2)*r2;
-    var y2=terrainHeight(x2,z2);
-    var g=new THREE.Group();
-    var h=rnd(2.5,6);
-    var stalk=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.3,h,6),stalkMat);
-    stalk.position.y=h/2; g.add(stalk);
-    var cap=new THREE.Mesh(new THREE.SphereGeometry(rnd(0.6,1.3),8,6),capMat);
-    cap.position.y=h; cap.scale.y=0.6; g.add(cap);
-    g.position.set(x2,y2,z2);
-    g.rotation.y=rnd(0,6.28);
-    surfaceScene.add(g);
-  }
-  for(var gi=0;gi<14;gi++){
-    var ga=rnd(0,Math.PI*2), gr=rnd(BUILD_ZONE_R*0.9,SURFACE_SIZE*0.44);
-    var gx=Math.cos(ga)*gr, gz=Math.sin(ga)*gr, gy=terrainHeight(gx,gz);
-    var gg=new THREE.Group();
-    var gh=rnd(7,13);
-    var stalk2=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.75,gh,8),stalkMat);
-    stalk2.position.y=gh/2; gg.add(stalk2);
-    var gcap=new THREE.Mesh(new THREE.SphereGeometry(rnd(2.2,3.4),10,8),giantCapMat);
-    gcap.position.y=gh; gcap.scale.y=0.55; gg.add(gcap);
-    var nSpots=Math.floor(rnd(4,8));
-    for(var si=0;si<nSpots;si++){
-      var sang=rnd(0,6.28), sr=rnd(1,2.6);
-      var spot=new THREE.Mesh(new THREE.SphereGeometry(0.22,6,5),spotMat);
-      spot.position.set(Math.cos(sang)*sr,gh+0.6+rnd(-0.3,0.3),Math.sin(sang)*sr); gg.add(spot);
-    }
-    var nPods=Math.floor(rnd(2,4));
-    for(var pi=0;pi<nPods;pi++){
-      var pang=rnd(0,6.28), pr=rnd(1.2,2.4);
-      var pod=new THREE.Mesh(new THREE.SphereGeometry(0.3,6,5),podMat);
-      pod.position.set(Math.cos(pang)*pr,gh-0.8,Math.sin(pang)*pr); gg.add(pod);
-    }
-    gg.position.set(gx,gy,gz);
-    gg.rotation.y=rnd(0,6.28);
-    surfaceScene.add(gg);
-  }
-  /* freestanding crystal clusters — pure decoration, distinct from the mineable ore nodes */
-  for(var ki=0;ki<24;ki++){
-    var ka=rnd(0,Math.PI*2), kr=rnd(BUILD_ZONE_R*0.8,SURFACE_SIZE*0.45);
-    var kx=Math.cos(ka)*kr, kz=Math.sin(ka)*kr, ky=terrainHeight(kx,kz);
-    var kg=new THREE.Group();
-    var kmat=Math.random()<0.5?crystalMat:crystalMat2;
-    var nShards=Math.floor(rnd(3,6));
-    for(var si2=0;si2<nShards;si2++){
-      var sh=rnd(1.2,3.2);
-      var shard=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3,0.6),sh,5),kmat);
-      shard.position.set(rnd(-0.8,0.8),sh/2,rnd(-0.8,0.8));
-      shard.rotation.set(rnd(-0.25,0.25),rnd(0,6.28),rnd(-0.25,0.25));
-      kg.add(shard);
-    }
-    kg.position.set(kx,ky,kz);
-    surfaceScene.add(kg);
-  }
-  /* every world is its own separate SQUARE baseplate — its own terrain mesh with real height
-     variation, built exactly like the home baseplate is (a height-displaced, vertex-colored
-     plane), just smaller and using that world's own palette. Separation from every other world
-     comes purely from being tens of thousands of units away on the ground (see WORLDS above),
-     not from a wall hiding anything — there's nothing else within sight distance to hide. */
   WORLDS.forEach(function(w){
-    var floorC=new THREE.Color(w.floor), midC=new THREE.Color(w.mid), rockC=new THREE.Color(w.rock);
-    var seg=Math.max(20,Math.round(w.zoneR/3));
-    /* the plate used to end exactly at zoneR*2 — well short of applyWorldAtmosphere's own fog
-       range (zoneR*2.6), so from any high vantage point (like the flight-in approach) you could
-       see the ground's actual geometric edge against open space past it. Extending the plate all
-       the way out to the fog's far distance means the ground is always fully fogged out before
-       its edge would ever come into view — same rock-colored falloff past buildR*1.6, just
-       carried out to where fog hides it instead of stopping short. */
-    var plateHalf=w.zoneR*2.6;
-    var wGeo=new THREE.PlaneGeometry(plateHalf*2,plateHalf*2,seg,seg);
-    wGeo.rotateX(-Math.PI/2);
-    var wpos=wGeo.attributes.position, wcol=new Float32Array(wpos.count*3);
+    var b=biomeOf(w), floorC=new THREE.Color(w.floor), midC=new THREE.Color(w.mid), rockC=new THREE.Color(w.rock);
     var buildR=worldBuildR(w);
-    for(var wi2=0;wi2<wpos.count;wi2++){
-      var lxp=wpos.getX(wi2), lzp=wpos.getZ(wi2);
-      var h=terrainHeight(w.cx+lxp,w.cz+lzp);
-      wpos.setY(wi2,h);
-      var edget=clamp(Math.max(Math.abs(lxp),Math.abs(lzp))/buildR,0,1.6);
-      var wc=new THREE.Color().copy(floorC).lerp(midC,clamp(edget*0.7,0,1)).lerp(rockC,clamp((edget-1)*1.5,0,1));
-      var wspeck=rnd(-0.035,0.035);
-      wc.r=clamp(wc.r+wspeck,0,1); wc.g=clamp(wc.g+wspeck,0,1); wc.b=clamp(wc.b+wspeck,0,1);
-      wcol[wi2*3]=wc.r; wcol[wi2*3+1]=wc.g; wcol[wi2*3+2]=wc.b;
-    }
-    wGeo.setAttribute("color",new THREE.BufferAttribute(wcol,3));
-    wGeo.computeVertexNormals();
-    var wTexs=groundTexSet(plateHalf*2/11);
-    var wMat=new THREE.MeshStandardMaterial({vertexColors:true,map:wTexs.map,normalMap:wTexs.normal,normalScale:new THREE.Vector2(1.4,1.4),
-      roughness:w.decor==="ice"?0.55:0.95,metalness:w.decor==="ice"?0.15:0,envMapIntensity:w.decor==="ice"?0.8:0.35});
-    var wMesh=new THREE.Mesh(wGeo,wMat);
-    wMesh.position.set(w.cx,0,w.cz);
-    surfaceScene.add(wMesh);
+    var accent=new THREE.Color({vesta:0xf2f8ff,ember:0x2a1410,verdance:0x2a6a2a,obsidian:0x3a2a5a,bastion:0x5a5650}[w.id]||0xffffff);
+    var plateHalf=w.zoneR*2.6;
+    var mesh=buildTerrainPlate(w.cx,w.cz,plateHalf,230,function(col,lx,lz,h,ny){
+      var edget=clamp(Math.max(Math.abs(lx),Math.abs(lz))/buildR,0,1.6);
+      col.copy(floorC).lerp(midC,clamp(edget*0.7,0,1)).lerp(rockC,clamp((edget-1)*1.2,0,1));
+      var p=fbm2((w.cx+lx)*0.022,(w.cz+lz)*0.022,8192,3,33);
+      if(p>0.55)col.lerp(accent,clamp((p-0.55)*3,0,1)*0.6);
+      if(h<b.waterY+1.2)col.multiplyScalar(0.75);
+    },b);
+    surfaceScene.add(mesh);
+    buildLiquid(w.cx,w.cz,plateHalf,b);
   });
-  /* each landable world gets its own decoration set scattered across its disc, so it reads as a
-     distinct place the moment you're standing there — ice spikes, volcanic glass spires, or
-     jungle fern clusters, depending on the world's biome */
-  var iceMat=new THREE.MeshStandardMaterial({color:0x9fe0f0,emissive:0x2a6a80,emissiveIntensity:0.55,roughness:0.25,metalness:0.35,flatShading:true});
-  var frostRockMat=new THREE.MeshStandardMaterial({color:0xbfd8e2,roughness:0.9,metalness:0.05,flatShading:true});
-  var volGlassMat=new THREE.MeshStandardMaterial({color:0xff6a2a,emissive:0xaa2a08,emissiveIntensity:0.75,roughness:0.3,metalness:0.3,flatShading:true});
-  var volRockMat=new THREE.MeshStandardMaterial({color:0x241614,roughness:0.95,metalness:0.05,flatShading:true});
-  var fernMat=new THREE.MeshStandardMaterial({color:0x4ad86a,emissive:0x0a4a1a,emissiveIntensity:0.5,roughness:0.5,metalness:0.1,flatShading:true});
-  var vineRockMat=new THREE.MeshStandardMaterial({color:0x1a3a22,roughness:0.9,metalness:0.05,flatShading:true});
-  WORLDS.forEach(function(w){
-    for(var fi=0;fi<90;fi++){
-      var fa=rnd(0,Math.PI*2), fr=rnd(w.zoneR*0.35,w.zoneR*0.92);
-      var fx=w.cx+Math.cos(fa)*fr, fz=w.cz+Math.sin(fa)*fr, fy=terrainHeight(fx,fz);
-      var fg=new THREE.Group();
-      if(w.decor==="ice"){
-        if(Math.random()<0.6){
-          var nSp=Math.floor(rnd(2,5));
-          for(var spi=0;spi<nSp;spi++){
-            var sph=rnd(1.5,4.2);
-            var spike=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.3,0.7),sph,6),iceMat);
-            spike.position.set(rnd(-1,1),sph/2,rnd(-1,1));
-            spike.rotation.set(rnd(-0.2,0.2),rnd(0,6.28),rnd(-0.2,0.2));
-            fg.add(spike);
-          }
-        } else {
-          var boulder=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1,2.2),0),frostRockMat);
-          boulder.scale.set(1,rnd(0.6,0.9),1); boulder.rotation.y=rnd(0,6.28);
-          fg.add(boulder);
-        }
-      } else if(w.decor==="volcanic"){
-        if(Math.random()<0.55){
-          var nGl=Math.floor(rnd(2,4));
-          for(var gi=0;gi<nGl;gi++){
-            var gh=rnd(1.8,4.8);
-            var glass=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.25,0.5),gh,5),volGlassMat);
-            glass.position.set(rnd(-0.9,0.9),gh/2,rnd(-0.9,0.9));
-            glass.rotation.set(rnd(-0.3,0.3),rnd(0,6.28),rnd(-0.3,0.3));
-            fg.add(glass);
-          }
-        } else {
-          var vrock=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1.2,2.6),0),volRockMat);
-          vrock.scale.set(1,rnd(0.5,0.8),1); vrock.rotation.y=rnd(0,6.28);
-          fg.add(vrock);
-          var vein=new THREE.Mesh(new THREE.OctahedronGeometry(rnd(0.3,0.6),0),volGlassMat);
-          vein.position.set(rnd(-0.6,0.6),rnd(0.4,0.9),rnd(-0.6,0.6));
-          fg.add(vein);
-        }
-      } else if(w.decor==="fortress"){
-        /* bastion's surface: armored bunkers, broken pylons and fallen ring debris */
-        var fMat=Math.random()<0.5?volRockMat:matStd(0x2a2c34,0.5,0.75);
-        if(Math.random()<0.45){
-          var bunker=new THREE.Mesh(new THREE.BoxGeometry(rnd(2.5,5),rnd(1.2,2.4),rnd(2.5,5)),matStd(0x34363e,0.6,0.7));
-          bunker.position.y=0.6; fg.add(bunker);
-          var slit=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.18,0.05),new THREE.MeshStandardMaterial({color:0x200805,emissive:0xff5a2a,emissiveIntensity:1.2}));
-          slit.position.set(0,1.0,bunker.geometry.parameters.depth/2+0.03); fg.add(slit);
-        } else if(Math.random()<0.6){
-          var pyl=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.45,rnd(4,9),6),matStd(0x2a2c34,0.5,0.8));
-          pyl.position.y=pyl.geometry.parameters.height/2; pyl.rotation.z=rnd(-0.35,0.35); fg.add(pyl);
-          var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5),new THREE.MeshStandardMaterial({color:0x200000,emissive:0xff2a1a,emissiveIntensity:1.6}));
-          lamp.position.y=pyl.geometry.parameters.height; fg.add(lamp);
-        } else {
-          var chunk=new THREE.Mesh(new THREE.BoxGeometry(rnd(1.5,4),rnd(0.8,2),rnd(1,3)),fMat);
-          chunk.rotation.set(rnd(-0.6,0.6),rnd(0,6.28),rnd(-0.6,0.6)); chunk.position.y=0.5; fg.add(chunk);
-        }
-      } else {
-        if(Math.random()<0.6){
-          var nFr=Math.floor(rnd(3,6));
-          for(var fri=0;fri<nFr;fri++){
-            var fh=rnd(1.2,2.6);
-            var frond=new THREE.Mesh(new THREE.ConeGeometry(rnd(0.5,0.9),fh,4),fernMat);
-            frond.position.set(rnd(-1,1),fh/2,rnd(-1,1));
-            frond.rotation.set(rnd(-0.4,0.4),rnd(0,6.28),rnd(-0.4,0.4));
-            fg.add(frond);
-          }
-        } else {
-          var mound=new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(1,2),0),vineRockMat);
-          mound.scale.set(1.1,rnd(0.5,0.8),1.1); mound.rotation.y=rnd(0,6.28);
-          fg.add(mound);
-        }
-      }
-      fg.position.set(fx,fy,fz);
-      surfaceScene.add(fg);
-    }
-  });
-  /* small ruin markers — broken arches and leaning obelisks hinting at something that was here
-     before the colony, kept sparse and well outside any walkable/buildable path */
-  var ruinMat=new THREE.MeshStandardMaterial({color:0x3a3648,roughness:0.85,metalness:0.15});
-  var runeMat=new THREE.MeshStandardMaterial({color:0x2a2438,emissive:0x6a3aff,emissiveIntensity:0.55,roughness:0.4});
-  for(var ri=0;ri<7;ri++){
-    var ra=rnd(0,Math.PI*2), rr=rnd(SURFACE_SIZE*0.28,SURFACE_SIZE*0.45);
-    var rx=Math.cos(ra)*rr, rz=Math.sin(ra)*rr, ry=terrainHeight(rx,rz);
-    var rg=new THREE.Group();
-    if(Math.random()<0.5){
-      var legL=new THREE.Mesh(new THREE.BoxGeometry(1.1,rnd(5,8),1.1),ruinMat);
-      legL.position.set(-2.6,legL.geometry.parameters.height/2,0); rg.add(legL);
-      var legR=legL.clone(); legR.position.x=2.6; rg.add(legR);
-      var lintel=new THREE.Mesh(new THREE.BoxGeometry(6.4,1.0,1.1),ruinMat);
-      lintel.position.set(0,legL.geometry.parameters.height-0.5,0); rg.add(lintel);
-      var rune=new THREE.Mesh(new THREE.CircleGeometry(0.5,10),runeMat);
-      rune.position.set(0,legL.geometry.parameters.height-0.5,0.58); rg.add(rune);
-    } else {
-      var obelisk=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.9,rnd(7,11),5),ruinMat);
-      obelisk.position.y=obelisk.geometry.parameters.height/2; rg.add(obelisk);
-      obelisk.rotation.z=rnd(-0.12,0.12);
-      var rune2=new THREE.Mesh(new THREE.CircleGeometry(0.35,8),runeMat);
-      rune2.position.set(0,obelisk.geometry.parameters.height*0.6,0.62); rg.add(rune2);
-    }
-    rg.position.set(rx,ry,rz);
-    rg.rotation.y=rnd(0,6.28);
-    surfaceScene.add(rg);
-  }
-  /* scattered wreck debris, purely dressing */
-  var debrisMat=new THREE.MeshStandardMaterial({color:0x5b6a78,roughness:0.6,metalness:0.4});
-  for(var di=0;di<20;di++){
-    var da=rnd(0,Math.PI*2), dr=rnd(BUILD_ZONE_R*0.78,SURFACE_SIZE*0.44);
-    var dx=Math.cos(da)*dr, dz=Math.sin(da)*dr, dy=terrainHeight(dx,dz);
-    var piece=new THREE.Mesh(new THREE.BoxGeometry(rnd(0.6,1.8),rnd(0.3,0.7),rnd(0.5,1.4)),debrisMat);
-    piece.position.set(dx,dy+0.2,dz);
-    piece.rotation.set(rnd(-0.3,0.3),rnd(0,6.28),rnd(-0.3,0.3));
-    surfaceScene.add(piece);
-  }
-  /* small pools of glowing alien liquid, with a slow shimmering wobble */
-  var poolLiquidMat=new THREE.MeshStandardMaterial({color:0x1aff9a,emissive:0x0a8a5a,emissiveIntensity:0.8,roughness:0.15,metalness:0.1,transparent:true,opacity:0.85});
-  for(var qi=0;qi<6;qi++){
-    var qa=rnd(0,Math.PI*2), qr=rnd(BUILD_ZONE_R*0.85,SURFACE_SIZE*0.4);
-    var qx=Math.cos(qa)*qr, qz=Math.sin(qa)*qr, qy=terrainHeight(qx,qz);
-    var pool=new THREE.Mesh(new THREE.CircleGeometry(rnd(3,6),16),poolLiquidMat.clone());
-    pool.rotation.x=-Math.PI/2; pool.position.set(qx,qy+0.06,qz);
-    surfaceScene.add(pool);
-    alienPools.push(pool);
-    var rim=new THREE.Mesh(new THREE.RingGeometry(pool.geometry.parameters.radius,pool.geometry.parameters.radius+0.5,16),rockMat);
-    rim.rotation.x=-Math.PI/2; rim.position.set(qx,qy+0.04,qz);
-    surfaceScene.add(rim);
-  }
 })();
 
 
@@ -3501,6 +3379,8 @@ function paintableParts(mesh){
 function paintBuilding(b,colorHex,partsArr){
   if(!b||!b.mesh)return;
   paintableParts(b.mesh).forEach(function(o,i){
+    /* models share cached materials now, so a painted part gets its own copy first */
+    if(!o.userData.ownMat){ o.material=o.material.clone(); o.userData.ownMat=true; }
     o.material.color.set((partsArr&&partsArr[i]!=null)?partsArr[i]:colorHex);
   });
   b.paintColor=colorHex;
@@ -3786,6 +3666,238 @@ function matStd(color,rough,metal){
   return new THREE.MeshStandardMaterial({color:color,roughness:Math.min(1,(rough==null?0.6:rough)*1.45),metalness:metal==null?0.2:metal,
     map:panelTex,normalMap:GFX_METAL.normal,normalScale:new THREE.Vector2(0.9,0.9),roughnessMap:GFX_METAL.rough,envMapIntensity:0.9});
 }
+
+/* ═════════════ MODEL KIT (v2.1: shared parts every new model is built from) ═════════════ */
+/* Real machinery reads as real because of its small parts: rounded/bevelled panels instead of
+   razor-edged boxes, lathed tanks with weld seams, pipe runs that bend, vent grilles, rivets,
+   lit screens with readouts, ladders and handrails, trusses. Everything below builds those from
+   plain three.js geometry so each model in the game can be assembled from them. */
+var MK={};
+MK.mats={};
+/* painted/bare metal materials are cached by their parameters so a hundred buildings share a
+   handful of materials (fewer shader programs, faster rendering) */
+MK.mat=function(color,rough,metal,extra){
+  var key=color+"|"+rough+"|"+metal+"|"+(extra?JSON.stringify(extra):"");
+  if(MK.mats[key]&&!(extra&&extra.unique))return MK.mats[key];
+  var m=matStd(color,rough,metal);
+  if(extra){ for(var k in extra)if(k!=="unique"){ if(m[k]&&m[k].isColor)m[k].set(extra[k]); else m[k]=extra[k]; } }
+  if(!(extra&&extra.unique))MK.mats[key]=m;
+  return m;
+};
+MK.glow=function(color,intensity){
+  return new THREE.MeshStandardMaterial({color:0x111111,emissive:color,emissiveIntensity:intensity==null?1.4:intensity,roughness:0.35,metalness:0.1});
+};
+MK.glass=function(tint,op){
+  return new THREE.MeshStandardMaterial({color:tint||0x9fd8ff,roughness:0.05,metalness:0.6,transparent:true,opacity:op==null?0.35:op,envMapIntensity:1.6});
+};
+MK.rubber=function(){ return MK.mat(0x1a1a1c,0.95,0.0); };
+/* a box with rounded edges: a subdivided box whose vertices are pulled onto a rounded shell */
+var _rboxCache={};
+MK.rboxGeo=function(w,h,d,r,seg){
+  seg=seg||3; r=Math.min(r==null?0.08:r,w/2-0.001,h/2-0.001,d/2-0.001);
+  var key=[w,h,d,r,seg].join(",");
+  if(_rboxCache[key])return _rboxCache[key];
+  var g=new THREE.BoxGeometry(w,h,d,seg*2,seg*2,seg*2);
+  var p=g.attributes.position, n=g.attributes.normal, v=new THREE.Vector3(), inner=new THREE.Vector3(), dir=new THREE.Vector3();
+  var hx=w/2-r, hy=h/2-r, hz=d/2-r;
+  for(var i=0;i<p.count;i++){
+    v.fromBufferAttribute(p,i);
+    inner.set(clamp(v.x,-hx,hx),clamp(v.y,-hy,hy),clamp(v.z,-hz,hz));
+    dir.subVectors(v,inner);
+    if(dir.lengthSq()<1e-10)dir.fromBufferAttribute(n,i);
+    dir.normalize();
+    v.copy(inner).addScaledVector(dir,r);
+    p.setXYZ(i,v.x,v.y,v.z); n.setXYZ(i,dir.x,dir.y,dir.z);
+  }
+  _rboxCache[key]=g;
+  return g;
+};
+MK.rbox=function(parent,w,h,d,mat,x,y,z,r){
+  var m=new THREE.Mesh(MK.rboxGeo(w,h,d,r==null?Math.min(w,h,d)*0.08:r),mat);
+  m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+MK.box=function(parent,w,h,d,mat,x,y,z){
+  var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+MK.cyl=function(parent,rt,rb,h,mat,x,y,z,seg){
+  var m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||16),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+MK.sph=function(parent,r,mat,x,y,z,ws,hs){
+  var m=new THREE.Mesh(new THREE.SphereGeometry(r,ws||16,hs||12),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+/* lathe from a [radius,height] profile — tanks, domes, nozzles, silos */
+MK.lathe=function(parent,profile,mat,x,y,z,seg){
+  var pts=profile.map(function(p){ return new THREE.Vector2(p[0],p[1]); });
+  var m=new THREE.Mesh(new THREE.LatheGeometry(pts,seg||24),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+/* a pipe that follows a list of points with rounded bends */
+MK.pipe=function(parent,points,radius,mat,tubSeg){
+  var curve=new THREE.CatmullRomCurve3(points.map(function(p){ return new THREE.Vector3(p[0],p[1],p[2]); }),false,"catmullrom",0.15);
+  var m=new THREE.Mesh(new THREE.TubeGeometry(curve,tubSeg||Math.max(8,points.length*8),radius,8,false),mat);
+  if(parent)parent.add(m);
+  /* flanges at both ends */
+  [points[0],points[points.length-1]].forEach(function(e){
+    var f=new THREE.Mesh(new THREE.CylinderGeometry(radius*1.5,radius*1.5,radius*0.7,10),mat);
+    f.position.set(e[0],e[1],e[2]); if(parent)parent.add(f);
+  });
+  return m;
+};
+/* a ring of hex bolts around a circle (axis Y) */
+MK.boltRing=function(parent,r,y,n,mat,size){
+  size=size||0.05; mat=mat||MK.mat(0x8a929e,0.35,0.85);
+  var geo=new THREE.CylinderGeometry(size,size,size*0.9,6);
+  for(var i=0;i<n;i++){ var a=i/n*Math.PI*2; var b=new THREE.Mesh(geo,mat); b.position.set(Math.cos(a)*r,y,Math.sin(a)*r); parent.add(b); }
+};
+/* a straight row of rivets on a face (along x, facing +z) */
+MK.rivets=function(parent,x0,x1,y,z,n,mat){
+  mat=mat||MK.mat(0x8a929e,0.35,0.85);
+  var geo=new THREE.SphereGeometry(0.035,6,4);
+  for(var i=0;i<n;i++){ var t=n>1?i/(n-1):0.5; var b=new THREE.Mesh(geo,mat); b.position.set(x0+(x1-x0)*t,y,z); b.scale.z=0.6; parent.add(b); }
+};
+/* a louvered vent grille facing +z */
+MK.vent=function(parent,w,h,x,y,z,mat,slats){
+  slats=slats||Math.max(3,Math.round(h/0.09));
+  var frameM=mat||MK.mat(0x23282f,0.6,0.6), slatM=MK.mat(0x101317,0.7,0.5);
+  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
+  MK.box(g,w+0.06,h+0.06,0.04,frameM,0,0,-0.01);
+  var sh=h/slats;
+  for(var i=0;i<slats;i++){ var s=MK.box(g,w,sh*0.55,0.05,slatM,0,-h/2+sh*(i+0.5),0.02); s.rotation.x=-0.6; }
+  return g;
+};
+/* an emissive screen that shows a little procedurally drawn readout (graphs, bars, text) */
+var _screenTexCache={};
+MK.screenTex=function(kind,col){
+  var key=kind+col; if(_screenTexCache[key])return _screenTexCache[key];
+  var c=document.createElement("canvas"); c.width=128; c.height=80;
+  var g=c.getContext("2d"); var cs="#"+new THREE.Color(col).getHexString();
+  g.fillStyle="#04070c"; g.fillRect(0,0,128,80);
+  g.strokeStyle=cs; g.fillStyle=cs; g.globalAlpha=0.9;
+  if(kind==="graph"){
+    g.lineWidth=2; g.beginPath(); for(var x=0;x<=120;x+=4){ var y=44+Math.sin(x*0.09)*14+Math.sin(x*0.31)*6; if(x===0)g.moveTo(4+x,y); else g.lineTo(4+x,y); } g.stroke();
+    g.globalAlpha=0.35; for(var gx=0;gx<128;gx+=16)g.fillRect(gx,0,1,80); for(var gy=0;gy<80;gy+=16)g.fillRect(0,gy,128,1);
+  } else if(kind==="bars"){
+    for(var b=0;b<8;b++){ var hh=10+Math.random()*52; g.fillRect(8+b*14,70-hh,9,hh); }
+  } else if(kind==="radar"){
+    g.lineWidth=1.5; for(var r=10;r<40;r+=10){ g.beginPath(); g.arc(64,40,r,0,6.28); g.stroke(); }
+    g.beginPath(); g.moveTo(64,40); g.lineTo(98,22); g.stroke(); g.fillRect(84,48,4,4); g.fillRect(44,26,3,3);
+  } else {
+    g.font="bold 11px monospace"; ["SYS OK","PWR 98%","TEMP 412K","FLOW 6.2","CYC 0041"].forEach(function(t,i){ g.fillText(t,8,16+i*13); });
+  }
+  g.globalAlpha=0.08; g.fillStyle="#fff"; for(var sl=0;sl<80;sl+=3)g.fillRect(0,sl,128,1);
+  var t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+  _screenTexCache[key]=t; return t;
+};
+MK.screen=function(parent,w,h,x,y,z,kind,col){
+  var tex=MK.screenTex(kind||"text",col||0x4fd3ff);
+  var mat=new THREE.MeshStandardMaterial({color:0x000000,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:1.2,roughness:0.2,metalness:0.1});
+  var bezel=MK.rbox(parent,w+0.08,h+0.08,0.06,MK.mat(0x14181e,0.5,0.6),x,y,z-0.02);
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat); m.position.set(x,y,z+0.015); parent.add(m);
+  return {mesh:m,mat:mat,bezel:bezel};
+};
+/* a caged ladder up the side of something (facing +z, at local x,z) */
+MK.ladder=function(parent,h,x,z,mat){
+  mat=mat||MK.mat(0xffb545,0.45,0.6);
+  var g=new THREE.Group(); g.position.set(x,0,z); parent.add(g);
+  MK.box(g,0.04,h,0.04,mat,-0.18,h/2,0); MK.box(g,0.04,h,0.04,mat,0.18,h/2,0);
+  for(var y=0.25;y<h;y+=0.3)MK.box(g,0.36,0.03,0.03,mat,0,y,0);
+  return g;
+};
+/* a handrail run along x, posts every ~1m */
+MK.rail=function(parent,len,x,y,z,rotY,mat){
+  mat=mat||MK.mat(0xffb545,0.45,0.6);
+  var g=new THREE.Group(); g.position.set(x,y,z); g.rotation.y=rotY||0; parent.add(g);
+  var top=MK.cyl(g,0.03,0.03,len,mat,0,0.9,0,6); top.rotation.z=Math.PI/2;
+  var mid=MK.cyl(g,0.022,0.022,len,mat,0,0.48,0,6); mid.rotation.z=Math.PI/2;
+  var n=Math.max(2,Math.round(len)+1);
+  for(var i=0;i<n;i++)MK.cyl(g,0.028,0.028,0.9,mat,-len/2+len*i/(n-1),0.45,0,6);
+  return g;
+};
+/* a lattice truss between two heights (square section, along y) */
+MK.truss=function(parent,h,w,x,y,z,mat){
+  mat=mat||MK.mat(0x3a4656,0.5,0.75);
+  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
+  var hw=w/2, rad=Math.max(0.025,w*0.05);
+  [[-hw,-hw],[hw,-hw],[hw,hw],[-hw,hw]].forEach(function(c){ MK.cyl(g,rad,rad,h,mat,c[0],h/2,c[1],6); });
+  var step=w*1.2;
+  for(var yy=0;yy<h-0.01;yy+=step){
+    [[-hw,-hw,hw,-hw],[hw,-hw,hw,hw],[hw,hw,-hw,hw],[-hw,hw,-hw,-hw]].forEach(function(e,k){
+      var a=new THREE.Vector3(e[0],yy,e[1]), b=new THREE.Vector3(e[2],Math.min(h,yy+step),e[3]);
+      if(k%2)b.y=yy, a.y=Math.min(h,yy+step);
+      var d=new THREE.Vector3().subVectors(b,a), L=d.length();
+      var br=MK.cyl(g,rad*0.7,rad*0.7,L,mat,0,0,0,5);
+      br.position.copy(a).addScaledVector(d,0.5); br.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+    });
+  }
+  return g;
+};
+/* small warning beacon with a glass dome */
+MK.beacon=function(parent,x,y,z,col){
+  var base=MK.cyl(parent,0.09,0.11,0.08,MK.mat(0x1a1d22,0.5,0.6),x,y,z,10);
+  var m=MK.glow(col||0xff3a20,1.6);
+  var dome=MK.sph(parent,0.08,m,x,y+0.07,z,10,6);
+  return m;
+};
+/* a radiator fin bank (facing +x/-x) */
+MK.radiator=function(parent,w,h,d,x,y,z,n,mat){
+  mat=mat||MK.mat(0x5a6470,0.4,0.8);
+  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
+  for(var i=0;i<n;i++)MK.box(g,w,h,0.03,mat,0,0,-d/2+d*i/Math.max(1,n-1));
+  MK.box(g,w*1.05,0.06,d+0.05,MK.mat(0x23282f,0.6,0.6),0,h/2,0); MK.box(g,w*1.05,0.06,d+0.05,MK.mat(0x23282f,0.6,0.6),0,-h/2,0);
+  return g;
+};
+/* a cable bundle sagging between two points */
+MK.cable=function(parent,a,b,sag,radius,mat){
+  var mid=[(a[0]+b[0])/2,(a[1]+b[1])/2-(sag||0.3),(a[2]+b[2])/2];
+  return MK.pipe(parent,[a,mid,b],radius||0.03,mat||MK.rubber(),16);
+};
+/* a concrete/steel pad with a chamfered rim, the base most buildings sit on */
+MK.pad=function(parent,w,d,h,col){
+  var m=MK.rbox(parent,w,h||0.3,d,MK.mat(col||0x3a4048,0.85,0.25),0,(h||0.3)/2,0,0.06);
+  var stripe=hazardBar(w*0.98,0.08,0.06); stripe.position.set(0,(h||0.3)*0.55,d/2+0.01); parent.add(stripe);
+  return m;
+};
+/* merge several geometries (each optionally transformed and vertex-coloured) into one, so
+   instanced foliage and props can be a single draw call */
+MK.merge=function(parts){
+  var pos=[],nor=[],col=[];
+  parts.forEach(function(p){
+    var g=p.geo.index?p.geo.toNonIndexed():p.geo.clone();
+    if(p.matrix)g.applyMatrix4(p.matrix);
+    if(!g.attributes.normal)g.computeVertexNormals();
+    var P=g.attributes.position, N=g.attributes.normal, C=g.attributes.color, c=new THREE.Color(p.color==null?0xffffff:p.color);
+    for(var i=0;i<P.count;i++){
+      pos.push(P.getX(i),P.getY(i),P.getZ(i)); nor.push(N.getX(i),N.getY(i),N.getZ(i));
+      var shade=p.shade?p.shade(P.getX(i),P.getY(i),P.getZ(i)):1;
+      if(C)col.push(C.getX(i)*c.r*shade,C.getY(i)*c.g*shade,C.getZ(i)*c.b*shade); else col.push(c.r*shade,c.g*shade,c.b*shade);
+    }
+  });
+  var out=new THREE.BufferGeometry();
+  out.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
+  out.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
+  out.computeBoundingSphere();
+  return out;
+};
+MK.mtx=function(x,y,z,rx,ry,rz,sx,sy,sz){
+  var m=new THREE.Matrix4();
+  m.compose(new THREE.Vector3(x||0,y||0,z||0),new THREE.Quaternion().setFromEuler(new THREE.Euler(rx||0,ry||0,rz||0)),new THREE.Vector3(sx==null?1:sx,sy==null?(sx==null?1:sx):sy,sz==null?(sx==null?1:sx):sz));
+  return m;
+};
+/* a lumpy natural rock: an icosphere pushed around by 3D noise */
+MK.rockGeo=function(r,seed,detail,squash){
+  var g=new THREE.IcosahedronGeometry(r,detail==null?2:detail);
+  var p=g.attributes.position, v=new THREE.Vector3();
+  for(var i=0;i<p.count;i++){
+    v.fromBufferAttribute(p,i);
+    var n=v.clone().normalize();
+    var k=1+(fbm3(n.x*1.6+seed,n.y*1.6,n.z*1.6,4,seed|0)-0.5)*0.9;
+    v.copy(n).multiplyScalar(r*k);
+    v.y*=squash==null?0.7:squash;
+    p.setXYZ(i,v.x,v.y,v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+};
 function boltRow(g,w,d,y,mat,n){
   n=n||4; mat=mat||matStd(0x1a2230,0.5,0.7);
   for(var i=0;i<n;i++){
@@ -7539,6 +7651,322 @@ function hurtPlayer(d){
   $("vig").style.opacity=String(Math.min(0.7,0.25+d*0.03));
   setTimeout(function(){ $("vig").style.opacity="0"; },160);
   if(playerHp<=0)respawnPlayer();
+}
+
+
+/* ═════════════ FOLIAGE v2.1: grass, trees, shrubs, rocks, flowers and crystals on every world ═════════════ */
+/* Each biome gets its own plant set, scattered with noise-driven clumping (meadows, groves, bare
+   patches), kept off steep cliffs and out of lakes. Everything is instanced and split into
+   spatial chunks so the camera only draws what it can see; grass and leaves sway in the wind in
+   the vertex shader. Low ground cover is allowed inside the buildable area, but any of it under a
+   building is hidden automatically. Each world's foliage is only built the first time you visit. */
+var FOL={time:{value:0},regions:{},windMats:[]};
+function windMaterial(opts,amp,stiff){
+  var m=new THREE.MeshStandardMaterial(opts);
+  var uAmp={value:amp}, uStiff={value:stiff||1.6};
+  m.onBeforeCompile=function(sh){
+    sh.uniforms.uTime=FOL.time; sh.uniforms.uAmp=uAmp; sh.uniforms.uStiff=uStiff;
+    sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nuniform float uTime; uniform float uAmp; uniform float uStiff;")
+      .replace("#include <begin_vertex>",[
+        "#include <begin_vertex>",
+        "#ifdef USE_INSTANCING",
+        "vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);",
+        "#else",
+        "vec3 ip=vec3(0.0);",
+        "#endif",
+        "float bend=pow(max(transformed.y,0.0),uStiff);",
+        "float gust=sin(uTime*1.3+ip.x*0.045+ip.z*0.03)*0.6+0.4;",
+        "float sway=(sin(uTime*2.1+ip.x*0.61+ip.z*0.43)*0.6+sin(uTime*3.7+ip.z*0.9)*0.25)*gust;",
+        "transformed.x+=sway*bend*uAmp; transformed.z+=sway*0.55*bend*uAmp;"
+      ].join("\n"));
+  };
+  m.customProgramCacheKey=function(){ return "wind"+amp+"_"+stiff; };
+  FOL.windMats.push(m);
+  return m;
+}
+/* ── geometry builders (all vertex coloured, merged into one geometry each) ── */
+function grassClumpGeo(h,w,blades,c0,c1,curl){
+  var parts=[];
+  for(var b=0;b<blades;b++){
+    var bh=h*(0.6+nHash(b,3,1)*0.6), bw=w*(0.7+nHash(b,4,1)*0.6);
+    var segs=3, pos=[], ang=b/blades*Math.PI*2+nHash(b,5,1), lean=(0.15+nHash(b,6,1)*0.35)*(curl||1);
+    var ox=Math.cos(ang)*w*1.6*nHash(b,7,1), oz=Math.sin(ang)*w*1.6*nHash(b,8,1);
+    var dx=Math.cos(ang), dz=Math.sin(ang);
+    for(var s=0;s<segs;s++){
+      var t0=s/segs, t1=(s+1)/segs;
+      var y0=t0*bh, y1=t1*bh, w0=bw*(1-t0), w1=bw*(1-t1)*(s===segs-1?0:1);
+      var l0=lean*t0*t0*bh, l1=lean*t1*t1*bh;
+      var px=-dz, pz=dx;
+      var A=[ox+dx*l0-px*w0,y0,oz+dz*l0-pz*w0], B=[ox+dx*l0+px*w0,y0,oz+dz*l0+pz*w0];
+      var C=[ox+dx*l1-px*w1,y1,oz+dz*l1-pz*w1], D=[ox+dx*l1+px*w1,y1,oz+dz*l1+pz*w1];
+      pos.push.apply(pos,A.concat(B,D)); pos.push.apply(pos,A.concat(D,C));
+    }
+    var g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    /* grass lit from above reads far better than true blade normals */
+    var nr=[]; for(var k=0;k<pos.length/3;k++)nr.push(dx*0.25,0.95,dz*0.25);
+    g.setAttribute("normal",new THREE.Float32BufferAttribute(nr,3));
+    var cA=new THREE.Color(c0), cB=new THREE.Color(c1), cl=[], tmp=new THREE.Color();
+    for(var q=0;q<pos.length/3;q++){ tmp.copy(cA).lerp(cB,Math.pow(pos[q*3+1]/bh,0.8)); cl.push(tmp.r,tmp.g,tmp.b); }
+    g.setAttribute("color",new THREE.Float32BufferAttribute(cl,3));
+    parts.push({geo:g});
+  }
+  return MK.merge(parts);
+}
+function rockClusterGeo(seed,col,big){
+  var parts=[], n=big?1:ri(1,3);
+  for(var i=0;i<n;i++){
+    var r=i===0?1:rnd(0.35,0.6);
+    parts.push({geo:MK.rockGeo(r,seed+i*7,big?2:1,rnd(0.55,0.85)),matrix:MK.mtx(i?rnd(-1.1,1.1):0,i?-0.1:0,i?rnd(-1.1,1.1):0,0,rnd(0,6.28),0),
+      color:col,shade:function(x,y,z){ return 0.75+clamp(y,0,1)*0.35; }});
+  }
+  return MK.merge(parts);
+}
+function mushroomTreeGeo(stemCol,capCol,gillCol){
+  var parts=[];
+  var stem=new THREE.LatheGeometry([[0.5,0],[0.32,0.4],[0.22,2.4],[0.26,4.6],[0.4,5.4]].map(function(p){return new THREE.Vector2(p[0],p[1]);}),10);
+  parts.push({geo:stem,color:stemCol,shade:function(x,y){ return 0.7+y/5.4*0.4; }});
+  var cap=new THREE.LatheGeometry([[0.3,5.3],[2.6,5.5],[3.1,5.9],[2.8,6.6],[1.8,7.1],[0,7.3]].map(function(p){return new THREE.Vector2(p[0],p[1]);}),18);
+  parts.push({geo:cap,color:capCol,shade:function(x,y,z){ return 0.7+(y-5.3)/2*0.5; }});
+  var gills=new THREE.CylinderGeometry(2.9,0.35,0.35,18,1,true); parts.push({geo:gills,matrix:MK.mtx(0,5.45,0),color:gillCol});
+  for(var i=0;i<6;i++){ var a=i/6*6.28; parts.push({geo:new THREE.SphereGeometry(0.28,6,4),matrix:MK.mtx(Math.cos(a)*1.9,6.85,Math.sin(a)*1.9,0,0,0,1,0.45,1),color:0xffe8c0}); }
+  return MK.merge(parts);
+}
+function coralShrubGeo(col,tip){
+  var parts=[];
+  for(var i=0;i<7;i++){
+    var a=i/7*6.28+rnd(-0.3,0.3), lean=rnd(0.2,0.6), h=rnd(0.9,2.0);
+    var tube=new THREE.CylinderGeometry(0.07,0.13,h,6,3);
+    parts.push({geo:tube,matrix:MK.mtx(Math.cos(a)*0.25,h/2,Math.sin(a)*0.25,Math.sin(a)*lean,0,-Math.cos(a)*lean),color:col,shade:function(x,y){ return 0.6+y*0.3; }});
+    parts.push({geo:new THREE.SphereGeometry(0.13,6,4),matrix:MK.mtx(Math.cos(a)*(0.25+Math.sin(lean)*h),Math.cos(lean)*h,Math.sin(a)*(0.25+Math.sin(lean)*h)),color:tip});
+  }
+  return MK.merge(parts);
+}
+function pineGeo(trunk,needle,snow){
+  var parts=[{geo:new THREE.CylinderGeometry(0.14,0.28,2.2,7),matrix:MK.mtx(0,1.1,0),color:trunk}];
+  for(var t=0;t<5;t++){
+    var r=2.1-t*0.38, y=1.4+t*1.15;
+    var cone=new THREE.ConeGeometry(r,1.9,9,2);
+    var p=cone.attributes.position; for(var i=0;i<p.count;i++){ var yy=p.getY(i); if(yy<0.5){ var d=1+(nHash(i,t,9)-0.5)*0.25; p.setX(i,p.getX(i)*d); p.setZ(i,p.getZ(i)*d); } }
+    cone.computeVertexNormals();
+    parts.push({geo:cone,matrix:MK.mtx(0,y,0,0,t*0.7,0),color:needle,shade:(function(y0){ return function(x,yy){ return 0.62+clamp((yy-(y0-0.95))/1.9,0,1)*0.6; }; })(y)});
+    if(snow)parts.push({geo:new THREE.ConeGeometry(r*0.75,0.55,9),matrix:MK.mtx(0,y+0.55,0,0,t*0.7,0),color:snow});
+  }
+  return MK.merge(parts);
+}
+function deadTreeGeo(col){
+  var parts=[{geo:new THREE.CylinderGeometry(0.18,0.4,4.6,7,4),matrix:MK.mtx(0,2.3,0,0.05,0,0.06),color:col}];
+  for(var i=0;i<5;i++){
+    var a=i/5*6.28+rnd(-0.4,0.4), y=rnd(2.0,4.2), L=rnd(1,2.2);
+    parts.push({geo:new THREE.CylinderGeometry(0.04,0.1,L,5),matrix:MK.mtx(Math.cos(a)*L*0.35,y+L*0.3,Math.sin(a)*L*0.35,Math.sin(a)*1.0,0,-Math.cos(a)*1.0),color:col});
+  }
+  return MK.merge(parts);
+}
+function jungleTreeGeo(bark,leaf){
+  var parts=[];
+  var trunk=new THREE.LatheGeometry([[1.0,0],[0.6,0.6],[0.42,3],[0.36,7],[0.5,8.2]].map(function(p){return new THREE.Vector2(p[0],p[1]);}),9);
+  parts.push({geo:trunk,color:bark,shade:function(x,y){ return 0.6+y/8.2*0.4; }});
+  for(var b=0;b<4;b++){ var a=b/4*6.28+0.4; parts.push({geo:new THREE.ConeGeometry(0.35,1.6,4),matrix:MK.mtx(Math.cos(a)*0.7,0.5,Math.sin(a)*0.7,Math.sin(a)*0.6,0,-Math.cos(a)*0.6),color:bark}); }
+  for(var c=0;c<7;c++){
+    var ca=c/7*6.28, cr=c===0?0:rnd(1.4,2.4), cy=c===0?9.4:rnd(8,9.2), s=c===0?2.4:rnd(1.4,2.0);
+    var blob=new THREE.IcosahedronGeometry(1,1);
+    var p=blob.attributes.position; for(var i=0;i<p.count;i++){ var k=0.8+nHash(i,c,11)*0.4; p.setXYZ(i,p.getX(i)*k,p.getY(i)*k*0.65,p.getZ(i)*k); }
+    blob.computeVertexNormals();
+    parts.push({geo:blob,matrix:MK.mtx(Math.cos(ca)*cr,cy,Math.sin(ca)*cr,0,rnd(0,6),0,s),color:leaf,shade:function(x,y){ return 0.55+clamp((y-7.5)/3,0,1)*0.6; }});
+  }
+  return MK.merge(parts);
+}
+function fernGeo(col0,col1){
+  var parts=[];
+  for(var f=0;f<7;f++){
+    var a=f/7*6.28+rnd(-0.2,0.2), L=rnd(1.2,1.9);
+    var pos=[], cols=[], cA=new THREE.Color(col0), cB=new THREE.Color(col1), t=new THREE.Color();
+    for(var s=0;s<6;s++){
+      var t0=s/6, t1=(s+1)/6, w0=Math.sin(t0*Math.PI)*0.32+0.04, w1=Math.sin(t1*Math.PI)*0.32+0.04;
+      var y0=Math.sin(t0*1.6)*L*0.7, y1=Math.sin(t1*1.6)*L*0.7, r0=t0*L, r1=t1*L;
+      var quad=[[r0,y0,-w0],[r0,y0,w0],[r1,y1,w1],[r0,y0,-w0],[r1,y1,w1],[r1,y1,-w1]];
+      quad.forEach(function(q){ pos.push(q[0],q[1],q[2]); t.copy(cA).lerp(cB,q[0]/L); cols.push(t.r,t.g,t.b); });
+    }
+    var g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3)); g.setAttribute("color",new THREE.Float32BufferAttribute(cols,3));
+    g.computeVertexNormals();
+    parts.push({geo:g,matrix:MK.mtx(0,0.05,0,0,a,0)});
+  }
+  return MK.merge(parts);
+}
+function crystalClusterGeo(col){
+  var parts=[];
+  for(var i=0;i<6;i++){
+    var h=i===0?2.4:rnd(0.8,1.8), r=h*0.16, a=rnd(0,6.28), lean=i===0?0:rnd(0.25,0.7);
+    var prism=new THREE.CylinderGeometry(r,r*1.1,h,6); var tip=new THREE.ConeGeometry(r,r*2.2,6);
+    var m=MK.mtx(Math.cos(a)*(i?0.35:0),h/2,Math.sin(a)*(i?0.35:0),Math.sin(a)*lean,0,-Math.cos(a)*lean);
+    parts.push({geo:prism,matrix:m,color:col,shade:function(x,y){ return 0.6+y*0.25; }});
+    var mt=m.clone().multiply(MK.mtx(0,h/2+r*1.1,0)); parts.push({geo:tip,matrix:mt,color:col,shade:function(){ return 1.3; }});
+  }
+  return MK.merge(parts);
+}
+function flowerGeo(stemCol){
+  var parts=[];
+  for(var i=0;i<3;i++){
+    var a=i/3*6.28, h=rnd(0.5,1.0);
+    parts.push({geo:new THREE.CylinderGeometry(0.02,0.03,h,4),matrix:MK.mtx(Math.cos(a)*0.15,h/2,Math.sin(a)*0.15),color:stemCol});
+    parts.push({geo:new THREE.ConeGeometry(0.16,0.12,6,1,true),matrix:MK.mtx(Math.cos(a)*0.15,h,Math.sin(a)*0.15,Math.PI),color:stemCol,shade:function(){ return 1.4; }});
+  }
+  return MK.merge(parts);
+}
+function bulbsGeo(){
+  var parts=[];
+  for(var i=0;i<3;i++){ var a=i/3*6.28; parts.push({geo:new THREE.SphereGeometry(0.11,8,6),matrix:MK.mtx(Math.cos(a)*0.15,0.72+nHash(i,1,2)*0.3,Math.sin(a)*0.15)}); }
+  return MK.merge(parts);
+}
+function basaltGeo(col){
+  var parts=[];
+  for(var i=0;i<9;i++){ var a=i/9*6.28, r=i?rnd(0.6,1.3):0, h=rnd(1.5,4.5); parts.push({geo:new THREE.CylinderGeometry(0.42,0.45,h,6),matrix:MK.mtx(Math.cos(a)*r,h/2,Math.sin(a)*r),color:col,shade:function(x,y){ return y>0.4?1.2:0.8; }}); }
+  return MK.merge(parts);
+}
+function wreckGeo(){
+  var parts=[], cols=[0x3a3c42,0x5a3a2a,0x2a2c30];
+  for(var i=0;i<5;i++)parts.push({geo:new THREE.BoxGeometry(rnd(0.6,2.6),rnd(0.08,0.4),rnd(0.5,1.8)),matrix:MK.mtx(rnd(-1,1),rnd(0.1,0.5),rnd(-1,1),rnd(-0.6,0.6),rnd(0,6),rnd(-0.6,0.6)),color:cols[i%3]});
+  parts.push({geo:new THREE.CylinderGeometry(0.25,0.25,2.4,8,1,true),matrix:MK.mtx(0.4,0.3,0.2,0,0.6,1.5),color:0x4a4c52});
+  return MK.merge(parts);
+}
+/* ── biome plant sets: kind, geometry, material, count, scale range, placement rules ── */
+function biomeFoliage(id){
+  var std=function(o){ return new THREE.MeshStandardMaterial(Object.assign({vertexColors:true,roughness:0.85,metalness:0.02},o||{})); };
+  var grassMat=function(){ return windMaterial({vertexColors:true,roughness:0.9,metalness:0,side:THREE.DoubleSide},0.22,1.6); };
+  var leafMat=function(){ return windMaterial({vertexColors:true,roughness:0.8,metalness:0},0.0016,2.0); };
+  var glowMat=function(c,i){ return new THREE.MeshStandardMaterial({color:0x111111,emissive:c,emissiveIntensity:i||1.6,roughness:0.4}); };
+  var crystalMat=function(c,e){ return new THREE.MeshStandardMaterial({vertexColors:true,color:c,emissive:e,emissiveIntensity:0.55,roughness:0.12,metalness:0.4,transparent:true,opacity:0.92,flatShading:true}); };
+  var S={
+    home:[
+      {kind:"grass",geo:grassClumpGeo(1.0,0.07,6,0x2a1020,0xc8687a),mat:grassMat(),n:16000,s:[0.7,1.4],clump:0.42,noCast:true},
+      {kind:"cover",geo:grassClumpGeo(0.32,0.05,5,0x3a1a20,0x9a6a5a),mat:grassMat(),n:4200,s:[0.7,1.3],inZone:true,noCast:true},
+      {kind:"shrub",geo:coralShrubGeo(0xd0603a,0x4fe0d3),mat:std({roughness:0.6}),n:700,s:[0.6,1.3],clump:0.5},
+      {kind:"tree",geo:mushroomTreeGeo(0xc8b0a0,0x7a3ab0,0x3a1a4a),mat:std({roughness:0.55}),n:170,s:[0.8,1.6],clump:0.55},
+      {kind:"rock",geo:rockClusterGeo(3,0x7a5040),mat:std({roughness:0.95,flatShading:true}),n:650,s:[0.5,2.2]},
+      {kind:"rock",geo:rockClusterGeo(9,0x6a4a48,true),mat:std({roughness:0.95,flatShading:true}),n:90,s:[3,7],steep:true},
+      {kind:"flower",geo:flowerGeo(0x2a6a5a),mat:std({roughness:0.6,side:THREE.DoubleSide}),n:900,s:[0.8,1.4],clump:0.6,noCast:true,
+        extra:{geo:bulbsGeo(),mat:glowMat(0x7affe0,2.0)}}
+    ],
+    vesta:[
+      {kind:"grass",geo:grassClumpGeo(0.55,0.05,6,0x4a6a7a,0xeaf6ff),mat:grassMat(),n:9000,s:[0.7,1.3],clump:0.5,noCast:true},
+      {kind:"cover",geo:grassClumpGeo(0.25,0.04,4,0x6a8a9a,0xffffff),mat:grassMat(),n:2600,s:[0.8,1.2],inZone:true,noCast:true},
+      {kind:"tree",geo:pineGeo(0x3a2a20,0x1e4a4a,0xf4fbff),mat:leafMat(),n:320,s:[0.9,1.9],clump:0.45},
+      {kind:"crystal",geo:crystalClusterGeo(0xbfefff),mat:crystalMat(0xffffff,0x3a8aaa),n:260,s:[0.6,1.6],clump:0.6},
+      {kind:"rock",geo:rockClusterGeo(5,0xd8e4ee),mat:std({roughness:0.7,flatShading:true}),n:600,s:[0.5,2.4]},
+      {kind:"rock",geo:rockClusterGeo(15,0xc8d4e0,true),mat:std({roughness:0.7,flatShading:true}),n:70,s:[3,7],steep:true}
+    ],
+    ember:[
+      {kind:"grass",geo:grassClumpGeo(0.5,0.05,5,0x140806,0x7a2a14),mat:grassMat(),n:5500,s:[0.7,1.3],clump:0.58,noCast:true},
+      {kind:"tree",geo:deadTreeGeo(0x1a1210),mat:std({roughness:0.95}),n:200,s:[0.8,1.7],clump:0.5},
+      {kind:"rock",geo:rockClusterGeo(7,0x2a201e),mat:new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.9,flatShading:true,emissive:0x5a1004,emissiveIntensity:0.35}),n:700,s:[0.5,2.6]},
+      {kind:"basalt",geo:basaltGeo(0x2a2226),mat:std({roughness:0.8,flatShading:true}),n:70,s:[0.8,1.8],steep:true},
+      {kind:"crystal",geo:crystalClusterGeo(0xff6a2a),mat:crystalMat(0xffffff,0xaa2a08),n:180,s:[0.5,1.2],clump:0.6}
+    ],
+    verdance:[
+      {kind:"grass",geo:grassClumpGeo(1.3,0.08,7,0x07280c,0x6ae070),mat:grassMat(),n:20000,s:[0.7,1.5],clump:0.35,noCast:true},
+      {kind:"cover",geo:grassClumpGeo(0.4,0.06,5,0x0a3a12,0x7ae07a),mat:grassMat(),n:5200,s:[0.7,1.3],inZone:true,noCast:true},
+      {kind:"fern",geo:fernGeo(0x0a3a12,0x5ad060),mat:windMaterial({vertexColors:true,roughness:0.8,side:THREE.DoubleSide},0.12,1.4),n:1100,s:[0.7,1.6],clump:0.45},
+      {kind:"tree",geo:jungleTreeGeo(0x3a2a1a,0x2a7a2a),mat:leafMat(),n:300,s:[0.8,1.5],clump:0.4},
+      {kind:"rock",geo:rockClusterGeo(11,0x3a5a34),mat:std({roughness:0.95,flatShading:true}),n:420,s:[0.6,2.2]},
+      {kind:"flower",geo:flowerGeo(0x1a5a1a),mat:std({roughness:0.6,side:THREE.DoubleSide}),n:1200,s:[0.8,1.6],clump:0.55,noCast:true,
+        extra:{geo:bulbsGeo(),mat:glowMat(0xff6ad8,2.0)}}
+    ],
+    obsidian:[
+      {kind:"grass",geo:grassClumpGeo(0.5,0.04,5,0x14081e,0x9a6aff),mat:grassMat(),n:5000,s:[0.7,1.3],clump:0.6,noCast:true},
+      {kind:"crystal",geo:crystalClusterGeo(0xb07aff),mat:crystalMat(0xffffff,0x5a2aa0),n:460,s:[0.6,2.0],clump:0.5},
+      {kind:"rock",geo:rockClusterGeo(13,0x1a1424),mat:std({roughness:0.2,metalness:0.4,flatShading:true}),n:560,s:[0.6,2.6]},
+      {kind:"rock",geo:rockClusterGeo(17,0x241a30,true),mat:std({roughness:0.25,metalness:0.4,flatShading:true}),n:60,s:[3,6],steep:true}
+    ],
+    bastion:[
+      {kind:"grass",geo:grassClumpGeo(0.6,0.05,5,0x1a1a18,0x8a7a62),mat:grassMat(),n:6500,s:[0.7,1.3],clump:0.55,noCast:true},
+      {kind:"cover",geo:grassClumpGeo(0.28,0.04,4,0x2a2a26,0x6a6050),mat:grassMat(),n:2000,s:[0.7,1.2],inZone:true,noCast:true},
+      {kind:"tree",geo:deadTreeGeo(0x2a2622),mat:std({roughness:0.95}),n:140,s:[0.6,1.3],clump:0.5},
+      {kind:"rock",geo:rockClusterGeo(19,0x4a4a50),mat:std({roughness:0.9,flatShading:true}),n:520,s:[0.5,2.4]},
+      {kind:"wreck",geo:wreckGeo(),mat:new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.55,metalness:0.7,map:GFX_METAL.map}),n:160,s:[0.8,2.2]}
+    ]
+  };
+  return S[id]||S.home;
+}
+/* ── scattering ── */
+function buildFoliageRegion(id,cx,cz,half,buildHalf,round,biome){
+  if(FOL.regions[id])return FOL.regions[id];
+  var q=gfxHigh()?1:0.35;
+  var group=new THREE.Group(); group.name="foliage-"+id; surfaceScene.add(group);
+  var region={id:id,group:group,cover:[],sets:[]};
+  var CH=4, chunk=half*2/CH;
+  var dummy=new THREE.Object3D();
+  var waterY=biome.waterY;
+  function inZone(lx,lz){ return round?(lx*lx+lz*lz<buildHalf*buildHalf):(Math.abs(lx)<buildHalf&&Math.abs(lz)<buildHalf); }
+  biomeFoliage(id).forEach(function(set,si){
+    var n=Math.round(set.n*q*(set.kind==="grass"?1:Math.max(0.6,q)));
+    var buckets=[]; for(var b=0;b<CH*CH;b++)buckets.push([]);
+    var placed=0, tries=0;
+    while(placed<n&&tries<n*6){
+      tries++;
+      var lx,lz;
+      if(set.inZone){ var ra=rnd(0,Math.PI*2), rr=Math.sqrt(Math.random())*buildHalf*0.98; lx=round?Math.cos(ra)*rr:rnd(-buildHalf,buildHalf); lz=round?Math.sin(ra)*rr:rnd(-buildHalf,buildHalf); }
+      else { lx=rnd(-half,half); lz=rnd(-half,half); if(inZone(lx,lz))continue; }
+      var x=cx+lx, z=cz+lz, y=terrainHeight(x,z);
+      if(y<waterY+0.25)continue;
+      /* slope from neighbouring heights */
+      var sx=terrainHeight(x+1.2,z)-y, sz=terrainHeight(x,z+1.2)-y, slope=Math.sqrt(sx*sx+sz*sz)/1.2;
+      if(set.steep?slope<0.25:slope>(set.kind==="rock"?0.9:0.55))continue;
+      /* clumping: natural meadows and groves instead of an even sprinkle */
+      if(set.clump){ var cn=fbm2(x*0.018+si*13,z*0.018,8192,3,90+si); if(cn<set.clump)continue; }
+      var s=rnd(set.s[0],set.s[1]);
+      dummy.position.set(x,y-(set.kind==="rock"?s*0.15:0.02),z);
+      dummy.rotation.set(set.kind==="rock"?rnd(-0.2,0.2):rnd(-0.06,0.06),rnd(0,Math.PI*2),set.kind==="rock"?rnd(-0.2,0.2):0);
+      dummy.scale.setScalar(s);
+      dummy.updateMatrix();
+      var bi=clamp(Math.floor((lx+half)/chunk),0,CH-1)+clamp(Math.floor((lz+half)/chunk),0,CH-1)*CH;
+      buckets[bi].push({m:dummy.matrix.clone(),x:x,z:z,s:s});
+      placed++;
+    }
+    buckets.forEach(function(list){
+      if(!list.length)return;
+      [set].concat(set.extra?[Object.assign({},set,set.extra,{extra:null})]:[]).forEach(function(part){
+        var im=new THREE.InstancedMesh(part.geo,part.mat,list.length);
+        list.forEach(function(it,i){ im.setMatrixAt(i,it.m); });
+        im.instanceMatrix.needsUpdate=true;
+        im.computeBoundingSphere();
+        if(set.noCast)im.userData.noCast=true;
+        im.receiveShadow=true;
+        group.add(im);
+        if(set.inZone)region.cover.push({im:im,items:list});
+      });
+    });
+  });
+  FOL.regions[id]=region;
+  region.maskSig="";
+  return region;
+}
+/* hide ground cover that ends up underneath a building */
+function updateFoliageMask(region){
+  var sig=buildings.length+":"+buildings.reduce(function(a,b){ return a+b.x*3+b.z*7; },0);
+  if(sig===region.maskSig)return;
+  region.maskSig=sig;
+  var zero=new THREE.Matrix4().makeScale(0,0,0);
+  region.cover.forEach(function(c){
+    c.items.forEach(function(it,i){
+      var hidden=buildings.some(function(b){ var d=BUILD_DEFS[b.type]; if(!d||d.tool)return false; var r=(d.edge?1.2:(d.radius||1.5)*1.45)+0.4; var dx=it.x-b.x, dz=it.z-b.z; return dx*dx+dz*dz<r*r; });
+      c.im.setMatrixAt(i,hidden?zero:it.m);
+    });
+    c.im.instanceMatrix.needsUpdate=true;
+  });
+}
+function currentFoliageId(){ return currentWorld?currentWorld.id:"home"; }
+function ensureFoliageFor(world){
+  var id=world?world.id:"home";
+  if(FOL.regions[id])return FOL.regions[id];
+  if(!world)return buildFoliageRegion("home",0,0,SURFACE_SIZE/2-6,BUILD_ZONE_R-6,true,BIOMES.home);
+  return buildFoliageRegion(id,world.cx,world.cz,world.zoneR*2.4,worldBuildR(world)-4,false,biomeOf(world));
+}
+var folMaskT=0;
+function updateFoliage(dt){
+  FOL.time.value+=dt;
+  var id=currentFoliageId();
+  Object.keys(FOL.regions).forEach(function(k){ FOL.regions[k].group.visible=(k===id); });
+  folMaskT-=dt;
+  if(folMaskT<=0&&FOL.regions[id]){ folMaskT=1; updateFoliageMask(FOL.regions[id]); }
 }
 
 /* ═════════════ SAVE / LOAD (persistent colony) ═════════════ */
@@ -11502,6 +11930,7 @@ if(!gfxHigh()){ surfaceScene.environment=null; spaceScene.environment=null; }
 setGfxLabel();
 titleScene.environment=worldEnv(null);
 fxLightsSurface=makeFxLights(surfaceScene); fxLightsSpace=makeFxLights(spaceScene);
+ensureFoliageFor(null);
 gfxMarkShadows(surfaceScene);
 applyPlayerColors();
 loadMeta();
