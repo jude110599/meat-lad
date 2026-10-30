@@ -2,6 +2,20 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.6.0] - 2026-10-30 — Combat
+
+### Added
+- Weapon heat with overheat lockout and HUD heat bar; Warhawk missile ammo (8, rearming).
+- Per-weapon muzzle flashes and synthesized sounds; hit-marker, impact bursts.
+- Damage states: smoke/fire/sparks on damaged enemies and on the player ship; player shield bubble flare and low-shield flicker; hull-hit camera shake and red edge flash; crippled engines below 25% hull with a warning.
+- Wave enemies are AI fighters with roles (striker, lancer, raider), two-pass target leading, separation, planet avoidance and a one-time retreat when below 25% hull.
+
+### Fixed
+- Player and enemy bolts are hit-tested along their swept path, so fast shots no longer tunnel through ships.
+
+### Changed
+- Enemy bolt speeds raised; enemy fighter hit radius 60; player ship hit radius widened to match the model.
+
 ## [2.5.1] - 2026-10-30
 
 ### Fixed

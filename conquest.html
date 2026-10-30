@@ -175,6 +175,20 @@ body:not(.pc-mode) #fleetHud{bottom:auto;top:calc(118px + env(safe-area-inset-to
 #spaceCrosshair{position:fixed;left:0;top:0;width:70px;height:70px;
   display:none;z-index:5;pointer-events:none}
 #spaceCrosshair.show{display:block}
+#spaceCrosshair.hot path{stroke:#ff8a3a}
+.bar.heat i{background:linear-gradient(90deg,#ffd06a,#ff6a2a)} .bar.heat.over i{background:#ff2a1a;animation:heatBlink .3s steps(2) infinite}
+@keyframes heatBlink{50%{opacity:.35}}
+#hitMarker{position:fixed;left:0;top:0;width:44px;height:44px;pointer-events:none;z-index:31;opacity:0;transition:opacity .08s}
+#hitMarker.show{opacity:1}
+#hitMarker i{position:absolute;left:50%;top:50%;width:12px;height:2.5px;background:#fff;border-radius:2px;box-shadow:0 0 6px rgba(255,255,255,.8)}
+#hitMarker i:nth-child(1){transform:translate(-50%,-50%) rotate(45deg) translateX(-13px)} #hitMarker i:nth-child(2){transform:translate(-50%,-50%) rotate(45deg) translateX(13px)}
+#hitMarker i:nth-child(3){transform:translate(-50%,-50%) rotate(-45deg) translateX(-13px)} #hitMarker i:nth-child(4){transform:translate(-50%,-50%) rotate(-45deg) translateX(13px)}
+#hitMarker.kill i{background:#ff5a4a;box-shadow:0 0 8px #ff3a2a;width:15px}
+#dmgFlash{position:fixed;inset:0;pointer-events:none;z-index:29;opacity:0;background:radial-gradient(ellipse at center,rgba(255,40,20,0) 45%,rgba(255,40,20,.45) 100%)}
+#dmgFlash.on{animation:dmgFlash .45s ease-out}
+@keyframes dmgFlash{0%{opacity:1}100%{opacity:0}}
+#hullWarn{position:fixed;left:50%;top:calc(150px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:30;display:none;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,77,94,.7);background:rgba(40,6,10,.8);color:#ff8a97;font-weight:800;font-size:12px;letter-spacing:.14em;animation:heatBlink .8s steps(2) infinite;pointer-events:none}
+#hullWarn.show{display:block}
 #spaceCrosshair svg{width:100%;height:100%;display:block;overflow:visible}
 .thrGauge{display:flex;flex-direction:column;align-items:center;gap:6px}
 .thrLbl{font-size:9px;letter-spacing:.12em;color:var(--dim);font-weight:800}
@@ -495,6 +509,9 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   <div class="aimLabel hide" id="aimLabel"></div>
   <div class="saveInd" id="saveInd"><span class="dot"></span><span id="saveIndTxt">Saved</span></div>
   <div id="vig"></div>
+  <div id="hitMarker"><i></i><i></i><i></i><i></i></div>
+  <div id="dmgFlash"></div>
+  <div id="hullWarn">HULL CRITICAL — ENGINES DAMAGED</div>
   <div id="spaceCrosshair">
     <svg viewBox="0 0 100 100">
       <path d="M 50.0 10.0 L 62.2 20.4 L 78.3 21.7 L 79.6 37.8 L 90.0 50.0 L 79.6 62.2 L 78.3 78.3 L 62.2 79.6 L 50.0 90.0 L 37.8 79.6 L 21.7 78.3 L 20.4 62.2 L 10.0 50.0 L 20.4 37.8 L 21.7 21.7 L 37.8 20.4 Z"
@@ -545,6 +562,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="bars">
         <div class="bar hull"><i id="spHullFill"></i><span class="barlbl">HULL</span></div>
         <div class="bar shield"><i id="spShieldFill"></i><span class="barlbl">SHIELD</span></div>
+        <div class="bar heat" id="heatBar"><i id="heatFill"></i><span class="barlbl" id="heatLbl">HEAT</span></div>
         <div class="bar base"><i id="spBaseFill"></i><span class="barlbl">BASE</span></div>
       </div>
       <div class="res" id="spWaveTxt">WAVE 0</div>
@@ -602,7 +620,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.5 · Flight Handling</div>
+      <div class="armadaBadge">v2.6 · Combat</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -612,6 +630,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Combat rebuilt: shots that land, weapon heat, visible damage and enemy pilots with roles</li>
           <li>Ships now have momentum and their own handling, with a smooth chase camera</li>
           <li>Rebuilt conveyor belts with smooth curves, a placement preview and Auto-belt</li>
           <li>New lighting on every world, a Brightness setting, local lights, softer shadows and a real sky everywhere</li>
@@ -869,8 +888,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.5.1";
+var VERSION="2.6.0";
 var CHANGELOG=[
+  {v:"2.6.0",t:"Combat: shots that land, weapon heat, real damage and smarter enemies",items:[
+    "SHOTS LAND WHERE YOU AIM. Bolts move about 300 units every frame, and hits were only checked at the end of each step, so many shots passed straight through ships. Hits are now checked along the whole path a shot travels (in testing, 20 of 20 shots at a target 1,500 units ahead landed)",
+    "WEAPON HEAT. Guns build heat as you fire and overheat after about six seconds of continuous fire, locking out for a moment while they cool. A HEAT bar sits under your hull and shield, and the crosshair turns orange when you are running hot",
+    "MISSILE AMMO. The Warhawk carries 8 missiles that rearm one every 6 seconds; the button shows how many you have left",
+    "WEAPON FEEL. Every weapon has its own muzzle flash and sound (laser zap, twin cannon thump, railgun crack, bomb release), hits flash a white hit-marker on your crosshair (red for a kill) with an impact burst and spark spray",
+    "SHIPS SHOW DAMAGE. Enemy fighters start trailing smoke at half health and burn and throw sparks when nearly destroyed. Your own ship does the same: your shield flares when it absorbs a hit and flickers when it is low, hull hits shake the camera and flash the screen edges red, and below a quarter hull your engines sputter (top speed drops and cuts out briefly) with a HULL CRITICAL warning",
+    "SMARTER ENEMIES. Home-defense waves are now flown by real pilots instead of slow drones that crept toward you: STRIKERS dogfight, bracketing you from both sides and swinging round for repeat passes; LANCERS (from wave 3) hold off at range, circle and snipe with heavy bolts; RAIDERS (from wave 2) make strafing runs on your station whenever you stray from it. All of them lead their shots, keep their distance from each other, steer around planets, dodge when hit, and break off to retreat once when badly damaged before coming back",
+    "Enemy bolts are faster and aimed with a two-step lead, so flying straight and level in a fight is now dangerous; jinking and turning dodges fire"
+  ]},
   {v:"2.5.1",t:"Fixed: the LAND button showing all the time",items:[
     "FIXED: the LAND (L) button stayed on screen everywhere (on foot, in menus and in space) instead of only while flying over a world"
   ]},
@@ -3118,6 +3146,7 @@ function updateSurfaceFlight(dt){
   if(currentWorld&&currentWorld.hasHive)ensureHive(currentWorld);
   if(currentWorld){ ensureTurrets(currentWorld); updateTurrets(dt); }
   if(shipCrashing){ updateShipCrash(dt); return; }
+  playerDamageFrame(dt);
   if(arrivalAnim){ updateArrivalAnim(dt); return; }
   if(landingAnim){ updateLandingAnim(dt); return; }
   var pc=document.body.classList.contains("pc-mode");
@@ -6960,21 +6989,34 @@ function spawnAIFighter(pos,vel,fortress,elite){
 }
 function updateEnemyAI(e,idx,dt){
   var pos=e.mesh.position;
-  /* pick a target: the player or the nearest wingman */
+  var R=AI_ROLES[e.role||"striker"]||AI_ROLES.striker;
+  /* pick a target: the player or the nearest wingman (a raider goes for the station unless you get close) */
   var tgt=null, td=1e12;
   if(pShip&&pShip.alive){ tgt={pos:pShip.pos,vel:pShip.vel,w:null}; td=pos.distanceTo(pShip.pos); }
+  if(e.role==="raider"&&(!tgt||td>1800)){ tgt={pos:homeRaidPoint(),vel:new THREE.Vector3(),w:null,base:true}; td=pos.distanceTo(tgt.pos); }
   wingmen.forEach(function(w){ if(w.scene!==spaceScene||w.phase!=="form")return; var d=pos.distanceTo(w.pos); if(d<td*0.75){ td=d; tgt={pos:w.pos,vel:w.vel,w:w}; } });
   if(e.fortress&&pShip){ var fw=fortressWorld(); if(fw){ var fdx=pShip.pos.x-fw.sx, fdz=pShip.pos.z-fw.sz; if(Math.sqrt(fdx*fdx+fdz*fdz)>70000){ spaceScene.remove(e.mesh); enemyShips.splice(idx,1); return; } } }
   e.modeT-=dt;
-  if(e.hitT>0&&e.mode!=="evade"){ e.mode="evade"; e.modeT=rnd(0.6,1.1); e.jink=new THREE.Vector3(rnd(-1,1),rnd(-0.5,0.5),rnd(-1,1)).normalize(); }
+  /* badly hurt: break off and run once, then come back for another try */
+  if(!e.retreated&&e.hp<e.max*0.25&&e.mode!=="retreat"){ e.mode="retreat"; e.modeT=rnd(3,4.5); e.retreated=true; }
+  if(e.hitT>0&&e.mode!=="evade"&&e.mode!=="retreat"){ e.mode="evade"; e.modeT=rnd(0.6,1.1); e.jink=new THREE.Vector3(rnd(-1,1),rnd(-0.5,0.5),rnd(-1,1)).normalize(); }
   var desiredDir;
   if(!tgt){ desiredDir=e.vel.clone().normalize(); }
   else {
     var toT=new THREE.Vector3().subVectors(tgt.pos,pos), dist=toT.length();
     var lead=tgt.pos.clone().addScaledVector(tgt.vel,clamp(dist/6000,0,1.2));
-    if(e.mode==="evade"){
+    if(e.mode==="retreat"){
+      desiredDir=toT.clone().normalize().multiplyScalar(-1).add(new THREE.Vector3(-toT.z,0,toT.x).normalize().multiplyScalar(e.side*0.5)).normalize();
+      if(e.modeT<=0)e.mode="pursue";
+    } else if(e.mode==="evade"){
       desiredDir=e.jink.clone().addScaledVector(toT.normalize(),0.3).normalize();
       if(e.modeT<=0)e.mode="pursue";
+    } else if(e.role==="lancer"&&!tgt.base){
+      /* hold off at range and circle, sniping with heavy bolts */
+      var tn=toT.clone().normalize(), perp=new THREE.Vector3(-tn.z,0,tn.x).multiplyScalar(e.side);
+      if(dist>R.standoff+600)desiredDir=lead.clone().sub(pos).normalize();
+      else if(dist<R.standoff-800)desiredDir=tn.clone().multiplyScalar(-1).addScaledVector(perp,0.6).normalize();
+      else desiredDir=perp.clone().addScaledVector(tn,0.25).normalize();
     } else if(e.mode==="extend"){
       /* overshot: extend away, then swing round for another pass */
       desiredDir=e.vel.clone().normalize().add(new THREE.Vector3(-toT.z,0,toT.x).normalize().multiplyScalar(e.side*0.6)).normalize();
@@ -6988,18 +7030,36 @@ function updateEnemyAI(e,idx,dt){
     /* fire when the target sits inside a tight cone ahead */
     e.cd-=dt;
     var fwd=e.vel.clone().normalize();
-    var aimDir=new THREE.Vector3().subVectors(tgt.pos.clone().addScaledVector(tgt.vel,dist/2800),pos).normalize();
-    if(e.cd<=0&&dist<3200&&fwd.dot(aimDir)>0.93){
-      e.cd=rnd(0.55,1.0);
-      var b={x:pos.x+fwd.x*30,y:pos.y+fwd.y*30,z:pos.z+fwd.z*30,vx:aimDir.x*2800,vy:aimDir.y*2800,vz:aimDir.z*2800,dmg:e.dmg,life:2.2,hitR:10};
-      b.mesh=makeBoltMesh(0xff4d5e,30,1.8); b.mesh.position.set(b.x,b.y,b.z); orientBoltMesh(b.mesh,b.vx,b.vz,b.vy);
+    /* two-pass lead: aim where the target will be when the bolt arrives */
+    var tLead=dist/R.boltSpd, leadP=tgt.pos.clone().addScaledVector(tgt.vel,tLead);
+    tLead=leadP.distanceTo(pos)/R.boltSpd; leadP=tgt.pos.clone().addScaledVector(tgt.vel,tLead);
+    var aimDir=new THREE.Vector3().subVectors(leadP,pos).normalize();
+    var cone=e.role==="lancer"?0.55:R.cone;
+    if(tgt.base){
+      /* a strafing run on the station: it takes damage while the raider is overhead */
+      if(dist<900){ homeBase.hp-=e.dmg*0.6*dt; if(Math.random()<dt*3)spawnThrustParticle(tgt.pos.clone().add(new THREE.Vector3(rnd(-120,120),rnd(-60,60),rnd(-120,120))),new THREE.Vector3(0,40,0),rnd(3,5),0xff8a30); }
+    } else if(e.mode!=="retreat"&&e.cd<=0&&dist<R.range&&fwd.dot(aimDir)>cone){
+      e.cd=rnd(R.cd[0],R.cd[1]);
+      var heavy=e.role==="lancer";
+      var b={x:pos.x+fwd.x*30,y:pos.y+fwd.y*30,z:pos.z+fwd.z*30,vx:aimDir.x*R.boltSpd,vy:aimDir.y*R.boltSpd,vz:aimDir.z*R.boltSpd,dmg:Math.round(e.dmg*(e.fortress?1:R.dmgMul)),life:2.4,hitR:heavy?16:10};
+      b.mesh=makeBoltMesh(R.col,heavy?46:30,heavy?3.2:1.8); b.mesh.position.set(b.x,b.y,b.z); orientBoltMesh(b.mesh,b.vx,b.vz,b.vy);
       eBolts.push(b);
+      spawnThrustParticle(new THREE.Vector3(b.x,b.y,b.z),new THREE.Vector3(),heavy?3:1.8,R.col);
     }
   }
   /* avoid the floor/ceiling of the combat band, the planets and the ring */
   if(pos.y<300)desiredDir.y+=0.6; if(pos.y>HOME_COMBAT_Y-200)desiredDir.y-=0.6;
+  /* keep clear of the other fighters instead of stacking up on the same line */
+  var sep=new THREE.Vector3();
+  for(var si=0;si<enemyShips.length;si++){ var o=enemyShips[si]; if(o===e||!o.ai)continue; var dv=new THREE.Vector3().subVectors(pos,o.mesh.position), dl=dv.length(); if(dl>0&&dl<320)sep.addScaledVector(dv,(320-dl)/(320*dl)); }
+  desiredDir.addScaledVector(sep,1.4);
+  /* steer away from a planet ahead before hitting it */
+  WORLDS.concat([HOME_WORLD]).forEach(function(w){
+    if(w.sx==null)return; var ax=pos.x+e.vel.x*0.6-w.sx, az=pos.z+e.vel.z*0.6-w.sz, ad=Math.sqrt(ax*ax+az*az);
+    if(ad<w.radius*1.15&&pos.y<w.radius*1.2){ desiredDir.x+=ax/ad*1.2; desiredDir.z+=az/ad*1.2; desiredDir.y+=0.4; }
+  });
   desiredDir.normalize();
-  var spd=e.spd*(e.mode==="extend"?1.15:1)*(tgt&&pos.distanceTo(tgt.pos)>8000?1.3:1);
+  var spd=(e.role?R.spd:e.spd)*(e.mode==="extend"?1.15:1)*(e.mode==="retreat"?1.25:1)*(tgt&&pos.distanceTo(tgt.pos)>8000?1.3:1);
   var want=desiredDir.multiplyScalar(spd);
   var turn=Math.min(1,dt*(e.mode==="evade"?3.2:1.8));
   e.vel.lerp(want,turn);
@@ -7014,6 +7074,7 @@ function updateEnemyAI(e,idx,dt){
   e.pitch=-Math.atan2(e.vel.y,hv);
   e.mesh.rotation.set(e.pitch,e.yaw,e.roll);
   if(e.mesh.userData.plume)e.mesh.userData.plume.material.opacity=0.6+Math.random()*0.3;
+  damageSmoke(pos,e.vel,e.hp/e.max,dt,false);
   if(Math.random()<0.25)spawnThrustParticle(pos.clone().addScaledVector(e.vel.clone().normalize(),-18),e.vel.clone().multiplyScalar(-0.05),rnd(2,3.5),e.fortress?0xff6030:0xff4d5e);
 }
 
@@ -7030,8 +7091,8 @@ function fireTwinBolt(spread){
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
   orientBoltMesh(bolt.mesh,vx,vz,vy);
   pBolts.push(bolt);
-  spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0xffb545,false);
-  tone(twinSide>0?240:220,90,0.07,"sawtooth",0.025);
+  muzzleFlash(new THREE.Vector3(bolt.x,bolt.y,bolt.z),"twin");
+  weaponSound("twin");
 }
 var missiles=[], missileCd=0;
 function shipHasMissiles(){ return !!(pShip&&SHIP_STATS[shipModelKey]&&SHIP_STATS[shipModelKey].missiles); }
@@ -7046,6 +7107,9 @@ function makeMissileMesh(){
 function fireMissile(){
   if(!shipHasMissiles()){ toast("This ship has no missiles — the Warhawk Gunship carries them"); return; }
   if(missileCd>0)return;
+  if(pShip.missiles==null)pShip.missiles=8;
+  if(pShip.missiles<=0){ toast("Out of missiles — they rearm one every 6 seconds"); tone(300,200,0.1,"square",0.03); return; }
+  pShip.missiles--;
   missileCd=0.9;
   var dir=pcFireDir(0);
   var fwd=new THREE.Vector3(dir.x,dir.y,dir.z);
@@ -7068,6 +7132,10 @@ function fireMissile(){
 }
 function updateMissiles(dt){
   if(missileCd>0)missileCd-=dt;
+  if(pShip&&shipHasMissiles()){
+    if(pShip.missiles==null)pShip.missiles=8;
+    if(pShip.missiles<8){ pShip.missileRegen=(pShip.missileRegen||0)+dt; if(pShip.missileRegen>=6){ pShip.missileRegen=0; pShip.missiles++; } }
+  }
   for(var i=missiles.length-1;i>=0;i--){
     var m=missiles[i];
     m.life-=dt; m.arm-=dt;
@@ -9471,6 +9539,9 @@ function spWaveCount(w){ return 2+Math.floor(w*1.1); }
    band well clear of the planet's surface instead of sitting down near y=0 inside it. */
 var HOME_COMBAT_Y=4200;
 function spawnEnemyShip(){
+  return spawnWaveFighter();
+}
+function spawnEnemyShipOld(){
   var a=rnd(0,Math.PI*2), r=rnd(1260,1980);
   var mesh=buildEnemyMesh();
   mesh.position.set(Math.cos(a)*r,HOME_COMBAT_Y+rnd(-6,6),Math.sin(a)*r);
@@ -9603,8 +9674,8 @@ function fireShipBolt(spread){
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
   orientBoltMesh(bolt.mesh,vx,vz,vy);
   pBolts.push(bolt);
-  spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0x6fe8ff,false);
-  sfx.click();
+  muzzleFlash(new THREE.Vector3(bolt.x,bolt.y,bolt.z),"bolt");
+  weaponSound("bolt");
 }
 /* the Vanguard's weapon — reuses the exact same pBolts array and hit-detection as a regular bolt
    (already checks enemyShips and moonBoss), just visibly bigger, faster, and a distinct violet to
@@ -9618,8 +9689,8 @@ function fireRailShot(spread){
   bolt.mesh.position.set(bolt.x,bolt.y,bolt.z);
   orientBoltMesh(bolt.mesh,vx,vz,vy);
   pBolts.push(bolt);
-  spawnBoltSpark(new THREE.Vector3(bolt.x,bolt.y,bolt.z),vx,vz,0xb060ff,true);
-  sfx.click();
+  muzzleFlash(new THREE.Vector3(bolt.x,bolt.y,bolt.z),"rail");
+  weaponSound("rail");
 }
 var bombs=[];
 function dropBomb(){
@@ -9628,7 +9699,7 @@ function dropBomb(){
   mesh.rotation.y=pShip.yaw;
   spaceScene.add(mesh);
   bombs.push({x:pShip.pos.x,y:pShip.pos.y,z:pShip.pos.z,vx:pShip.vel.x,vz:pShip.vel.z,vy:-2,dmg:pShip.dmg,fuse:2.2,mesh:mesh});
-  sfx.click();
+  weaponSound("bomb");
 }
 function bombBlast(b){
   var pos=new THREE.Vector3(b.x,b.y,b.z);
@@ -9674,8 +9745,10 @@ function updateBombs(dt){
 function damagePShip(dmg){
   if(!pShip||!pShip.alive)return;
   pShip.shieldRegenT=3;
-  if(pShip.shield>0){ var use=Math.min(pShip.shield,dmg); pShip.shield-=use; dmg-=use; }
+  var absorbed=0;
+  if(pShip.shield>0){ var use=Math.min(pShip.shield,dmg); pShip.shield-=use; dmg-=use; absorbed=use; }
   if(dmg>0)pShip.hp-=dmg;
+  combatOnPlayerHit(absorbed,dmg);
   if(pShip.hp<=0){
     /* being shot down while flying over a world is a real crash, not the space-combat eject —
        there's no rescue-ship-in-space to fall back on out here, so the hull goes down burning
@@ -9832,7 +9905,7 @@ function updateSpace(dt){
       var mlen=Math.sqrt(fwd*fwd+strafe*strafe); if(mlen>1){fwd/=mlen;strafe/=mlen;}
       boosting=!!(keys[" "]||spaceBoostHeld);
       shipBoosting=boosting;
-      var spd=pShip.spd*(boosting?1.7:1);
+      var spd=pShip.spd*(boosting?1.7:1)*shipSpeedMult();
       var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
                :new THREE.Vector3(strafe*spd,0,-fwd*spd);
       var spaceSlip=0;
@@ -9921,12 +9994,14 @@ function updateSpace(dt){
     updateShipNavLights(pShip.mesh);
 
     pShip.cd-=dt;
-    if(!landedPlanet&&firing&&pShip.cd<=0){
+    weaponHeatTick(dt,firing);
+    if(!landedPlanet&&firing&&pShip.cd<=0&&!pShip.overheat){
       var zoomT=pShip.zoomT||0;
       var spread=SPREAD_NORMAL+(SPREAD_ZOOM-SPREAD_NORMAL)*zoomT;
       var rateMult=1+zoomT*(ZOOM_RATE_MULT-1);
       if(pShip.weapon==="bomb")dropBomb(); else if(pShip.weapon==="rail")fireRailShot(spread); else if(pShip.weapon==="twin")fireTwinBolt(spread); else fireShipBolt(spread);
       pShip.cd=pShip.rate*rateMult;
+      weaponAfterShot();
     }
     if(pShip.shieldRegenT>0)pShip.shieldRegenT-=dt;
     else if(pShip.shield<pShip.maxshield)pShip.shield=Math.min(pShip.maxshield,pShip.shield+pShip.maxshield*0.25*dt);
@@ -9935,6 +10010,8 @@ function updateSpace(dt){
     if(pShip.respawnT<=0){ pShip.alive=true; pShip.pos.set(0,HOME_COMBAT_Y,20); pShip.hp=Math.round(pShip.maxhp*0.5); pShip.shield=0; pShip.mesh.visible=true; toast("Rescue ship deployed"); }
   }
 
+  playerDamageFrame(dt);
+  if(hitMarkerT>0){ hitMarkerT-=dt; if(hitMarkerT<=0){ var hm=$("hitMarker"); if(hm)hm.classList.remove("show"); } }
   ensureMoonBoss();
   updateMoonBoss(dt);
   updateFortress(dt);
@@ -10007,7 +10084,7 @@ function updateSpace(dt){
     /* bolts can now travel vertically too (see fireShipBolt/fireRailShot's 3D aim direction), not
        just across the flat plane they always used to stay on — b.y actually moves now instead of
        staying pinned at spawn height */
-    var b=pBolts[i2]; b.x+=b.vx*dt; b.y+=(b.vy||0)*dt; b.z+=b.vz*dt; b.life-=dt;
+    var b=pBolts[i2], bx0=b.x, by0=b.y, bz0=b.z; b.x+=b.vx*dt; b.y+=(b.vy||0)*dt; b.z+=b.vz*dt; b.life-=dt;
     if(b.mesh)b.mesh.position.set(b.x,b.y,b.z);
     var hit=false;
     for(var j=enemyShips.length-1;j>=0;j--){
@@ -10017,9 +10094,11 @@ function updateSpace(dt){
          tunnel straight through a target between frames without ever registering a hit. Now checks
          vertical distance too (edy) — a bolt aimed steeply up/down can genuinely miss a target
          it's horizontally lined up with, the same way it always could miss left/right. */
-      if(Math.sqrt(edx*edx+edy*edy+edz*edz)<40){
+      if(segHitSphere(bx0,by0,bz0,b.x,b.y,b.z,e2.mesh.position.x,e2.mesh.position.y,e2.mesh.position.z,e2.big?120:60)){
         e2.hp-=b.dmg; e2.hitT=0.12; hit=true;
-        if(e2.hp<=0)killEnemyShip(e2,j);
+        var killed=e2.hp<=0;
+        showHitMarker(killed); impactBurst(new THREE.Vector3(b.x,b.y,b.z),0xffcf6a,killed);
+        if(killed)killEnemyShip(e2,j);
         break;
       }
     }
@@ -10027,12 +10106,12 @@ function updateSpace(dt){
       var fts=fortressTargets();
       for(var fi2=0;fi2<fts.length;fi2++){
         var ft=fts[fi2], fdx=b.x-ft.pos.x, fdy=b.y-ft.pos.y, fdz=b.z-ft.pos.z;
-        if(fdx*fdx+fdy*fdy+fdz*fdz<ft.r*ft.r){ ft.damage(b.dmg); hit=true; break; }
+        if(segHitSphere(bx0,by0,bz0,b.x,b.y,b.z,ft.pos.x,ft.pos.y,ft.pos.z,ft.r)){ ft.damage(b.dmg); hit=true; showHitMarker(false); break; }
       }
     }
     if(!hit&&moonBoss){
       var bdx=b.x-moonBoss.mesh.position.x, bdy=b.y-moonBoss.mesh.position.y, bdz=b.z-moonBoss.mesh.position.z;
-      if(Math.sqrt(bdx*bdx+bdy*bdy+bdz*bdz)<200){ damageMoonBoss(b.dmg); hit=true; }
+      if(segHitSphere(bx0,by0,bz0,b.x,b.y,b.z,moonBoss.mesh.position.x,moonBoss.mesh.position.y,moonBoss.mesh.position.z,200)){ damageMoonBoss(b.dmg); hit=true; showHitMarker(false); }
     }
     /* a hit used to just silently delete the bolt with nothing to show for it — a small spark
        burst right where it actually landed makes a hit read as an impact, not a disappearance */
@@ -10040,13 +10119,12 @@ function updateSpace(dt){
     if(hit||b.life<=0){ if(b.mesh)spaceScene.remove(b.mesh); pBolts.splice(i2,1); }
   }
   for(var i3=eBolts.length-1;i3>=0;i3--){
-    var eb=eBolts[i3]; eb.x+=eb.vx*dt; eb.z+=eb.vz*dt; eb.life-=dt;
+    var eb=eBolts[i3], ex0=eb.x, ey0=eb.y, ez0=eb.z; eb.x+=eb.vx*dt; eb.z+=eb.vz*dt; eb.life-=dt;
     if(eb.mesh)eb.mesh.position.set(eb.x,eb.y,eb.z);
     if(eb.vy)eb.y+=eb.vy*dt;
     var gone=eb.life<=0;
     if(pShip&&pShip.alive){
-      var pdx=eb.x-pShip.pos.x,pdz=eb.z-pShip.pos.z,pdy=eb.vy?eb.y-pShip.pos.y:0;
-      if(Math.sqrt(pdx*pdx+pdz*pdz+pdy*pdy)<(eb.hitR||8)+6){ damagePShip(eb.dmg); gone=true; }
+      if(segHitSphere(ex0,eb.vy?ey0:pShip.pos.y,ez0,eb.x,eb.vy?eb.y:pShip.pos.y,eb.z,pShip.pos.x,pShip.pos.y,pShip.pos.z,(eb.hitR||8)+12)){ damagePShip(eb.dmg); gone=true; }
     }
     if(!gone){
       for(var wi=wingmen.length-1;wi>=0;wi--){
@@ -10166,7 +10244,11 @@ function updateHudSpace(){
   }
   objT-=1/60; if(objT<=0){ objT=0.5; updateObjective(); }
   $("bMissile").classList.toggle("hide",!shipHasMissiles());
-  if(shipHasMissiles())$("bMissile").style.opacity=missileCd>0?".45":"1";
+  if(shipHasMissiles()){ $("bMissile").style.opacity=(missileCd>0||pShip.missiles===0)?".45":"1"; $("bMissile").textContent="Missiles (F) ×"+(pShip.missiles==null?8:pShip.missiles); }
+  var ht=clamp(pShip.heat||0,0,1);
+  $("heatFill").style.width=(ht*100)+"%";
+  $("heatBar").classList.toggle("over",!!pShip.overheat);
+  $("heatLbl").textContent=pShip.overheat?"OVERHEAT":"HEAT";
   updateNavMarkers();
   var thrPc=clamp(pShip.throttle==null?0:pShip.throttle,0,1);
   $("thrFill").style.height=(thrPc*100)+"%";
@@ -10195,6 +10277,8 @@ function updateHudSpace(){
     var zoomT=pShip.zoomT||0;
     var scale=1-zoomT*0.6;
     $("spaceCrosshair").style.transform="translate("+(mouse.x-35)+"px,"+(mouse.y-35)+"px) scale("+scale.toFixed(3)+")";
+    $("hitMarker").style.transform="translate("+(mouse.x-22)+"px,"+(mouse.y-22)+"px)";
+    $("spaceCrosshair").classList.toggle("hot",(pShip.heat||0)>0.75||!!pShip.overheat);
   }
 }
 
@@ -12214,6 +12298,150 @@ ensureFoliageFor(null);
 gfxMarkShadows(surfaceScene);
 applyPlayerColors();
 loadMeta();
+
+/* ═════════════ COMBAT v2.6 ═════════════ */
+/* Shots are tested along the whole path they travelled this frame (a bolt at 18000 units/sec moves
+   ~300 units a frame, so the old end-point-only check let most shots tunnel straight through a
+   ship). Guns build heat and overheat, every weapon has its own muzzle flash and sound, hits show
+   a hit-marker and an impact burst, damaged ships smoke and burn, your own ship's shield flares on
+   impact and its hull smokes, sparks and sputters as it is worn down, and the home-defense waves
+   are flown by real pilots with roles: strikers that dogfight, lancers that hold off and snipe with
+   heavy bolts, and raiders that make runs on the station, all of which break off and retreat when
+   badly hurt. */
+function segHitSphere(x0,y0,z0,x1,y1,z1,cx,cy,cz,r){
+  var dx=x1-x0, dy=y1-y0, dz=z1-z0, fx=x0-cx, fy=y0-cy, fz=z0-cz;
+  var L2=dx*dx+dy*dy+dz*dz, t=L2>0?clamp(-(fx*dx+fy*dy+fz*dz)/L2,0,1):0;
+  var px=fx+dx*t, py=fy+dy*t, pz=fz+dz*t;
+  return px*px+py*py+pz*pz<r*r;
+}
+/* ── weapons: heat, flashes, sounds ── */
+var WEAPON_FX={
+  bolt:{heat:0.095,col:0x6fe8ff,flash:22},
+  twin:{heat:0.045,col:0xffb545,flash:20},
+  rail:{heat:0.18,col:0xb060ff,flash:36},
+  bomb:{heat:0,col:0xffd06a,flash:0}
+};
+function weaponKind(){ return pShip&&WEAPON_FX[pShip.weapon]?pShip.weapon:"bolt"; }
+function weaponSound(kind){
+  if(kind==="rail"){ tone(1400,90,0.32,"sawtooth",0.045); noiz(0.18,0.05,5000); }
+  else if(kind==="twin"){ tone(twinSide>0?260:230,70,0.09,"square",0.03); noiz(0.06,0.04,2400); }
+  else if(kind==="bomb"){ tone(220,80,0.18,"triangle",0.04); }
+  else { tone(1250,320,0.08,"square",0.026); tone(2400,900,0.05,"sine",0.016); }
+}
+var sfxHit=function(){ tone(1800,1400,0.035,"square",0.02); };
+var sfxHurt=function(){ noiz(0.16,0.09,700); tone(150,70,0.18,"sawtooth",0.035); };
+var sfxShieldHit=function(){ tone(900,500,0.12,"sine",0.03); };
+var sfxOverheat=function(){ tone(700,180,0.4,"square",0.035); noiz(0.35,0.04,3500); };
+function muzzleFlash(pos,kind){
+  var W=WEAPON_FX[kind]; if(!W||!W.flash)return;
+  spawnThrustParticle(pos,new THREE.Vector3(0,0,0),W.flash*0.12,W.col);
+  if(typeof fxFlashLight==="function")fxFlashLight(spaceScene,pos,W.flash,W.col);
+}
+function weaponAfterShot(){
+  if(!pShip)return;
+  var kind=weaponKind(), W=WEAPON_FX[kind];
+  pShip.heat=Math.min(1,(pShip.heat||0)+W.heat);
+  pShip.heatIdle=0;
+  if(pShip.heat>=1&&!pShip.overheat){ pShip.overheat=true; sfxOverheat(); toast("WEAPONS OVERHEATED — cooling"); }
+}
+function weaponHeatTick(dt,firing){
+  if(!pShip)return;
+  pShip.heatIdle=(pShip.heatIdle||0)+dt;
+  var cool=pShip.overheat?0.42:(pShip.heatIdle>0.35?0.55:0.1);
+  pShip.heat=Math.max(0,(pShip.heat||0)-cool*dt);
+  if(pShip.overheat&&pShip.heat<=0.3){ pShip.overheat=false; tone(500,900,0.12,"sine",0.025); }
+}
+/* ── hit markers ── */
+var hitMarkerT=0;
+function showHitMarker(kill){
+  hitMarkerT=kill?0.35:0.16;
+  var hm=$("hitMarker"); if(hm){ hm.classList.add("show"); hm.classList.toggle("kill",!!kill); }
+  sfxHit();
+}
+function impactBurst(pos,col,big){
+  spawnThrustParticle(pos,new THREE.Vector3(0,0,0),big?4.2:2.6,0xffffff);
+  for(var i=0;i<(big?7:4);i++){
+    var v=new THREE.Vector3(rnd(-1,1),rnd(-1,1),rnd(-1,1)).normalize().multiplyScalar(rnd(120,380));
+    spawnThrustParticle(pos.clone(),v,rnd(0.6,1.3),col||0xffcf6a);
+  }
+}
+/* ── damage states: smoke at half health, fire and sparks when critical ── */
+function damageSmoke(pos,vel,frac,dt,surface){
+  if(frac>0.6)return;
+  var spawn=surface?spawnSurfaceParticle:spawnThrustParticle;
+  var back=vel?vel.clone().multiplyScalar(-0.08):new THREE.Vector3();
+  var sc=surface?0.12:1;
+  if(Math.random()<dt*(frac<0.3?26:12))spawn(pos.clone().add(new THREE.Vector3(rnd(-3,3)*sc,rnd(-1,2)*sc,rnd(-3,3)*sc)),back.clone().add(new THREE.Vector3(0,rnd(20,60)*sc,0)),rnd(2,3.6)*(surface?0.35:1),0x3a3a40);
+  if(frac<0.3&&Math.random()<dt*18)spawn(pos.clone(),back.clone().add(new THREE.Vector3(rnd(-60,60)*sc,rnd(0,80)*sc,rnd(-60,60)*sc)),rnd(1.2,2.2)*(surface?0.35:1),Math.random()<0.5?0xff7a20:0xffd060);
+}
+/* ── your ship: shield flare, hull damage, sputtering engines ── */
+function shipShieldMesh(){
+  if(!pShip)return null;
+  var m=pShip.mesh;
+  if(!m.userData.shieldBubble){
+    var box=new THREE.Box3().setFromObject(m), sz=box.getSize(new THREE.Vector3()), s=m.scale.x||1;
+    var mat=new THREE.MeshBasicMaterial({color:0x6fd8ff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,wireframe:false});
+    var b=new THREE.Mesh(new THREE.IcosahedronGeometry(1,2),mat);
+    b.scale.set(sz.x/s*0.62,sz.y/s*0.95,sz.z/s*0.62); b.userData.noShadow=true; b.renderOrder=4;
+    m.add(b); m.userData.shieldBubble=b;
+  }
+  return m.userData.shieldBubble;
+}
+function combatOnPlayerHit(shieldAbsorbed,hullDmg){
+  if(!pShip)return;
+  if(shieldAbsorbed>0){ pShip.shieldFlashT=0.35; sfxShieldHit(); }
+  if(hullDmg>0){
+    pShip.hullHitT=0.3; sfxHurt();
+    addCamShake(clamp(hullDmg/40,0.12,0.5));
+    var surf=state==="surface";
+    for(var i=0;i<6;i++){ var v=new THREE.Vector3(rnd(-1,1),rnd(-0.4,1),rnd(-1,1)).normalize().multiplyScalar(surf?rnd(4,9):rnd(150,420)); (surf?spawnSurfaceParticle:spawnThrustParticle)(pShip.pos.clone(),v,surf?rnd(0.12,0.25):rnd(0.8,1.6),0xffc060); }
+    var vg=$("dmgFlash"); if(vg){ vg.classList.remove("on"); void vg.offsetWidth; vg.classList.add("on"); }
+  }
+}
+function playerDamageFrame(dt){
+  if(!pShip||!pShip.mesh)return;
+  var frac=pShip.alive?clamp(pShip.hp/pShip.maxhp,0,1):1;
+  var b=shipShieldMesh();
+  pShip.shieldFlashT=Math.max(0,(pShip.shieldFlashT||0)-dt);
+  if(b){
+    var sh=clamp(pShip.shield/Math.max(1,pShip.maxshield),0,1);
+    /* a low shield flickers on its own; a hit makes it flare */
+    var flicker=sh>0&&sh<0.3&&Math.random()<0.08?0.12:0;
+    b.material.opacity=pShip.shieldFlashT>0?0.5*(pShip.shieldFlashT/0.35)*Math.max(0.35,sh):flicker;
+    b.visible=b.material.opacity>0.005;
+  }
+  if(pShip.alive)damageSmoke(pShip.pos,pShip.vel,frac,dt,state==="surface");
+  /* critically damaged engines sputter: top speed drops and the flame cuts in and out */
+  pShip.crippled=pShip.alive&&frac<0.25;
+  var hp=$("hullWarn"); if(hp)hp.classList.toggle("show",!!pShip.crippled&&(state==="space"||(state==="surface"&&surfaceFlying)));
+}
+function shipSpeedMult(){ return pShip&&pShip.crippled?(Math.random()<0.04?0.35:0.78):1; }
+
+/* ── wave AI: roles and retreat ── */
+var AI_ROLES={
+  striker:{spd:3600,cd:[0.55,1.0],range:3600,cone:0.93,boltSpd:4800,dmgMul:0.75,col:0xff4d5e},
+  lancer:{spd:3000,cd:[1.6,2.3],range:5200,cone:0.97,boltSpd:6000,dmgMul:1.7,col:0xff8a2a,standoff:2700},
+  raider:{spd:3900,cd:[0.8,1.3],range:3000,cone:0.9,boltSpd:4800,dmgMul:0.8,col:0xff4d5e}
+};
+function waveRoleFor(n){
+  if(wave<2)return "striker";
+  var r=Math.random();
+  if(wave>=3&&r<0.3)return "lancer";
+  if(r<0.55)return "raider";
+  return "striker";
+}
+function spawnWaveFighter(){
+  var role=waveRoleFor();
+  var a=rnd(0,Math.PI*2), r=rnd(6000,8500);
+  var pos=new THREE.Vector3(Math.cos(a)*r,HOME_COMBAT_Y-rnd(200,900),Math.sin(a)*r);
+  var vel=new THREE.Vector3(-Math.cos(a),0,-Math.sin(a)).multiplyScalar(3000);
+  var e=spawnAIFighter(pos,vel,false,role==="lancer");
+  e.role=role; e.hp=e.max=Math.round(spEnemyHP(wave)*(role==="lancer"?1.3:1)*1.3); e.dmg=spEnemyDmg(wave); e.spd=AI_ROLES[role].spd;
+  return e;
+}
+/* the station the raiders go for sits under the combat band at the colony */
+function homeRaidPoint(){ return new THREE.Vector3(homeBaseMesh.position.x,HOME_COMBAT_Y-400,homeBaseMesh.position.z); }
+
 
 /* ═════════════ CONVEYORS v2.4 ═════════════ */
 /* A belt is now one continuous swept model along a smooth route instead of three straight boxes
