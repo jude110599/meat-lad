@@ -863,8 +863,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.3.1";
+var VERSION="2.3.2";
 var CHANGELOG=[
+  {v:"2.3.2",t:"Fixed: the world going black near a Constructor",items:[
+    "FIXED: standing near a Constructor turned the ground and every building pitch black. The new local lights looked buildings up by name, and the Constructor's internal name collided with a built-in one, which broke the lighting for the whole scene. Lights now only ever use their own entries, and a broken value can never reach the renderer"
+  ]},
   {v:"2.3.1",t:"Landing fixed, and a one-button LAND",items:[
     "FIXED: ships could not touch down at all. Since the 2.1 models, every ship stands on taller landing gear, so the lowest it could fly sat above the height that triggers touchdown. Height is now measured from the bottom of the landing gear, so flying low and slow lands you again",
     "NEW: press L (or the LAND button that appears while flying over a world) to auto-land. The ship cuts its throttle, brakes, descends and touches down right where you are. Climb (E), push the throttle up, or tap the button again to cancel. It also works if you press it while still gliding in from space",
@@ -12035,7 +12038,9 @@ function localLightsFrame(dt){
     LL.t=0.25;
     var cand=[];
     buildings.forEach(function(b){
-      var e=LIGHT_EMITTERS[b.type]; if(!e)return;
+      /* own-property lookup: a plain object also "has" inherited keys, and the Constructor's type
+         name is literally "constructor", which used to hand back Object() and poison a light with NaN */
+      var e=Object.prototype.hasOwnProperty.call(LIGHT_EMITTERS,b.type)?LIGHT_EMITTERS[b.type]:null; if(!e)return;
       if(e.active&&!b.recipeActive)return;
       var dx=b.x-f.x, dz=b.z-f.z, d2=dx*dx+dz*dz; if(d2>55*55)return;
       cand.push({b:b,e:e,d2:d2});
@@ -12048,6 +12053,7 @@ function localLightsFrame(dt){
     if(w&&buildings.indexOf(w.b)>=0){
       var d=Math.sqrt(w.d2);
       target=w.e.i*clamp((55-d)/15,0,1)*Math.pow(LIGHT_BRIGHT,0.7);
+      if(!isFinite(target))target=0;
       if(l.userData.who!==w.b){ l.userData.who=w.b; l.position.set(w.b.x,w.e.y,w.b.z); l.color.set(w.e.col); l.distance=w.e.d; l.userData.cur=0; }
       if(w.e.active)target*=0.85+Math.sin(performance.now()/90+i)*0.15;
     } else l.userData.who=null;

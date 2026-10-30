@@ -2,6 +2,11 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.3.2] - 2026-10-30
+
+### Fixed
+- The ground and buildings turned black when standing near a Constructor (the local-light table lookup inherited `constructor` from Object.prototype and produced a NaN light).
+
 ## [2.3.1] - 2026-10-30
 
 ### Fixed
