@@ -2,6 +2,18 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.4.0] - 2026-10-30 — Conveyors Rebuilt
+
+### Added
+- Swept conveyor model: channel frame, rounded rails, belt surface, legs, end drums, drive motor and port collars; tier-specific styling (Mk.3 side guards and braces).
+- Belt routing that compares direct, L-shaped and sideways-detour runs and avoids buildings; corners are filleted into curves.
+- Instanced belt items resting on the belt surface, oriented along it, moving at a per-tier speed synced to the scrolling chevrons.
+- Belt placement preview: valid destinations ringed, ghost belt and an info label (item, tier, rate, length, cost, obstruction warning).
+- Auto-belt toggle in the Build menu (saved) that connects a newly placed machine to the nearest compatible one.
+
+### Fixed
+- Port arrows now show for Mk.2 and Mk.3 belt tools.
+
 ## [2.3.2] - 2026-10-30
 
 ### Fixed

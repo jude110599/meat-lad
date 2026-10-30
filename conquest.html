@@ -601,7 +601,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.3 · Light &amp; Atmosphere</div>
+      <div class="armadaBadge">v2.4 · Conveyors Rebuilt</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -611,6 +611,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Rebuilt conveyor belts with smooth curves, a placement preview and Auto-belt</li>
           <li>New lighting on every world, a Brightness setting, local lights, softer shadows and a real sky everywhere</li>
           <li>Oil, limestone, caterium, quartz and bauxite, 30 new parts and 12 new buildings</li>
           <li>Space Elevator, AWESOME Sink, overclocking with Power Shards and alternate recipes</li>
@@ -659,6 +660,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <div style="position:absolute;left:12px;top:9px;display:flex;gap:6px">
           <button id="bRemoveTool" style="background:rgba(255,77,94,.12);border:1px solid rgba(255,77,94,.5);border-radius:6px;color:#ff8a97;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:7px 12px;display:flex;align-items:center;gap:6px;transition:background .15s,opacity .15s" title="Remove tool" onmouseover="this.style.background='rgba(255,77,94,.24)'" onmouseout="this.style.background='rgba(255,77,94,.12)'"><span style="font-size:15px;line-height:1">&#128465;</span>Remove</button>
           <button id="bGridCycle" style="background:rgba(159,198,255,.12);border:1px solid rgba(159,198,255,.5);border-radius:6px;color:#9fc6ff;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:7px 12px;transition:background .15s" title="Change placement grid snap (or press G while placing)" onmouseover="this.style.background='rgba(159,198,255,.24)'" onmouseout="this.style.background='rgba(159,198,255,.12)'">Grid: 1x</button>
+          <button id="bAutoBelt" style="background:rgba(123,217,74,.12);border:1px solid rgba(123,217,74,.5);border-radius:6px;color:#bff0a0;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:7px 12px" title="Automatically belt a new machine to the nearest compatible one">Auto-belt: Off</button>
         </div>
         <h2><i></i>Build</h2><div class="panelTag">Construction</div>
       </div>
@@ -863,8 +865,19 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.3.2";
+var VERSION="2.4.0";
 var CHANGELOG=[
+  {v:"2.4.0",t:"Conveyors rebuilt: real belts, smooth curves, previews and auto-belt",items:[
+    "NEW CONVEYOR MODELS. Every belt is now one continuous industrial conveyor instead of three straight boxes joined by hubs: a channel frame, rounded side rails, a ribbed rubber belt, support legs with foot plates, a roller drum at each end, a drive motor at the head and a collar where it plugs into each building. No gaps, no overlapping pieces",
+    "SMOOTH CURVES. Every corner is a proper curved bend instead of a sharp angle",
+    "BELTS GO AROUND BUILDINGS. When a belt is placed it tries a direct run, both L-shaped runs and sideways detours, and keeps whichever crosses the fewest buildings",
+    "CLEAR DIRECTION. Chevrons on the belt point the way it runs and scroll in step with the items, so you can tell at a glance which way things are moving",
+    "ITEMS SIT ON THE BELT. Items rest on the belt surface, face along it, stay evenly spaced and travel at a fixed speed for each tier (Mk.3 is visibly the fastest). They are drawn as one batch per belt, so big factories run faster",
+    "TIERS LOOK DIFFERENT. Mk.1 is grey steel with yellow rails; Mk.2 has a blue frame, glowing blue rails and light strips; Mk.3 has a bronze frame, orange rails, raised side guards and cross-braced legs",
+    "PLACEMENT PREVIEW. After you pick a source, every valid destination in range is ringed in green, and hovering one shows a ghost of the exact belt that will be built, with the item, tier, rate, length and cost, and an amber warning if it has to pass through a building",
+    "AUTO-BELT. Turn it on with the Auto-belt button in the Build menu and each new machine you place belts itself to the nearest compatible machine (using the best belt tier you can afford)",
+    "FIXED: the input/output arrows on machines only showed for Mk.1 belts; they now show for every belt tier"
+  ]},
   {v:"2.3.2",t:"Fixed: the world going black near a Constructor",items:[
     "FIXED: standing near a Constructor turned the ground and every building pitch black. The new local lights looked buildings up by name, and the Constructor's internal name collided with a built-in one, which broke the lighting for the whole scene. Lights now only ever use their own entries, and a broken value can never reach the renderer"
   ]},
@@ -4031,8 +4044,11 @@ function hazardMat(){ return new THREE.MeshStandardMaterial({map:hazardTex,rough
 var beltTreadTex=(function(){
   var cvs=document.createElement("canvas"); cvs.width=64; cvs.height=32;
   var g=cvs.getContext("2d");
-  g.fillStyle="#181410"; g.fillRect(0,0,64,32);
-  g.strokeStyle="#3a2f24"; g.lineWidth=5; g.lineCap="round";
+  /* ribbed rubber with raised chevrons pointing the way the belt runs, in enough contrast to read
+     the direction at a glance while it scrolls */
+  g.fillStyle="#24201c"; g.fillRect(0,0,64,32);
+  g.fillStyle="#1a1714"; for(var rb=0;rb<64;rb+=8)g.fillRect(rb,0,3,32);
+  g.strokeStyle="#7a6c5c"; g.lineWidth=4.5; g.lineCap="round";
   for(var x=-16;x<80;x+=32){
     g.beginPath(); g.moveTo(x,4); g.lineTo(x+12,16); g.lineTo(x,28); g.stroke();
   }
@@ -5220,6 +5236,8 @@ function clearUpgradeBeltGlow(){
   hoveredUpgradeBelt=null;
 }
 function updateConnectHighlight(sx,sy,worldPt){
+  updateBeltTargetRings();
+  if(!((placing==="belt"||placing==="belt2"||placing==="belt3")&&beltFrom))clearBeltPreview();
   if(!isClickTool(placing)){ connectHighlight.visible=false; $("aimLabel").classList.add("hide"); clearUpgradeBeltGlow(); return; }
   if((placing==="belt2"||placing==="belt3")&&!beltFrom&&worldPt){
     var upTier=placing==="belt3"?3:2;
@@ -5261,7 +5279,11 @@ function updateConnectHighlight(sx,sy,worldPt){
       '<span class="sub">Click to paint — '+(colorPresets[activePresetIdx]?colorPresets[activePresetIdx].name:"Default")+'</span>';
     lbl.classList.remove("hide");
   } else {
-    lbl.innerHTML='<span class="nm" style="color:'+(ok?"var(--green)":"var(--red)")+'">'+BUILD_DEFS[cand.type].nm+'</span>';
+    var beltTool=placing==="belt"||placing==="belt2"||placing==="belt3";
+    var plbl=beltTool&&beltFrom&&ok?beltPreviewLabel(beltFrom,cand):null;
+    if(!plbl)clearBeltPreview();
+    lbl.innerHTML=plbl||('<span class="nm" style="color:'+(ok?"var(--green)":"var(--red)")+'">'+BUILD_DEFS[cand.type].nm+'</span>'+
+      (beltTool&&!beltFrom&&ok?'<span class="sub">Click to pick this as the source</span>':''));
     lbl.classList.remove("hide");
   }
 }
@@ -5331,6 +5353,7 @@ function tryPlaceAt3D(x,z){
   payCost(d.cost);
   var b=makeBuilding(type,x,z,rotY,node);
   buildings.push(b);
+  autoConnectNew(b);
   sfx.build(); pulseInteractPose();
   /* "zoop" placement: the tool stays equipped after every build (structural pieces, machines,
      everything) so you can keep dropping copy after copy without reopening the build menu —
@@ -5464,14 +5487,14 @@ function addPortMarkers(mesh,type){
       var arrow=new THREE.Mesh(new THREE.ConeGeometry(0.3,0.7,3),mat);
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(pointDir.x,0,pointDir.z).normalize());
       arrow.position.set(lx,0.5,lz);
-      arrow.visible=placing==="belt";
+      arrow.visible=placing==="belt"||placing==="belt2"||placing==="belt3";
       mesh.add(arrow);
       allPortArrows.push(arrow);
     });
   });
 }
 function updatePortArrowVisibility(){
-  var show=placing==="belt";
+  var show=placing==="belt"||placing==="belt2"||placing==="belt3";
   for(var i=0;i<allPortArrows.length;i++)allPortArrows[i].visible=show;
 }
 function makeBeltItemMesh(res){
@@ -5569,51 +5592,7 @@ function pathLerp(waypoints,t){
   }
   return waypoints[waypoints.length-1];
 }
-function makeBeltMesh(bl){
-  var outP=portSlotWorld(bl.from,"out",bl._outSlot), inP=portSlotWorld(bl.to,"in",bl._inSlot);
-  var beltH=0.55;
-  var STUB=2.6; /* fixed straight run leaving/entering a port before the belt is free to bend toward the other building */
-  /* buildings are boxy, not circular, so push the very first/last segment this far past the port into the
-     building's footprint — enough to clear the largest machine's corner at any approach angle — so the belt
-     always visually plugs in instead of stopping short. Internal elbow joints get no such extension: they
-     already meet exactly, they're just masked with a small coupler box. */
-  var OVERLAP=2.2;
-  var elbow1={x:outP.x+outP.nx*STUB, z:outP.z+outP.nz*STUB};
-  var elbow2={x:inP.x+inP.nx*STUB, z:inP.z+inP.nz*STUB};
-  var waypoints=[{x:outP.x,z:outP.z},elbow1,elbow2,{x:inP.x,z:inP.z}];
-  var mk2=bl.tier>=2, mk3=bl.tier===3;
-  var treadMap=beltTreadTex.clone(); treadMap.needsUpdate=true;
-  treadMap.wrapS=treadMap.wrapT=THREE.RepeatWrapping;
-  var mats={
-    frame:matStd(mk3?0x4a2e1a:(mk2?0x1a3a4a:0x2a3542),0.6,0.6),
-    belt:new THREE.MeshStandardMaterial({color:0x1a1410,roughness:0.85,metalness:0.15,map:treadMap}),
-    rail:new THREE.MeshStandardMaterial({color:mk3?0xff9a3a:(mk2?0x4fd3ff:0x3a4a5e),roughness:0.4,metalness:0.6,
-      emissive:mk3?0x7a3a0a:(mk2?0x1a5a70:0x000000),emissiveIntensity:mk2?0.7:0})
-  };
-  var g=new THREE.Group();
-  var seg1=beltSegMesh(waypoints[0],waypoints[1],beltH,OVERLAP,0,mats); g.add(seg1.frame);
-  var seg2=beltSegMesh(waypoints[1],waypoints[2],beltH,0,0,mats); g.add(seg2.frame);
-  var seg3=beltSegMesh(waypoints[2],waypoints[3],beltH,0,OVERLAP,mats); g.add(seg3.frame);
-  /* a rounded hub instead of a square box at each bend — reads as a real swivel joint the belt
-     curves through rather than a hard mechanical corner */
-  [elbow1,elbow2].forEach(function(e){
-    var joint=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.42,0.62,14),mats.frame);
-    joint.position.set(e.x,beltH,e.z); g.add(joint);
-    var ring=new THREE.Mesh(new THREE.TorusGeometry(0.38,0.035,6,16),mats.rail);
-    ring.rotation.x=Math.PI/2; ring.position.set(e.x,beltH+0.14,e.z); g.add(ring);
-  });
-  var totalLen=seg1.len+seg2.len+seg3.len;
-  treadMap.repeat.set(Math.max(1,Math.round(totalLen*0.35)),1);
-  var items=[];
-  var n=Math.max(2,Math.floor(totalLen/2.2));
-  for(var i=0;i<n;i++){
-    var itemMesh=makeBeltItemMesh(bl.res);
-    itemMesh.position.y=beltH+0.18;
-    g.add(itemMesh); items.push(itemMesh);
-  }
-  surfaceScene.add(g);
-  return {mesh:g,items:items,waypoints:waypoints,len:totalLen,beltH:beltH,mats:mats};
-}
+/* makeBeltMesh lives in CONVEYORS v2.4 */
 function tryPlaceBelt(from,to,tier){
   tier=tier===3?3:(tier===2?2:1);
   if(tier>1&&!unlocked["belt"+tier]){ toast("Unlock Belt Mk."+tier+" at the Command Hub first"); return; }
@@ -5630,7 +5609,7 @@ function tryPlaceBelt(from,to,tier){
   payCost(def.cost);
   var bl={from:from,to:to,res:res,rate:BELT_RATE[tier],tier:tier,_flow:false,_outSlot:outSlot,_inSlot:inSlot};
   var vis=makeBeltMesh(bl);
-  bl.mesh=vis.mesh; bl.items=vis.items; bl.waypoints=vis.waypoints; bl.len=vis.len; bl.mats=vis.mats;
+  bl.mesh=vis.mesh; bl.items=vis.items; bl.waypoints=vis.waypoints; bl.len=vis.len; bl.mats=vis.mats; bl.inst=vis.inst; bl.F=vis.F; bl.nItems=vis.nItems; bl.spin=vis.spin; bl.lift=vis.lift;
   belts.push(bl);
   sfx.click(); toast((tier>1?"Mk."+tier+" belt":"Belt")+" connected — "+RES[res].nm); pulseInteractPose();
 }
@@ -5646,7 +5625,7 @@ function upgradeBeltMk2(bl,tier){
   surfaceScene.remove(bl.mesh);
   bl.tier=tier; bl.rate=BELT_RATE[tier];
   var vis=makeBeltMesh(bl);
-  bl.mesh=vis.mesh; bl.items=vis.items; bl.waypoints=vis.waypoints; bl.len=vis.len; bl.mats=vis.mats;
+  bl.mesh=vis.mesh; bl.items=vis.items; bl.waypoints=vis.waypoints; bl.len=vis.len; bl.mats=vis.mats; bl.inst=vis.inst; bl.F=vis.F; bl.nItems=vis.nItems; bl.spin=vis.spin; bl.lift=vis.lift;
   sfx.build(); toast("Belt upgraded to Mk."+tier); pulseInteractPose(); saveGame();
 }
 function makeCableMesh(c){
@@ -5714,15 +5693,15 @@ function surfaceClick3D(x,z,sx,sy){
   if(placing==="belt"||placing==="belt2"||placing==="belt3"||placing==="cable"){
     var b=pickBuildingForClick(x,z,sx,sy);
     if(!b){ toast("Aim at a building to connect, or at an existing Mk.1 belt to upgrade it"); return; }
-    if(!beltFrom){ beltFrom=b; toast("Now select the destination building"); return; }
+    if(!beltFrom){ beltFrom=b; toast(placing==="cable"?"Now select the destination building":"Now select the destination — valid ones are ringed in green"); updateBeltTargetRings(); return; }
     if(beltFrom===b){ toast("Pick a different building"); return; }
     if(placing==="belt")tryPlaceBelt(beltFrom,b); else if(placing==="belt2")tryPlaceBelt(beltFrom,b,2); else if(placing==="belt3")tryPlaceBelt(beltFrom,b,3); else tryPlaceCable(beltFrom,b);
-    beltFrom=null;
+    beltFrom=null; clearBeltPreview(); updateBeltTargetRings();
     return;
   }
   tryPlaceAt3D(x,z);
 }
-function cancelPlacing(){ placing=null; beltFrom=null; placeGhost.visible=false; connectHighlight.visible=false; $("aimLabel").classList.add("hide"); }
+function cancelPlacing(){ placing=null; beltFrom=null; placeGhost.visible=false; connectHighlight.visible=false; $("aimLabel").classList.add("hide"); clearBeltPreview(); updateBeltTargetRings(); updatePortArrowVisibility(); }
 
 /* ═════════════ SURFACE PRODUCTION TICK ═════════════ */
 /* Shared smoke-puff sprite, spawned from a building's mesh.userData.smokeAnchor while it's actively
@@ -5988,19 +5967,7 @@ function updateBuildings(dt){
     var amt=Math.min(bl.rate*dt,avail,room);
     if(amt>0){ bl.from.out[bl.res]-=amt; bl.to.in[bl.res]=cur+amt; }
     bl._flow=amt>0.001;
-    if(bl.mats&&bl.mats.belt.map){
-      /* scroll the tread chevrons along the belt while it's actually carrying something, still
-         for an idle line — the same "is this belt doing anything" cue the moving items give,
-         but visible along the belt's whole length instead of just wherever an item happens to be */
-      bl.mats.belt.map.offset.x+=(bl._flow?dt*1.6:0);
-    }
-    var t0=(performance.now()/1000*0.4)%1;
-    for(var i=0;i<bl.items.length;i++){
-      var t=bl._flow?((t0+i/bl.items.length)%1):(i/bl.items.length);
-      var pos=pathLerp(bl.waypoints,t);
-      bl.items[i].position.set(pos.x,(bl.beltH||0.55)+0.18,pos.z);
-      bl.items[i].visible=bl._flow;
-    }
+    beltAnimate(bl,dt);
   });
 }
 
@@ -8116,7 +8083,7 @@ function applySaveData(data){
     var tier=bl.tier===3?3:(bl.tier===2?2:1);
     var nb={from:from,to:to,res:bl.res,rate:BELT_RATE[tier],tier:tier,_flow:false,_outSlot:outSlot,_inSlot:inSlot};
     var vis=makeBeltMesh(nb);
-    nb.mesh=vis.mesh; nb.items=vis.items; nb.waypoints=vis.waypoints; nb.len=vis.len; nb.mats=vis.mats;
+    nb.mesh=vis.mesh; nb.items=vis.items; nb.waypoints=vis.waypoints; nb.len=vis.len; nb.mats=vis.mats; nb.inst=vis.inst; nb.F=vis.F; nb.nItems=vis.nItems; nb.spin=vis.spin; nb.lift=vis.lift;
     belts.push(nb);
   });
   (data.cables||[]).forEach(function(cd){
@@ -10518,6 +10485,7 @@ $("bRemoveTool").onclick=function(){
   sfx.click(); placing="remove"; beltFrom=null; setGhost(null); closeBuild(); toast("Click a building to remove it");
 };
 $("bGridCycle").onclick=function(){ sfx.click(); cycleSnapMult(); };
+$("bAutoBelt").onclick=function(){ sfx.click(); autoBelt=!autoBelt; try{ localStorage.setItem("conquestAutoBelt",autoBelt?"1":"0"); }catch(e){} setAutoBeltLabel(); toast(autoBelt?"Auto-belt on: new machines connect to the nearest compatible one":"Auto-belt off"); };
 $("bBuildOpen").onclick=function(){ sfx.click(); openBuild(); };
 $("bBuildClose").onclick=function(){ sfx.click(); closeBuild(); };
 
@@ -12164,6 +12132,326 @@ ensureFoliageFor(null);
 gfxMarkShadows(surfaceScene);
 applyPlayerColors();
 loadMeta();
+
+/* ═════════════ CONVEYORS v2.4 ═════════════ */
+/* A belt is now one continuous swept model along a smooth route instead of three straight boxes
+   joined by hubs: the route leaves each port straight, tries a direct run and both L-shaped
+   runs and keeps whichever crosses the fewest buildings, and every corner is filleted into a
+   curve. Along it run a channel frame, rounded side rails, the moving belt surface, support legs,
+   an end drum at each end, a drive motor at the head and a collar at each port. Items are drawn
+   as one instanced batch per belt, sit on the belt surface, face along it, and travel at a fixed
+   speed per tier that the belt's chevrons scroll in step with. */
+var BELT_SPEED={1:1.3,2:2.3,3:3.6};
+var BELT_H=0.55, BELT_TOP=0.04, BELT_SPACING=1.15, BELT_EXT=1.6;
+var BELT_STYLE={
+  1:{frame:0x4a525e,rail:0xd8a030,railEm:0x000000,railEmI:0,leg:0x3a414c,accent:0xd8a030,guard:false},
+  2:{frame:0x24485c,rail:0x4fd3ff,railEm:0x1a5a70,railEmI:0.7,leg:0x2a3a48,accent:0x4fd3ff,guard:false},
+  3:{frame:0x3e2c20,rail:0xff9a3a,railEm:0x7a3a0a,railEmI:0.7,leg:0x2e2620,accent:0xff9a3a,guard:true}
+};
+function beltTierOf(bl){ return bl.tier===3?3:(bl.tier===2?2:1); }
+/* ── routing ── */
+function beltRouteHits(pts,from,to){
+  var hits=0;
+  for(var i=1;i<pts.length-2;i++){
+    var a=pts[i], b=pts[i+1];
+    buildings.forEach(function(bd){
+      if(bd===from||bd===to)return;
+      var d=BUILD_DEFS[bd.type]; if(!d||d.tool||d.noCollide||d.edge)return;
+      var r=(d.radius||1.5)*1.45*0.85+0.5;
+      if(distToSegment(bd.x,bd.z,a.x,a.z,b.x,b.z)<r)hits++;
+    });
+  }
+  return hits;
+}
+function beltRoute(outP,inP,from,to){
+  var STUB=2.6;
+  var e1={x:outP.x+outP.nx*STUB,z:outP.z+outP.nz*STUB}, e2={x:inP.x+inP.nx*STUB,z:inP.z+inP.nz*STUB};
+  var start={x:outP.x-outP.nx*BELT_EXT,z:outP.z-outP.nz*BELT_EXT}, end={x:inP.x-inP.nx*BELT_EXT,z:inP.z-inP.nz*BELT_EXT};
+  var cands=[[e1,e2],[e1,{x:e1.x,z:e2.z},e2],[e1,{x:e2.x,z:e1.z},e2]];
+  /* sideways detours, for when the direct and L-shaped runs all cross something */
+  var ml=Math.hypot(e2.x-e1.x,e2.z-e1.z)||1, px=-(e2.z-e1.z)/ml, pz=(e2.x-e1.x)/ml;
+  [7,-7,12,-12,18,-18].forEach(function(o){ cands.push([e1,{x:e1.x+px*o,z:e1.z+pz*o},{x:e2.x+px*o,z:e2.z+pz*o},e2]); });
+  var best=null,bs=Infinity,bh=0;
+  cands.forEach(function(mid,ci){
+    var pts=[start,{x:outP.x,z:outP.z}].concat(mid,[{x:inP.x,z:inP.z},end]);
+    var len=0; for(var i=0;i<pts.length-1;i++)len+=Math.hypot(pts[i+1].x-pts[i].x,pts[i+1].z-pts[i].z);
+    var hits=beltRouteHits(pts,from,to);
+    var score=hits*1000+len+(ci?1.5:0)+(ci>2?4:0);
+    if(score<bs){ bs=score; best=pts; bh=hits; }
+  });
+  return {pts:filletPath(best,1.8),hits:bh};
+}
+/* round every corner of a polyline with a quadratic curve (dense enough to read as a smooth bend) */
+function filletPath(pts,R){
+  var clean=[pts[0]];
+  for(var i=1;i<pts.length;i++){ var p=clean[clean.length-1]; if(Math.hypot(pts[i].x-p.x,pts[i].z-p.z)>0.05)clean.push(pts[i]); }
+  pts=clean;
+  var out=[pts[0]];
+  for(var i=1;i<pts.length-1;i++){
+    var a=pts[i-1], b=pts[i], c=pts[i+1];
+    var la=Math.hypot(b.x-a.x,b.z-a.z), lc=Math.hypot(c.x-b.x,c.z-b.z);
+    var d1={x:(b.x-a.x)/la,z:(b.z-a.z)/la}, d2={x:(c.x-b.x)/lc,z:(c.z-b.z)/lc};
+    var cosA=clamp(d1.x*d2.x+d1.z*d2.z,-1,1);
+    if(cosA>0.999){ out.push(b); continue; }
+    var t=Math.min(R,la*0.45,lc*0.45);
+    var p1={x:b.x-d1.x*t,z:b.z-d1.z*t}, p2={x:b.x+d2.x*t,z:b.z+d2.z*t};
+    var n=Math.max(4,Math.round(Math.acos(cosA)/0.18));
+    for(var k=0;k<=n;k++){
+      var u=k/n, iu=1-u;
+      out.push({x:iu*iu*p1.x+2*iu*u*b.x+u*u*p2.x, z:iu*iu*p1.z+2*iu*u*b.z+u*u*p2.z});
+    }
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
+function beltFrames(pts){
+  var cum=[0], tan=[];
+  for(var i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].z-pts[i-1].z));
+  for(var i=0;i<pts.length;i++){
+    var a=pts[Math.max(0,i-1)], b=pts[Math.min(pts.length-1,i+1)];
+    var dx=b.x-a.x, dz=b.z-a.z, l=Math.hypot(dx,dz)||1;
+    tan.push({x:dx/l,z:dz/l});
+  }
+  return {pts:pts,cum:cum,tan:tan,len:cum[cum.length-1]};
+}
+function beltSample(F,s){
+  s=clamp(s,0,F.len);
+  var lo=0,hi=F.cum.length-1;
+  while(hi-lo>1){ var mid=(lo+hi)>>1; if(F.cum[mid]<=s)lo=mid; else hi=mid; }
+  var seg=F.cum[hi]-F.cum[lo]||1, u=(s-F.cum[lo])/seg;
+  var a=F.pts[lo], b=F.pts[hi];
+  return {x:a.x+(b.x-a.x)*u, z:a.z+(b.z-a.z)*u, yaw:Math.atan2(-(b.z-a.z),b.x-a.x)};
+}
+/* sweep a 2D profile (side offset, height) along the route; each profile edge gets its own
+   vertices so edges stay crisp while the bend itself shades smoothly */
+function beltSweep(F,profile,closed,y0,uScale,s0,s1){
+  var pos=[],nor=[],uv=[],idx=[];
+  var nE=closed?profile.length:profile.length-1;
+  var i0=0,i1=F.pts.length-1;
+  if(s0!=null){ while(i0<F.pts.length-1&&F.cum[i0+1]<=s0)i0++; }
+  if(s1!=null){ while(i1>0&&F.cum[i1-1]>=s1)i1--; }
+  for(var e=0;e<nE;e++){
+    var p=profile[e], q=profile[(e+1)%profile.length];
+    var ex=q[0]-p[0], ey=q[1]-p[1], el=Math.hypot(ex,ey)||1;
+    var nx=ey/el, ny=-ex/el;
+    var base=pos.length/3;
+    for(var i=i0;i<=i1;i++){
+      var P=F.pts[i], T=F.tan[i], sx=T.z, sz=-T.x;
+      [p,q].forEach(function(v,vi){
+        pos.push(P.x+sx*v[0], y0+v[1], P.z+sz*v[0]);
+        nor.push(sx*nx, ny, sz*nx);
+        uv.push(F.cum[i]*uScale, vi);
+      });
+    }
+    var rows=i1-i0;
+    for(var r=0;r<rows;r++){
+      var a=base+r*2, b=a+1, c=a+2, d=a+3;
+      idx.push(a,c,b, b,c,d);
+    }
+  }
+  var g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
+  g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx);
+  return g;
+}
+var BELT_PROFILE_TROUGH=[[-0.52,0.06],[-0.52,-0.16],[-0.44,-0.24],[0.44,-0.24],[0.52,-0.16],[0.52,0.06],[0.45,0.06],[0.45,-0.05],[-0.45,-0.05],[-0.45,0.06]];
+var BELT_PROFILE_RAIL=function(c){ return [[c-0.05,0.04],[c+0.05,0.04],[c+0.065,0.1],[c+0.05,0.17],[c-0.05,0.17],[c-0.065,0.1]]; };
+var BELT_PROFILE_GUARD=function(c){ return [[c-0.018,0.17],[c+0.018,0.17],[c+0.018,0.34],[c-0.018,0.34]]; };
+var _beltFrameMats={};
+function beltFrameMat(tier){
+  if(!_beltFrameMats[tier])_beltFrameMats[tier]=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.62,metalness:0.6,map:GFX_METAL.map,normalMap:GFX_METAL.normal,normalScale:new THREE.Vector2(0.6,0.6),envMapIntensity:1.25});
+  return _beltFrameMats[tier];
+}
+function beltBoxGeo(w,h,d,x,y,z,yaw){ var g=new THREE.BoxGeometry(w,h,d); g.applyMatrix4(MK.mtx(x,y,z,0,yaw,0)); return g; }
+function makeBeltMesh(bl){
+  var outP=portSlotWorld(bl.from,"out",bl._outSlot), inP=portSlotWorld(bl.to,"in",bl._inSlot);
+  var tier=beltTierOf(bl), S=BELT_STYLE[tier];
+  var route=beltRoute(outP,inP,bl.from,bl.to);
+  var F=beltFrames(route.pts);
+  var g=new THREE.Group();
+  var yb=BELT_H;
+  /* moving surface */
+  var treadMap=beltTreadTex.clone(); treadMap.needsUpdate=true; treadMap.wrapS=treadMap.wrapT=THREE.RepeatWrapping;
+  var beltMat=new THREE.MeshStandardMaterial({color:tier===1?0x9a8a78:(tier===2?0x8ab0c8:0xc8a080),roughness:0.85,metalness:0.12,map:treadMap});
+  var surf=new THREE.Mesh(beltSweep(F,[[-0.45,BELT_TOP],[0.45,BELT_TOP]],false,yb,0.5),beltMat);
+  g.add(surf);
+  /* channel frame, legs, drums, motor and collars, merged into one mesh */
+  var parts=[{geo:beltSweep(F,BELT_PROFILE_TROUGH,true,yb,0.25),color:S.frame}];
+  var legStep=2.6, nLegs=Math.max(1,Math.floor((F.len-2*BELT_EXT)/legStep));
+  for(var li=0;li<=nLegs;li++){
+    var s=BELT_EXT+(F.len-2*BELT_EXT)*(li/nLegs);
+    var p=beltSample(F,s);
+    /* side offset: perpendicular to the direction of travel at this point */
+    var sx=Math.sin(p.yaw), sz=Math.cos(p.yaw);
+    [-0.4,0.4].forEach(function(o){
+      parts.push({geo:beltBoxGeo(0.1,yb-0.22,0.1,p.x+sx*o,(yb-0.22)/2,p.z+sz*o,p.yaw),color:S.leg});
+      parts.push({geo:beltBoxGeo(0.26,0.04,0.26,p.x+sx*o,0.02,p.z+sz*o,p.yaw),color:S.leg});
+    });
+    parts.push({geo:beltBoxGeo(0.08,0.07,0.84,p.x,0.16,p.z,p.yaw),color:S.leg});
+    if(tier===3){ var br=beltBoxGeo(0.05,0.05,0.9,p.x,0.2,p.z,p.yaw); br.applyMatrix4(new THREE.Matrix4().makeTranslation(-p.x,-0.2,-p.z)); br.applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(Math.cos(p.yaw),0,-Math.sin(p.yaw)),0.4)); br.applyMatrix4(new THREE.Matrix4().makeTranslation(p.x,0.2,p.z)); parts.push({geo:br,color:S.leg}); }
+  }
+  [BELT_EXT*0.55,F.len-BELT_EXT*0.55].forEach(function(s,ei){
+    var p=beltSample(F,s);
+    var dm=new THREE.CylinderGeometry(0.15,0.15,0.98,16); dm.rotateX(Math.PI/2); dm.rotateY(p.yaw); dm.translate(p.x,yb-0.08,p.z);
+    parts.push({geo:dm,color:0xb8c0c8});
+  });
+  /* drive motor beside the head drum, and a collar at each port */
+  (function(){
+    var s=BELT_EXT+0.35, p=beltSample(F,s), sx=Math.sin(p.yaw), sz=Math.cos(p.yaw);
+    var mo=new THREE.CylinderGeometry(0.17,0.17,0.42,14); mo.rotateX(Math.PI/2); mo.rotateY(p.yaw); mo.translate(p.x+sx*0.72,yb-0.06,p.z+sz*0.72);
+    parts.push({geo:mo,color:S.accent});
+    parts.push({geo:beltBoxGeo(0.34,0.24,0.18,p.x+sx*0.6,yb-0.06,p.z+sz*0.6,p.yaw),color:0x2a2f36});
+    [outP,inP].forEach(function(pp){
+      var ring=new THREE.TorusGeometry(0.62,0.07,8,24,Math.PI); var yaw=Math.atan2(-pp.nz,pp.nx);
+      ring.rotateY(yaw+Math.PI/2); ring.translate(pp.x,yb-0.12,pp.z);
+      parts.push({geo:ring,color:S.accent});
+    });
+  })();
+  var frameGeo=MK.merge(parts);
+  /* planar UVs from position so the metal texture still varies across the merged frame */
+  var fp=frameGeo.attributes.position, fuv=new Float32Array(fp.count*2);
+  for(var ui=0;ui<fp.count;ui++){ fuv[ui*2]=(fp.getX(ui)+fp.getZ(ui))*0.35; fuv[ui*2+1]=fp.getY(ui)*0.35+(fp.getX(ui)-fp.getZ(ui))*0.12; }
+  frameGeo.setAttribute("uv",new THREE.Float32BufferAttribute(fuv,2));
+  var frameMat=beltFrameMat(tier).clone();
+  var frame=new THREE.Mesh(frameGeo,frameMat); g.add(frame);
+  /* rails (own material: the upgrade-hover glow tints them) */
+  var railMat=new THREE.MeshStandardMaterial({color:S.rail,roughness:0.38,metalness:0.65,emissive:S.railEm,emissiveIntensity:S.railEmI});
+  var railParts=[BELT_PROFILE_RAIL(-0.49),BELT_PROFILE_RAIL(0.49)];
+  var railGeo=MK.merge(railParts.map(function(pr){ return {geo:beltSweep(F,pr,true,yb,0.5,BELT_EXT*0.3,F.len-BELT_EXT*0.3)}; }));
+  var rails=new THREE.Mesh(railGeo,railMat); g.add(rails);
+  /* Mk.3 adds raised side guards in the frame colour to keep its faster load on the belt */
+  if(S.guard){
+    var guards=new THREE.Mesh(MK.merge([-0.5,0.5].map(function(c){ return {geo:beltSweep(F,BELT_PROFILE_GUARD(c),true,yb,0.5,BELT_EXT*0.6,F.len-BELT_EXT*0.6)}; })),
+      new THREE.MeshStandardMaterial({color:0x5a4434,roughness:0.5,metalness:0.7}));
+    g.add(guards);
+  }
+  if(tier>=2){
+    var stripMat=new THREE.MeshBasicMaterial({color:S.accent});
+    var strip=new THREE.Mesh(MK.merge([-0.556,0.556].map(function(c){ return {geo:beltSweep(F,[[c,0.09],[c,0.12]],false,yb,1,BELT_EXT,F.len-BELT_EXT)}; })),stripMat);
+    strip.material.side=THREE.DoubleSide; g.add(strip);
+  }
+  /* items: one instanced batch per sub-part of the item model */
+  var tpl=makeBeltItemMesh(bl.res); tpl.updateMatrixWorld(true);
+  var box=new THREE.Box3().setFromObject(tpl), lift=-box.min.y;
+  var nItems=Math.max(1,Math.floor((F.len-2*BELT_EXT)/BELT_SPACING));
+  var inst=[];
+  tpl.traverse(function(o){
+    if(!o.isMesh)return;
+    var im=new THREE.InstancedMesh(o.geometry,o.material,nItems);
+    im.userData.local=o.matrixWorld.clone(); im.frustumCulled=false; im.count=0; im.castShadow=false;
+    g.add(im); inst.push(im);
+  });
+  var spin=[]; for(var k=0;k<nItems;k++)spin.push(RES[bl.res]&&RES[bl.res].cat==="ore"||/_ore$|coal|shard|crystal|pod|vein|core/.test(bl.res)?rnd(0,6.28):0);
+  surfaceScene.add(g);
+  gfxMarkShadows(g);
+  inst.forEach(function(im){ im.castShadow=false; });
+  return {mesh:g,items:[],inst:inst,spin:spin,nItems:nItems,F:F,lift:lift,waypoints:route.pts,len:F.len,beltH:yb,mats:{frame:frameMat,belt:beltMat,rail:railMat},hits:route.hits};
+}
+var _beltM=new THREE.Matrix4(), _beltQ=new THREE.Quaternion(), _beltV=new THREE.Vector3(), _beltS=new THREE.Vector3(1,1,1), _beltUp=new THREE.Vector3(0,1,0);
+function beltAnimate(bl,dt){
+  var tier=beltTierOf(bl), v=BELT_SPEED[tier];
+  if(bl._flow){
+    bl._phase=((bl._phase||0)+v*dt)%BELT_SPACING;
+    if(bl.mats&&bl.mats.belt.map)bl.mats.belt.map.offset.x-=v*dt*0.5;
+  }
+  if(!bl.inst||!bl.F)return;
+  var on=!!bl._flow, F=bl.F, n=on?bl.nItems:0;
+  for(var k=0;k<bl.inst.length;k++){
+    var im=bl.inst[k];
+    if(im.count!==n)im.count=n;
+    if(!n)continue;
+    for(var i=0;i<n;i++){
+      var s=BELT_EXT+(bl._phase||0)+i*BELT_SPACING;
+      if(s>F.len-BELT_EXT)s-=bl.nItems*BELT_SPACING;
+      var p=beltSample(F,s);
+      _beltQ.setFromAxisAngle(_beltUp,p.yaw+bl.spin[i]);
+      _beltV.set(p.x,BELT_H+BELT_TOP+bl.lift,p.z);
+      _beltM.compose(_beltV,_beltQ,_beltS).multiply(im.userData.local);
+      im.setMatrixAt(i,_beltM);
+    }
+    im.instanceMatrix.needsUpdate=true;
+  }
+}
+
+/* ── placement preview: once a source is picked, every valid destination in range is ringed, and
+   hovering one shows a ghost of the exact belt that would be built ── */
+var beltPreview={mesh:null,key:"",rings:[],ringKey:""};
+var beltGhostMat=new THREE.MeshBasicMaterial({color:0x7bd94a,transparent:true,opacity:0.45,depthWrite:false});
+var beltGhostWarnMat=new THREE.MeshBasicMaterial({color:0xffb545,transparent:true,opacity:0.45,depthWrite:false});
+var beltRingMat=new THREE.MeshBasicMaterial({color:0x7bd94a,transparent:true,opacity:0.5,side:THREE.DoubleSide,depthWrite:false});
+function beltToolTier(){ return placing==="belt3"?3:(placing==="belt2"?2:1); }
+function clearBeltPreview(){
+  if(beltPreview.mesh){ surfaceScene.remove(beltPreview.mesh); beltPreview.mesh.geometry.dispose(); beltPreview.mesh=null; beltPreview.key=""; }
+}
+function showBeltPreview(from,to){
+  var key=from.id+">"+to.id+":"+buildings.length;
+  if(beltPreview.key===key&&beltPreview.mesh)return beltPreview.info;
+  clearBeltPreview();
+  var os=allocPortSlot(from,"out"), is=allocPortSlot(to,"in");
+  if(os<0||is<0)return null;
+  var route=beltRoute(portSlotWorld(from,"out",os),portSlotWorld(to,"in",is),from,to);
+  var F=beltFrames(route.pts);
+  var geo=MK.merge([{geo:beltSweep(F,BELT_PROFILE_TROUGH,true,BELT_H,0.25)},{geo:beltSweep(F,[[-0.45,BELT_TOP],[0.45,BELT_TOP]],false,BELT_H,0.5)}]);
+  var m=new THREE.Mesh(geo,route.hits?beltGhostWarnMat:beltGhostMat); m.userData.noShadow=true; m.renderOrder=3;
+  surfaceScene.add(m);
+  beltPreview.mesh=m; beltPreview.key=key;
+  beltPreview.info={len:F.len,hits:route.hits};
+  return beltPreview.info;
+}
+function updateBeltTargetRings(){
+  var show=(placing==="belt"||placing==="belt2"||placing==="belt3")&&beltFrom;
+  var key=show?(beltFrom.id+":"+buildings.length+":"+belts.length):"";
+  if(key===beltPreview.ringKey)return;
+  beltPreview.ringKey=key;
+  beltPreview.rings.forEach(function(r){ surfaceScene.remove(r); r.geometry.dispose(); });
+  beltPreview.rings=[];
+  if(!show)return;
+  var def=BUILD_DEFS[placing];
+  buildings.forEach(function(b){
+    if(b===beltFrom||!beltCompatible(beltFrom,b)||allocPortSlot(b,"in")<0)return;
+    if(Math.hypot(b.x-beltFrom.x,b.z-beltFrom.z)>def.range)return;
+    var r=(BUILD_DEFS[b.type].radius||1)*1.45+0.9;
+    var ring=new THREE.Mesh(new THREE.RingGeometry(r,r+0.22,40),beltRingMat);
+    ring.rotation.x=-Math.PI/2; ring.position.set(b.x,0.1,b.z); ring.userData.noShadow=true;
+    surfaceScene.add(ring); beltPreview.rings.push(ring);
+  });
+}
+function beltPreviewLabel(from,to){
+  var info=showBeltPreview(from,to); if(!info)return null;
+  var tier=beltToolTier(), res=beltCompatible(from,to);
+  return '<span class="nm" style="color:var(--green)">'+BUILD_DEFS[from.type].nm+' &rarr; '+BUILD_DEFS[to.type].nm+'</span>'+
+    '<span class="sub">'+(RES[res]?RES[res].nm:'')+' &middot; Mk.'+tier+' &middot; '+(BELT_RATE[tier]*60)+'/min &middot; '+info.len.toFixed(0)+' m &middot; '+costStr(BUILD_DEFS[placing].cost)+
+    (info.hits?' &middot; <b style="color:var(--amber)">passes through '+info.hits+' building'+(info.hits>1?'s':'')+'</b>':'')+'</span>';
+}
+
+/* ── auto-connect: placing a machine next to a compatible one belts them together ── */
+var autoBelt=false;
+try{ autoBelt=localStorage.getItem("conquestAutoBelt")==="1"; }catch(e){}
+function setAutoBeltLabel(){ var b=$("bAutoBelt"); if(b)b.textContent="Auto-belt: "+(autoBelt?"On":"Off"); }
+setAutoBeltLabel();
+function bestBeltTierAffordable(){
+  var tiers=[3,2,1].filter(function(t){ return t===1||unlocked["belt"+t]; });
+  for(var i=0;i<tiers.length;i++){ var def=tiers[i]>1?BUILD_DEFS["belt"+tiers[i]]:BUILD_DEFS.belt; if(canAfford(def.cost))return tiers[i]; }
+  return 0;
+}
+function autoConnectNew(b){
+  if(!autoBelt||!PORT_SIDES[b.type])return;
+  var made=[];
+  function tryLink(src,dst){
+    if(!beltCompatible(src,dst)||allocPortSlot(src,"out")<0||allocPortSlot(dst,"in")<0)return false;
+    var t=bestBeltTierAffordable(); if(!t)return false;
+    var n=belts.length; tryPlaceBelt(src,dst,t); if(belts.length>n){ made.push(BUILD_DEFS[src.type].nm+" → "+BUILD_DEFS[dst.type].nm); return true; }
+    return false;
+  }
+  var near=buildings.filter(function(o){ return o!==b&&PORT_SIDES[o.type]&&Math.hypot(o.x-b.x,o.z-b.z)<24; })
+    .sort(function(p,q){ return Math.hypot(p.x-b.x,p.z-b.z)-Math.hypot(q.x-b.x,q.z-b.z); });
+  for(var i=0;i<near.length;i++){ if(tryLink(near[i],b))break; }
+  for(var j=0;j<near.length;j++){ if(tryLink(b,near[j]))break; }
+  if(made.length)toast("Auto-belt: "+made.join(", "));
+}
+
 
 
 /* ═════════════ FACTORY v2.2: the full production tree ═════════════ */
