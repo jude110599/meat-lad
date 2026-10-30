@@ -2,6 +2,24 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.2.0] - 2026-10-29 — The Factory Update
+
+### Added
+- New deposits: Limestone, Caterium Ore, Raw Quartz, Bauxite and Crude Oil at the colony and on other worlds (added to existing saves); Water from a Water Extractor.
+- 30 new items with Constructor, Smelter, Foundry, Assembler, Manufacturer and Oil Refinery recipes, from Iron Plates and Screws up to Computers, Heavy Modular Frames and Adaptive Control Units.
+- Buildings: Manufacturer, Oil Extractor, Water Extractor, Oil Refinery, Fuel Generator, Power Storage, Industrial Storage, AWESOME Sink, Space Elevator, Research Lab, Conveyor Belt Mk.3 and Golden Nut Statue, each with an animated model.
+- Space Elevator with three delivery phases; phases 1 and 2 open Hub Tiers 5 and 6.
+- AWESOME Sink points and coupons, and a shop with Power Shards, a jetpack, gold paint and the statue.
+- Clock-speed control (10–250%) on production machines and extractors, with Power Shards for overclocking and power draw scaling with clock.
+- Eight alternate recipes discovered at the Research Lab.
+- Factory overview (O): power, battery charge, machine counts and per-minute production and consumption over the last minute.
+- Per-minute input and output rates in machine panels.
+
+### Changed
+- Smelters and Constructors send output with no belt attached straight to the stockpile.
+- Miners can't be placed on oil, and each deposit takes one extractor.
+- Hub milestones are listed in tier order.
+
 ## [2.1.0] - 2026-10-29
 
 ### Added
