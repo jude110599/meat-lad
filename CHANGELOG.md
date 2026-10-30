@@ -2,6 +2,28 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.3.0] - 2026-10-30 — Light & Atmosphere
+
+### Added
+- Per-world lighting profiles: near-neutral sun, hemisphere sky/ground fill, low flat ambient, rim light, exposure and grade per world.
+- Brightness setting in the pause menu (50–160%), saved to localStorage.
+- Colour-grading pass on High graphics (HDR render target, white balance, saturation, ACES, shadow lift, contrast, vignette).
+- Pooled local point lights (4) assigned to the nearest lamps, interiors and active furnaces, generators and refinery.
+- Contact shadow decal under every machine.
+- Sky dome, stars, moon, gas giant and a sun glow that follow the camera onto every world; star visibility per world.
+- Two distant mountain-range bands on every horizon; clouds on every world.
+- Weather particles per world (dust, snow, embers, spores, void motes, ash) with wind gusts.
+
+### Changed
+- Shadows use PCF with a blur radius; the surface shadow map updates every other frame on foot.
+- Reflection maps are painted from each world's lighting profile, and stay on in Low graphics.
+- Glass and water are dielectric materials; metal reflection strength raised.
+- Cloud sprites use a soft multi-blob texture.
+
+### Fixed
+- Foliage no longer spawns through ore deposits, enemy camp structures or the lander.
+- Worlds other than the colony had no sky dome, stars or moon.
+
 ## [2.2.0] - 2026-10-29 — The Factory Update
 
 ### Added
