@@ -2,6 +2,18 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.5.0] - 2026-10-30 — Flight Handling
+
+### Added
+- Per-class ship handling (turn rate, turn response, acceleration time, lateral grip, bank, camera distance).
+- Heading-relative momentum: forward speed ramps per class, lateral velocity decays by grip; turn inertia via a smoothed yaw rate.
+- Chase camera on a smoothed heading with exact placement (no positional lag), speed pull-back and per-class distance, for space and surface flight.
+- Ship turning and camera look sensitivity sliders in the pause menu (saved).
+
+### Changed
+- Banking follows the actual yaw rate and slip.
+- Ship tail fins are swept, tapered extrusions; the Bomber's tail booms, fins and tailplane are rebuilt.
+
 ## [2.4.0] - 2026-10-30 — Conveyors Rebuilt
 
 ### Added

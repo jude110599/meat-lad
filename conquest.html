@@ -601,7 +601,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.4 · Conveyors Rebuilt</div>
+      <div class="armadaBadge">v2.5 · Flight Handling</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -611,6 +611,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Ships now have momentum and their own handling, with a smooth chase camera</li>
           <li>Rebuilt conveyor belts with smooth curves, a placement preview and Auto-belt</li>
           <li>New lighting on every world, a Brightness setting, local lights, softer shadows and a real sky everywhere</li>
           <li>Oil, limestone, caterium, quartz and bauxite, 30 new parts and 12 new buildings</li>
@@ -640,6 +641,8 @@ body:not(.pc-mode) #mobActions.show{display:flex}
           <button class="btn sub" id="bDevice">Switch Device Mode</button>
           <button class="btn sub" id="bGfx">Graphics: High</button>
           <div class="brightRow"><span>Brightness</span><input type="range" id="brightSlider" min="50" max="160" step="5" value="100"><b id="brightVal">100%</b></div>
+          <div class="brightRow"><span>Ship turning</span><input type="range" id="flightSensSlider" min="50" max="160" step="5" value="100"><b id="flightSensVal">100%</b></div>
+          <div class="brightRow"><span>Camera look</span><input type="range" id="camSensSlider" min="40" max="200" step="10" value="100"><b id="camSensVal">100%</b></div>
           <button class="btn sub" id="bReturnTitle">Return to Title</button>
         </div>
       </div>
@@ -865,8 +868,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.4.0";
+var VERSION="2.5.0";
 var CHANGELOG=[
+  {v:"2.5.0",t:"Flight handling: every ship flies differently, with momentum and a smooth camera",items:[
+    "REAL MOMENTUM. Ships used to change speed and direction instantly the moment you touched a key. Now they build up to speed, keep their momentum, and carry some sideways drift through a turn that bleeds off as they straighten out",
+    "EVERY SHIP HANDLES DIFFERENTLY. The Scout is the most agile (reaches speed in about 1.3 s, turns fastest, barely drifts), the Fighter is quick and nimble, the Warhawk and Vanguard are heavier, and the Bomber and Frigate are slow to turn, take about 3 seconds to get up to speed and drift wider through turns",
+    "TURN INERTIA. Turning builds up and eases off instead of starting and stopping instantly, and ships bank into turns based on how hard they are actually turning",
+    "SMOOTH CHASE CAMERA. The camera now swings round behind your ship through a turn instead of snapping, pulls back slightly at speed, sits further back for bigger ships, and is locked to the ship so it can no longer jitter at high speed. The same applies when flying low over a world",
+    "NEW SETTINGS in the Menu: Ship turning (50–160%) and Camera look (40–200%) sensitivity, saved between sessions",
+    "SHIP MODELS: every ship's tail fins are now swept, tapered fins instead of flat rectangular slabs, and the Bomber gets thicker twin tail booms with engine fairings, tall raked fins and a proper tailplane"
+  ]},
   {v:"2.4.0",t:"Conveyors rebuilt: real belts, smooth curves, previews and auto-belt",items:[
     "NEW CONVEYOR MODELS. Every belt is now one continuous industrial conveyor instead of three straight boxes joined by hubs: a channel frame, rounded side rails, a ribbed rubber belt, support legs with foot plates, a roller drum at each end, a drive motor at the head and a collar where it plugs into each building. No gaps, no overlapping pieces",
     "SMOOTH CURVES. Every corner is a proper curved bend instead of a sharp angle",
@@ -3115,7 +3126,7 @@ function updateSurfaceFlight(dt){
   }
   if(pc){
     if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
-    pShip.yaw+=turn*SHIP_TURN_RATE*dt;
+    shipTurnStep(pShip.autoLand?0:turn,dt);
     /* same throttle lever as space flight, sharing the same pShip.throttle/curSpeedFrac fields —
        it used to be direct instant W/S control here (a leftover from before the throttle system
        existed), so the gauges shown while flying over a world displayed a value that up/down and
@@ -3139,8 +3150,10 @@ function updateSurfaceFlight(dt){
   var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
            :new THREE.Vector3(strafe*spd,0,-fwd*spd);
   if(pShip.autoLand)tv.set(0,0,0);
-  var k=Math.min(1,pShip.accel*dt*(pShip.autoLand?2.5:1));
-  pShip.vel.lerp(tv,k);
+  var surfSlip=0;
+  if(pShip.autoLand)pShip.vel.lerp(tv,Math.min(1,dt*2.5));
+  else if(pc)surfSlip=shipMomentumStep(fwd,spd,dt);
+  else pShip.vel.lerp(tv,Math.min(1,dt*3/shipHandling().accelT));
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
   /* was a flat 9 units/sec regardless of ship — next to shipSurfSpd() now running 58-100
      units/sec horizontally, 9 vertical read as barely doing anything: crossing the ~45-unit
@@ -3172,8 +3185,8 @@ function updateSurfaceFlight(dt){
      liveliness space flight already had instead of sitting dead level the whole time */
   pShip.roll=pShip.roll==null?0:pShip.roll;
   pShip.pitch=pShip.pitch==null?0:pShip.pitch;
-  var targetRoll=pc?-turn*0.55:-strafe*0.4;
-  pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
+  var targetRoll=pc?shipBankTarget(surfSlip,spd):-strafe*0.4;
+  pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*5);
   /* pitch used to be a fixed cosmetic angle whenever Q/E was held, completely unrelated to how
      fast the ship was actually climbing or descending, or to its forward speed — the nose tipped
      up the exact same amount whether you were crawling forward or at full throttle, and by the
@@ -3207,10 +3220,7 @@ function updateSurfaceFlight(dt){
   }
   updateShipNavLights(pShip.mesh);
 
-  var camOff=new THREE.Vector3(-Math.sin(pShip.yaw)*34,16,-Math.cos(pShip.yaw)*34);
-  var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-  chaseCamTo(camTarget,dt,14);
-  camera.lookAt(pShip.pos.x,pShip.pos.y+0.5,pShip.pos.z);
+  shipChaseCam(dt,shipHandling().cam*CAM_SENS_DIST(),16,0,6);
 
   pShip.cd-=dt;
   var firing=pc?mouse.downBtn===2:spaceFiring;
@@ -9078,6 +9088,15 @@ function buildShipMesh(model,opts){
     var wh=MK.cyl(g,0.1,0.1,0.08,rubber,x,y-h,z,10); wh.rotation.z=Math.PI/2;
     MK.box(g,0.12,0.03,0.25,dark,x,y-0.03,z);
   }
+  /* a swept, tapered tail fin (root along the hull, tip raked back) instead of a rectangular slab;
+     x,y,z is where the old slab's centre was, so every fin keeps its footprint */
+  function tailFin(x,y,z,h,len,thick,mat,cant){
+    var r=len/2, sh=new THREE.Shape();
+    sh.moveTo(r,0); sh.lineTo(-r,0); sh.lineTo(-r-len*0.14,h); sh.lineTo(-r+len*0.4,h); sh.lineTo(r,0);
+    var geo=new THREE.ExtrudeGeometry(sh,{depth:thick,bevelEnabled:true,bevelThickness:thick*0.3,bevelSize:thick*0.25,bevelSegments:1});
+    geo.translate(0,0,-thick/2); geo.rotateY(-Math.PI/2);
+    var m=new THREE.Mesh(geo,mat); m.position.set(x,y-h/2,z); m.rotation.z=cant||0; g.add(m); return m;
+  }
   function rcs(x,y,z){ MK.box(g,0.12,0.12,0.12,dark,x,y,z); for(var i=0;i<3;i++){ var n=MK.cyl(g,0.025,0.035,0.06,chrome,x,y,z,6); n.rotation.set(i===0?Math.PI/2:0,0,i===1?Math.PI/2:0); n.position[["z","x","y"][i]]+=0.08; } }
   function antenna(x,y,z,h){ MK.cyl(g,0.012,0.018,h,chrome,x,y+h/2,z,4); MK.sph(g,0.025,MK.glow(0xff3a20,1.2),x,y+h,z,6,4); }
   if(model==="scout"){
@@ -9086,8 +9105,8 @@ function buildShipMesh(model,opts){
     MK.cyl(g,0.04,0.04,0.6,chrome,0,0,3.0,6).rotation.x=Math.PI/2;
     cockpit(0.24,1.1,0.55,1.2,trim);
     wing(1,-0.1,1.4,0.5,1.9,0.9,0.07,-0.05,hull,0.05); wing(-1,-0.1,1.4,0.5,1.9,0.9,0.07,-0.05,hull,0.05);
-    [-1,1].forEach(function(s){ MK.rbox(g,0.1,0.42,0.7,trim,s*1.95,0.15,-0.95,0.03); MK.cyl(g,0.04,0.04,0.7,dark,s*1.2,-0.12,0.6,6).rotation.x=Math.PI/2; rcs(s*0.45,0.1,1.9); });
-    MK.rbox(g,0.12,0.5,0.8,trim,0,0.45,-0.8,0.04);
+    [-1,1].forEach(function(s){ tailFin(s*1.95,0.15,-0.95,0.42,0.7,0.1,trim,-s*0.08); MK.cyl(g,0.04,0.04,0.7,dark,s*1.2,-0.12,0.6,6).rotation.x=Math.PI/2; rcs(s*0.45,0.1,1.9); });
+    tailFin(0,0.45,-0.8,0.5,0.8,0.12,trim);
     var gl=engine(0,0,-0.55,0.32,0.8,trim,MK.mat(0xffb545,0.4,0.5));
     gear(0,-0.32,1.4,0.35); gear(-0.5,-0.3,-0.4,0.3); gear(0.5,-0.3,-0.4,0.3);
     antenna(0.15,0.3,-0.2,0.4);
@@ -9128,11 +9147,12 @@ function buildShipMesh(model,opts){
     MK.box(g,0.4,0.04,1.5,haz,-0.23,-0.57,0.0); MK.box(g,0.4,0.04,1.5,haz,0.23,-0.57,0.0);
     var chin=MK.sph(g,0.22,trim,0,-0.45,1.6,12,8); MK.cyl(g,0.04,0.04,0.7,dark,0,-0.5,2.0,6).rotation.x=Math.PI/2;
     [-1,1].forEach(function(s){
-      MK.rbox(g,0.22,0.3,2.6,hull,s*1.6,0.05,-1.3,0.08);
-      MK.rbox(g,0.08,0.9,0.8,trim,s*1.6,0.55,-2.3,0.03);
+      MK.rbox(g,0.32,0.36,2.6,hull,s*1.6,0.05,-1.3,0.15);
+      MK.lathe(g,[[0,0],[0.16,0.18],[0.18,0.4]],hull,s*1.6,0.05,0.0,12).rotation.x=Math.PI/2;
+      tailFin(s*1.6,0.6,-2.25,1.05,1.0,0.1,trim,s*0.06);
       rcs(s*2.6,0.05,-0.7);
     });
-    MK.rbox(g,3.4,0.08,0.5,trim,0,0.6,-2.55,0.02);
+    MK.rbox(g,3.5,0.12,0.75,trim,0,0.55,-2.5,0.05);
     var glows=[-1.0,-0.35,0.35,1.0].map(function(x){ return engine(x,0.0,-1.25,0.22,0.6,trim); });
     gear(0,-0.5,1.5,0.45); gear(-1.2,-0.45,-0.6,0.45); gear(1.2,-0.45,-0.6,0.45);
     antenna(0,0.5,0.2,0.5);
@@ -9154,7 +9174,7 @@ function buildShipMesh(model,opts){
       MK.rbox(g,0.5,0.55,0.12,trim,s*2.7,0.25,-1.0,0.03);
     });
     wing(1,-0.5,1.6,0.7,2.6,0.9,0.1,-0.05,hull,0.02); wing(-1,-0.5,1.6,0.7,2.6,0.9,0.1,-0.05,hull,0.02);
-    MK.rbox(g,0.12,0.7,1.1,trim,0,0.62,-1.2,0.04);
+    tailFin(0,0.62,-1.2,0.7,1.1,0.12,trim);
     var gL=engine(-0.55,-0.15,-1.0,0.32,1.4,blk,trim), gR=engine(0.55,-0.15,-1.0,0.32,1.4,blk,trim);
     gear(0,-0.4,1.8,0.3); gear(-0.8,-0.4,-0.6,0.3); gear(0.8,-0.4,-0.6,0.3);
     var navL=navLight(0xff3040); navL.position.set(-2.7,0.55,-1.0); g.add(navL);
@@ -9174,7 +9194,7 @@ function buildShipMesh(model,opts){
       MK.cyl(g,0.16,0.13,0.25,trim,s*0.95,-0.25,2.25,8).rotation.x=Math.PI/2;
       MK.rbox(g,0.5,0.44,1.6,blk,s*3.2,-0.1,0.45,0.08);
       for(var m=0;m<3;m++){ var mt=MK.cyl(g,0.0,0.08,0.25,MK.mat(0xa8302a,0.5,0.4),s*3.2+(m-1)*0.13,-0.1,1.35,6); mt.rotation.x=Math.PI/2; }
-      var fin=MK.rbox(g,0.1,0.95,1.1,trim,s*0.75,0.65,-1.3,0.03); fin.rotation.z=s*-0.25;
+      var fin=tailFin(s*0.75,0.65,-1.3,0.95,1.1,0.1,trim,s*0.18); fin.rotation.z=s*-0.25;
       var st=hazardBar(2.4,0.1,0.3); st.position.set(s*1.9,0.06,0.2); st.rotation.y=s*0.18; g.add(st);
       rcs(s*0.8,0.35,2.2);
     });
@@ -9195,7 +9215,7 @@ function buildShipMesh(model,opts){
       MK.rbox(g,0.3,0.32,1.2,trim,s*0.55,-0.05,0.5,0.08);
       MK.box(g,0.24,0.24,0.05,MK.mat(0x05070a,0.9,0),s*0.55,-0.05,1.12);
       MK.cyl(g,0.04,0.04,1.3,dark,s*2.3,-0.05,-0.3,6).rotation.x=Math.PI/2;
-      var tail=MK.rbox(g,0.08,0.75,0.9,trim,s*0.55,0.55,-1.1,0.03); tail.rotation.z=s*-0.35;
+      var tail=tailFin(s*0.55,0.55,-1.1,0.75,0.9,0.08,trim,s*0.2); tail.rotation.z=s*-0.35;
       MK.box(g,0.04,0.5,0.06,blue,s*0.62,0.6,-0.75).rotation.z=s*-0.35;
       MK.box(g,1.4,0.02,0.18,blue,s*1.0,0.05,-0.2).rotation.y=s*0.3;
       rcs(s*0.42,0.2,1.9);
@@ -9293,6 +9313,61 @@ var SHIP_STATS={
   vanguard:{maxhp:200,maxshield:70,spd:6800,dmg:48,rate:.6,accel:2100,weapon:"rail",clearance:2.1,surfSpd:75},
   warhawk:{maxhp:260,maxshield:90,spd:6600,dmg:22,rate:.16,accel:2000,weapon:"twin",missiles:true,clearance:2.0,surfSpd:74}
 };
+/* ═════════════ FLIGHT v2.5: per-class handling ═════════════ */
+/* Ships used to have no momentum at all (velocity snapped to the stick every frame, since accel*dt
+   was always >= 1) and every class turned at the same fixed 2.1 rad/s, so a Frigate flew exactly
+   like a Scout. Each class now has its own handling: a top turn rate it builds up to and lets go
+   of (turn inertia), an acceleration time, a lateral grip (how quickly sideways momentum bleeds
+   off, so heavier ships drift wider through a turn), a bank angle and a camera distance. */
+var SHIP_HANDLING={
+  scout:{turn:2.7,turnResp:9,accelT:1.4,grip:21,bank:0.62,cam:30},
+  fighter:{turn:2.35,turnResp:7.5,accelT:1.8,grip:15,bank:0.58,cam:33},
+  warhawk:{turn:1.95,turnResp:5.5,accelT:2.4,grip:10,bank:0.5,cam:36},
+  vanguard:{turn:1.8,turnResp:5,accelT:2.6,grip:8.5,bank:0.48,cam:37},
+  bomber:{turn:1.45,turnResp:3.8,accelT:3.1,grip:6.5,bank:0.42,cam:40},
+  frigate:{turn:1.2,turnResp:3.2,accelT:3.6,grip:5,bank:0.36,cam:44}
+};
+function shipHandling(){ return (shipModelKey&&Object.prototype.hasOwnProperty.call(SHIP_HANDLING,shipModelKey))?SHIP_HANDLING[shipModelKey]:SHIP_HANDLING.fighter; }
+var FLIGHT_SENS=1, CAM_SENS=1;
+try{ var _fs=parseFloat(localStorage.getItem("conquestFlightSens")); if(isFinite(_fs))FLIGHT_SENS=clamp(_fs,0.5,1.6); var _cs=parseFloat(localStorage.getItem("conquestCamSens")); if(isFinite(_cs))CAM_SENS=clamp(_cs,0.4,2); }catch(e){}
+function CAM_SENS_DIST(){ return 1; }
+function lerpAngle(a,b,t){ var d=((b-a+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI; return a+d*clamp(t,0,1); }
+/* yaw rate builds toward the stick's target and eases off when released */
+function shipTurnStep(turnIn,dt){
+  var H=shipHandling();
+  pShip.yawRate=pShip.yawRate||0;
+  pShip.yawRate+=(turnIn*H.turn*FLIGHT_SENS-pShip.yawRate)*Math.min(1,dt*H.turnResp);
+  pShip.yaw+=pShip.yawRate*dt;
+  return pShip.yawRate;
+}
+/* heading-relative momentum: forward speed chases the throttle at the class's acceleration (and
+   brakes a bit harder), sideways momentum left over from a turn bleeds off by the class's grip */
+function shipMomentumStep(fwdFrac,spd,dt){
+  var H=shipHandling(), dx=Math.sin(pShip.yaw), dz=Math.cos(pShip.yaw);
+  var f=pShip.vel.x*dx+pShip.vel.z*dz, l=pShip.vel.x*dz-pShip.vel.z*dx;
+  var a=spd/H.accelT, diff=fwdFrac*spd-f;
+  f+=clamp(diff,-a*1.6*dt,a*dt);
+  l*=Math.exp(-H.grip*dt);
+  pShip.vel.x=dx*f+dz*l; pShip.vel.z=dz*f-dx*l;
+  return l;
+}
+/* bank from the actual turn rate (plus a little from any sideways slip), not from the raw key */
+function shipBankTarget(slip,spd){
+  var H=shipHandling();
+  return -clamp((pShip.yawRate||0)/H.turn,-1.2,1.2)*H.bank-clamp(slip/Math.max(1,spd),-0.3,0.3)*0.6;
+}
+/* a chase camera on a smoothed heading: it swings round behind the ship through a turn instead of
+   snapping, and it is placed exactly (no positional lag), so it can't jitter at any speed */
+function shipChaseCam(dt,dist,height,extraY,lookAhead){
+  pShip.camYaw=pShip.camYaw==null?pShip.yaw:lerpAngle(pShip.camYaw,pShip.yaw,dt*4.2);
+  pShip.camY=pShip.camY==null?height+extraY:pShip.camY+(height+extraY-pShip.camY)*Math.min(1,dt*4);
+  var spdF=clamp(Math.hypot(pShip.vel.x,pShip.vel.z)/Math.max(1,pShip.spd||1),0,1.7);
+  pShip.camDist=pShip.camDist==null?dist:pShip.camDist+((dist*(1+spdF*0.12))-pShip.camDist)*Math.min(1,dt*2.5);
+  camera.position.set(pShip.pos.x-Math.sin(pShip.camYaw)*pShip.camDist,pShip.pos.y+pShip.camY,pShip.pos.z-Math.cos(pShip.camYaw)*pShip.camDist);
+  camera.lookAt(pShip.pos.x+Math.sin(pShip.yaw)*lookAhead,pShip.pos.y+1,pShip.pos.z+Math.cos(pShip.yaw)*lookAhead);
+}
+function setFlightSens(v){ FLIGHT_SENS=clamp(v,0.5,1.6); try{ localStorage.setItem("conquestFlightSens",String(FLIGHT_SENS)); }catch(e){} var l=$("flightSensVal"); if(l)l.textContent=Math.round(FLIGHT_SENS*100)+"%"; }
+function setCamSens(v){ CAM_SENS=clamp(v,0.4,2); try{ localStorage.setItem("conquestCamSens",String(CAM_SENS)); }catch(e){} var l=$("camSensVal"); if(l)l.textContent=Math.round(CAM_SENS*100)+"%"; }
 /* how high the hull sits when landed: measured from the model's own landing gear, so remodelled
    ships always rest on their wheels instead of a hand-tuned number per ship */
 var _clrCache={};
@@ -9708,7 +9783,7 @@ function updateSpace(dt){
            aims the crosshair (see pcAimDir/pcUpdateAimYaw below) for where SHOTS go; it never
            touches the ship's own heading or movement. */
         if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
-        pShip.yaw+=turn*SHIP_TURN_RATE*dt;
+        shipTurnStep(turn,dt);
         /* left click fires, right click zooms (aim down sights) — used to be right-click-fires
            with no zoom at all, which also meant the only mouse button doing anything was the one
            least associated with "shoot" in basically every other shooter */
@@ -9756,8 +9831,9 @@ function updateSpace(dt){
       var spd=pShip.spd*(boosting?1.7:1);
       var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
                :new THREE.Vector3(strafe*spd,0,-fwd*spd);
-      var k=Math.min(1,pShip.accel*dt);
-      pShip.vel.lerp(tv,k);
+      var spaceSlip=0;
+      if(pc)spaceSlip=shipMomentumStep(fwd,spd,dt);
+      else pShip.vel.lerp(tv,Math.min(1,dt*2.6/shipHandling().accelT));
       pShip.pos.addScaledVector(pShip.vel,dt);
       /* Q/E freely raise or lower altitude — this is what actually lets you fly a landing in,
          instead of the old instant snap-to-ground the moment the lock circle filled. 0.6x of
@@ -9781,8 +9857,8 @@ function updateSpace(dt){
       }
       updatePlanetTargeting(dt);
       pShip.roll=pShip.roll==null?0:pShip.roll;
-      var targetRoll=pc?-turn*0.5:0;
-      pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*6);
+      var targetRoll=pc?shipBankTarget(spaceSlip,spd):0;
+      pShip.roll+=(targetRoll-pShip.roll)*Math.min(1,dt*5);
       /* eases toward 1 while zoomed and back toward 0 when not, instead of an instant snap — feeds
          the FOV kick, the fire-rate/spread tradeoff, and the reticle's own size (see fireShipBolt,
          fireRailShot, updateHudSpace) so all three tighten up together instead of some lagging */
@@ -10001,7 +10077,7 @@ function updateSpace(dt){
          The camera then ends up almost directly above the ship with nothing behind it in frame,
          reading as "pointing straight down" rather than as a chase cam. Yaw-only horizontal offset
          means there's always a real behind-the-ship view no matter how steep the nose gets. */
-      var backX=-Math.sin(pShip.yaw)*34, backZ=-Math.cos(pShip.yaw)*34;
+      var camD=shipHandling().cam*CAM_SENS_DIST(), backX=-Math.sin(pShip.yaw)*camD, backZ=-Math.cos(pShip.yaw)*camD;
       /* pitch still lifts/drops the camera so a dive or climb still reads as one, just capped well
          short of the near-vertical case above instead of scaling all the way up with it */
       var pitchRise=clamp(-Math.sin(camPitch2),-0.6,0.6)*34;
@@ -10016,9 +10092,11 @@ function updateSpace(dt){
       camOff.y+=pShip.camDiveT*22;
       lookY=pShip.pos.y+1;
     }
-    var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
-    chaseCamTo(camTarget,dt,16);
-    camera.lookAt(pShip.pos.x,lookY,pShip.pos.z);
+    if(landedPlanet&&landedNormal){
+      var camTarget=new THREE.Vector3().copy(pShip.pos).add(camOff);
+      chaseCamTo(camTarget,dt,16);
+      camera.lookAt(pShip.pos.x,lookY,pShip.pos.z);
+    } else shipChaseCam(dt,camD,camOff.y,0,8);
   }
   updateHudSpace();
 }
@@ -10253,8 +10331,8 @@ function camDragMove(x,y){
   if(!dragActive)return;
   var dx=x-dragLastX, dy=y-dragLastY;
   dragLastX=x; dragLastY=y;
-  camYaw-=dx*0.0055;
-  camPitch=clamp(camPitch+dy*0.0045,CAM_PITCH_MIN,CAM_PITCH_MAX);
+  camYaw-=dx*0.0055*CAM_SENS;
+  camPitch=clamp(camPitch+dy*0.0045*CAM_SENS,CAM_PITCH_MIN,CAM_PITCH_MAX);
 }
 function camDragEnd(){ dragActive=false; dragId=null; }
 
@@ -13119,6 +13197,11 @@ BUILDERS.statue=function(g,P){
 };
 /* ── extractor placement, belt tiers, save state, machine-panel extras ── */
 var BELT_RATE={1:6,2:12,3:24};
+(function(){
+  var f=$("flightSensSlider"), c=$("camSensSlider");
+  if(f){ f.value=Math.round(FLIGHT_SENS*100); setFlightSens(FLIGHT_SENS); f.oninput=function(){ setFlightSens(parseInt(this.value,10)/100); }; }
+  if(c){ c.value=Math.round(CAM_SENS*100); setCamSens(CAM_SENS); c.oninput=function(){ setCamSens(parseInt(this.value,10)/100); }; }
+})();
 function startAutoLand(){
   if(!(state==="surface"&&surfaceFlying&&pShip)||landingAnim||shipCrashing)return;
   pShip.autoLand=!pShip.autoLand;
