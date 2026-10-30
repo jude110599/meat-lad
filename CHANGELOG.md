@@ -2,6 +2,11 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.5.1] - 2026-10-30
+
+### Fixed
+- The LAND button was always visible: it had no hide rule.
+
 ## [2.5.0] - 2026-10-30 — Flight Handling
 
 ### Added
