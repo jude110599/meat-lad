@@ -2,6 +2,17 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.3.1] - 2026-10-30
+
+### Fixed
+- Ships could not land: touchdown altitude is now measured from the bottom of the landing gear (the flight floor is ground + gear clearance, which sat above the old fixed touchdown height).
+
+### Added
+- Auto-land: L key or the on-screen LAND button while flying over a world.
+
+### Changed
+- Touchdown speed threshold raised from 3 to 8.
+
 ## [2.3.0] - 2026-10-30 — Light & Atmosphere
 
 ### Added

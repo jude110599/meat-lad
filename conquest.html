@@ -139,6 +139,9 @@ body:not(.pc-mode) #fleetHud{bottom:auto;top:calc(118px + env(safe-area-inset-to
 .rateRow svg{width:18px;height:18px;flex:none} .rateRow span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rateRow.in b{color:var(--amber2)} .rateRow.out b{color:var(--green)}
 @media (max-width:560px){ .fxPower{grid-template-columns:repeat(2,1fr)} .rateBox{grid-template-columns:1fr} .fxRow{grid-template-columns:2fr 1fr 1fr 1fr 1fr;font-size:11px} }
+#bLandNow{position:absolute;left:50%;bottom:calc(110px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:7;padding:12px 26px;border-radius:12px;
+  border:1px solid rgba(123,217,74,.7);background:rgba(12,30,14,.82);color:#bff0a0;font-family:inherit;font-weight:800;font-size:14px;letter-spacing:.14em;cursor:pointer;backdrop-filter:blur(4px)}
+#bLandNow.on{border-color:var(--amber);color:var(--amber2);background:rgba(40,28,8,.85)}
 .fcHp{height:5px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden;margin:6px 0 8px}
 .fcHp i{display:block;height:100%;background:linear-gradient(90deg,#a3101c,var(--green))}
 .fcBtns{display:flex;flex-wrap:wrap;gap:6px}
@@ -581,6 +584,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   <div id="zoneCam"></div>
   <div class="stickArt" id="artL"><i></i></div>
   <div class="stickArt" id="artR"><i></i></div>
+  <button id="bLandNow" class="hide">LAND (L)</button>
   <div id="mobActions">
     <div class="mbtn accent" id="mbFire" style="display:none;border-color:#ff6a3a;color:#ffb08a">FIRE</div>
     <div class="mbtn accent" id="mbInteract">INTERACT</div>
@@ -859,8 +863,13 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.3.0";
+var VERSION="2.3.1";
 var CHANGELOG=[
+  {v:"2.3.1",t:"Landing fixed, and a one-button LAND",items:[
+    "FIXED: ships could not touch down at all. Since the 2.1 models, every ship stands on taller landing gear, so the lowest it could fly sat above the height that triggers touchdown. Height is now measured from the bottom of the landing gear, so flying low and slow lands you again",
+    "NEW: press L (or the LAND button that appears while flying over a world) to auto-land. The ship cuts its throttle, brakes, descends and touches down right where you are. Climb (E), push the throttle up, or tap the button again to cancel. It also works if you press it while still gliding in from space",
+    "Landing no longer needs an almost dead stop: anything under 8 units/sec counts as slow enough to touch down"
+  ]},
   {v:"2.3.0",t:"Light and atmosphere: every world is easy to see and has its own sky",items:[
     "NEW LIGHTING. Every world used to tint its sun, its fill light and its ambient light the same colour as its ground, so the tint stacked up and whole planets looked like a dark coloured filter (Obsidian Moon was almost entirely near-black). Each world now has its own lighting profile: a near-neutral sun, a sky-and-ground bounce light that keeps shapes readable in shadow, its own exposure, and its character carried by the sky, fog, rim light and weather instead of by darkness",
     "BRIGHTNESS SETTING. Menu → Brightness (50–160%) brightens shadows and the whole picture without washing out highlights. It is saved between sessions",
@@ -2955,7 +2964,7 @@ function fireGun(){
 }
 
 /* ═════════════ SURFACE FLIGHT (piloting the ship low over a world's terrain) ═════════════ */
-var SURF_LAND_ALT=1.8, SURF_LAND_SPEED=3, SURF_LAND_SETTLE=1.0, SURF_EXIT_ALT=35;
+var SURF_LAND_ALT=1.8, SURF_LAND_SPEED=8, SURF_LAND_SETTLE=1.0, SURF_EXIT_ALT=35;
 /* arriving at a world drops the ship in from high altitude instead of snapping straight to
    hover height — a visible "falling out of the sky" entrance instead of an instant cut */
 var arrivalAnim=null;
@@ -3082,6 +3091,12 @@ function updateSurfaceFlight(dt){
   if(landingAnim){ updateLandingAnim(dt); return; }
   var pc=document.body.classList.contains("pc-mode");
   var fwd=0,strafe=0,turn=0;
+  /* auto-land (L key / LAND button): cut the throttle, brake, descend and touch down right here.
+     Climbing (E) or pushing the throttle back up cancels it. */
+  if(pShip.autoLand){
+    if(keys.e||keys.arrowup||(!pc&&moveStick.on&&Math.hypot(moveStick.dx,moveStick.dy)>0.3)){ pShip.autoLand=false; toast("Auto-land cancelled"); }
+    else { pShip.throttle=0; pShip.curSpeedFrac=(pShip.curSpeedFrac||0)*Math.max(0,1-dt*3); }
+  }
   if(pc){
     if(keys.d||keys.arrowright)turn-=1; if(keys.a||keys.arrowleft)turn+=1;
     pShip.yaw+=turn*SHIP_TURN_RATE*dt;
@@ -3107,7 +3122,8 @@ function updateSurfaceFlight(dt){
   var spd=shipSurfSpd();
   var tv=pc?new THREE.Vector3(Math.sin(pShip.yaw)*fwd*spd,0,Math.cos(pShip.yaw)*fwd*spd)
            :new THREE.Vector3(strafe*spd,0,-fwd*spd);
-  var k=Math.min(1,pShip.accel*dt);
+  if(pShip.autoLand)tv.set(0,0,0);
+  var k=Math.min(1,pShip.accel*dt*(pShip.autoLand?2.5:1));
   pShip.vel.lerp(tv,k);
   pShip.pos.x+=pShip.vel.x*dt; pShip.pos.z+=pShip.vel.z*dt;
   /* was a flat 9 units/sec regardless of ship — next to shipSurfSpd() now running 58-100
@@ -3116,7 +3132,7 @@ function updateSurfaceFlight(dt){
      time. Scaling it off the ship's own surface speed keeps climbing/descending feeling as
      responsive as the horizontal movement it's paired with. */
   var vertSpd=shipSurfSpd()*0.6;
-  if(keys.q)pShip.pos.y-=dt*vertSpd;
+  if(keys.q||pShip.autoLand)pShip.pos.y-=dt*vertSpd*(pShip.autoLand&&!keys.q?0.7:1);
   if(keys.e)pShip.pos.y+=dt*vertSpd;
   /* the ship used to fly straight through every building with nothing stopping it — only ever
      low enough to matter for a landing approach or ground-level buzzing, so this only kicks in
@@ -3193,10 +3209,15 @@ function updateSurfaceFlight(dt){
      settle timer, and slams the ship back down before you've had a chance to actually climb out,
      making it look like the ship can never take off. liftedOff only flips true once you've
      actually gained real clearance, and only then does the auto-land watch resume. */
-  if(!pShip.liftedOff&&alt>SURF_LAND_ALT*2)pShip.liftedOff=true;
-  var ready=pShip.liftedOff&&alt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
+  /* measured from the bottom of the landing gear, not from the ship's origin: the flight floor
+     above is groundY+shipClearance(), and since the v2.1 models stand on taller gear that floor
+     (2.5 for the Fighter) sat above the old fixed 1.8 touchdown height, so no ship could land */
+  var gearAlt=alt-shipClearance();
+  if(!pShip.liftedOff&&gearAlt>SURF_LAND_ALT*2)pShip.liftedOff=true;
+  var ready=pShip.liftedOff&&gearAlt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
   landSettleT=ready?landSettleT+dt:Math.max(0,landSettleT-dt*2);
   if(pShip.liftedOff&&landSettleT>=SURF_LAND_SETTLE){
+    pShip.autoLand=false;
     landingAnim={t:0,dur:0.85,fromY:pShip.pos.y,toY:groundY+shipClearance(),fromTiltX:pShip.mesh.rotation.x};
   }
   /* climb high enough and you break for space — the other half of "fly it out yourself" */
@@ -8913,7 +8934,7 @@ function enterSurfaceFlight(world){
   applyWorldAtmosphere(world);
   $("hud").classList.add("show"); $("mobActions").classList.remove("show"); $("hudSpace").classList.remove("show");
   if(!world.hasHive)$("hiveHud").classList.add("hide");
-  toast("Flying over "+world.nm+" — fly low and slow to touch down"+(pShip.weapon==="bomb"?" (right-click to bomb)":""));
+  toast("Flying over "+world.nm+" — press L (or LAND) to touch down, or fly low and slow"+(pShip.weapon==="bomb"?" (right-click to bomb)":""));
   saveGame();
 }
 function touchDown(){
@@ -8965,7 +8986,7 @@ function enterHomeSurfaceFlight(){
   restoreHomeAtmosphere();
   $("hud").classList.add("show"); $("mobActions").classList.remove("show"); $("hudSpace").classList.remove("show");
   $("hiveHud").classList.add("hide");
-  toast("Descending to the colony — fly low and slow to touch down");
+  toast("Descending to the colony — press L (or LAND) to touch down, or fly low and slow");
   saveGame();
 }
 /* boarding just hands control of the parked ship back to you — you fly it out yourself (same
@@ -10159,6 +10180,7 @@ window.addEventListener("keydown",function(e){
   if(k==="e"&&state==="surface"&&!placing)doInteract();
   if(k==="f"&&state==="surface"&&!placing)doPlaceOnBelt();
   if(k==="b"&&!placing)toggleBackpack();
+  if(k==="l"&&state==="surface"&&surfaceFlying)startAutoLand();
   if(k==="o"&&!placing){ if(state==="surface"&&!surfaceFlying)openFactory(); else if(state==="factory")closeFactory(); }
   if(k==="x"&&(state==="space"||(state==="surface"&&(surfaceFlying||wingmen.length))))toggleFleetRelease();
   if(k==="f"&&state==="space"&&pShip&&pShip.alive&&typeof fireMissile==="function")fireMissile();
@@ -11589,6 +11611,7 @@ function updateObjective(){
 }
 function updateHudSurface(){
   objT-=1/60; if(objT<=0){ objT=0.5; updateObjective(); }
+  updateLandButton();
   $("txtSteel").textContent=Math.floor(stock.steel||0);
   $("txtCircuit").textContent=Math.floor(stock.circuit||0);
   $("txtRobot").textContent=Math.floor(stock.robot||0);
@@ -11638,6 +11661,7 @@ function frame(now){
        are you actually piloting it" (space/launching, or surface flight specifically, not just
        walking around on foot) so it shows in every flying context, not just one of them. */
     $("throttleHud").classList.toggle("show",!!pShip&&(spaceStates||(state==="surface"&&surfaceFlying)));
+    updateLandButton();
     /* the world (camera, clouds/spores/pools, hand-gathering, building simulation, jump physics)
        keeps running whenever a menu is open on top of the surface — only WASD movement itself
        is gated to state==="surface" inside updateSurface, so you can't walk around blind under
@@ -12801,6 +12825,18 @@ BUILDERS.statue=function(g,P){
 };
 /* ── extractor placement, belt tiers, save state, machine-panel extras ── */
 var BELT_RATE={1:6,2:12,3:24};
+function startAutoLand(){
+  if(!(state==="surface"&&surfaceFlying&&pShip)||landingAnim||shipCrashing)return;
+  pShip.autoLand=!pShip.autoLand;
+  if(pShip.autoLand){ pShip.liftedOff=true; toast("Auto-landing — touching down here"); sfx.click(); }
+  else toast("Auto-land cancelled");
+}
+$("bLandNow").onclick=function(e){ e.stopPropagation(); startAutoLand(); };
+function updateLandButton(){
+  var b=$("bLandNow"); var show=state==="surface"&&surfaceFlying&&!!pShip&&!landingAnim&&!shipCrashing;
+  b.classList.toggle("hide",!show);
+  if(show){ b.classList.toggle("on",!!pShip.autoLand); b.textContent=pShip.autoLand?"LANDING… (tap to cancel)":"LAND (L)"; }
+}
 var FACTORY_INTERACT=["manufacturer","oilrefinery","fuelgen","miner","miner2","oilextractor","waterextractor","sink","elevator","research","battery","indstorage"];
 $("bFactoryOpen").onclick=function(){ sfx.click(); openFactory(); };
 $("bFactoryClose").onclick=function(){ sfx.click(); closeFactory(); };
