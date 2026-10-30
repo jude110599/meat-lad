@@ -567,7 +567,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.0 · The Armada Update</div>
+      <div class="armadaBadge">v2.1 · Living Worlds</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -575,8 +575,9 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <button class="btn sub" id="bMuteTitle">Sound: on</button>
       </div>
       <div class="whatsNew">
-        <div class="wnHead">New in 2.0</div>
+        <div class="wnHead">New in 2.1 &amp; 2.0</div>
         <ul>
+          <li>New terrain, lakes and swaying foliage on every planet; every building, ship and character remodelled</li>
           <li>Real-time shadows, reflective metal, realistic planets and explosions</li>
           <li>Steel, wire, circuits, motors, robot pilots — 6 new buildings and a milestone tree</li>
           <li>Hangars and Fleet Command: robots fly your ships in formation. Press X to release them</li>
@@ -800,8 +801,18 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.0.0";
+var VERSION="2.1.0";
 var CHANGELOG=[
+  {v:"2.1.0",t:"Living worlds: new terrain, foliage everywhere, and every model rebuilt",items:[
+    "NEW TERRAIN. The ground blends from soil to real rock on every slope, with layered cliffs, big natural patches of darker and lighter ground so the texture never visibly repeats, and snow, ash or mineral crust on the highest ridges. The land itself has real valleys and mountain ridgelines now",
+    "LAKES ON EVERY WORLD. Valleys fill with liquid that matches the planet: glowing alien water at the colony, frozen ice on Vesta, molten lava on Ember Reach, swamp on Verdant Hollow, violet void liquid on Obsidian Moon and black oil on Bastion Prime",
+    "FOLIAGE ON EVERY PLANET. Thousands of grass clumps that sway in the wind, trees, shrubs, ferns, glowing flowers, crystal clusters and rocks, with a different plant set for each world: giant mushroom trees and coral shrubs at home, snowy pines and ice crystals on Vesta, dead trees, basalt columns and ember-veined rocks on Ember Reach, jungle trees and ferns on Verdant Hollow, crystal fields on Obsidian Moon and wrecked machinery on Bastion Prime. Plants grow in natural meadows and groves, stay off cliffs and out of lakes, and short ground cover inside your build area hides itself under anything you build",
+    "EVERY BUILDING REMODELLED. All of them are rebuilt with bevelled panels, real structural frames, pipe runs, vents, rivets, ladders, handrails and lit screens: a drilling derrick for the Miner, a three-tower rig for the Miner Mk.2, a refractory blast furnace, a four-post hydraulic press, a fractionating column refinery, an arc foundry, a robotic assembly cell, a coal power plant with a spinning flywheel, solar trackers with real cells, lattice power pylons with insulators, freight containers, a gantry crane shipyard, a command centre with a comms array, and new walls, windows, blast doors, foundations, lights and plants",
+    "EVERY SHIP REMODELLED. Scout, Fighter, Frigate, Bomber, Warhawk and Vanguard all have new streamlined hulls, swept wings, framed canopies over lit cockpits, engine nacelles, intakes, landing gear, thrusters and antennae. Each ship now rests on its own landing gear when parked",
+    "NEW CHARACTERS AND ENEMIES. A new astronaut suit with a gold-visored helmet and life-support pack, new alien soldiers, heavies, snipers and hunter drones, a new hive crawler and hive, new flak turrets, new raider interceptors and a new Sentinel",
+    "NEW PROPS. Ore deposits are fractured outcrops split open by veins of ore, the lander you arrived in is rebuilt with its cargo drop, enemy camps get new barracks, sniper towers and sandbag cover, and your station in orbit has a habitat ring and solar wings",
+    "Faster rendering: each detailed model merges its static parts, and foliage is drawn in chunks, only on the world you're on"
+  ]},
   {v:"2.0.0",t:"The Armada Update: a fleet of robot-piloted ships, a fortress world, real graphics",items:[
     "REALISTIC GRAPHICS. Every building, ship and prop is now made of worn metal plates with seams, rivets, grime and scratches that catch the light (real normal and roughness maps, generated in-game), metal reflects the sky around it, and the sun casts real-time shadows from every building, ship and character. Ground on every world has pebbles, cracks and dust layers. Turn it down under Menu → Graphics if your device struggles",
     "REALISTIC PLANETS. Planets are rebuilt from scratch with continents, mountain ranges, craters and polar caps, glowing atmospheres around their edges, and a visible sun in space",
@@ -1929,6 +1940,332 @@ rimLight.position.set(-140,90,-110);
 surfaceScene.add(rimLight);
 
 /* cheap deterministic pseudo-noise (layered sine waves) — no external noise lib needed */
+/* ═════════════ MODEL KIT (v2.1: shared parts every new model is built from) ═════════════ */
+/* Real machinery reads as real because of its small parts: rounded/bevelled panels instead of
+   razor-edged boxes, lathed tanks with weld seams, pipe runs that bend, vent grilles, rivets,
+   lit screens with readouts, ladders and handrails, trusses. Everything below builds those from
+   plain three.js geometry so each model in the game can be assembled from them. */
+var MK={};
+MK.mats={};
+/* painted/bare metal materials are cached by their parameters so a hundred buildings share a
+   handful of materials (fewer shader programs, faster rendering) */
+MK.mat=function(color,rough,metal,extra){
+  var key=color+"|"+rough+"|"+metal+"|"+(extra?JSON.stringify(extra):"");
+  if(MK.mats[key]&&!(extra&&extra.unique))return MK.mats[key];
+  var m=matStd(color,rough,metal);
+  if(extra){ for(var k in extra)if(k!=="unique"){ if(m[k]&&m[k].isColor)m[k].set(extra[k]); else m[k]=extra[k]; } }
+  if(!(extra&&extra.unique))MK.mats[key]=m;
+  return m;
+};
+MK.glow=function(color,intensity){
+  return new THREE.MeshStandardMaterial({color:0x111111,emissive:color,emissiveIntensity:intensity==null?1.4:intensity,roughness:0.35,metalness:0.1});
+};
+MK.glass=function(tint,op){
+  return new THREE.MeshStandardMaterial({color:tint||0x9fd8ff,roughness:0.05,metalness:0.6,transparent:true,opacity:op==null?0.35:op,envMapIntensity:1.6});
+};
+MK.rubber=function(){ return MK.mat(0x1a1a1c,0.95,0.0); };
+/* a box with rounded edges: a subdivided box whose vertices are pulled onto a rounded shell */
+var _rboxCache={};
+MK.rboxGeo=function(w,h,d,r,seg){
+  seg=seg||3; r=Math.min(r==null?0.08:r,w/2-0.001,h/2-0.001,d/2-0.001);
+  var key=[w,h,d,r,seg].join(",");
+  if(_rboxCache[key])return _rboxCache[key];
+  var g=new THREE.BoxGeometry(w,h,d,seg*2,seg*2,seg*2);
+  var p=g.attributes.position, n=g.attributes.normal, v=new THREE.Vector3(), inner=new THREE.Vector3(), dir=new THREE.Vector3();
+  var hx=w/2-r, hy=h/2-r, hz=d/2-r;
+  for(var i=0;i<p.count;i++){
+    v.fromBufferAttribute(p,i);
+    inner.set(clamp(v.x,-hx,hx),clamp(v.y,-hy,hy),clamp(v.z,-hz,hz));
+    dir.subVectors(v,inner);
+    if(dir.lengthSq()<1e-10)dir.fromBufferAttribute(n,i);
+    dir.normalize();
+    v.copy(inner).addScaledVector(dir,r);
+    p.setXYZ(i,v.x,v.y,v.z); n.setXYZ(i,dir.x,dir.y,dir.z);
+  }
+  _rboxCache[key]=g;
+  return g;
+};
+MK.rbox=function(parent,w,h,d,mat,x,y,z,r){
+  var m=new THREE.Mesh(MK.rboxGeo(w,h,d,r==null?Math.min(w,h,d)*0.08:r),mat);
+  m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+MK.box=function(parent,w,h,d,mat,x,y,z){
+  var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+MK.cyl=function(parent,rt,rb,h,mat,x,y,z,seg){
+  var m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||16),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+MK.sph=function(parent,r,mat,x,y,z,ws,hs){
+  var m=new THREE.Mesh(new THREE.SphereGeometry(r,ws||16,hs||12),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+/* lathe from a [radius,height] profile — tanks, domes, nozzles, silos */
+MK.lathe=function(parent,profile,mat,x,y,z,seg){
+  var pts=profile.map(function(p){ return new THREE.Vector2(p[0],p[1]); });
+  var m=new THREE.Mesh(new THREE.LatheGeometry(pts,seg||24),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
+};
+/* a pipe that follows a list of points with rounded bends */
+MK.pipe=function(parent,points,radius,mat,tubSeg){
+  var curve=new THREE.CatmullRomCurve3(points.map(function(p){ return new THREE.Vector3(p[0],p[1],p[2]); }),false,"catmullrom",0.15);
+  var m=new THREE.Mesh(new THREE.TubeGeometry(curve,tubSeg||Math.max(8,points.length*8),radius,8,false),mat);
+  if(parent)parent.add(m);
+  /* flanges at both ends */
+  [points[0],points[points.length-1]].forEach(function(e){
+    var f=new THREE.Mesh(new THREE.CylinderGeometry(radius*1.5,radius*1.5,radius*0.7,10),mat);
+    f.position.set(e[0],e[1],e[2]); if(parent)parent.add(f);
+  });
+  return m;
+};
+/* a ring of hex bolts around a circle (axis Y) */
+MK.boltRing=function(parent,r,y,n,mat,size){
+  size=size||0.05; mat=mat||MK.mat(0x8a929e,0.35,0.85);
+  var geo=new THREE.CylinderGeometry(size,size,size*0.9,6);
+  for(var i=0;i<n;i++){ var a=i/n*Math.PI*2; var b=new THREE.Mesh(geo,mat); b.position.set(Math.cos(a)*r,y,Math.sin(a)*r); parent.add(b); }
+};
+/* a straight row of rivets on a face (along x, facing +z) */
+MK.rivets=function(parent,x0,x1,y,z,n,mat){
+  mat=mat||MK.mat(0x8a929e,0.35,0.85);
+  var geo=new THREE.SphereGeometry(0.035,6,4);
+  for(var i=0;i<n;i++){ var t=n>1?i/(n-1):0.5; var b=new THREE.Mesh(geo,mat); b.position.set(x0+(x1-x0)*t,y,z); b.scale.z=0.6; parent.add(b); }
+};
+/* a louvered vent grille facing +z */
+MK.vent=function(parent,w,h,x,y,z,mat,slats){
+  slats=slats||Math.max(3,Math.round(h/0.09));
+  var frameM=mat||MK.mat(0x23282f,0.6,0.6), slatM=MK.mat(0x101317,0.7,0.5);
+  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
+  MK.box(g,w+0.06,h+0.06,0.04,frameM,0,0,-0.01);
+  var sh=h/slats;
+  for(var i=0;i<slats;i++){ var s=MK.box(g,w,sh*0.55,0.05,slatM,0,-h/2+sh*(i+0.5),0.02); s.rotation.x=-0.6; }
+  return g;
+};
+/* an emissive screen that shows a little procedurally drawn readout (graphs, bars, text) */
+var _screenTexCache={};
+MK.screenTex=function(kind,col){
+  var key=kind+col; if(_screenTexCache[key])return _screenTexCache[key];
+  var c=document.createElement("canvas"); c.width=128; c.height=80;
+  var g=c.getContext("2d"); var cs="#"+new THREE.Color(col).getHexString();
+  g.fillStyle="#04070c"; g.fillRect(0,0,128,80);
+  g.strokeStyle=cs; g.fillStyle=cs; g.globalAlpha=0.9;
+  if(kind==="graph"){
+    g.lineWidth=2; g.beginPath(); for(var x=0;x<=120;x+=4){ var y=44+Math.sin(x*0.09)*14+Math.sin(x*0.31)*6; if(x===0)g.moveTo(4+x,y); else g.lineTo(4+x,y); } g.stroke();
+    g.globalAlpha=0.35; for(var gx=0;gx<128;gx+=16)g.fillRect(gx,0,1,80); for(var gy=0;gy<80;gy+=16)g.fillRect(0,gy,128,1);
+  } else if(kind==="bars"){
+    for(var b=0;b<8;b++){ var hh=10+Math.random()*52; g.fillRect(8+b*14,70-hh,9,hh); }
+  } else if(kind==="radar"){
+    g.lineWidth=1.5; for(var r=10;r<40;r+=10){ g.beginPath(); g.arc(64,40,r,0,6.28); g.stroke(); }
+    g.beginPath(); g.moveTo(64,40); g.lineTo(98,22); g.stroke(); g.fillRect(84,48,4,4); g.fillRect(44,26,3,3);
+  } else {
+    g.font="bold 11px monospace"; ["SYS OK","PWR 98%","TEMP 412K","FLOW 6.2","CYC 0041"].forEach(function(t,i){ g.fillText(t,8,16+i*13); });
+  }
+  g.globalAlpha=0.08; g.fillStyle="#fff"; for(var sl=0;sl<80;sl+=3)g.fillRect(0,sl,128,1);
+  var t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+  _screenTexCache[key]=t; return t;
+};
+MK.screen=function(parent,w,h,x,y,z,kind,col){
+  var tex=MK.screenTex(kind||"text",col||0x4fd3ff);
+  var mat=new THREE.MeshStandardMaterial({color:0x000000,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:1.2,roughness:0.2,metalness:0.1});
+  var bezel=MK.rbox(parent,w+0.08,h+0.08,0.06,MK.mat(0x14181e,0.5,0.6),x,y,z-0.02);
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat); m.position.set(x,y,z+0.015); parent.add(m);
+  return {mesh:m,mat:mat,bezel:bezel};
+};
+/* a caged ladder up the side of something (facing +z, at local x,z) */
+MK.ladder=function(parent,h,x,z,mat){
+  mat=mat||MK.mat(0xffb545,0.45,0.6);
+  var g=new THREE.Group(); g.position.set(x,0,z); parent.add(g);
+  MK.box(g,0.04,h,0.04,mat,-0.18,h/2,0); MK.box(g,0.04,h,0.04,mat,0.18,h/2,0);
+  for(var y=0.25;y<h;y+=0.3)MK.box(g,0.36,0.03,0.03,mat,0,y,0);
+  return g;
+};
+/* a handrail run along x, posts every ~1m */
+MK.rail=function(parent,len,x,y,z,rotY,mat){
+  mat=mat||MK.mat(0xffb545,0.45,0.6);
+  var g=new THREE.Group(); g.position.set(x,y,z); g.rotation.y=rotY||0; parent.add(g);
+  var top=MK.cyl(g,0.03,0.03,len,mat,0,0.9,0,6); top.rotation.z=Math.PI/2;
+  var mid=MK.cyl(g,0.022,0.022,len,mat,0,0.48,0,6); mid.rotation.z=Math.PI/2;
+  var n=Math.max(2,Math.round(len)+1);
+  for(var i=0;i<n;i++)MK.cyl(g,0.028,0.028,0.9,mat,-len/2+len*i/(n-1),0.45,0,6);
+  return g;
+};
+/* a lattice truss between two heights (square section, along y) */
+MK.truss=function(parent,h,w,x,y,z,mat){
+  mat=mat||MK.mat(0x3a4656,0.5,0.75);
+  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
+  var hw=w/2, rad=Math.max(0.025,w*0.05);
+  [[-hw,-hw],[hw,-hw],[hw,hw],[-hw,hw]].forEach(function(c){ MK.cyl(g,rad,rad,h,mat,c[0],h/2,c[1],6); });
+  var step=w*1.2;
+  for(var yy=0;yy<h-0.01;yy+=step){
+    [[-hw,-hw,hw,-hw],[hw,-hw,hw,hw],[hw,hw,-hw,hw],[-hw,hw,-hw,-hw]].forEach(function(e,k){
+      var a=new THREE.Vector3(e[0],yy,e[1]), b=new THREE.Vector3(e[2],Math.min(h,yy+step),e[3]);
+      if(k%2)b.y=yy, a.y=Math.min(h,yy+step);
+      var d=new THREE.Vector3().subVectors(b,a), L=d.length();
+      var br=MK.cyl(g,rad*0.7,rad*0.7,L,mat,0,0,0,5);
+      br.position.copy(a).addScaledVector(d,0.5); br.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+    });
+  }
+  return g;
+};
+/* small warning beacon with a glass dome */
+MK.beacon=function(parent,x,y,z,col){
+  var base=MK.cyl(parent,0.09,0.11,0.08,MK.mat(0x1a1d22,0.5,0.6),x,y,z,10);
+  var m=MK.glow(col||0xff3a20,1.6);
+  var dome=MK.sph(parent,0.08,m,x,y+0.07,z,10,6);
+  return m;
+};
+/* a radiator fin bank (facing +x/-x) */
+MK.radiator=function(parent,w,h,d,x,y,z,n,mat){
+  mat=mat||MK.mat(0x5a6470,0.4,0.8);
+  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
+  for(var i=0;i<n;i++)MK.box(g,w,h,0.03,mat,0,0,-d/2+d*i/Math.max(1,n-1));
+  MK.box(g,w*1.05,0.06,d+0.05,MK.mat(0x23282f,0.6,0.6),0,h/2,0); MK.box(g,w*1.05,0.06,d+0.05,MK.mat(0x23282f,0.6,0.6),0,-h/2,0);
+  return g;
+};
+/* a cable bundle sagging between two points */
+MK.cable=function(parent,a,b,sag,radius,mat){
+  var mid=[(a[0]+b[0])/2,(a[1]+b[1])/2-(sag||0.3),(a[2]+b[2])/2];
+  return MK.pipe(parent,[a,mid,b],radius||0.03,mat||MK.rubber(),16);
+};
+/* a concrete/steel pad with a chamfered rim, the base most buildings sit on */
+MK.pad=function(parent,w,d,h,col){
+  var m=MK.rbox(parent,w,h||0.3,d,MK.mat(col||0x3a4048,0.85,0.25),0,(h||0.3)/2,0,0.06);
+  var stripe=hazardBar(w*0.98,0.08,0.06); stripe.position.set(0,(h||0.3)*0.55,d/2+0.01); parent.add(stripe);
+  return m;
+};
+/* merge several geometries (each optionally transformed and vertex-coloured) into one, so
+   instanced foliage and props can be a single draw call */
+MK.merge=function(parts){
+  var pos=[],nor=[],col=[];
+  parts.forEach(function(p){
+    var g=p.geo.index?p.geo.toNonIndexed():p.geo.clone();
+    if(p.matrix)g.applyMatrix4(p.matrix);
+    if(!g.attributes.normal)g.computeVertexNormals();
+    var P=g.attributes.position, N=g.attributes.normal, C=g.attributes.color, c=new THREE.Color(p.color==null?0xffffff:p.color);
+    for(var i=0;i<P.count;i++){
+      pos.push(P.getX(i),P.getY(i),P.getZ(i)); nor.push(N.getX(i),N.getY(i),N.getZ(i));
+      var shade=p.shade?p.shade(P.getX(i),P.getY(i),P.getZ(i)):1;
+      if(C)col.push(C.getX(i)*c.r*shade,C.getY(i)*c.g*shade,C.getZ(i)*c.b*shade); else col.push(c.r*shade,c.g*shade,c.b*shade);
+    }
+  });
+  var out=new THREE.BufferGeometry();
+  out.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
+  out.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
+  out.computeBoundingSphere();
+  return out;
+};
+MK.mtx=function(x,y,z,rx,ry,rz,sx,sy,sz){
+  var m=new THREE.Matrix4();
+  m.compose(new THREE.Vector3(x||0,y||0,z||0),new THREE.Quaternion().setFromEuler(new THREE.Euler(rx||0,ry||0,rz||0)),new THREE.Vector3(sx==null?1:sx,sy==null?(sx==null?1:sx):sy,sz==null?(sx==null?1:sx):sz));
+  return m;
+};
+
+/* merge every static part of a model that shares a material into one mesh. Anything the game
+   animates or recolours (whatever the model stores in userData, plus everything underneath it)
+   is left alone. A detailed building drops from ~100 draw calls to ~15. */
+MK.optimize=function(root){
+  var keep=new Set();
+  function mark(v,depth){
+    if(!v||depth>4)return;
+    if(Array.isArray(v)){ v.forEach(function(x){ mark(x,depth+1); }); return; }
+    if(v.isObject3D){ v.traverse(function(o){ keep.add(o); }); for(var p=v.parent;p&&p!==root;p=p.parent)keep.add(p); return; }
+    if(typeof v==="object"&&!v.isMaterial&&!v.isVector3&&!v.isColor&&!v.isTexture){ for(var k in v)mark(v[k],depth+1); }
+  }
+  for(var k in root.userData)mark(root.userData[k],0);
+  root.updateMatrixWorld(true);
+  var inv=new THREE.Matrix4().copy(root.matrixWorld).invert();
+  var buckets=new Map();
+  root.traverse(function(o){
+    if(!o.isMesh||o.isInstancedMesh||keep.has(o))return;
+    for(var p=o.parent;p&&p!==root;p=p.parent)if(keep.has(p))return;
+    var list=buckets.get(o.material); if(!list){ list=[]; buckets.set(o.material,list); }
+    list.push(o);
+  });
+  buckets.forEach(function(list,mat){
+    if(list.length<2)return;
+    var pos=[],nor=[],uv=[];
+    list.forEach(function(o){
+      var gg=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();
+      var mm=new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld);
+      gg.applyMatrix4(mm);
+      /* a mirrored part (negative scale) has its triangle winding reversed once baked in, which
+         would get its visible faces culled — swap two corners of every triangle to undo that */
+      var flip=mm.determinant()<0;
+      var P=gg.attributes.position, N=gg.attributes.normal, U=gg.attributes.uv;
+      for(var i=0;i<P.count;i++){
+        var j=flip?(i%3===1?i+1:(i%3===2?i-1:i)):i;
+        pos.push(P.getX(j),P.getY(j),P.getZ(j));
+        if(N)nor.push(N.getX(j),N.getY(j),N.getZ(j)); else nor.push(0,1,0);
+        if(U)uv.push(U.getX(j),U.getY(j)); else uv.push(0,0);
+      }
+      gg.dispose();
+    });
+    var geo=new THREE.BufferGeometry();
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
+    geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+    geo.computeBoundingSphere();
+    var merged=new THREE.Mesh(geo,mat);
+    root.add(merged);
+    list.forEach(function(o){ if(o.parent)o.parent.remove(o); });
+  });
+  return root;
+};
+/* photovoltaic cells: dark blue cells with silver busbars and a faint crystalline sheen */
+var solarCellTex=(function(){
+  var c=document.createElement("canvas"); c.width=256; c.height=256;
+  var g=c.getContext("2d");
+  g.fillStyle="#c8ccd4"; g.fillRect(0,0,256,256);
+  for(var y=0;y<8;y++)for(var x=0;x<8;x++){
+    var shade=20+Math.floor(Math.random()*14);
+    g.fillStyle="rgb("+(shade)+","+(shade+18)+","+(shade+60)+")"; g.fillRect(x*32+1.5,y*32+1.5,29,29);
+    g.fillStyle="rgba(140,170,255,.08)"; for(var s=0;s<4;s++)g.fillRect(x*32+2+Math.random()*24,y*32+2+Math.random()*24,4,4);
+    g.fillStyle="rgba(210,215,225,.7)"; g.fillRect(x*32+9,y*32+1.5,1,29); g.fillRect(x*32+21,y*32+1.5,1,29);
+  }
+  var t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  return t;
+})();
+/* corrugated steel for containers and sheds */
+var corrugatedNormal=(function(){
+  var w=128,h=16,hf=new Float32Array(w*h);
+  for(var y=0;y<h;y++)for(var x=0;x<w;x++)hf[y*w+x]=Math.sin(x/w*Math.PI*16)*0.5+0.5;
+  var t=canvasTex(heightToNormalCanvas(hf,w,h,3,true),1,false); return t;
+})();
+MK.corrugated=function(color){
+  var key="corr"+color; if(MK.mats[key])return MK.mats[key];
+  var m=new THREE.MeshStandardMaterial({color:color,roughness:0.55,metalness:0.55,map:GFX_METAL.map,normalMap:corrugatedNormal,normalScale:new THREE.Vector2(1.4,1.4)});
+  MK.mats[key]=m; return m;
+};
+/* tread plate for floors and decks */
+var treadNormal=(function(){
+  var s=64,hf=new Float32Array(s*s);
+  for(var y=0;y<s;y++)for(var x=0;x<s;x++){
+    var cx=(x%16)-8, cy=(y%16)-8, alt=((Math.floor(x/16)+Math.floor(y/16))%2);
+    var a=alt?Math.atan2(1,1):-Math.atan2(1,1), u=cx*Math.cos(a)+cy*Math.sin(a), v=-cx*Math.sin(a)+cy*Math.cos(a);
+    hf[y*s+x]=(Math.abs(u)<5.5&&Math.abs(v)<1.4)?1:0;
+  }
+  return canvasTex(heightToNormalCanvas(hf,s,s,2.5,true),1,false);
+})();
+MK.tread=function(color,rep){
+  var key="tread"+color+"|"+rep; if(MK.mats[key])return MK.mats[key];
+  var n=treadNormal.clone(); n.needsUpdate=true; n.repeat.set(rep||4,rep||4);
+  var m=new THREE.MeshStandardMaterial({color:color,roughness:0.42,metalness:0.85,map:GFX_METAL.map,normalMap:n,normalScale:new THREE.Vector2(1.2,1.2)});
+  MK.mats[key]=m; return m;
+};
+
+/* a lumpy natural rock: an icosphere pushed around by 3D noise */
+MK.rockGeo=function(r,seed,detail,squash){
+  var g=new THREE.IcosahedronGeometry(r,detail==null?2:detail);
+  var p=g.attributes.position, v=new THREE.Vector3();
+  for(var i=0;i<p.count;i++){
+    v.fromBufferAttribute(p,i);
+    var n=v.clone().normalize();
+    var k=1+(fbm3(n.x*1.6+seed,n.y*1.6,n.z*1.6,4,seed|0)-0.5)*0.9;
+    v.copy(n).multiplyScalar(r*k);
+    v.y*=squash==null?0.7:squash;
+    p.setXYZ(i,v.x,v.y,v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+};
+
 /* ═════════════ TERRAIN v2.1: slope-blended ground, rock cliffs, lakes ═════════════ */
 /* every biome's look, used by the ground shader, the liquid in its lakes and the foliage */
 var BIOMES={
@@ -2284,19 +2621,17 @@ function gfxSurfaceFrame(dt){
 var hiveRuntime=null, monsters=[], playerHp=100, playerMaxHp=100, monsterSpawnT=4;
 function buildHiveMesh(){
   var g=new THREE.Group();
-  var bodyMat=new THREE.MeshStandardMaterial({color:0x2a1a3a,roughness:0.7,metalness:0.1,flatShading:true});
+  /* an organic hive mound: lumpy resin layers, pulsing vein tubes, egg sacs and a glowing core
+     in an open crown */
+  var body=MK.mat(0x2a1a3a,0.55,0.15), resin=MK.mat(0x4a2a5a,0.3,0.2);
   var veinMat=new THREE.MeshStandardMaterial({color:0x9a3aff,emissive:0x6a1aff,emissiveIntensity:0.9,roughness:0.3,metalness:0.2});
-  var mound=new THREE.Mesh(new THREE.SphereGeometry(3.4,14,10,0,Math.PI*2,0,Math.PI/1.7),bodyMat);
-  g.add(mound);
-  for(var i=0;i<6;i++){
-    var ang=i/6*Math.PI*2;
-    var vein=new THREE.Mesh(new THREE.TorusGeometry(1.2,0.12,6,10,Math.PI*0.6),veinMat);
-    vein.position.set(Math.cos(ang)*1.8,1.2,Math.sin(ang)*1.8);
-    vein.rotation.set(Math.PI/2,0,ang);
-    g.add(vein);
+  var mound=new THREE.Mesh(MK.rockGeo(3.4,21,3,0.75),body); mound.position.y=0.8; g.add(mound);
+  var crown=new THREE.Mesh(MK.rockGeo(2.0,23,2,0.8),resin); crown.position.y=2.5; g.add(crown);
+  for(var i=0;i<8;i++){ var a=i/8*6.28;
+    MK.pipe(g,[[Math.cos(a)*3.0,0.2,Math.sin(a)*3.0],[Math.cos(a)*2.4,1.6,Math.sin(a)*2.4],[Math.cos(a)*1.2,2.8,Math.sin(a)*1.2]],0.13,veinMat,12);
+    if(i%2)MK.sph(g,0.45,MK.mat(0xb08a6a,0.25,0.1,{transparent:true,opacity:0.85}),Math.cos(a+0.4)*2.8,0.45,Math.sin(a+0.4)*2.8,10,8).scale.y=1.3;
   }
-  var core=new THREE.Mesh(new THREE.SphereGeometry(0.7,10,8),veinMat);
-  core.position.y=3.0; g.add(core);
+  var core=new THREE.Mesh(new THREE.SphereGeometry(0.75,16,12),veinMat); core.position.y=3.15; g.add(core);
   g.userData.core=core;
   return g;
 }
@@ -2309,20 +2644,23 @@ function ensureHive(world){
   hiveRuntime={mesh:mesh,pos:new THREE.Vector3(hx,0,hz),hp:220,maxhp:220,alive:true};
 }
 function buildMonsterMesh(){
+  /* a hive crawler: segmented carapace, a horned head with mandibles and glowing eyes, six jointed
+     legs and a spiked tail */
   var g=new THREE.Group();
-  var mat=new THREE.MeshStandardMaterial({color:0x3a1a4a,roughness:0.6,metalness:0.15,flatShading:true});
+  var shell=MK.mat(0x3a1a4a,0.35,0.45), under=MK.mat(0x1a0a22,0.6,0.2);
   var eyeMat=new THREE.MeshStandardMaterial({color:0x1a0a0a,emissive:0xff2a4a,emissiveIntensity:1.3});
-  var body=new THREE.Mesh(new THREE.DodecahedronGeometry(0.55,0),mat);
-  body.scale.set(1,0.75,1.2); g.add(body);
-  var eye=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,6),eyeMat);
-  eye.position.set(0,0.15,0.5); g.add(eye);
-  for(var i=0;i<4;i++){
-    var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.5,5),mat);
-    var a=(i/4)*Math.PI*2;
-    leg.position.set(Math.cos(a)*0.4,-0.35,Math.sin(a)*0.4);
-    leg.rotation.z=Math.cos(a)*0.5; leg.rotation.x=Math.sin(a)*0.5;
-    g.add(leg);
+  for(var s=0;s<3;s++){ var seg=MK.sph(g,0.32-s*0.04,shell,0,0.1,-s*0.45,14,10); seg.scale.set(1.15,0.7,1.0); MK.sph(g,0.26-s*0.03,under,0,-0.02,-s*0.45,10,8).scale.set(1.0,0.5,0.9); }
+  var head=MK.sph(g,0.26,shell,0,0.12,0.42,14,10); head.scale.set(1,0.8,1.1);
+  MK.sph(g,0.07,eyeMat,-0.1,0.2,0.62,8,6); MK.sph(g,0.07,eyeMat,0.1,0.2,0.62,8,6); MK.sph(g,0.04,eyeMat,0,0.27,0.6,6,4);
+  [-1,1].forEach(function(sd){ var md=MK.cyl(g,0.0,0.05,0.3,under,sd*0.1,0.0,0.75,5); md.rotation.set(Math.PI/2,0,sd*0.5); var hn=MK.cyl(g,0.0,0.04,0.3,MK.mat(0xd8c8a0,0.5,0.2),sd*0.15,0.35,0.42,5); hn.rotation.z=-sd*0.5; });
+  for(var l=0;l<6;l++){
+    var sd2=l%2?1:-1, z=0.2-Math.floor(l/2)*0.4;
+    MK.pipe(g,[[sd2*0.25,0.05,z],[sd2*0.6,0.35,z+0.05],[sd2*0.85,-0.35,z+0.1]],0.035,under,12);
   }
+  MK.pipe(g,[[0,0.1,-1.0],[0,0.35,-1.35],[0,0.55,-1.45]],0.05,shell,10);
+  MK.cyl(g,0.0,0.06,0.25,MK.mat(0xd8c8a0,0.5,0.2),0,0.7,-1.42,5);
+  MK.optimize(g);
+  g.scale.setScalar(1.05);
   return g;
 }
 function spawnMonster(){
@@ -2406,17 +2744,17 @@ function updateHiveHud(){
 /* ═════════════ ALIEN FLAK TURRETS (shoot at your ship while you fly over their world) ═════════════ */
 var turrets=[], turretWorldId=null, alienBolts=[];
 function buildTurretMesh(){
+  /* alien flak emplacement: a sunken armoured ring, a rotating turret dome with twin barrels,
+     ammo drums and a red targeting eye */
   var g=new THREE.Group();
-  var baseMat=new THREE.MeshStandardMaterial({color:0x2a2438,roughness:0.7,metalness:0.3,flatShading:true});
+  var base=MK.mat(0x2a2438,0.55,0.6), dark=MK.mat(0x141220,0.5,0.7);
   var eyeMat=new THREE.MeshStandardMaterial({color:0x2a0a0a,emissive:0xff2a20,emissiveIntensity:1.3});
-  var base=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.3,0.8,8),baseMat);
-  base.position.y=0.4; g.add(base);
-  var mount=new THREE.Mesh(new THREE.SphereGeometry(0.6,10,8),baseMat);
-  mount.position.y=1.0; g.add(mount);
-  var barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,1.6,6),baseMat);
-  barrel.rotation.x=Math.PI/2.4; barrel.position.set(0,1.2,0.7); g.add(barrel);
-  var eye=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),eyeMat);
-  eye.position.set(0,1.15,0.3); g.add(eye);
+  MK.lathe(g,[[1.4,0],[1.45,0.25],[1.2,0.55],[0.9,0.6],[0,0.6]],base,0,0,0,16);
+  for(var i=0;i<6;i++){ var a=i/6*6.28; MK.rbox(g,0.35,0.3,0.5,dark,Math.cos(a)*1.2,0.3,Math.sin(a)*1.2,0.05).rotation.y=-a; }
+  MK.sph(g,0.65,base,0,0.95,0,16,10).scale.y=0.8;
+  [-0.18,0.18].forEach(function(x){ var br=MK.cyl(g,0.09,0.12,1.7,dark,x,1.2,0.75,8); br.rotation.x=Math.PI/2.4; MK.cyl(g,0.14,0.14,0.18,base,x,1.5,1.45,8).rotation.x=Math.PI/2.4; });
+  MK.cyl(g,0.22,0.22,0.5,dark,-0.7,0.95,-0.1,12).rotation.z=Math.PI/2;
+  var eye=MK.sph(g,0.2,eyeMat,0,1.15,0.45,10,8);
   g.userData.eye=eye;
   return g;
 }
@@ -3048,109 +3386,6 @@ var landingRing=new THREE.Mesh(
 landingRing.rotation.x=-Math.PI/2; landingRing.position.y=0.05;
 surfaceScene.add(landingRing);
 
-/* landing pod — the ship the player arrived in, dressing out the starting area */
-var landingPodBeacon=null;
-(function(){
-  var scorch=new THREE.Mesh(new THREE.CircleGeometry(8,32),new THREE.MeshBasicMaterial({color:0x0a0a0c,transparent:true,opacity:0.45}));
-  scorch.rotation.x=-Math.PI/2; scorch.position.y=0.03; surfaceScene.add(scorch);
-  for(var s=0;s<6;s++){
-    var streak=new THREE.Mesh(new THREE.PlaneGeometry(1.2,rnd(3,6)),new THREE.MeshBasicMaterial({color:0x0a0a0c,transparent:true,opacity:0.3}));
-    streak.rotation.x=-Math.PI/2; var sa=s/6*Math.PI*2;
-    streak.position.set(Math.cos(sa)*6,0.035,Math.sin(sa)*6); streak.rotation.z=sa;
-    surfaceScene.add(streak);
-  }
-  var g=new THREE.Group();
-  var hullMat=new THREE.MeshStandardMaterial({color:0xd8dde6,roughness:0.4,metalness:0.5});
-  var trimMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.4,metalness:0.4});
-  var darkMat=new THREE.MeshStandardMaterial({color:0x1a2230,roughness:0.5,metalness:0.5});
-  var glassMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.7,roughness:0.2,metalness:0.3});
-  for(var li=0;li<4;li++){
-    var la=li/4*Math.PI*2+Math.PI/4;
-    var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.22,4.6,6),darkMat);
-    leg.position.set(Math.cos(la)*3.6,2.3,Math.sin(la)*3.6);
-    leg.rotation.z=Math.cos(la)*0.35; leg.rotation.x=-Math.sin(la)*0.35;
-    g.add(leg);
-    var foot=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.85,0.4,8),darkMat);
-    foot.position.set(Math.cos(la)*4.3,0.2,Math.sin(la)*4.3); g.add(foot);
-    var brace=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,2.2,5),darkMat);
-    brace.position.set(Math.cos(la)*2.2,3.6,Math.sin(la)*2.2);
-    brace.rotation.z=Math.cos(la)*0.9; brace.rotation.x=-Math.sin(la)*0.9;
-    g.add(brace);
-  }
-  var hullLower=new THREE.Mesh(new THREE.CylinderGeometry(2.6,3.6,3.0,10),hullMat);
-  hullLower.position.y=6.0; g.add(hullLower);
-  var hullUpper=new THREE.Mesh(new THREE.SphereGeometry(2.6,10,8,0,Math.PI*2,0,Math.PI/2),hullMat);
-  hullUpper.position.y=7.5; g.add(hullUpper);
-  var band=new THREE.Mesh(new THREE.TorusGeometry(3.05,0.18,6,20),trimMat);
-  band.rotation.x=Math.PI/2; band.position.y=5.1; g.add(band);
-  var cockpit=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,8,0,Math.PI*2,0,Math.PI*0.55),glassMat);
-  cockpit.position.set(0,7.6,2.1); cockpit.rotation.x=-0.3; g.add(cockpit);
-  var nozzleMat=darkMat;
-  for(var ni=0;ni<3;ni++){
-    var na=ni/3*Math.PI*2;
-    var nozzle=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.75,1.1,8),nozzleMat);
-    nozzle.position.set(Math.cos(na)*1.6,4.0,Math.sin(na)*1.6); g.add(nozzle);
-    var glow=new THREE.Mesh(new THREE.CircleGeometry(0.45,8),new THREE.MeshStandardMaterial({color:0xff6a2a,emissive:0xff6a2a,emissiveIntensity:1}));
-    glow.rotation.x=Math.PI/2; glow.position.set(Math.cos(na)*1.6,3.46,Math.sin(na)*1.6); g.add(glow);
-  }
-  var ramp=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.14,4.4),darkMat);
-  ramp.position.set(0,2.6,4.6); ramp.rotation.x=-0.55; g.add(ramp);
-  var railMat=trimMat;
-  var railL=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.6,4.4),railMat);
-  railL.position.set(1.25,3.2,4.6); railL.rotation.x=-0.55; g.add(railL);
-  var railR=railL.clone(); railR.position.x=-1.25; g.add(railR);
-  boltRow(g,5.0,5.0,4.55,darkMat,5);
-  var beaconMat=new THREE.MeshStandardMaterial({color:0xff4a4a,emissive:0xff2a2a,emissiveIntensity:1.3});
-  var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,6),beaconMat);
-  beacon.position.set(0,8.9,0); g.add(beacon);
-  g.userData.beacon=beacon;
-  g.position.set(0,0,0);
-  surfaceScene.add(g);
-  landingPodBeacon=beacon;
-})();
-
-/* supply crates + abandoned equipment near the landing pod */
-(function(){
-  var crateMat=new THREE.MeshStandardMaterial({color:0x3a2c1c,roughness:0.7,metalness:0.2});
-  var bandMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.5,metalness:0.4});
-  var spots=[[7,6],[8.5,4.5],[-7,7],[-8,5]];
-  spots.forEach(function(p,i){
-    var g=new THREE.Group();
-    var size=0.9+((i%2)*0.3);
-    var crate=new THREE.Mesh(new THREE.BoxGeometry(size,size,size),crateMat);
-    crate.position.y=size/2; g.add(crate);
-    var b1=new THREE.Mesh(new THREE.BoxGeometry(size+0.05,0.08,size+0.05),bandMat);
-    b1.position.y=size*0.7; g.add(b1);
-    var y=terrainHeight(p[0],p[1]);
-    g.position.set(p[0],y,p[1]); g.rotation.y=rnd(0,6.28);
-    surfaceScene.add(g);
-  });
-  var stack=new THREE.Group();
-  var c1=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.1,1.1),crateMat); c1.position.y=0.55; stack.add(c1);
-  var c2=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9),crateMat); c2.position.set(0.15,1.55,0.1); c2.rotation.y=0.3; stack.add(c2);
-  var ys=terrainHeight(-6.5,-6);
-  stack.position.set(-6.5,ys,-6);
-  surfaceScene.add(stack);
-  var rustMat=new THREE.MeshStandardMaterial({color:0x6a3a20,roughness:0.85,metalness:0.3});
-  var poleMat=new THREE.MeshStandardMaterial({color:0x3a4a5e,roughness:0.7,metalness:0.4});
-  var brokenMat=new THREE.MeshStandardMaterial({color:0x1a2230,emissive:0x2a0505,emissiveIntensity:0.3,roughness:0.6});
-  var eq=new THREE.Group();
-  var base=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,0.4,8),rustMat);
-  base.position.y=0.2; eq.add(base);
-  var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,3.4,6),poleMat);
-  pole.position.set(0,1.7,0); pole.rotation.z=1.15; pole.position.x=1.2; pole.position.y=1.0; eq.add(pole);
-  var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.35,8,6),brokenMat);
-  lamp.position.set(2.6,1.7,0); eq.add(lamp);
-  for(var d=0;d<4;d++){
-    var chunk=new THREE.Mesh(new THREE.BoxGeometry(rnd(0.3,0.7),rnd(0.2,0.4),rnd(0.3,0.6)),rustMat);
-    chunk.position.set(rnd(-1.2,1.2),0.15,rnd(-1.2,1.2));
-    chunk.rotation.y=rnd(0,6.28); eq.add(chunk);
-  }
-  var ye=terrainHeight(9.5,-3);
-  eq.position.set(9.5,ye,-3); eq.rotation.y=rnd(0,6.28);
-  surfaceScene.add(eq);
-})();
-
 /* every alien world is its own terrain plate (see buildTerrainPlate): its palette on the flats,
    the biome's own rock on slopes, snow/ash/moss accents, and a liquid filling its valleys. The
    plate runs out to the fog distance so its edge is never visible. Rocks, plants and trees live
@@ -3177,89 +3412,67 @@ var landingPodBeacon=null;
 /* ═════════════ PLAYER ═════════════ */
 function buildPlayerMesh(){
   var g=new THREE.Group();
-  /* body/arms/legs/head/eyes each get their own material instance (instead of one shared
-     "suit" material for the whole body) specifically so the Wardrobe can recolor them
-     independently — a slightly reflective finish ("kind of, not a lot") on all of them so
-     they actually catch light instead of reading flat */
-  var bodyMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.42,metalness:0.35});
-  var armMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.42,metalness:0.35});
-  var legMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.42,metalness:0.35});
-  var plateMat=new THREE.MeshStandardMaterial({color:0xd9903a,roughness:0.4,metalness:0.4});
-  var darkMat=new THREE.MeshStandardMaterial({color:0x0b0f18,roughness:0.35,metalness:0.4});
-  var trimMat=new THREE.MeshStandardMaterial({color:0x233a56,roughness:0.45,metalness:0.45});
-  var gloveMat=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:0.55,metalness:0.15});
-  var visorMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x1a5a70,emissiveIntensity:0.8,roughness:0.25,metalness:0.2});
-  var lightMat=new THREE.MeshStandardMaterial({color:0xffe08a,emissive:0xffaa33,emissiveIntensity:1.4});
-  var eyeMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x4fd3ff,emissiveIntensity:1.2,roughness:0.2,metalness:0.1});
-
+  /* v2.1 astronaut: a layered pressure suit with soft fabric folds and hard armour plates, a
+     bubble helmet with a tinted visor and headlamp, a life-support pack with tanks and hoses,
+     articulated elbows/knees, gloves and treaded boots. body/arms/legs/head/eyes keep their own
+     materials so the Wardrobe can recolour them independently. */
+  var bodyMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.62,metalness:0.12,map:GFX_GROUND.map});
+  var armMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.62,metalness:0.12,map:GFX_GROUND.map});
+  var legMat=new THREE.MeshStandardMaterial({color:0xffb545,roughness:0.62,metalness:0.12,map:GFX_GROUND.map});
+  var plateMat=MK.mat(0xe8e2d6,0.38,0.3), darkMat=new THREE.MeshStandardMaterial({color:0x0b0f18,roughness:0.32,metalness:0.5});
+  var trimMat=MK.mat(0x2a3a52,0.45,0.55), gloveMat=MK.mat(0x2a2620,0.8,0.1), metal=MK.mat(0x9aa4b0,0.3,0.85);
+  var visorMat=new THREE.MeshStandardMaterial({color:0xffc870,emissive:0x3a2a08,emissiveIntensity:0.4,roughness:0.04,metalness:0.95,envMapIntensity:2.2});
+  var lightMat=MK.glow(0xffcc66,1.4), eyeMat=new THREE.MeshStandardMaterial({color:0x4fd3ff,emissive:0x4fd3ff,emissiveIntensity:1.2,roughness:0.2,metalness:0.1});
   var hip=new THREE.Group(); hip.position.y=0.86; g.add(hip);
-
-  var torso=new THREE.Mesh(new THREE.CapsuleGeometry(0.46,0.62,4,10),bodyMat);
-  torso.position.y=0.5; hip.add(torso);
-  var chest=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.42,0.22),plateMat);
-  chest.position.set(0,0.62,0.32); hip.add(chest);
-  var belt=new THREE.Mesh(new THREE.BoxGeometry(0.64,0.14,0.5),trimMat);
-  belt.position.y=0.16; hip.add(belt);
-  var pouch=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.16,0.12),darkMat);
-  pouch.position.set(0.28,0.1,0.32); hip.add(pouch);
-
-  var pack=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.62,0.26),darkMat);
-  pack.position.set(0,0.55,-0.4); hip.add(pack);
-  [-0.18,0.18].forEach(function(tx){
-    var tank=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.58,8),trimMat);
-    tank.position.set(tx,0.55,-0.58); hip.add(tank);
-  });
-  var hose=new THREE.Mesh(new THREE.TorusGeometry(0.14,0.03,6,10,Math.PI),trimMat);
-  hose.position.set(0,0.92,-0.28); hose.rotation.set(Math.PI/2,0,0); hip.add(hose);
-
-  var neck=new THREE.Group(); neck.position.y=0.86; hip.add(neck);
-  var head=new THREE.Mesh(new THREE.SphereGeometry(0.36,16,12),darkMat);
-  neck.add(head);
-  var jaw=new THREE.Mesh(new THREE.SphereGeometry(0.3,14,10),darkMat);
-  jaw.position.y=-0.12; jaw.scale.set(1,0.75,0.95); neck.add(jaw);
-  var visor=new THREE.Mesh(new THREE.SphereGeometry(0.22,14,10),visorMat);
-  visor.position.set(0,0,0.26); visor.scale.set(1,0.72,0.62); neck.add(visor);
-  /* two small glowing eyes on the visor, their own color (not tied to the head/body materials)
-     and animated with a periodic blink instead of just sitting there static */
-  var eyeGeo=new THREE.SphereGeometry(0.045,8,6);
-  var eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.09,0.02,0.4); neck.add(eyeL);
-  var eyeR=new THREE.Mesh(eyeGeo,eyeMat); eyeR.position.set(0.09,0.02,0.4); neck.add(eyeR);
+  var torso=new THREE.Mesh(new THREE.CapsuleGeometry(0.4,0.5,6,14),bodyMat); torso.position.y=0.5; torso.scale.set(1.05,1,0.82); hip.add(torso);
+  MK.rbox(hip,0.62,0.4,0.18,plateMat,0,0.64,0.3,0.06);
+  MK.rbox(hip,0.36,0.16,0.05,darkMat,0,0.66,0.4,0.03);
+  MK.box(hip,0.28,0.1,0.01,MK.glow(0x7bd94a,1.0),0,0.66,0.43);
+  MK.rbox(hip,0.68,0.13,0.52,trimMat,0,0.16,0,0.05);
+  MK.rbox(hip,0.16,0.14,0.1,darkMat,0.25,0.12,0.29,0.03); MK.rbox(hip,0.16,0.14,0.1,darkMat,-0.25,0.12,0.29,0.03);
+  var collar=new THREE.Mesh(new THREE.TorusGeometry(0.27,0.06,8,20),metal); collar.rotation.x=Math.PI/2; collar.position.y=0.92; hip.add(collar);
+  /* life-support pack */
+  MK.rbox(hip,0.56,0.68,0.26,plateMat,0,0.55,-0.38,0.08);
+  [-0.16,0.16].forEach(function(tx){ MK.lathe(hip,[[0,-0.3],[0.08,-0.28],[0.09,0.24],[0.06,0.3],[0,0.31]],metal,tx,0.55,-0.56,12); });
+  MK.box(hip,0.3,0.06,0.02,MK.glow(0x4fd3ff,1.1),0,0.78,-0.52);
+  MK.pipe(hip,[[0.2,0.85,-0.3],[0.28,0.95,-0.05],[0.18,0.9,0.15]],0.025,trimMat,12);
+  MK.pipe(hip,[[-0.2,0.85,-0.3],[-0.28,0.95,-0.05],[-0.18,0.9,0.15]],0.025,trimMat,12);
+  /* helmet */
+  var neck=new THREE.Group(); neck.position.y=0.9; hip.add(neck);
+  var head=new THREE.Mesh(new THREE.SphereGeometry(0.36,24,16),darkMat); head.position.y=0.06; neck.add(head);
+  var shell=new THREE.Mesh(new THREE.SphereGeometry(0.375,24,16,0,Math.PI*2,0,Math.PI*0.55),plateMat); shell.position.y=0.06; shell.rotation.x=-0.35; neck.add(shell);
+  var visor=new THREE.Mesh(new THREE.SphereGeometry(0.33,22,14,Math.PI*0.12,Math.PI*0.76,Math.PI*0.28,Math.PI*0.42),visorMat); visor.position.set(0,0.05,0.04); neck.add(visor);
+  var eyeGeo=new THREE.SphereGeometry(0.04,8,6);
+  var eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.09,0.07,0.3); neck.add(eyeL);
+  var eyeR=new THREE.Mesh(eyeGeo,eyeMat); eyeR.position.set(0.09,0.07,0.3); neck.add(eyeR);
   g.userData.eyes=[eyeL,eyeR];
-  var antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.3,5),trimMat);
-  antenna.position.set(0.22,0.32,-0.05); antenna.rotation.z=0.3; neck.add(antenna);
-  var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.045,6,6),lightMat);
-  beacon.position.set(0.29,0.46,-0.06); neck.add(beacon);
-  var lamp=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,0.07,8),lightMat);
-  lamp.position.set(0,0.14,0.34); lamp.rotation.x=Math.PI/2; neck.add(lamp);
+  MK.cyl(neck,0.05,0.06,0.08,metal,0.3,0.12,0.05,10).rotation.z=Math.PI/2;
+  var lamp=MK.cyl(neck,0.05,0.05,0.06,lightMat,0.33,0.18,0.12,10); lamp.rotation.x=Math.PI/2;
+  MK.cyl(neck,0.012,0.012,0.36,metal,-0.24,0.42,-0.12,5);
+  var beacon=MK.sph(neck,0.035,lightMat,-0.24,0.6,-0.12,8,6);
   g.userData.beacon=beacon;
-  /* a real headlamp light, not just an emissive mesh — throws actual illumination a few
-     metres ahead, which matters once you're out past the buildable clearing under the new
-     dusk lighting where the ambient/fill alone leave the wild terrain fairly dim */
-  var headlamp=new THREE.PointLight(0xffe8b0,1.6,14,2);
-  headlamp.position.set(0,0.14,0.5); neck.add(headlamp);
-
+  var headlamp=new THREE.PointLight(0xffe8b0,1.6,14,2); headlamp.position.set(0.3,0.18,0.4); neck.add(headlamp);
   function buildArm(side){
-    var shoulder=new THREE.Group(); shoulder.position.set(side*0.5,0.78,0); hip.add(shoulder);
-    var pad=new THREE.Mesh(new THREE.SphereGeometry(0.16,10,8),plateMat);
-    shoulder.add(pad);
-    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.11,0.32,3,6),armMat);
-    upper.position.y=-0.2; shoulder.add(upper);
-    var glove=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),gloveMat);
-    glove.position.y=-0.42; shoulder.add(glove);
+    var shoulder=new THREE.Group(); shoulder.position.set(side*0.47,0.76,0); hip.add(shoulder);
+    var pad=new THREE.Mesh(new THREE.SphereGeometry(0.17,14,10,0,Math.PI*2,0,Math.PI*0.6),plateMat); pad.position.y=0.03; shoulder.add(pad);
+    MK.cyl(shoulder,0.11,0.1,0.26,armMat,0,-0.14,0,12);
+    MK.sph(shoulder,0.1,trimMat,0,-0.3,0,10,8);
+    MK.cyl(shoulder,0.1,0.085,0.22,armMat,0,-0.42,0.02,12);
+    MK.rbox(shoulder,0.14,0.12,0.16,plateMat,side*0.02,-0.4,0.07,0.04);
+    var glove=MK.rbox(shoulder,0.16,0.16,0.18,gloveMat,0,-0.58,0.02,0.06);
     return shoulder;
   }
   var armL=buildArm(-1), armR=buildArm(1);
-
   function buildLeg(side){
-    var socket=new THREE.Group(); socket.position.set(side*0.2,-0.02,0); hip.add(socket);
-    var upper=new THREE.Mesh(new THREE.CapsuleGeometry(0.15,0.34,3,6),legMat);
-    upper.position.y=-0.2; socket.add(upper);
-    var boot=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.2,0.34),trimMat);
-    boot.position.set(0,-0.42,0.05); socket.add(boot);
+    var socket=new THREE.Group(); socket.position.set(side*0.19,-0.02,0); hip.add(socket);
+    MK.cyl(socket,0.15,0.13,0.3,legMat,0,-0.15,0,12);
+    var knee=MK.rbox(socket,0.2,0.16,0.12,plateMat,0,-0.32,0.1,0.05);
+    MK.cyl(socket,0.12,0.11,0.22,legMat,0,-0.44,0,12);
+    MK.rbox(socket,0.24,0.16,0.36,trimMat,0,-0.62,0.05,0.06);
+    MK.box(socket,0.25,0.04,0.37,MK.rubber(),0,-0.7,0.05);
     return socket;
   }
   var legL=buildLeg(-1), legR=buildLeg(1);
-
   g.userData.hip=hip; g.userData.body=torso; g.userData.neck=neck;
   g.userData.legs=[legL,legR]; g.userData.arms=[armL,armR];
   g.userData.mats={body:bodyMat,arms:armMat,legs:legMat,head:darkMat,eyes:eyeMat};
@@ -3664,334 +3877,8 @@ function cableAnchorWorld(b){
 var panelTex=GFX_METAL.map;
 function matStd(color,rough,metal){
   return new THREE.MeshStandardMaterial({color:color,roughness:Math.min(1,(rough==null?0.6:rough)*1.45),metalness:metal==null?0.2:metal,
-    map:panelTex,normalMap:GFX_METAL.normal,normalScale:new THREE.Vector2(0.9,0.9),roughnessMap:GFX_METAL.rough,envMapIntensity:0.9});
+    map:GFX_METAL.map,normalMap:GFX_METAL.normal,normalScale:new THREE.Vector2(0.9,0.9),roughnessMap:GFX_METAL.rough,envMapIntensity:0.9});
 }
-
-/* ═════════════ MODEL KIT (v2.1: shared parts every new model is built from) ═════════════ */
-/* Real machinery reads as real because of its small parts: rounded/bevelled panels instead of
-   razor-edged boxes, lathed tanks with weld seams, pipe runs that bend, vent grilles, rivets,
-   lit screens with readouts, ladders and handrails, trusses. Everything below builds those from
-   plain three.js geometry so each model in the game can be assembled from them. */
-var MK={};
-MK.mats={};
-/* painted/bare metal materials are cached by their parameters so a hundred buildings share a
-   handful of materials (fewer shader programs, faster rendering) */
-MK.mat=function(color,rough,metal,extra){
-  var key=color+"|"+rough+"|"+metal+"|"+(extra?JSON.stringify(extra):"");
-  if(MK.mats[key]&&!(extra&&extra.unique))return MK.mats[key];
-  var m=matStd(color,rough,metal);
-  if(extra){ for(var k in extra)if(k!=="unique"){ if(m[k]&&m[k].isColor)m[k].set(extra[k]); else m[k]=extra[k]; } }
-  if(!(extra&&extra.unique))MK.mats[key]=m;
-  return m;
-};
-MK.glow=function(color,intensity){
-  return new THREE.MeshStandardMaterial({color:0x111111,emissive:color,emissiveIntensity:intensity==null?1.4:intensity,roughness:0.35,metalness:0.1});
-};
-MK.glass=function(tint,op){
-  return new THREE.MeshStandardMaterial({color:tint||0x9fd8ff,roughness:0.05,metalness:0.6,transparent:true,opacity:op==null?0.35:op,envMapIntensity:1.6});
-};
-MK.rubber=function(){ return MK.mat(0x1a1a1c,0.95,0.0); };
-/* a box with rounded edges: a subdivided box whose vertices are pulled onto a rounded shell */
-var _rboxCache={};
-MK.rboxGeo=function(w,h,d,r,seg){
-  seg=seg||3; r=Math.min(r==null?0.08:r,w/2-0.001,h/2-0.001,d/2-0.001);
-  var key=[w,h,d,r,seg].join(",");
-  if(_rboxCache[key])return _rboxCache[key];
-  var g=new THREE.BoxGeometry(w,h,d,seg*2,seg*2,seg*2);
-  var p=g.attributes.position, n=g.attributes.normal, v=new THREE.Vector3(), inner=new THREE.Vector3(), dir=new THREE.Vector3();
-  var hx=w/2-r, hy=h/2-r, hz=d/2-r;
-  for(var i=0;i<p.count;i++){
-    v.fromBufferAttribute(p,i);
-    inner.set(clamp(v.x,-hx,hx),clamp(v.y,-hy,hy),clamp(v.z,-hz,hz));
-    dir.subVectors(v,inner);
-    if(dir.lengthSq()<1e-10)dir.fromBufferAttribute(n,i);
-    dir.normalize();
-    v.copy(inner).addScaledVector(dir,r);
-    p.setXYZ(i,v.x,v.y,v.z); n.setXYZ(i,dir.x,dir.y,dir.z);
-  }
-  _rboxCache[key]=g;
-  return g;
-};
-MK.rbox=function(parent,w,h,d,mat,x,y,z,r){
-  var m=new THREE.Mesh(MK.rboxGeo(w,h,d,r==null?Math.min(w,h,d)*0.08:r),mat);
-  m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
-};
-MK.box=function(parent,w,h,d,mat,x,y,z){
-  var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
-};
-MK.cyl=function(parent,rt,rb,h,mat,x,y,z,seg){
-  var m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||16),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
-};
-MK.sph=function(parent,r,mat,x,y,z,ws,hs){
-  var m=new THREE.Mesh(new THREE.SphereGeometry(r,ws||16,hs||12),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
-};
-/* lathe from a [radius,height] profile — tanks, domes, nozzles, silos */
-MK.lathe=function(parent,profile,mat,x,y,z,seg){
-  var pts=profile.map(function(p){ return new THREE.Vector2(p[0],p[1]); });
-  var m=new THREE.Mesh(new THREE.LatheGeometry(pts,seg||24),mat); m.position.set(x||0,y||0,z||0); if(parent)parent.add(m); return m;
-};
-/* a pipe that follows a list of points with rounded bends */
-MK.pipe=function(parent,points,radius,mat,tubSeg){
-  var curve=new THREE.CatmullRomCurve3(points.map(function(p){ return new THREE.Vector3(p[0],p[1],p[2]); }),false,"catmullrom",0.15);
-  var m=new THREE.Mesh(new THREE.TubeGeometry(curve,tubSeg||Math.max(8,points.length*8),radius,8,false),mat);
-  if(parent)parent.add(m);
-  /* flanges at both ends */
-  [points[0],points[points.length-1]].forEach(function(e){
-    var f=new THREE.Mesh(new THREE.CylinderGeometry(radius*1.5,radius*1.5,radius*0.7,10),mat);
-    f.position.set(e[0],e[1],e[2]); if(parent)parent.add(f);
-  });
-  return m;
-};
-/* a ring of hex bolts around a circle (axis Y) */
-MK.boltRing=function(parent,r,y,n,mat,size){
-  size=size||0.05; mat=mat||MK.mat(0x8a929e,0.35,0.85);
-  var geo=new THREE.CylinderGeometry(size,size,size*0.9,6);
-  for(var i=0;i<n;i++){ var a=i/n*Math.PI*2; var b=new THREE.Mesh(geo,mat); b.position.set(Math.cos(a)*r,y,Math.sin(a)*r); parent.add(b); }
-};
-/* a straight row of rivets on a face (along x, facing +z) */
-MK.rivets=function(parent,x0,x1,y,z,n,mat){
-  mat=mat||MK.mat(0x8a929e,0.35,0.85);
-  var geo=new THREE.SphereGeometry(0.035,6,4);
-  for(var i=0;i<n;i++){ var t=n>1?i/(n-1):0.5; var b=new THREE.Mesh(geo,mat); b.position.set(x0+(x1-x0)*t,y,z); b.scale.z=0.6; parent.add(b); }
-};
-/* a louvered vent grille facing +z */
-MK.vent=function(parent,w,h,x,y,z,mat,slats){
-  slats=slats||Math.max(3,Math.round(h/0.09));
-  var frameM=mat||MK.mat(0x23282f,0.6,0.6), slatM=MK.mat(0x101317,0.7,0.5);
-  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
-  MK.box(g,w+0.06,h+0.06,0.04,frameM,0,0,-0.01);
-  var sh=h/slats;
-  for(var i=0;i<slats;i++){ var s=MK.box(g,w,sh*0.55,0.05,slatM,0,-h/2+sh*(i+0.5),0.02); s.rotation.x=-0.6; }
-  return g;
-};
-/* an emissive screen that shows a little procedurally drawn readout (graphs, bars, text) */
-var _screenTexCache={};
-MK.screenTex=function(kind,col){
-  var key=kind+col; if(_screenTexCache[key])return _screenTexCache[key];
-  var c=document.createElement("canvas"); c.width=128; c.height=80;
-  var g=c.getContext("2d"); var cs="#"+new THREE.Color(col).getHexString();
-  g.fillStyle="#04070c"; g.fillRect(0,0,128,80);
-  g.strokeStyle=cs; g.fillStyle=cs; g.globalAlpha=0.9;
-  if(kind==="graph"){
-    g.lineWidth=2; g.beginPath(); for(var x=0;x<=120;x+=4){ var y=44+Math.sin(x*0.09)*14+Math.sin(x*0.31)*6; if(x===0)g.moveTo(4+x,y); else g.lineTo(4+x,y); } g.stroke();
-    g.globalAlpha=0.35; for(var gx=0;gx<128;gx+=16)g.fillRect(gx,0,1,80); for(var gy=0;gy<80;gy+=16)g.fillRect(0,gy,128,1);
-  } else if(kind==="bars"){
-    for(var b=0;b<8;b++){ var hh=10+Math.random()*52; g.fillRect(8+b*14,70-hh,9,hh); }
-  } else if(kind==="radar"){
-    g.lineWidth=1.5; for(var r=10;r<40;r+=10){ g.beginPath(); g.arc(64,40,r,0,6.28); g.stroke(); }
-    g.beginPath(); g.moveTo(64,40); g.lineTo(98,22); g.stroke(); g.fillRect(84,48,4,4); g.fillRect(44,26,3,3);
-  } else {
-    g.font="bold 11px monospace"; ["SYS OK","PWR 98%","TEMP 412K","FLOW 6.2","CYC 0041"].forEach(function(t,i){ g.fillText(t,8,16+i*13); });
-  }
-  g.globalAlpha=0.08; g.fillStyle="#fff"; for(var sl=0;sl<80;sl+=3)g.fillRect(0,sl,128,1);
-  var t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
-  _screenTexCache[key]=t; return t;
-};
-MK.screen=function(parent,w,h,x,y,z,kind,col){
-  var tex=MK.screenTex(kind||"text",col||0x4fd3ff);
-  var mat=new THREE.MeshStandardMaterial({color:0x000000,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:1.2,roughness:0.2,metalness:0.1});
-  var bezel=MK.rbox(parent,w+0.08,h+0.08,0.06,MK.mat(0x14181e,0.5,0.6),x,y,z-0.02);
-  var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat); m.position.set(x,y,z+0.015); parent.add(m);
-  return {mesh:m,mat:mat,bezel:bezel};
-};
-/* a caged ladder up the side of something (facing +z, at local x,z) */
-MK.ladder=function(parent,h,x,z,mat){
-  mat=mat||MK.mat(0xffb545,0.45,0.6);
-  var g=new THREE.Group(); g.position.set(x,0,z); parent.add(g);
-  MK.box(g,0.04,h,0.04,mat,-0.18,h/2,0); MK.box(g,0.04,h,0.04,mat,0.18,h/2,0);
-  for(var y=0.25;y<h;y+=0.3)MK.box(g,0.36,0.03,0.03,mat,0,y,0);
-  return g;
-};
-/* a handrail run along x, posts every ~1m */
-MK.rail=function(parent,len,x,y,z,rotY,mat){
-  mat=mat||MK.mat(0xffb545,0.45,0.6);
-  var g=new THREE.Group(); g.position.set(x,y,z); g.rotation.y=rotY||0; parent.add(g);
-  var top=MK.cyl(g,0.03,0.03,len,mat,0,0.9,0,6); top.rotation.z=Math.PI/2;
-  var mid=MK.cyl(g,0.022,0.022,len,mat,0,0.48,0,6); mid.rotation.z=Math.PI/2;
-  var n=Math.max(2,Math.round(len)+1);
-  for(var i=0;i<n;i++)MK.cyl(g,0.028,0.028,0.9,mat,-len/2+len*i/(n-1),0.45,0,6);
-  return g;
-};
-/* a lattice truss between two heights (square section, along y) */
-MK.truss=function(parent,h,w,x,y,z,mat){
-  mat=mat||MK.mat(0x3a4656,0.5,0.75);
-  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
-  var hw=w/2, rad=Math.max(0.025,w*0.05);
-  [[-hw,-hw],[hw,-hw],[hw,hw],[-hw,hw]].forEach(function(c){ MK.cyl(g,rad,rad,h,mat,c[0],h/2,c[1],6); });
-  var step=w*1.2;
-  for(var yy=0;yy<h-0.01;yy+=step){
-    [[-hw,-hw,hw,-hw],[hw,-hw,hw,hw],[hw,hw,-hw,hw],[-hw,hw,-hw,-hw]].forEach(function(e,k){
-      var a=new THREE.Vector3(e[0],yy,e[1]), b=new THREE.Vector3(e[2],Math.min(h,yy+step),e[3]);
-      if(k%2)b.y=yy, a.y=Math.min(h,yy+step);
-      var d=new THREE.Vector3().subVectors(b,a), L=d.length();
-      var br=MK.cyl(g,rad*0.7,rad*0.7,L,mat,0,0,0,5);
-      br.position.copy(a).addScaledVector(d,0.5); br.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
-    });
-  }
-  return g;
-};
-/* small warning beacon with a glass dome */
-MK.beacon=function(parent,x,y,z,col){
-  var base=MK.cyl(parent,0.09,0.11,0.08,MK.mat(0x1a1d22,0.5,0.6),x,y,z,10);
-  var m=MK.glow(col||0xff3a20,1.6);
-  var dome=MK.sph(parent,0.08,m,x,y+0.07,z,10,6);
-  return m;
-};
-/* a radiator fin bank (facing +x/-x) */
-MK.radiator=function(parent,w,h,d,x,y,z,n,mat){
-  mat=mat||MK.mat(0x5a6470,0.4,0.8);
-  var g=new THREE.Group(); g.position.set(x,y,z); parent.add(g);
-  for(var i=0;i<n;i++)MK.box(g,w,h,0.03,mat,0,0,-d/2+d*i/Math.max(1,n-1));
-  MK.box(g,w*1.05,0.06,d+0.05,MK.mat(0x23282f,0.6,0.6),0,h/2,0); MK.box(g,w*1.05,0.06,d+0.05,MK.mat(0x23282f,0.6,0.6),0,-h/2,0);
-  return g;
-};
-/* a cable bundle sagging between two points */
-MK.cable=function(parent,a,b,sag,radius,mat){
-  var mid=[(a[0]+b[0])/2,(a[1]+b[1])/2-(sag||0.3),(a[2]+b[2])/2];
-  return MK.pipe(parent,[a,mid,b],radius||0.03,mat||MK.rubber(),16);
-};
-/* a concrete/steel pad with a chamfered rim, the base most buildings sit on */
-MK.pad=function(parent,w,d,h,col){
-  var m=MK.rbox(parent,w,h||0.3,d,MK.mat(col||0x3a4048,0.85,0.25),0,(h||0.3)/2,0,0.06);
-  var stripe=hazardBar(w*0.98,0.08,0.06); stripe.position.set(0,(h||0.3)*0.55,d/2+0.01); parent.add(stripe);
-  return m;
-};
-/* merge several geometries (each optionally transformed and vertex-coloured) into one, so
-   instanced foliage and props can be a single draw call */
-MK.merge=function(parts){
-  var pos=[],nor=[],col=[];
-  parts.forEach(function(p){
-    var g=p.geo.index?p.geo.toNonIndexed():p.geo.clone();
-    if(p.matrix)g.applyMatrix4(p.matrix);
-    if(!g.attributes.normal)g.computeVertexNormals();
-    var P=g.attributes.position, N=g.attributes.normal, C=g.attributes.color, c=new THREE.Color(p.color==null?0xffffff:p.color);
-    for(var i=0;i<P.count;i++){
-      pos.push(P.getX(i),P.getY(i),P.getZ(i)); nor.push(N.getX(i),N.getY(i),N.getZ(i));
-      var shade=p.shade?p.shade(P.getX(i),P.getY(i),P.getZ(i)):1;
-      if(C)col.push(C.getX(i)*c.r*shade,C.getY(i)*c.g*shade,C.getZ(i)*c.b*shade); else col.push(c.r*shade,c.g*shade,c.b*shade);
-    }
-  });
-  var out=new THREE.BufferGeometry();
-  out.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
-  out.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
-  out.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
-  out.computeBoundingSphere();
-  return out;
-};
-MK.mtx=function(x,y,z,rx,ry,rz,sx,sy,sz){
-  var m=new THREE.Matrix4();
-  m.compose(new THREE.Vector3(x||0,y||0,z||0),new THREE.Quaternion().setFromEuler(new THREE.Euler(rx||0,ry||0,rz||0)),new THREE.Vector3(sx==null?1:sx,sy==null?(sx==null?1:sx):sy,sz==null?(sx==null?1:sx):sz));
-  return m;
-};
-
-/* merge every static part of a model that shares a material into one mesh. Anything the game
-   animates or recolours (whatever the model stores in userData, plus everything underneath it)
-   is left alone. A detailed building drops from ~100 draw calls to ~15. */
-MK.optimize=function(root){
-  var keep=new Set();
-  function mark(v,depth){
-    if(!v||depth>4)return;
-    if(Array.isArray(v)){ v.forEach(function(x){ mark(x,depth+1); }); return; }
-    if(v.isObject3D){ v.traverse(function(o){ keep.add(o); }); for(var p=v.parent;p&&p!==root;p=p.parent)keep.add(p); return; }
-    if(typeof v==="object"&&!v.isMaterial&&!v.isVector3&&!v.isColor&&!v.isTexture){ for(var k in v)mark(v[k],depth+1); }
-  }
-  for(var k in root.userData)mark(root.userData[k],0);
-  root.updateMatrixWorld(true);
-  var inv=new THREE.Matrix4().copy(root.matrixWorld).invert();
-  var buckets=new Map();
-  root.traverse(function(o){
-    if(!o.isMesh||o.isInstancedMesh||keep.has(o))return;
-    for(var p=o.parent;p&&p!==root;p=p.parent)if(keep.has(p))return;
-    var list=buckets.get(o.material); if(!list){ list=[]; buckets.set(o.material,list); }
-    list.push(o);
-  });
-  buckets.forEach(function(list,mat){
-    if(list.length<2)return;
-    var pos=[],nor=[],uv=[];
-    list.forEach(function(o){
-      var gg=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();
-      var mm=new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld);
-      gg.applyMatrix4(mm);
-      /* a mirrored part (negative scale) has its triangle winding reversed once baked in, which
-         would get its visible faces culled — swap two corners of every triangle to undo that */
-      var flip=mm.determinant()<0;
-      var P=gg.attributes.position, N=gg.attributes.normal, U=gg.attributes.uv;
-      for(var i=0;i<P.count;i++){
-        var j=flip?(i%3===1?i+1:(i%3===2?i-1:i)):i;
-        pos.push(P.getX(j),P.getY(j),P.getZ(j));
-        if(N)nor.push(N.getX(j),N.getY(j),N.getZ(j)); else nor.push(0,1,0);
-        if(U)uv.push(U.getX(j),U.getY(j)); else uv.push(0,0);
-      }
-      gg.dispose();
-    });
-    var geo=new THREE.BufferGeometry();
-    geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
-    geo.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
-    geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
-    geo.computeBoundingSphere();
-    var merged=new THREE.Mesh(geo,mat);
-    root.add(merged);
-    list.forEach(function(o){ if(o.parent)o.parent.remove(o); });
-  });
-  return root;
-};
-/* photovoltaic cells: dark blue cells with silver busbars and a faint crystalline sheen */
-var solarCellTex=(function(){
-  var c=document.createElement("canvas"); c.width=256; c.height=256;
-  var g=c.getContext("2d");
-  g.fillStyle="#c8ccd4"; g.fillRect(0,0,256,256);
-  for(var y=0;y<8;y++)for(var x=0;x<8;x++){
-    var shade=20+Math.floor(Math.random()*14);
-    g.fillStyle="rgb("+(shade)+","+(shade+18)+","+(shade+60)+")"; g.fillRect(x*32+1.5,y*32+1.5,29,29);
-    g.fillStyle="rgba(140,170,255,.08)"; for(var s=0;s<4;s++)g.fillRect(x*32+2+Math.random()*24,y*32+2+Math.random()*24,4,4);
-    g.fillStyle="rgba(210,215,225,.7)"; g.fillRect(x*32+9,y*32+1.5,1,29); g.fillRect(x*32+21,y*32+1.5,1,29);
-  }
-  var t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
-  return t;
-})();
-/* corrugated steel for containers and sheds */
-var corrugatedNormal=(function(){
-  var w=128,h=16,hf=new Float32Array(w*h);
-  for(var y=0;y<h;y++)for(var x=0;x<w;x++)hf[y*w+x]=Math.sin(x/w*Math.PI*16)*0.5+0.5;
-  var t=canvasTex(heightToNormalCanvas(hf,w,h,3,true),1,false); return t;
-})();
-MK.corrugated=function(color){
-  var key="corr"+color; if(MK.mats[key])return MK.mats[key];
-  var m=new THREE.MeshStandardMaterial({color:color,roughness:0.55,metalness:0.55,map:GFX_METAL.map,normalMap:corrugatedNormal,normalScale:new THREE.Vector2(1.4,1.4)});
-  MK.mats[key]=m; return m;
-};
-/* tread plate for floors and decks */
-var treadNormal=(function(){
-  var s=64,hf=new Float32Array(s*s);
-  for(var y=0;y<s;y++)for(var x=0;x<s;x++){
-    var cx=(x%16)-8, cy=(y%16)-8, alt=((Math.floor(x/16)+Math.floor(y/16))%2);
-    var a=alt?Math.atan2(1,1):-Math.atan2(1,1), u=cx*Math.cos(a)+cy*Math.sin(a), v=-cx*Math.sin(a)+cy*Math.cos(a);
-    hf[y*s+x]=(Math.abs(u)<5.5&&Math.abs(v)<1.4)?1:0;
-  }
-  return canvasTex(heightToNormalCanvas(hf,s,s,2.5,true),1,false);
-})();
-MK.tread=function(color,rep){
-  var key="tread"+color+"|"+rep; if(MK.mats[key])return MK.mats[key];
-  var n=treadNormal.clone(); n.needsUpdate=true; n.repeat.set(rep||4,rep||4);
-  var m=new THREE.MeshStandardMaterial({color:color,roughness:0.42,metalness:0.85,map:GFX_METAL.map,normalMap:n,normalScale:new THREE.Vector2(1.2,1.2)});
-  MK.mats[key]=m; return m;
-};
-
-/* a lumpy natural rock: an icosphere pushed around by 3D noise */
-MK.rockGeo=function(r,seed,detail,squash){
-  var g=new THREE.IcosahedronGeometry(r,detail==null?2:detail);
-  var p=g.attributes.position, v=new THREE.Vector3();
-  for(var i=0;i<p.count;i++){
-    v.fromBufferAttribute(p,i);
-    var n=v.clone().normalize();
-    var k=1+(fbm3(n.x*1.6+seed,n.y*1.6,n.z*1.6,4,seed|0)-0.5)*0.9;
-    v.copy(n).multiplyScalar(r*k);
-    v.y*=squash==null?0.7:squash;
-    p.setXYZ(i,v.x,v.y,v.z);
-  }
-  g.computeVertexNormals();
-  return g;
-};
 function boltRow(g,w,d,y,mat,n){
   n=n||4; mat=mat||matStd(0x1a2230,0.5,0.7);
   for(var i=0;i<n;i++){
@@ -4806,6 +4693,55 @@ function buildBuildingMesh(type){
   return g;
 }
 
+/* the lander you arrived in, plus the cargo it brought, at the centre of the colony */
+var landingPodBeacon=null;
+(function(){
+  var g=new THREE.Group();
+  var white=MK.mat(0xdcdfe4,0.38,0.45), dark=MK.mat(0x1a2230,0.5,0.6), gold=MK.mat(0xc8a040,0.25,0.9), orange=MK.mat(0xe2a02c,0.45,0.4), chrome=MK.mat(0xc8ccd4,0.2,0.95);
+  var scorch=new THREE.Mesh(new THREE.CircleGeometry(9,40),new THREE.MeshBasicMaterial({color:0x0a0806,transparent:true,opacity:0.5,depthWrite:false}));
+  scorch.rotation.x=-Math.PI/2; scorch.position.y=0.04; surfaceScene.add(scorch);
+  /* descent stage: an octagonal gold-foil wrapped body, four landing legs with footpads and shock
+     struts, three descent engines; ascent stage: a pressurised cabin with windows, a hatch,
+     ladder, RCS quads, antennae and a high-gain dish */
+  var desc=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.6,1.6,8),gold); desc.position.y=2.6; g.add(desc);
+  MK.rbox(g,3.4,0.25,3.4,dark,0,1.75,0,0.05);
+  for(var l=0;l<4;l++){
+    var a=l/4*6.28+Math.PI/4, cx=Math.cos(a), sz=Math.sin(a);
+    MK.pipe(g,[[cx*2.1,2.4,sz*2.1],[cx*3.6,1.0,sz*3.6],[cx*4.0,0.25,sz*4.0]],0.12,white,12);
+    MK.pipe(g,[[cx*1.6,1.8,sz*1.6],[cx*3.0,0.9,sz*3.0]],0.07,chrome,8);
+    MK.cyl(g,0.65,0.75,0.2,dark,cx*4.0,0.12,sz*4.0,14);
+  }
+  for(var e=0;e<3;e++){ var ea=e/3*6.28; MK.lathe(g,[[0.25,0],[0.45,-0.8],[0.5,-0.85]],dark,Math.cos(ea)*0.9,1.75,Math.sin(ea)*0.9,14); }
+  MK.lathe(g,[[2.0,3.4],[2.1,4.6],[1.7,5.6],[1.0,6.2],[0,6.35]],white,0,0,0,20);
+  for(var w=0;w<3;w++){ var wa=w/3*6.28+0.5; MK.sph(g,0.22,MK.glass(0x6fc0ff,0.6),Math.cos(wa)*1.95,5.0,Math.sin(wa)*1.95,10,8).scale.set(1,0.8,0.4); }
+  MK.rbox(g,1.0,1.4,0.12,dark,0,4.0,2.05,0.08);
+  MK.ladder(g,2.4,0,2.6,orange);
+  for(var q=0;q<4;q++){ var qa=q/4*6.28; MK.box(g,0.3,0.3,0.3,dark,Math.cos(qa)*1.75,5.3,Math.sin(qa)*1.75); }
+  MK.cyl(g,0.05,0.05,1.6,chrome,0.8,6.8,-0.4,6);
+  var dish=new THREE.Mesh(new THREE.SphereGeometry(0.7,14,8,0,Math.PI*2,0,Math.PI*0.3),MK.mat(0xd5d9de,0.4,0.4,{side:THREE.DoubleSide})); dish.rotation.x=-0.8; dish.position.set(-0.9,6.4,0.2); g.add(dish);
+  var hz=hazardBar(4.0,0.2,0.05); hz.position.set(0,1.75,1.71); g.add(hz);
+  MK.optimize(g);
+  var beaconMat=new THREE.MeshStandardMaterial({color:0xff4a4a,emissive:0xff2a2a,emissiveIntensity:1.3});
+  var beacon=new THREE.Mesh(new THREE.SphereGeometry(0.18,10,8),beaconMat); beacon.position.set(0.8,7.65,-0.4); g.add(beacon);
+  landingPodBeacon=beacon;
+  g.position.set(0,0,-4);
+  g.scale.setScalar(0.9);
+  gfxMarkShadows(g);
+  surfaceScene.add(g);
+  /* supply drop: crates, a fuel bladder, a toolbox and a work light */
+  var cr=new THREE.Group();
+  [[-9,4,0.2],[-10.5,2.5,0.9],[-9.6,2.9,-0.5],[9,5,0.4],[10.2,3.3,1.2]].forEach(function(p,i){
+    var c=MK.rbox(cr,1.5,1.1,1.1,MK.corrugated([0x3a5a3a,0x6a4a2a,0x2a4a6a][i%3]),p[0],0.55+(i===2?1.1:0),p[1],0.05); c.rotation.y=p[2];
+    var band=MK.box(cr,1.52,0.12,1.12,orange,p[0],0.55+(i===2?1.1:0),p[1]); band.rotation.y=p[2];
+  });
+  var bl=MK.sph(cr,0.9,MK.mat(0x2a2a2a,0.6,0.1),11.5,0.4,-1.5,16,10); bl.scale.set(1.3,0.45,0.9);
+  MK.rbox(cr,0.7,0.35,0.35,MK.mat(0xa8302a,0.45,0.4),-11,0.18,0.5,0.04);
+  MK.cyl(cr,0.04,0.06,2.2,dark,-7.5,1.1,-1.5,6); MK.rbox(cr,0.5,0.3,0.2,dark,-7.5,2.25,-1.5,0.04); MK.box(cr,0.4,0.2,0.02,MK.glow(0xfff0d0,1.4),-7.5,2.25,-1.39);
+  MK.optimize(cr);
+  gfxMarkShadows(cr);
+  surfaceScene.add(cr);
+})();
+
 /* ═════════════ RENDERED BUILD ICONS (offscreen model thumbnails) ═════════════ */
 function renderBuildIcons(){
   var W=128,H=128;
@@ -4958,38 +4894,36 @@ var NODE_STYLE={
 function spawnNode(x,z,restype){
   var g=new THREE.Group();
   var style=NODE_STYLE[restype];
-  var rockMat=new THREE.MeshStandardMaterial({color:style.rockCol,roughness:0.95,metalness:0.05,flatShading:true});
-  var crystalMat=new THREE.MeshStandardMaterial({color:style.crystalCol,roughness:0.35,metalness:0.4,flatShading:true,emissive:style.emit,emissiveIntensity:0.35});
-  var moundGeo=new THREE.DodecahedronGeometry(2.3,0);
-  var mound=new THREE.Mesh(moundGeo,rockMat);
-  mound.scale.set(1.25,0.55,1.1);
-  mound.rotation.y=rnd(0,6.28);
-  mound.position.y=0.65;
-  g.add(mound);
-  var mound2=new THREE.Mesh(new THREE.DodecahedronGeometry(1.5,0),rockMat);
-  mound2.scale.set(1,0.5,1);
-  mound2.position.set(rnd(-1.2,1.2),0.45,rnd(-1.2,1.2));
-  mound2.rotation.y=rnd(0,6.28);
-  g.add(mound2);
-  var nShards=style.shape==="shard"?6:(style.shape==="blob"?5:4);
-  for(var i=0;i<nShards;i++){
-    var ang=(i/nShards)*Math.PI*2+rnd(-0.3,0.3);
-    var dist=rnd(0.3,1.5);
-    var h=rnd(1.1,2.6);
-    var geo=style.shape==="shard"?new THREE.ConeGeometry(rnd(0.35,0.6),h,5)
-      :style.shape==="blob"?new THREE.IcosahedronGeometry(rnd(0.55,0.9),0)
-      :new THREE.BoxGeometry(rnd(0.6,1.0),rnd(0.5,0.9),rnd(0.6,1.0));
-    var shard=new THREE.Mesh(geo,crystalMat);
-    shard.position.set(Math.cos(ang)*dist,h*0.35+0.4,Math.sin(ang)*dist);
-    shard.rotation.set(rnd(-0.25,0.25),rnd(0,6.28),style.shape==="shard"?rnd(-0.3,0.3):rnd(0,6.28));
-    g.add(shard);
+  /* an ore deposit: a fractured outcrop (noise-displaced rock, faceted) split open by veins of the
+     resource — crystal clusters, nodules or seams depending on the ore — with loose ore chunks
+     scattered at its foot and a soft glint above */
+  var rockMat=new THREE.MeshStandardMaterial({color:style.rockCol,roughness:0.92,metalness:0.08,flatShading:true,map:GFX_ROCK.map});
+  var crystalMat=new THREE.MeshStandardMaterial({color:style.crystalCol,roughness:0.18,metalness:0.45,flatShading:true,emissive:style.emit,emissiveIntensity:0.45,envMapIntensity:1.6});
+  var seed=Math.floor(Math.abs(x*13+z*7))%97;
+  var main=new THREE.Mesh(MK.rockGeo(2.2,seed,2,0.55),rockMat); main.position.y=0.35; main.rotation.y=rnd(0,6.28); g.add(main);
+  for(var r=0;r<3;r++){ var a=r/3*6.28+rnd(-0.4,0.4); var sm=new THREE.Mesh(MK.rockGeo(rnd(0.6,1.1),seed+r*5,1,0.7),rockMat); sm.position.set(Math.cos(a)*2.0,0.05,Math.sin(a)*2.0); g.add(sm); }
+  var n=style.shape==="shard"?7:(style.shape==="blob"?6:5);
+  for(var i=0;i<n;i++){
+    var ang=(i/n)*Math.PI*2+rnd(-0.3,0.3), dist=rnd(0.2,1.3), h=rnd(1.0,2.4), sh;
+    if(style.shape==="shard"){
+      sh=new THREE.Group();
+      var pr=MK.cyl(sh,h*0.12,h*0.14,h,crystalMat,0,h/2,0,6); var tip=MK.cyl(sh,0,h*0.12,h*0.3,crystalMat,0,h+h*0.15,0,6);
+    } else if(style.shape==="blob"){
+      sh=new THREE.Mesh(MK.rockGeo(rnd(0.45,0.8),seed+i,1,1.0),crystalMat);
+    } else {
+      sh=new THREE.Mesh(new THREE.BoxGeometry(rnd(0.5,0.9),rnd(0.4,0.8),rnd(0.5,0.9)),crystalMat);
+    }
+    sh.position.set(Math.cos(ang)*dist,0.55+(style.shape==="shard"?0:h*0.25),Math.sin(ang)*dist);
+    sh.rotation.set(rnd(-0.35,0.35),rnd(0,6.28),rnd(-0.35,0.35));
+    g.add(sh);
   }
-  var glintMat=new THREE.MeshStandardMaterial({color:style.crystalCol,emissive:style.crystalCol,emissiveIntensity:0.8,roughness:0.2,metalness:0.6});
-  var glint=new THREE.Mesh(new THREE.OctahedronGeometry(0.22,0),glintMat);
-  glint.position.set(0,2.0,0);
-  g.add(glint);
+  for(var c=0;c<5;c++){ var ca=rnd(0,6.28), cr=rnd(1.8,2.8); var ch=new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(0.12,0.25),0),crystalMat); ch.position.set(Math.cos(ca)*cr,-0.2,Math.sin(ca)*cr); g.add(ch); }
+  var glint=new THREE.Mesh(new THREE.OctahedronGeometry(0.2,0),new THREE.MeshStandardMaterial({color:style.crystalCol,emissive:style.crystalCol,emissiveIntensity:0.9,roughness:0.2,metalness:0.6}));
+  glint.position.set(0,2.2,0); g.add(glint);
+  MK.optimize(g);
   g.position.set(x,0.4,z);
   g.userData.footprint=2.6;
+  gfxMarkShadows(g);
   surfaceScene.add(g);
   nodes.push({x:x,z:z,restype:restype,mesh:g});
 }
@@ -6595,22 +6529,28 @@ function buildCarrierMesh(){
    forward wings, twin glowing engines, a canopy and red running lights */
 function buildRaiderMesh(elite){
   var g=new THREE.Group();
-  var hull=matStd(elite?0x3a2a44:0x4a2226,0.4,0.7), dark=matStd(0x14141a,0.5,0.7);
-  var glowMat=new THREE.MeshStandardMaterial({color:0x200404,emissive:elite?0xff4fd8:0xff3020,emissiveIntensity:1.8});
-  var body=new THREE.Mesh(new THREE.ConeGeometry(0.6,3.2,6),hull); body.rotation.x=Math.PI/2; body.position.z=0.4; g.add(body);
-  var spine=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.4,2.2),dark); spine.position.set(0,0.25,-0.3); g.add(spine);
-  var can=new THREE.Mesh(new THREE.SphereGeometry(0.32,10,6),new THREE.MeshStandardMaterial({color:0x100608,emissive:0xff2a1a,emissiveIntensity:0.6,roughness:0.1,metalness:0.6}));
-  can.scale.set(0.8,0.6,1.4); can.position.set(0,0.35,0.9); g.add(can);
+  /* raider interceptor: a predatory forward-swept dart with a long sensor nose, canted wings
+     with cannon pods, a slit canopy, ventral fins and twin glowing engines */
+  var hull=MK.mat(elite?0x3a2a44:0x4a2226,0.35,0.75), dark=MK.mat(0x14141a,0.5,0.7), plate=MK.mat(elite?0x6a3a8a:0x8a3a2a,0.4,0.6);
+  var glowMat=MK.glow(elite?0xff4fd8:0xff3020,1.8);
+  var body=MK.lathe(g,[[0.32,-1.6],[0.6,-1.2],[0.62,0.0],[0.4,1.0],[0.12,1.9],[0,2.1]],hull,0,0,0,14); body.rotation.x=Math.PI/2; body.scale.set(1,0.7,1);
+  MK.cyl(g,0.03,0.05,0.8,dark,0,0,2.4,6).rotation.x=Math.PI/2;
+  MK.rbox(g,0.7,0.35,2.0,dark,0,0.28,-0.3,0.1);
+  MK.rbox(g,0.3,0.08,0.7,new THREE.MeshStandardMaterial({color:0x100608,emissive:elite?0xff4fd8:0xff2a1a,emissiveIntensity:0.7,roughness:0.08,metalness:0.7}),0,0.47,0.5,0.03);
   [-1,1].forEach(function(s){
-    var wing=new THREE.Mesh(new THREE.BoxGeometry(2.2,0.08,1.0),hull); wing.position.set(s*1.3,0,-0.4); wing.rotation.y=s*-0.45; g.add(wing);
-    var tipG=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.7,0.8),dark); tipG.position.set(s*2.3,0.1,-0.9); g.add(tipG);
-    var gun=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.2,5),dark); gun.rotation.x=Math.PI/2; gun.position.set(s*0.9,-0.1,0.7); g.add(gun);
-    var eng=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.22,1.0,8),dark); eng.rotation.x=Math.PI/2; eng.position.set(s*0.45,0,-1.4); g.add(eng);
-    var gl=new THREE.Mesh(new THREE.CircleGeometry(0.22,10),glowMat); gl.position.set(s*0.45,0,-1.92); gl.rotation.y=Math.PI; g.add(gl);
+    var wing=MK.rbox(g,2.5,0.08,0.9,hull,s*1.4,0,-0.2,0.03); wing.rotation.set(0,s*-0.45,s*0.12);
+    MK.rbox(g,1.4,0.1,0.25,plate,s*1.1,0.06,0.15,0.03).rotation.y=s*-0.45;
+    MK.rbox(g,0.14,0.8,0.9,dark,s*2.45,0.15,-0.9,0.03);
+    MK.cyl(g,0.08,0.08,1.4,dark,s*1.0,-0.12,0.4,8).rotation.x=Math.PI/2;
+    MK.cyl(g,0.05,0.05,0.5,plate,s*1.0,-0.12,1.2,6).rotation.x=Math.PI/2;
+    MK.lathe(g,[[0.24,0],[0.3,0.3],[0.3,1.0],[0.26,1.2]],dark,s*0.45,0,-0.6,12).rotation.x=-Math.PI/2;
+    var gl=new THREE.Mesh(new THREE.CircleGeometry(0.22,12),glowMat); gl.position.set(s*0.45,0,-1.82); gl.rotation.y=Math.PI; g.add(gl);
+    MK.rbox(g,0.06,0.5,0.6,dark,s*0.3,-0.45,-0.6,0.02);
   });
   var plume=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:elite?0xff4fd8:0xff6030,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
   plume.scale.setScalar(2.2); plume.position.set(0,0,-2.3); g.add(plume);
   g.userData.plume=plume;
+  MK.optimize(g);
   g.rotation.order="YXZ";
   g.scale.setScalar(7);
   return g;
@@ -7106,48 +7046,69 @@ function resetNPCRuntime(){
 function npcFaction(w){ return NPC_FACTIONS[w.id]||NPC_FACTIONS.ember; }
 function buildNPCMesh(type,fac){
   var g=new THREE.Group();
-  var armor=matStd(fac.armor,0.45,0.6), trim=matStd(fac.trim,0.5,0.5);
-  var visorMat=new THREE.MeshStandardMaterial({color:0x080808,emissive:fac.visor,emissiveIntensity:1.6,roughness:0.2});
+  var armor=MK.mat(fac.armor,0.4,0.6), trim=MK.mat(fac.trim,0.5,0.5), cloth=MK.mat(new THREE.Color(fac.trim).lerp(new THREE.Color(0x3a3a3a),0.5).getHex(),0.85,0.05);
+  var gun=MK.mat(0x1a1a1e,0.45,0.75), metal=MK.mat(0x8a929e,0.3,0.85);
+  var visorMat=new THREE.MeshStandardMaterial({color:0x080808,emissive:fac.visor,emissiveIntensity:1.6,roughness:0.15,metalness:0.6});
   if(type==="stalker"){
-    /* a hovering hunter drone: armored teardrop, spinning blade ring, single eye */
-    var body=new THREE.Mesh(new THREE.SphereGeometry(0.5,12,8),armor); body.scale.set(1,0.7,1.3); g.add(body);
-    var eye=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),visorMat); eye.position.set(0,0.05,0.6); g.add(eye);
-    var blades=new THREE.Group();
-    for(var b=0;b<3;b++){ var bl=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.04,0.14),trim); bl.rotation.y=b*Math.PI/3; blades.add(bl); }
-    blades.position.y=0.45; g.add(blades);
+    /* hunter drone: an armoured teardrop chassis, sensor eye in a cowl, three ducted rotors,
+       a dangling blade arm and an underglow thruster */
+    var inner=new THREE.Group(); inner.position.y=1.4;
+    MK.lathe(inner,[[0,-0.45],[0.32,-0.3],[0.42,0],[0.34,0.25],[0,0.36]],armor,0,0,0,16).rotation.x=Math.PI/2;
+    MK.rbox(inner,0.5,0.18,0.5,trim,0,0.22,-0.05,0.06);
+    var eye=MK.sph(inner,0.13,visorMat,0,0.04,0.42,12,8);
+    MK.cyl(inner,0.16,0.16,0.08,trim,0,0.04,0.38,12).rotation.x=Math.PI/2;
+    var blades=new THREE.Group(); blades.position.y=0.42; inner.add(blades);
+    for(var r=0;r<3;r++){ var a=r/3*6.28; var duct=new THREE.Mesh(new THREE.TorusGeometry(0.22,0.04,6,16),trim); duct.rotation.x=Math.PI/2; duct.position.set(Math.cos(a)*0.5,0,Math.sin(a)*0.5); blades.add(duct);
+      var bl=MK.box(blades,0.4,0.015,0.06,metal,Math.cos(a)*0.5,0,Math.sin(a)*0.5); bl.rotation.y=a; MK.rbox(inner,0.4,0.06,0.08,trim,Math.cos(a)*0.28,0.42,Math.sin(a)*0.28,0.02).rotation.y=-a; }
+    MK.pipe(inner,[[0,-0.25,0.2],[0,-0.55,0.35],[0,-0.6,0.6]],0.03,metal,10);
+    MK.cyl(inner,0.0,0.06,0.35,MK.mat(0xd8dde6,0.2,0.9),0,-0.62,0.8,6).rotation.x=Math.PI/2;
     var glow=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:fac.visor,transparent:true,opacity:0.6,blending:THREE.AdditiveBlending,depthWrite:false}));
-    glow.scale.setScalar(1.1); glow.position.y=-0.45; g.add(glow);
-    g.userData={blades:blades,eye:visorMat,hover:true};
-    var gg=new THREE.Group(); g.position.y=1.4; gg.add(g); gg.userData=g.userData; gg.userData.inner=g;
-    return gg;
+    glow.scale.setScalar(1.0); glow.position.y=-0.45; inner.add(glow);
+    g.add(inner);
+    g.userData={blades:blades,eye:visorMat,hover:true,inner:inner};
+    return g;
   }
+  /* soldier: fatigues under armour plates, a helmet with a glowing visor slit and rebreather,
+     webbing pouches, a pack with an antenna, and a proper rifle (or a heavy cannon / long rifle) */
   var hip=new THREE.Group(); hip.position.y=0.95; g.add(hip);
-  var torso=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.72,0.38),armor); torso.position.y=0.42; hip.add(torso);
-  var chest=new THREE.Mesh(new THREE.BoxGeometry(0.66,0.3,0.42),trim); chest.position.y=0.62; hip.add(chest);
-  var pack=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.5,0.22),trim); pack.position.set(0,0.45,-0.28); hip.add(pack);
-  var head=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.36,0.4),armor); head.position.y=0.98; hip.add(head);
-  var visor=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.1,0.04),visorMat); visor.position.set(0,1.0,0.21); hip.add(visor);
-  var crest=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.14,0.36),trim); crest.position.y=1.22; hip.add(crest);
+  MK.cyl(hip,0.27,0.24,0.42,cloth,0,0.22,0,12);
+  var chest=MK.rbox(hip,0.62,0.48,0.4,armor,0,0.6,0.02,0.1);
+  MK.rbox(hip,0.5,0.2,0.1,trim,0,0.5,0.22,0.04);
+  for(var p=0;p<3;p++)MK.rbox(hip,0.12,0.14,0.08,trim,-0.15+p*0.15,0.3,0.22,0.03);
+  MK.rbox(hip,0.66,0.1,0.42,trim,0,0.05,0,0.04);
+  MK.rbox(hip,0.46,0.5,0.22,trim,0,0.56,-0.3,0.06);
+  MK.cyl(hip,0.012,0.012,0.5,metal,0.15,1.05,-0.32,4);
+  MK.cyl(hip,0.12,0.14,0.12,cloth,0,0.88,0,10);
+  var helm=MK.sph(hip,0.23,armor,0,1.08,0,16,12); helm.scale.set(1,0.95,1.08);
+  MK.rbox(hip,0.36,0.09,0.06,visorMat,0,1.08,0.22,0.03);
+  MK.cyl(hip,0.06,0.08,0.12,trim,0,0.96,0.22,10).rotation.x=Math.PI/2;
+  MK.rbox(hip,0.08,0.12,0.34,trim,0,1.28,-0.02,0.03);
   var arms=[];
   [-1,1].forEach(function(s){
-    var sh=new THREE.Group(); sh.position.set(s*0.42,0.68,0); hip.add(sh);
-    var pad=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.18,0.3),trim); pad.position.y=0.04; sh.add(pad);
-    var arm=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.62,0.16),armor); arm.position.y=-0.32; sh.add(arm);
+    var sh=new THREE.Group(); sh.position.set(s*0.42,0.72,0); hip.add(sh);
+    MK.rbox(sh,0.26,0.2,0.32,armor,0,0.04,0,0.06);
+    MK.cyl(sh,0.08,0.075,0.3,cloth,0,-0.18,0,10);
+    MK.rbox(sh,0.15,0.26,0.15,armor,0,-0.46,0,0.04);
+    MK.rbox(sh,0.12,0.12,0.13,MK.rubber(),0,-0.64,0,0.03);
     arms.push(sh);
   });
-  /* the weapon rides on the right arm */
-  var gun=new THREE.Group();
-  var gunBody=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.16,type==="heavy"?0.95:0.75),matStd(0x1a1a1e,0.5,0.7)); gun.add(gunBody);
-  var muzzle=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.06),new THREE.MeshStandardMaterial({color:0x111111,emissive:fac.bolt,emissiveIntensity:0.6}));
-  muzzle.position.z=type==="heavy"?0.5:0.4; gun.add(muzzle);
-  if(type==="sniper"){ var scope=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.3,6),matStd(0x1a1a1e)); scope.rotation.x=Math.PI/2; scope.position.y=0.12; gun.add(scope); gunBody.scale.z=1.6; muzzle.position.z=0.62; }
-  gun.position.set(0,-0.6,0.3); arms[1].add(gun);
+  var w=new THREE.Group();
+  var len=type==="heavy"?1.05:(type==="sniper"?1.4:0.85);
+  MK.rbox(w,0.11,0.16,len*0.55,gun,0,0,0,0.02);
+  MK.cyl(w,0.03,0.03,len*0.5,gun,0,0.02,len*0.5,8).rotation.x=Math.PI/2;
+  MK.rbox(w,0.07,0.2,0.1,gun,0,-0.14,0.05,0.02);
+  MK.rbox(w,0.08,0.12,0.26,gun,0,-0.02,-len*0.34,0.03);
+  if(type==="heavy"){ MK.cyl(w,0.1,0.1,0.5,MK.mat(fac.bolt,0.4,0.5),0,0.02,0.45,10).rotation.x=Math.PI/2; MK.cyl(w,0.08,0.08,0.3,gun,0.12,0.02,0.1,10).rotation.x=Math.PI/2; }
+  if(type==="sniper"){ MK.cyl(w,0.04,0.04,0.36,gun,0,0.12,0.0,8).rotation.x=Math.PI/2; MK.cyl(w,0.05,0.05,0.02,MK.glow(0xff2a1a,1.4),0,0.12,0.18,8).rotation.x=Math.PI/2; }
+  var muzzle=MK.box(w,0.05,0.05,0.05,new THREE.MeshStandardMaterial({color:0x111111,emissive:fac.bolt,emissiveIntensity:0.6}),0,0.02,len*0.75);
+  w.position.set(0,-0.6,0.3); arms[1].add(w);
   var legs=[];
   [-1,1].forEach(function(s){
     var lg=new THREE.Group(); lg.position.set(s*0.17,0.95,0); g.add(lg);
-    var thigh=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.55,0.22),trim); thigh.position.y=-0.27; lg.add(thigh);
-    var shin=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.45,0.2),armor); shin.position.y=-0.72; lg.add(shin);
-    var boot=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.12,0.32),trim); boot.position.set(0,-0.93,0.05); lg.add(boot);
+    MK.cyl(lg,0.11,0.1,0.48,cloth,0,-0.26,0,10);
+    MK.rbox(lg,0.18,0.16,0.12,armor,0,-0.5,0.08,0.04);
+    MK.rbox(lg,0.17,0.4,0.19,armor,0,-0.72,0,0.05);
+    MK.rbox(lg,0.21,0.13,0.33,trim,0,-0.93,0.05,0.04);
     legs.push(lg);
   });
   g.userData={hip:hip,arms:arms,legs:legs,eye:visorMat,muzzle:muzzle};
@@ -7155,38 +7116,66 @@ function buildNPCMesh(type,fac){
 }
 function buildBarracksMesh(fac){
   var g=new THREE.Group();
-  var wall=matStd(fac.armor,0.6,0.5), dark=matStd(fac.trim,0.6,0.6);
-  var base=new THREE.Mesh(new THREE.BoxGeometry(9,0.4,7),dark); base.position.y=0.2; g.add(base);
-  var hut=new THREE.Mesh(new THREE.BoxGeometry(8,3.4,6),wall); hut.position.y=2.1; g.add(hut);
-  var roof=new THREE.Mesh(new THREE.CylinderGeometry(0.1,4.6,1.4,4),dark); roof.rotation.y=Math.PI/4; roof.position.y=4.5; roof.scale.set(1.25,1,0.95); g.add(roof);
-  var door=new THREE.Mesh(new THREE.BoxGeometry(2,2.6,0.1),new THREE.MeshStandardMaterial({color:0x100808,emissive:fac.visor,emissiveIntensity:0.35})); door.position.set(0,1.6,3.05); g.add(door);
-  var banner=new THREE.Mesh(new THREE.PlaneGeometry(1.2,2.4),new THREE.MeshStandardMaterial({color:fac.visor,emissive:fac.visor,emissiveIntensity:0.3,side:THREE.DoubleSide}));
-  banner.position.set(3.2,3.0,3.06); g.add(banner);
-  var antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,3,6),dark); antenna.position.set(-3,5.4,-2); g.add(antenna);
-  var bcn=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6),new THREE.MeshStandardMaterial({color:0x200000,emissive:0xff2a1a,emissiveIntensity:1.6})); bcn.position.set(-3,6.95,-2); g.add(bcn);
+  var wall=MK.mat(fac.armor,0.6,0.5), dark=MK.mat(fac.trim,0.6,0.6), metal=MK.mat(0x8a929e,0.35,0.8);
+  /* a prefab military barracks: a sandbagged plinth, prefab wall panels with ribs, a pitched
+     armoured roof with vents, a lit doorway under an awning, a faction banner, a generator, an
+     antenna mast with a warning beacon and floodlights */
+  MK.rbox(g,9.4,0.45,7.4,MK.mat(0x5a5650,0.9,0.05),0,0.22,0,0.06);
+  MK.box(g,8.2,3.4,6.2,wall,0,2.15,0);
+  for(var r=-3;r<=3;r++){ MK.box(g,0.14,3.5,6.3,dark,r*1.3,2.15,0); }
+  MK.box(g,8.4,0.2,6.4,dark,0,3.9,0);
+  var roofGeo=new THREE.CylinderGeometry(0.2,4.9,1.5,4,1); roofGeo.rotateY(Math.PI/4); roofGeo.scale(1.22,1,0.94);
+  var roof=new THREE.Mesh(roofGeo,dark); roof.position.y=4.75; g.add(roof);
+  MK.vent(g,1.0,0.4,-2.0,4.6,2.0,dark).rotation.x=-0.45;
+  MK.rbox(g,2.2,2.8,0.2,MK.mat(0x100808,0.8,0.2),0,1.8,3.12,0.04);
+  MK.box(g,1.9,2.5,0.04,MK.glow(fac.visor,0.35),0,1.75,3.15);
+  MK.rbox(g,3.0,0.12,1.4,dark,0,3.4,3.7,0.04);
+  [-1,1].forEach(function(s){ MK.cyl(g,0.06,0.06,3.0,metal,s*1.35,1.9,4.3,8); });
+  var banner=new THREE.Mesh(new THREE.PlaneGeometry(1.2,2.4,1,4),MK.mat(fac.visor,0.8,0,{emissive:fac.visor,emissiveIntensity:0.25,side:THREE.DoubleSide})); banner.position.set(3.2,2.7,3.12); g.add(banner);
+  for(var sb=0;sb<9;sb++){ var bag=MK.cyl(g,0.26,0.26,0.75,MK.mat(0x6a5a40,0.95,0),-4.0+sb*1.0,0.72,3.6,10); bag.rotation.z=Math.PI/2; }
+  MK.rbox(g,1.4,1.0,1.0,dark,-4.6,0.95,-2.0,0.08); MK.vent(g,0.6,0.5,-4.6,1.0,-1.49);
+  MK.cyl(g,0.08,0.12,3.4,metal,-3,5.6,-2,8);
+  var bcn=new THREE.Mesh(new THREE.SphereGeometry(0.2,10,8),new THREE.MeshStandardMaterial({color:0x200000,emissive:0xff2a1a,emissiveIntensity:1.6})); bcn.position.set(-3,7.4,-2); g.add(bcn);
+  [-1,1].forEach(function(s){ MK.rbox(g,0.5,0.3,0.3,dark,s*3.8,3.6,3.2,0.04); MK.box(g,0.4,0.22,0.02,MK.glow(0xfff0d0,1.4),s*3.8,3.6,3.36); });
+  MK.optimize(g);
   g.userData.beacon=bcn.material;
   return g;
 }
 function buildTowerMesh(fac){
   var g=new THREE.Group();
-  var leg=matStd(fac.trim,0.5,0.7);
-  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(c){ var l=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.18,7,6),leg); l.position.set(c[0]*1.2,3.5,c[1]*1.2); l.rotation.set(c[1]*0.06,0,-c[0]*0.06); g.add(l); });
-  var deck=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.25,3.4),matStd(fac.armor,0.6,0.5)); deck.position.y=7.1; g.add(deck);
-  var rail=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.8,0.1),leg); rail.position.set(0,7.6,1.65); g.add(rail);
-  var rail2=rail.clone(); rail2.position.z=-1.65; g.add(rail2);
-  var roof=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.18,3.6),leg); roof.position.y=9.4; g.add(roof);
-  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(c){ var p=new THREE.Mesh(new THREE.BoxGeometry(0.1,2.2,0.1),leg); p.position.set(c[0]*1.6,8.3,c[1]*1.6); g.add(p); });
+  var leg=MK.mat(fac.trim,0.5,0.7), deck=MK.mat(fac.armor,0.6,0.5);
+  /* a sniper watchtower: four braced legs, a ladder, a sandbagged deck with a corrugated roof
+     and a swivelling searchlight */
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(c){ var l=MK.rbox(g,0.22,7.2,0.22,leg,c[0]*1.25,3.5,c[1]*1.25,0.04); l.rotation.set(c[1]*0.05,0,-c[0]*0.05); });
+  for(var y=1.5;y<7;y+=2){
+    [[-1,0],[1,0]].forEach(function(e){ var br=MK.box(g,0.08,2.9,0.08,leg,e[0]*1.2,y,0); br.rotation.x=0.75; var br2=MK.box(g,0.08,2.9,0.08,leg,0,y,e[0]*1.2); br2.rotation.z=0.75; });
+  }
+  MK.ladder(g,7.0,0,1.35,leg);
+  MK.rbox(g,3.6,0.25,3.6,MK.tread(0x5a5650,3),0,7.1,0,0.04);
+  for(var s=0;s<4;s++){ var a=s/4*6.28; for(var b=0;b<3;b++){ var bag=MK.cyl(g,0.22,0.22,0.9,MK.mat(0x6a5a40,0.95,0),Math.sin(a)*1.6+Math.cos(a)*(b-1)*0.95,7.45,Math.cos(a)*1.6-Math.sin(a)*(b-1)*0.95,8); bag.rotation.set(0,a,Math.PI/2); } }
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(c){ MK.box(g,0.1,2.3,0.1,leg,c[0]*1.65,8.35,c[1]*1.65); });
+  var roof=MK.box(g,4.0,0.12,4.0,MK.corrugated(fac.trim),0,9.5,0); roof.rotation.x=0.08;
+  MK.cyl(g,0.25,0.3,0.4,leg,1.4,7.9,-1.4,10);
+  MK.box(g,0.35,0.3,0.05,MK.glow(0xfff0d0,1.5),1.4,7.95,-1.2);
+  MK.optimize(g);
   return g;
 }
 function buildCoverMesh(fac,big){
   var g=new THREE.Group();
   if(big){
-    var crate=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.6,1.6),matStd(fac.armor,0.7,0.4)); crate.position.y=0.8; g.add(crate);
-    var band=new THREE.Mesh(new THREE.BoxGeometry(2.25,0.2,1.65),matStd(fac.trim,0.6,0.6)); band.position.y=1.2; g.add(band);
+    /* armoured supply crates stacked as cover */
+    MK.rbox(g,2.2,1.5,1.6,MK.corrugated(fac.armor),0,0.75,0,0.06);
+    MK.box(g,2.25,0.18,1.65,MK.mat(fac.trim,0.6,0.6),0,1.2,0);
+    MK.rbox(g,1.0,0.7,1.0,MK.corrugated(fac.trim),0.4,1.85,0.1,0.05);
+    MK.box(g,0.5,0.3,0.02,MK.glow(fac.visor,0.6),-0.5,0.75,0.81);
   } else {
-    for(var i=0;i<5;i++){ var sb=new THREE.Mesh(new THREE.CapsuleGeometry(0.28,0.6,4,8),matStd(0x6a5a40,0.95,0)); sb.rotation.z=Math.PI/2; sb.position.set(-1.1+i*0.55,0.3,0); g.add(sb); }
-    for(var j=0;j<4;j++){ var sb2=new THREE.Mesh(new THREE.CapsuleGeometry(0.28,0.6,4,8),matStd(0x5a4a34,0.95,0)); sb2.rotation.z=Math.PI/2; sb2.position.set(-0.85+j*0.55,0.82,0); g.add(sb2); }
+    /* a curved sandbag wall: two staggered rows of bags with a timber brace */
+    var bagM=MK.mat(0x6a5a40,0.95,0), bagD=MK.mat(0x5a4a34,0.95,0);
+    for(var i=0;i<5;i++){ var a=(i-2)*0.18; var bag=MK.cyl(g,0.28,0.28,0.62,bagM,Math.sin(a)*2.8-0.0+(i-2)*0.0,0.3,Math.cos(a)*2.8-2.8,10); bag.position.x=(i-2)*0.56; bag.position.z=-Math.abs(i-2)*0.12; bag.rotation.z=Math.PI/2; bag.rotation.y=a; bag.scale.set(1,1,0.75); }
+    for(var j=0;j<4;j++){ var b2=MK.cyl(g,0.27,0.27,0.6,bagD,(j-1.5)*0.56,0.78,-Math.abs(j-1.5)*0.12,10); b2.rotation.z=Math.PI/2; b2.scale.set(1,1,0.75); }
+    var post=MK.box(g,0.1,1.2,0.1,MK.mat(0x4a3a2a,0.9,0),1.4,0.6,-0.35);
   }
+  MK.optimize(g);
   return g;
 }
 /* lay out a world's camp once: barracks, tower + sniper, a ring of cover, the starting squad */
@@ -8351,32 +8340,32 @@ var homeBase={hp:300,maxhp:300};
    a central hull with two solar-panel wings and a status beacon, small enough next to the huge
    planets to unmistakably read as built, not grown. */
 var homeBaseMesh=(function(){
+  /* the colony's orbital station: a central spine with a docking hub, a habitat torus on spokes
+     with lit windows, two long solar wings on trusses, radiator panels, antennae, a dish and a
+     status beacon (its glow tracks base health) */
   var g=new THREE.Group();
-  var hullMat=new THREE.MeshStandardMaterial({color:0x2a3542,roughness:0.5,metalness:0.55});
-  var hub=new THREE.Mesh(new THREE.CylinderGeometry(55,65,150,10),hullMat);
-  hub.rotation.z=Math.PI/2;
-  g.add(hub);
-  var capMat=new THREE.MeshStandardMaterial({color:0x1a2230,roughness:0.5,metalness:0.5});
-  var capL=new THREE.Mesh(new THREE.SphereGeometry(56,10,8,0,Math.PI*2,0,Math.PI/2),capMat);
-  capL.rotation.z=-Math.PI/2; capL.position.x=-75; g.add(capL);
-  var capR=capL.clone(); capR.rotation.z=Math.PI/2; capR.position.x=75; g.add(capR);
-  var panelMat=new THREE.MeshStandardMaterial({color:0x0e1c2c,emissive:0x1a5a80,emissiveIntensity:0.7,roughness:0.3,metalness:0.4});
-  var strutMat=new THREE.MeshStandardMaterial({color:0x1a2230,roughness:0.5,metalness:0.6});
+  var hull=MK.mat(0xb8bec8,0.4,0.6), dark=MK.mat(0x2a3542,0.5,0.7), gold=MK.mat(0xc8a040,0.25,0.9);
+  MK.lathe(g,[[40,-120],[55,-100],[55,100],[40,120],[20,140],[0,145]],hull,0,0,0,20).rotation.z=Math.PI/2;
+  for(var b=-1;b<=1;b++){ var band=MK.cyl(g,58,58,10,dark,b*60,0,0,20); band.rotation.z=Math.PI/2; }
+  var hab=new THREE.Mesh(new THREE.TorusGeometry(150,18,12,48),hull); hab.rotation.y=Math.PI/2; g.add(hab);
+  var winM=MK.glow(0xffd8a0,0.9);
+  var win=new THREE.Mesh(new THREE.TorusGeometry(150,18.4,4,48,Math.PI*2),winM); win.rotation.y=Math.PI/2; win.scale.set(1,1,0.12); g.add(win);
+  for(var s=0;s<6;s++){ var a=s/6*Math.PI*2; var sp=MK.cyl(g,5,5,100,dark,0,Math.cos(a)*90,Math.sin(a)*90,8); sp.rotation.x=a; }
   [-1,1].forEach(function(side){
-    var strut=new THREE.Mesh(new THREE.CylinderGeometry(8,8,120,6),strutMat);
-    strut.rotation.z=Math.PI/2; strut.position.x=side*180; g.add(strut);
-    var panel=new THREE.Mesh(new THREE.BoxGeometry(260,8,95),panelMat);
-    panel.position.x=side*310; g.add(panel);
-    var panel2=panel.clone(); panel2.position.z=105; g.add(panel2);
-    var panel3=panel.clone(); panel3.position.z=-105; g.add(panel3);
+    MK.truss(g,260,14,0,0,0,dark).rotation.z=-side*Math.PI/2;
+    for(var p=0;p<3;p++){
+      var panel=MK.box(g,240,4,70,new THREE.MeshStandardMaterial({map:solarCellTex,roughness:0.2,metalness:0.55}),side*(300),0,-80+p*80);
+      MK.box(g,244,6,4,dark,side*300,0,-115+p*80);
+    }
+    MK.radiator(g,6,60,80,side*160,70,0,10);
   });
-  var dishMat=new THREE.MeshStandardMaterial({color:0x2a3542,roughness:0.45,metalness:0.5,side:THREE.DoubleSide});
-  var dish=new THREE.Mesh(new THREE.CircleGeometry(45,16),dishMat);
-  dish.position.set(0,80,20); dish.rotation.x=-0.6; g.add(dish);
+  MK.lathe(g,[[0,0],[30,10],[38,18],[30,22]],gold,145,0,0,16).rotation.z=-Math.PI/2;
+  var dish=new THREE.Mesh(new THREE.SphereGeometry(45,20,10,0,Math.PI*2,0,Math.PI*0.3),MK.mat(0xd5d9de,0.4,0.4,{side:THREE.DoubleSide})); dish.rotation.x=-0.6; dish.position.set(0,90,30); g.add(dish);
+  MK.cyl(g,2,3,90,dark,-60,60,0,6);
+  MK.optimize(g);
   var beaconMat=new THREE.MeshStandardMaterial({color:0x233a56,emissive:0x7bd94a,emissiveIntensity:0.9});
-  var beacon=new THREE.Mesh(new THREE.SphereGeometry(16,10,8),beaconMat);
-  beacon.position.set(0,68,0); g.add(beacon);
-  g.userData.ringMat=beaconMat; /* keeps the existing HP-tied glow hookup working unchanged */
+  var beacon=new THREE.Mesh(new THREE.SphereGeometry(16,12,10),beaconMat); beacon.position.set(-60,108,0); g.add(beacon);
+  g.userData.ringMat=beaconMat;
   g.position.set(0,3150,4950);
   spaceScene.add(g);
   return g;
@@ -9147,36 +9136,28 @@ function buildEnemyMeshOld(){
    glance, even from the distance a player first spots it at. */
 function buildBossMesh(){
   var g=new THREE.Group();
-  var hullMat=new THREE.MeshStandardMaterial({color:0x2a2230,roughness:0.5,metalness:0.6,flatShading:true});
-  var trimMat=new THREE.MeshStandardMaterial({color:0x6a2aa0,roughness:0.4,metalness:0.5,flatShading:true});
-  var hull=new THREE.Mesh(new THREE.IcosahedronGeometry(2.3,0),hullMat);
-  hull.rotation.set(rnd(0,1),rnd(0,1),rnd(0,1));
-  g.add(hull);
+  /* the Sentinel: an armoured dreadnought-sphere wrapped in a rotating ring of plate, six
+     crystal spines, four heavy turret pods and an exposed reactor eye */
+  var hullMat=MK.mat(0x2a2230,0.4,0.75), trimMat=MK.mat(0x6a2aa0,0.35,0.6,{emissive:0x2a0a4a,emissiveIntensity:0.4});
+  var hull=new THREE.Mesh(MK.rockGeo(2.3,31,2,1.0),hullMat); g.add(hull);
+  var belt=new THREE.Mesh(new THREE.TorusGeometry(2.7,0.35,8,32),hullMat); belt.rotation.x=Math.PI/2; g.add(belt);
+  for(var p=0;p<12;p++){ var a=p/12*6.28; MK.rbox(g,0.8,0.9,0.3,trimMat,Math.cos(a)*2.7,0,Math.sin(a)*2.7,0.05).rotation.y=-a+Math.PI/2; }
   for(var i=0;i<6;i++){
-    var a=i/6*Math.PI*2;
-    var dir=new THREE.Vector3(Math.cos(a),Math.sin(a*1.7)*0.5,Math.sin(a));
-    dir.normalize();
-    var spike=new THREE.Mesh(new THREE.ConeGeometry(0.5,2.6,5),trimMat);
-    spike.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
-    spike.position.copy(dir).multiplyScalar(2.6);
-    g.add(spike);
+    var aa=i/6*Math.PI*2, dir=new THREE.Vector3(Math.cos(aa),Math.sin(aa*1.7)*0.5,Math.sin(aa)).normalize();
+    var spike=new THREE.Mesh(new THREE.ConeGeometry(0.45,2.8,6),trimMat);
+    spike.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir); spike.position.copy(dir).multiplyScalar(2.7); g.add(spike);
   }
-  var podMat=new THREE.MeshStandardMaterial({color:0x1a1622,roughness:0.5,metalness:0.55,flatShading:true});
-  for(var p=0;p<4;p++){
-    var pa=p/4*Math.PI*2;
-    var pod=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.65,1.4,8),podMat);
-    pod.position.set(Math.cos(pa)*2.5,rnd(-0.6,0.6),Math.sin(pa)*2.5);
-    pod.rotation.z=Math.PI/2; pod.rotation.y=pa;
-    g.add(pod);
-    var podGlow=new THREE.Mesh(new THREE.SphereGeometry(0.32,8,6),
-      new THREE.MeshStandardMaterial({color:0xff2a4a,emissive:0xff2a4a,emissiveIntensity:1.6}));
-    podGlow.position.set(Math.cos(pa)*3.3,pod.position.y,Math.sin(pa)*3.3);
-    g.add(podGlow);
+  var podMat=MK.mat(0x1a1622,0.45,0.7);
+  for(var q=0;q<4;q++){
+    var qa=q/4*Math.PI*2+0.4;
+    var pod=MK.rbox(g,1.0,0.9,1.4,podMat,Math.cos(qa)*2.6,(q%2?0.8:-0.8),Math.sin(qa)*2.6,0.15); pod.rotation.y=-qa;
+    MK.cyl(g,0.12,0.12,1.4,podMat,Math.cos(qa)*3.4,(q%2?0.8:-0.8),Math.sin(qa)*3.4,8).rotation.set(Math.PI/2,0,qa);
+    MK.sph(g,0.3,MK.glow(0xff2a4a,1.6),Math.cos(qa)*3.3,(q%2?0.8:-0.8)+0.45,Math.sin(qa)*3.3,8,6);
   }
+  MK.optimize(g);
   var coreMat=new THREE.MeshStandardMaterial({color:0x1a0a24,emissive:0xff3a6a,emissiveIntensity:2.2});
-  var core=new THREE.Mesh(new THREE.SphereGeometry(1.0,12,10),coreMat);
-  core.position.z=2.0;
-  g.add(core);
+  var core=new THREE.Mesh(new THREE.SphereGeometry(1.0,16,12),coreMat); core.position.z=2.0; g.add(core);
+  var lid=new THREE.Mesh(new THREE.TorusGeometry(1.1,0.18,8,24),trimMat); lid.position.z=2.1; g.add(lid);
   g.userData.coreGlow=core;
   g.scale.setScalar(26);
   return g;

@@ -2,6 +2,19 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.1.0] - 2026-10-29
+
+### Added
+- Terrain shader that blends soil and triplanar rock by slope, with large-scale colour variation and biome-coloured peaks; terrain heightfield with fbm hills and ridged mountains.
+- Lakes on every world (water, ice, lava, swamp, void liquid, oil).
+- Instanced, wind-animated foliage with a plant set per biome (grass, trees, shrubs, ferns, flowers, crystals, rocks, wreckage), clumped naturally, chunked for culling, built per world on first visit, and hidden under buildings.
+- A model kit (rounded panels, lathed parts, pipes, vents, screens, ladders, rails, trusses) and new models for every building, ship, the player, enemies, ore deposits, the lander, enemy camps and the orbital station.
+
+### Changed
+- Static parts of each model are merged by material to keep draw calls low.
+- Painting a building gives the painted parts their own materials.
+- Landed ship height is measured from each ship model.
+
 ## [2.0.0] - 2026-10-29 — The Armada Update
 
 ### Added
