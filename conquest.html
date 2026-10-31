@@ -148,6 +148,12 @@ body:not(.pc-mode) #fleetHud{bottom:auto;top:calc(118px + env(safe-area-inset-to
 #padRing{width:30px;height:30px;border-radius:50%;position:relative} #padRing i{position:absolute;inset:4px;border-radius:50%;background:rgba(8,20,12,.95)}
 .sceneFade.entry{transition:opacity .6s ease}
 #bLandNow.on{border-color:var(--amber);color:var(--amber2);background:rgba(40,28,8,.85)}
+.colList{display:flex;flex-direction:column;gap:6px}
+.colRow{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.colNm{display:flex;justify-content:space-between;align-items:center;gap:8px} .colNm b{font-size:13px}
+.colLvl{font-size:10px;font-weight:800;letter-spacing:.1em;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.06);color:var(--dim)}
+.colLvl.lv1{color:#9fc6ff} .colLvl.lv2{color:var(--amber2);background:rgba(255,181,69,.12)} .colLvl.lv3{color:var(--green);background:rgba(123,217,74,.14)}
+.colStats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--dim);margin-top:4px}
 .fcHp{height:5px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden;margin:6px 0 8px}
 .fcHp i{display:block;height:100%;background:linear-gradient(90deg,#a3101c,var(--green))}
 .fcBtns{display:flex;flex-wrap:wrap;gap:6px}
@@ -626,7 +632,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.8 · Unique Worlds</div>
+      <div class="armadaBadge">v2.9 · Exploration</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -636,6 +642,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Explore crashed ships, abandoned facilities and research stations; claim worlds with a Colony Core</li>
           <li>Every planet has its own landscape: ice mesas, volcanoes, jungle rivers, craters and desert mesas</li>
           <li>Landing pads on every world: hold 3 seconds over one and your ship lands itself</li>
           <li>Combat rebuilt: shots that land, weapon heat, visible damage and enemy pilots with roles</li>
@@ -896,8 +903,15 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.8.0";
+var VERSION="2.9.0";
 var CHANGELOG=[
+  {v:"2.9.0",t:"Exploration and colonies: places to discover and worlds to settle",items:[
+    "PLACES TO EXPLORE. Out past the build clearing on every world (and around the colony) there are now sites to find, each marked by a tall beam of light until you've been there: CRASHED SHIPS to salvage for parts, steel, hull plating, circuits and motors; ABANDONED FACILITIES that hand you a new alternate recipe plus computers, modular frames and wire; and RESEARCH STATIONS that give a Power Shard, an AWESOME coupon, quartz crystals and quickwire. Walk up and press E (INTERACT) to search; it takes a few seconds and you have to stay close. Further-out worlds pay more",
+    "RICH DEPOSITS. Every world, and the colony, has one rich deposit of its native ore: bigger, ringed with light and marked by a short beam, and it mines two and a half times faster (by Miner or by hand)",
+    "COLONIES. Build a Colony Core on an alien world to claim it. Your colonies grow as you build them up: OUTPOST when the core is built, SETTLEMENT with 12+ buildings and 40+ MW of power (machines there run 10% faster), and COLONY with 28+ buildings, 4+ machines running and a storage (20% faster). Your home colony counts too, with the Command Hub as its core",
+    "COLONIES OVERVIEW. The Factory overview (O, or interact with a Colony Core) now lists every colony with its level, buildings, machines running, power and how many sites you've explored there, plus what it needs for the next level. The galaxy map shows the same for each world",
+    "Every world's colony keeps feeding your one shared stockpile, and its machines keep running while you're away"
+  ]},
   {v:"2.8.0",t:"Unique worlds: every planet has its own landscape",items:[
     "EVERY WORLD HAS ITS OWN LANDSCAPE. The planets used to share the colony's hills, just flattened and recoloured. Each now has its own terrain, while the buildable clearing in the middle stays flat:",
     "VESTA FROST: stepped ice mesas with sheer terraced cliffs, frozen lakes in the low ground and fields of jagged ice spires",
@@ -5497,6 +5511,11 @@ function canPlaceAt3D(type,x,z,rotY){
   var d=BUILD_DEFS[type];
   if(d.unlockable&&!unlocked[type])return "Not unlocked yet — unlock it at the Command Hub";
   if(d.uniq&&buildings.some(function(b){return b.type===type;}))return "Already built";
+  if(type==="colonycore"){
+    var cw=worldAt(x,z)||null;
+    if(!cw)return "The Command Hub is your home colony's core — build Colony Cores on other worlds";
+    if(buildings.some(function(b){ return b.type==="colonycore"&&(worldAt(b.x,b.z)||null)===cw; }))return "This world already has a Colony Core";
+  }
   if(!canAfford(d.cost))return "Not enough resources";
   if(!inAnyBuildZone(x,z))return "Too far from the colony — the ground gets rough past here";
   if(d.edge){
@@ -8173,7 +8192,7 @@ function saveGame(){
       saveVersion:SAVE_VERSION,
       player:{x:player.position.x,z:player.position.z,rotY:player.rotation.y},
       stock:stock,
-      nodes:nodes.map(function(n){return {x:n.x,z:n.z,restype:n.restype};}),
+      nodes:nodes.map(function(n){return n.rich?{x:n.x,z:n.z,restype:n.restype,rich:true}:{x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){
         return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
           targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
@@ -8206,7 +8225,8 @@ function saveGame(){
       fortress:{ringDestroyed:!!fortressWorld().ringDestroyed,state:fortressSaveState()},
       campsCleared:WORLDS.filter(function(w){ return w.campCleared; }).map(function(w){ return w.id; }),
       factory:factorySaveState(),
-      worldPads:worldPadSpots
+      worldPads:worldPadSpots,
+      explore:{explored:poiExplored}
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -8229,6 +8249,7 @@ function newColony(){
     sink:false,indstorage:false,elevator:false,battery:false,research:false,manufacturer:false,oilextractor:false,waterextractor:false,oilrefinery:false,fuelgen:false,belt3:false,statue:false};
   factoryReset();
   Object.keys(worldPadMeshes).forEach(function(k){ surfaceScene.remove(worldPadMeshes[k]); }); worldPadMeshes={}; worldPadSpots={};
+  resetExploreRuntime(); poiExplored={};
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=[{name:"Default",color:0x384454,parts:{}}]; activePresetIdx=0;
@@ -8280,6 +8301,7 @@ function applySaveData(data){
       nx=w.cx+clamp(lx,-maxR,maxR); nz=w.cz+clamp(lz,-maxR,maxR);
     }
     spawnNode(nx,nz,n.restype);
+    if(n.rich)markRich(nodes[nodes.length-1]);
   });
   ensureWorldNodes();
   (data.buildings||[]).forEach(function(bd){
@@ -8330,6 +8352,7 @@ function applySaveData(data){
   factoryLoadState(data.factory);
   Object.keys(worldPadMeshes).forEach(function(k){ surfaceScene.remove(worldPadMeshes[k]); }); worldPadMeshes={};
   worldPadSpots=data.worldPads||{};
+  resetExploreRuntime(); poiExplored=(data.explore&&data.explore.explored)||{};
   playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454,parts:{}}];
@@ -11556,8 +11579,10 @@ function doInteract(){
     var sdx=pShip.pos.x-player.position.x, sdz=pShip.pos.z-player.position.z;
     if(Math.sqrt(sdx*sdx+sdz*sdz)<5.5){ if(shipWrecked)abandonWreck(); else boardParkedShip(); return; }
   }
+  if(tryStartPoiSearch()){ pulseInteractPose(); return; }
   var t=interactTarget();
   if(t&&t.type==="shipyard"){ openShipyard(); pulseInteractPose(); return; }
+  if(t&&t.type==="colonycore"){ openFactory(); pulseInteractPose(); return; }
   if(t&&(t.type==="smelter"||t.type==="constructor"||t.type==="refinery"||t.type==="coalgen"||t.type==="foundry"||t.type==="assembler"||t.type==="robotics"||
     t.type==="manufacturer"||t.type==="oilrefinery"||t.type==="fuelgen"||t.type==="miner"||t.type==="miner2"||t.type==="oilextractor"||t.type==="waterextractor")){ openMachine(t); pulseInteractPose(); return; }
   if(t&&t.type==="sink"){ openSink(t); pulseInteractPose(); return; }
@@ -11669,7 +11694,7 @@ function renderGalaxy(){
       var info=$("galaxyInfo");
       info.style.display="block";
       info.innerHTML='<div class="top"><span class="nm">'+p.nm+'</span><span class="cat" style="color:'+col+'">'+
-        ({owned:"HELD",enemy:"HOSTILE",fortress:"FORTRESS",unknown:"UNEXPLORED"}[p.status])+'</span></div><div class="ds">'+p.ds+'</div>';
+        ({owned:"HELD",enemy:"HOSTILE",fortress:"FORTRESS",unknown:"UNEXPLORED"}[p.status])+'</span></div><div class="ds">'+p.ds+'</div>'+galaxyColonyLine(p);
     };
     wrap.appendChild(dot);
     var label=document.createElement("div");
@@ -11838,7 +11863,7 @@ function updateSurface(dt){
     var nd=nodes[ni];
     var dx=nd.x-player.position.x, dz=nd.z-player.position.z;
     if(Math.sqrt(dx*dx+dz*dz)<2.4*eq.gatherRadiusMult){
-      stock[nd.restype]+=7*dt*eq.gatherMult; gathering=true;
+      stock[nd.restype]+=7*dt*eq.gatherMult*(nd.rich?2.5:1); gathering=true;
       gatherSfxT-=dt; if(gatherSfxT<=0){ sfx.step(); gatherSfxT=0.22; }
       nd.mesh.rotation.y+=dt*1.5;
       break;
@@ -11916,7 +11941,7 @@ function updateHudSurface(){
   $("powerTxt").textContent="PWR "+Math.round(powerGen)+"/"+Math.round(powerDraw);
   $("powerTxt").style.color=powerGen>=powerDraw?"":"var(--red)";
   var nearBelt=nearestBelt(player.position.x,player.position.z,2.5);
-  var canInteract=!!interactTarget()||!!nearBelt;
+  var canInteract=!!interactTarget()||!!nearBelt||!!nearestPoi(11);
   var ib=$("mbInteract");
   ib.textContent=placing?"PLACE":"INTERACT";
   ib.style.opacity=(placing||canInteract)?"1":".4";
@@ -12376,12 +12401,13 @@ function foliageObstacles(region){
   if(w){ var cp=npcCamps[w.id]; if(cp){ obs.push({x:cp.x,z:cp.z,r:7.5}); if(cp.tower)obs.push({x:cp.tower.x,z:cp.tower.z,r:2.8}); cp.cover.forEach(function(cv){ obs.push({x:cv.x,z:cv.z,r:2.0}); }); } }
   else obs.push({x:0,z:-4,r:6.5});
   var ps=worldPadSpots[region.id]; if(ps)obs.push({x:ps.x,z:ps.z,r:PAD_R+0.8});
+  if(typeof pois!=="undefined"&&pois[region.id])pois[region.id].forEach(function(p){ obs.push({x:p.x,z:p.z,r:p.kind==="wreck"?12:9}); });
   buildings.forEach(function(b){ var d=BUILD_DEFS[b.type]; if(!d||d.tool)return; obs.push({x:b.x,z:b.z,r:(d.edge?1.2:(d.radius||1.5)*1.45)+0.4}); });
   return obs;
 }
 function foliageObstacleSig(region){
   var w=region.id==="home"?null:worldById(region.id), cp=w&&npcCamps[w.id];
-  return (worldPadSpots[region.id]?"p":"")+nodes.length+":"+(cp?cp.cover.length+1:0)+":"+buildings.length+":"+buildings.reduce(function(a,b){ return a+b.x*3+b.z*7; },0);
+  return (worldPadSpots[region.id]?"p":"")+((typeof pois!=="undefined"&&pois[region.id])?"i":"")+nodes.length+":"+(cp?cp.cover.length+1:0)+":"+buildings.length+":"+buildings.reduce(function(a,b){ return a+b.x*3+b.z*7; },0);
 }
 function maskFoliage(region){
   var sig=foliageObstacleSig(region); if(sig===region.maskSig)return; region.maskSig=sig;
@@ -12434,6 +12460,8 @@ function lightingFrame(dt){
   atmFrame(dt);
   localLightsFrame(dt);
   worldFX(dt);
+  exploreFrame(dt);
+  colonyTick(dt);
 }
 function setBrightness(v){
   LIGHT_BRIGHT=clamp(v,0.5,1.6);
@@ -12458,6 +12486,7 @@ ensureFoliageFor(null);
 gfxMarkShadows(surfaceScene);
 applyPlayerColors();
 loadMeta();
+
 
 /* ═════════════ LANDING v2.7 ═════════════ */
 /* Every world (and the colony) has a designated landing pad, and any Landing Pad you build counts
@@ -13371,13 +13400,13 @@ function clockPower(b){ return Math.pow(clockOf(b),1.32); }
 var CLOCKABLE={miner:1,miner2:1,oilextractor:1,waterextractor:1,smelter:1,foundry:1,constructor:1,assembler:1,manufacturer:1,oilrefinery:1,refinery:1,robotics:1};
 /* ── the unified machine tick, called from updateBuildings ── */
 function factoryTick(b,d,powOk,dt){
-  var ck=clockOf(b);
+  var ck=clockOf(b)*colonyBonusFor(b);
   if(d.autoBank&&!powOk){ b.recipeActive=false; return true; }
   if(d.extractor||d.extractAny){
     b.recipeActive=false;
     var res=d.extractAny||(b.node&&b.node.restype);
     if(!res||!powOk)return true;
-    var room=Math.max(0,d.mineCap-(b.out[res]||0)), amt=Math.min(room,d.mineRate*ck*dt);
+    var room=Math.max(0,d.mineCap-(b.out[res]||0)), amt=Math.min(room,d.mineRate*ck*dt*(b.node&&b.node.rich?2.5:1));
     if(amt>0){ b.out[res]=(b.out[res]||0)+amt; statProd(res,amt); b.recipeActive=true; }
     return true;
   }
@@ -13458,7 +13487,7 @@ function renderFactory(){
     keys.map(function(k){ var m=R.made[k]||0,u=R.used[k]||0,n=m-u;
       return '<div class="fxRow"><span>'+(RES_ICONS[k]||'')+RES[k].nm+'</span><span>'+m.toFixed(1)+'</span><span>'+u.toFixed(1)+'</span><span class="'+(n>=0?'pos':'neg')+'">'+(n>=0?'+':'')+n.toFixed(1)+'</span><span>'+Math.floor(stock[k]||0)+'</span></div>'; }).join('')+
     (keys.length?'':'<div class="ds" style="padding:8px">Nothing produced in the last minute. Belted machine outputs and stockpiled outputs both count here.</div>')+'</div>';
-  $("factoryList").innerHTML=html;
+  $("factoryList").innerHTML=html+coloniesHtml();
 }
 /* ── AWESOME Sink panel ── */
 var sinkTarget=null;
@@ -13832,6 +13861,269 @@ function factoryAnimate(b,dt){
   if(u.flare){ u.flare.visible=!!on; if(on){ var fs=1+Math.sin(t*13)*0.12+Math.sin(t*7.3)*0.08; u.flare.scale.set(1.2*fs,2.0*fs,1); } }
   if(u.climber){ u.climber.position.y=8+(Math.sin(t*0.25)*0.5+0.5)*20; }
   if(u.chargeBar&&b.type==="battery"){ var f=(b.charge||0)/6000; u.chargeBar.material.emissiveIntensity=f>0.02?1.4:0.1; }
+}
+
+/* ═════════════ EXPLORATION & COLONIES v2.9 ═════════════ */
+/* Out past each world's build clearing there are now places worth walking to: crashed ships to
+   salvage, abandoned facilities to search and research stations to download, each marked by a
+   tall light beam until you've been there. Every world (and the colony) also has one rich
+   deposit of its native ore that mines two and a half times faster. And a world becomes a real
+   colony once you build a Colony Core on it: it grows from Outpost to Settlement to Colony as
+   you build it up, and its machines run faster at each level. */
+var POI_KINDS={
+  wreck:{nm:"Crashed Ship",verb:"Salvage the wreck",time:3,col:0xffb545},
+  ruins:{nm:"Abandoned Facility",verb:"Search the facility",time:4,col:0x7bd94a},
+  station:{nm:"Research Station",verb:"Download the station's data",time:5,col:0x4fd3ff}
+};
+var POI_LAYOUT={
+  home:[["wreck",205,-120],["station",-150,210]],
+  vesta:[["wreck",235,-70],["ruins",-215,200],["station",60,255]],
+  ember:[["wreck",-230,-60],["ruins",200,120],["station",-60,-250]],
+  verdance:[["wreck",230,60],["ruins",-120,-240],["station",-250,90]],
+  obsidian:[["wreck",-60,240],["ruins",250,-140],["station",-240,-180]],
+  bastion:[["wreck",230,230],["ruins",-240,60],["station",120,-250]]
+};
+var poiExplored={}, pois={}, poiSearch=null, poiNearT=0, poiPrompted={};
+function poiWorldCenter(id){ var w=id==="home"?null:worldById(id); return w?{x:w.cx,z:w.cz,w:w}:{x:0,z:0,w:null}; }
+function poiFlatSpot(x,z,avoid,world){
+  var best={x:x,z:z}, bs=1e9, wy=biomeOf(world).waterY, c=world?{x:world.cx,z:world.cz,R:world.zoneR-14}:{x:0,z:0,R:SURFACE_SIZE/2-20};
+  for(var r=0;r<=66;r+=6)for(var a=0;a<6.28;a+=r?0.45:7){
+    var px=x+Math.cos(a)*r, pz=z+Math.sin(a)*r, h=terrainHeight(px,pz), sl=0;
+    if(Math.max(Math.abs(px-c.x),Math.abs(pz-c.z))>c.R)continue;
+    for(var k=0;k<6;k++){ var aa=k/6*6.28; sl=Math.max(sl,Math.abs(terrainHeight(px+Math.cos(aa)*6,pz+Math.sin(aa)*6)-h)); }
+    if(avoid&&avoid.some(function(o){ return Math.hypot(o.x-px,o.z-pz)<o.r; }))sl+=50;
+    /* never in a lake: every corner of the site must stand clear of the water line */
+    var lowest=h; for(var q=0;q<8;q++){ var qa=q/8*6.28; lowest=Math.min(lowest,terrainHeight(px+Math.cos(qa)*9,pz+Math.sin(qa)*9)); }
+    if(lowest<wy+0.8)sl+=200;
+    var s=sl+r*0.04; if(s<bs){ bs=s; best={x:px,z:pz}; }
+  }
+  return best;
+}
+function buildPoiMesh(kind){
+  var g=new THREE.Group();
+  if(kind==="wreck"){
+    /* a frigate that came down hard: hull nosed into the ground and rolled, a torn-off wing, hull
+       plates and a scorch scar */
+    var hull=buildShipMesh("frigate",{noLights:true}); hull.scale.setScalar(2.4);
+    hull.rotation.set(0.32,0.6,0.5); hull.position.set(0,0.6,0); g.add(hull);
+    var dark=MK.mat(0x2a2c30,0.7,0.6), rust=MK.mat(0x5a3a2a,0.85,0.4);
+    var wing=MK.rbox(g,5,0.25,2.2,dark,7,0.3,-4,0.05); wing.rotation.set(0.2,1.1,-0.35);
+    for(var i=0;i<7;i++){ var p=MK.rbox(g,rnd(0.6,1.8),0.12,rnd(0.5,1.4),i%2?dark:rust,rnd(-9,9),0.15,rnd(-9,9),0.03); p.rotation.set(rnd(-0.5,0.5),rnd(0,6),rnd(-0.5,0.5)); }
+    g.userData.smoke=new THREE.Vector3(0,3,1);
+  } else if(kind==="ruins"){
+    /* a half-collapsed concrete bunker: broken walls, a fallen roof slab, a jammed blast door,
+       rusted crates and a toppled antenna mast */
+    var conc=MK.mat(0x6a6660,0.95,0.04), dk=MK.mat(0x2a2a2c,0.7,0.5), rs=MK.mat(0x6a4a2a,0.85,0.4);
+    MK.rbox(g,12,0.5,10,conc,0,0.25,0,0.1);
+    MK.rbox(g,12,4,0.8,conc,0,2.3,-4.6,0.1); MK.rbox(g,0.8,4,10,conc,-5.6,2.3,0,0.1);
+    var w2=MK.rbox(g,0.8,2.6,5,conc,5.6,1.6,-2.4,0.1); w2.rotation.z=0.12;
+    var roof=MK.rbox(g,9,0.6,7,conc,-0.5,2.4,0.5,0.08); roof.rotation.set(0.28,0.1,-0.22);
+    MK.rbox(g,3,3,0.3,dk,1.5,1.9,-4.2,0.05); MK.box(g,3.2,0.25,0.35,MK.mat(0xd8a030,0.6,0.4),1.5,3.5,-4.2);
+    for(var c=0;c<4;c++){ var cr=MK.rbox(g,1.1,0.9,1.1,MK.corrugated([0x3a5a3a,0x6a4a2a][c%2]),rnd(-4,4),0.95,rnd(1,4),0.05); cr.rotation.y=rnd(0,3); }
+    var mast=MK.cyl(g,0.12,0.16,9,rs,4,0.6,4,8); mast.rotation.set(0,0,1.35); mast.position.set(1,0.8,4);
+    MK.screen(g,1.2,0.7,-3,1.8,-4.15,"text",0x7bd94a);
+  } else {
+    /* a research outpost: a white habitat dome with an observation band, a sensor dish on a mast,
+       solar wings, a blinking beacon and an equipment shed */
+    var wh=MK.mat(0xd8dde4,0.45,0.35), dk2=MK.mat(0x2a3542,0.5,0.6);
+    MK.rbox(g,10,0.4,10,MK.mat(0x5a5650,0.9,0.05),0,0.2,0,0.08);
+    MK.lathe(g,[[3.4,0],[3.4,1.6],[2.8,3.2],[1.6,4.2],[0,4.5]],wh,0,0.4,0,28);
+    var band=new THREE.Mesh(new THREE.CylinderGeometry(3.42,3.42,0.6,28,1,true),MK.glass(0x6fc0ff,0.5)); band.position.y=1.8; g.add(band);
+    MK.cyl(g,0.12,0.15,6,dk2,3.8,3.4,2,8);
+    var dish=new THREE.Mesh(new THREE.SphereGeometry(1.4,16,8,0,Math.PI*2,0,Math.PI*0.3),MK.mat(0xd5d9de,0.4,0.4,{side:THREE.DoubleSide})); dish.rotation.x=-0.7; dish.position.set(3.8,6.6,2.3); g.add(dish);
+    [-1,1].forEach(function(s){ var pn=MK.box(g,3.2,0.08,1.6,MK.mat(0x14243a,0.3,0.6),s*5.6,1.6,-2.5); pn.rotation.z=s*0.35; MK.cyl(g,0.06,0.06,1.4,dk2,s*4.6,0.9,-2.5,6); });
+    MK.rbox(g,2.2,1.6,2,dk2,-3.6,1.2,-2.8,0.06);
+    MK.beacon(g,0,4.75,0,0x4fd3ff);
+  }
+  MK.optimize(g);
+  return g;
+}
+function poiBeam(col){
+  var m=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,160,12,1,true),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.28,blending:THREE.AdditiveBlending,depthWrite:false,fog:false,side:THREE.DoubleSide}));
+  m.position.y=80; m.userData.noShadow=true; return m;
+}
+function ensureWorldExplore(world){
+  var id=world?world.id:"home";
+  if(pois[id])return pois[id];
+  var c=poiWorldCenter(id), list=[];
+  var avoid=[];
+  if(world){ var cp=ensureNPCCamp(world); avoid.push({x:cp.x,z:cp.z,r:40}); }
+  (POI_LAYOUT[id]||[]).forEach(function(L,i){
+    var spot=poiFlatSpot(c.x+L[1],c.z+L[2],avoid,world);
+    var K=POI_KINDS[L[0]], key=id+":"+i;
+    var mesh=buildPoiMesh(L[0]); mesh.position.set(spot.x,footMinY(spot.x,spot.z,4),spot.z); mesh.rotation.y=tHash(i,3,7)*6.28;
+    gfxMarkShadows(mesh); surfaceScene.add(mesh);
+    var beam=null; if(!poiExplored[key]){ beam=poiBeam(K.col); beam.position.set(spot.x,mesh.position.y+80,spot.z); surfaceScene.add(beam); }
+    list.push({key:key,kind:L[0],x:spot.x,z:spot.z,mesh:mesh,beam:beam,world:world});
+  });
+  ensureRichDeposit(world);
+  pois[id]=list;
+  return list;
+}
+/* ── rich deposits ── */
+function ensureRichDeposit(world){
+  var w=world||null;
+  if(nodes.some(function(n){ return n.rich&&(worldAt(n.x,n.z)||null)===w; }))return;
+  var type=w?w.ore:"iron_ore", c=w?{x:w.cx,z:w.cz}:{x:0,z:0}, R=(w?worldBuildR(w):BUILD_ZONE_R)-24;
+  for(var t=0;t<80;t++){
+    var a=tHash(t,11,w?w.cx:1)*6.28, r=R*(0.55+tHash(t,13,3)*0.4);
+    var x=snapGrid(c.x+Math.cos(a)*r), z=snapGrid(c.z+Math.sin(a)*r);
+    if(nodes.some(function(n){ return Math.hypot(n.x-x,n.z-z)<16; }))continue;
+    if(buildings.some(function(b){ return Math.hypot(b.x-x,b.z-z)<(BUILD_DEFS[b.type].radius||2)*1.45+6; }))continue;
+    var pad=worldPadSpots[w?w.id:"home"]; if(pad&&Math.hypot(pad.x-x,pad.z-z)<PAD_R+8)continue;
+    spawnNode(x,z,type); markRich(nodes[nodes.length-1]);
+    return;
+  }
+}
+function markRich(n){
+  n.rich=true;
+  var g=n.mesh; g.scale.setScalar(1.35);
+  var col=(NODE_STYLE[n.restype]||{}).crystalCol||0xffd06a;
+  var halo=new THREE.Mesh(new THREE.RingGeometry(3.2,3.7,36),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.5,side:THREE.DoubleSide,depthWrite:false}));
+  halo.rotation.x=-Math.PI/2; halo.position.y=-0.3; halo.userData.noShadow=true; g.add(halo);
+  var beam=poiBeam(col); beam.scale.set(0.5,0.35,0.5); beam.position.y=28; g.add(beam);
+}
+/* ── searching ── */
+function nearestPoi(range){
+  var list=pois[currentWorld?currentWorld.id:"home"]; if(!list)return null;
+  var best=null,bd=range;
+  list.forEach(function(p){ if(poiExplored[p.key])return; var d=Math.hypot(p.x-player.position.x,p.z-player.position.z); if(d<bd){ bd=d; best=p; } });
+  return best;
+}
+function tryStartPoiSearch(){
+  if(surfaceFlying)return false;
+  var p=nearestPoi(11); if(!p)return false;
+  if(poiSearch&&poiSearch.p===p)return true;
+  poiSearch={p:p,t:0}; resetMovementKeys();
+  toast(POI_KINDS[p.kind].verb+"…"); sfx.click();
+  return true;
+}
+function exploreFrame(dt){
+  if(state!=="surface"&&state!=="factory")return;
+  ensureWorldExplore(currentWorld);
+  var list=pois[currentWorld?currentWorld.id:"home"]||[];
+  var t=performance.now()/1000;
+  list.forEach(function(p){ if(p.beam){ p.beam.material.opacity=0.2+Math.sin(t*1.6+p.x)*0.08; } if(p.kind==="wreck"&&!surfaceFlying&&Math.random()<dt*3){ var sp=p.mesh.position; spawnSurfaceParticle(new THREE.Vector3(sp.x+rnd(-2,2),sp.y+3,sp.z+rnd(-2,2)),new THREE.Vector3(rnd(-0.5,0.5),rnd(2,3.5),rnd(-0.5,0.5)),rnd(0.8,1.4),0x2a2828); } });
+  if(surfaceFlying){ if(poiSearch){ poiSearch=null; padHudShow(false); } return; }
+  /* a one-time prompt as you walk up to an unexplored site */
+  var near=nearestPoi(16);
+  if(near&&!poiPrompted[near.key]){ poiPrompted[near.key]=true; toast(POI_KINDS[near.kind].nm+" — press E (INTERACT) to "+POI_KINDS[near.kind].verb.toLowerCase()); }
+  if(poiSearch){
+    var p=poiSearch.p, d=Math.hypot(p.x-player.position.x,p.z-player.position.z);
+    if(d>13){ poiSearch=null; padHudShow(false); toast("Search interrupted"); return; }
+    poiSearch.t+=dt;
+    var K=POI_KINDS[p.kind], f=clamp(poiSearch.t/K.time,0,1);
+    padHudShow(true,f,(p.kind==="wreck"?"SALVAGING":(p.kind==="ruins"?"SEARCHING":"DOWNLOADING"))+" "+Math.round(f*100)+"%");
+    if(Math.random()<dt*6)tone(500+f*600,520+f*600,0.04,"sine",0.012);
+    if(f>=1){ poiSearch=null; padHudShow(false); completePoi(p); }
+  }
+}
+function worldTierOf(world){ return world?1+Math.max(0,WORLDS.indexOf(world)):0.6; }
+function completePoi(p){
+  poiExplored[p.key]=true;
+  if(p.beam){ surfaceScene.remove(p.beam); p.beam=null; }
+  var tier=worldTierOf(p.world), got=[];
+  function give(k,n){ n=Math.round(n); if(n<=0)return; stock[k]=(stock[k]||0)+n; got.push(n+" "+RES[k].nm); }
+  if(p.kind==="wreck"){
+    give("parts",40+tier*18); give("steel",14+tier*6); give("plating",2+tier); give("circuit",2+tier);
+    if(tier>=3)give("motor",2+tier);
+  } else if(p.kind==="ruins"){
+    var open=RESEARCH.filter(function(r){ return !researched[r.key]; });
+    if(open.length){ var r=open[Math.floor(tHash(p.x,p.z,9)*open.length)]; researched[r.key]=true; got.push("alternate recipe: "+r.nm); }
+    give("computer",1+Math.floor(tier/2)); give("modular_frame",2+tier); give("wire",30+tier*10);
+  } else {
+    stock.power_shard=(stock.power_shard||0)+1; got.push("1 Power Shard");
+    sinkCoupons+=1; got.push("1 AWESOME coupon");
+    give("quartz_crystal",10+tier*5); give("quickwire",30+tier*10);
+  }
+  fxExplosion(surfaceScene,new THREE.Vector3(p.x,p.mesh.position.y+3,p.z),3,{noDebris:true,ringCol:POI_KINDS[p.kind].col,silent:true});
+  sfx.build(); tone(660,1320,0.35,"triangle",0.05);
+  toast(POI_KINDS[p.kind].nm+" explored! Found "+got.join(", "));
+  saveGame();
+}
+function poiProgress(world){
+  var id=world?world.id:"home", L=POI_LAYOUT[id]||[], n=0;
+  L.forEach(function(_,i){ if(poiExplored[id+":"+i])n++; });
+  return {done:n,total:L.length};
+}
+
+/* ── colonies ── */
+var COLONY_LEVELS=[
+  {nm:"Unclaimed",bonus:0},
+  {nm:"Outpost",bonus:0,ds:"A Colony Core claims the world"},
+  {nm:"Settlement",bonus:0.1,ds:"12+ buildings and 40+ MW of power"},
+  {nm:"Colony",bonus:0.2,ds:"28+ buildings, 4+ machines running and a storage"}
+];
+var colonyCache={}, colonyCacheT=0;
+function colonyStats(world){
+  var w=world||null;
+  var here=buildings.filter(function(b){ return (worldAt(b.x,b.z)||null)===w; });
+  var core=here.some(function(b){ return b.type===(w?"colonycore":"hub"); });
+  var gen=0,draw=0,running=0,storage=false;
+  here.forEach(function(b){
+    var d=BUILD_DEFS[b.type]; if(!d)return;
+    if(d.generates&&(!d.fueled||b.burning)&&b.cableConnected)gen+=d.generates;
+    if(d.powerDraw&&b.powered)draw+=d.powerDraw*(CLOCKABLE[b.type]?clockPower(b):1);
+    if((RECIPES[b.type]||d.extractor||d.extractAny)&&b.recipeActive)running++;
+    if(b.type==="storage"||b.type==="indstorage")storage=true;
+  });
+  var n=here.filter(function(b){ var d=BUILD_DEFS[b.type]; return d&&!d.tool; }).length;
+  var lvl=!core?0:(n>=28&&running>=4&&storage?3:(n>=12&&gen>=40?2:1));
+  return {level:lvl,buildings:n,gen:gen,draw:draw,running:running,storage:storage,core:core};
+}
+function colonyTick(dt){
+  colonyCacheT-=dt; if(colonyCacheT>0)return; colonyCacheT=2;
+  [null].concat(WORLDS).forEach(function(w){
+    var id=w?w.id:"home", st=colonyStats(w), prev=colonyCache[id];
+    colonyCache[id]=st;
+    if(prev&&st.level>prev.level&&st.level>=2)toast((w?w.nm:"Your Colony")+" is now a "+COLONY_LEVELS[st.level].nm+" — its machines run "+Math.round(COLONY_LEVELS[st.level].bonus*100)+"% faster");
+  });
+}
+function colonyBonusFor(b){
+  var w=worldAt(b.x,b.z)||null, st=colonyCache[w?w.id:"home"];
+  return st?1+COLONY_LEVELS[st.level].bonus:1;
+}
+function coloniesHtml(){
+  var rows=[null].concat(WORLDS.filter(function(w){ return w.discovered; })).map(function(w){
+    var st=colonyCache[w?w.id:"home"]||colonyStats(w), pr=poiProgress(w), L=COLONY_LEVELS[st.level];
+    return '<div class="colRow"><div class="colNm"><b>'+(w?w.nm:"Your Colony")+'</b><span class="colLvl lv'+st.level+'">'+L.nm.toUpperCase()+(L.bonus?' +'+Math.round(L.bonus*100)+'%':'')+'</span></div>'+
+      '<div class="colStats"><span>'+st.buildings+' buildings</span><span>'+st.running+' machines running</span><span>'+Math.round(st.gen)+'/'+Math.round(st.draw)+' MW</span><span>'+pr.done+'/'+pr.total+' sites explored</span></div>'+
+      (st.level<3?'<div class="ds">Next: '+(st.level===0?(w?'build a Colony Core here':'build the Command Hub'):COLONY_LEVELS[st.level+1].ds)+'</div>':'')+'</div>';
+  }).join('');
+  return '<div class="cat" style="margin:12px 2px 6px">Colonies</div><div class="colList">'+rows+'</div>';
+}
+/* the Colony Core: claims an alien world as a colony (the Command Hub does this at home) */
+BUILD_DEFS.colonycore={nm:"Colony Core",cat:"Command",ds:"Claims an alien world as one of your colonies (one per world). The colony grows from Outpost to Settlement to Colony as you build it up, and its machines run up to 20% faster. Interact to see all your colonies.",
+  cost:{iron:40,steel:20,circuit:4,parts:20},powerDraw:10,radius:3.4,produces:[],accepts:[]};
+BUILD_ORDER.splice(BUILD_ORDER.indexOf("hub")+1,0,"colonycore");
+FACTORY_INTERACT.push("colonycore");
+BUILDERS.colonycore=function(g,P){
+  bmBase(g,P,6.4,6.4,0.4);
+  /* a hexagonal command spire: armoured base with doors, a tapering tower, a holo ring that
+     spins round a colony emblem, a flag and a beacon */
+  var hex=new THREE.Mesh(new THREE.CylinderGeometry(2.7,3.0,2.2,6),P.white); hex.position.y=1.5; g.add(hex);
+  var band=new THREE.Mesh(new THREE.CylinderGeometry(2.72,2.72,0.3,6,1,true),MK.glow(0x7bd94a,0.8)); band.position.y=2.4; g.add(band);
+  MK.lathe(g,[[1.6,2.6],[1.3,5.5],[0.7,7.6],[0.25,8.4],[0,8.5]],P.panel,0,0,0,6);
+  [0,2,4].forEach(function(i){ var a=i/6*6.28+Math.PI/6; MK.rbox(g,1.2,1.5,0.2,P.dark,Math.cos(a)*2.62,1.15,Math.sin(a)*2.62,0.04).rotation.y=-a+Math.PI/2; });
+  var ring=new THREE.Group(); ring.position.y=6; g.add(ring);
+  var rr=new THREE.Mesh(new THREE.TorusGeometry(1.9,0.07,8,40),MK.glow(0x7bd94a,1.4)); rr.rotation.x=Math.PI/2; ring.add(rr);
+  var em=new THREE.Mesh(new THREE.OctahedronGeometry(0.5,0),MK.glow(0xffd06a,1.5)); ring.add(em);
+  g.userData.spinPart=ring;
+  MK.cyl(g,0.05,0.05,3.2,P.chrome,-2.2,4.3,0,6);
+  var flag=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.8),MK.mat(0x7bd94a,0.8,0,{side:THREE.DoubleSide,emissive:0x2a5a1a,emissiveIntensity:0.4})); flag.position.set(-1.5,5.5,0); g.add(flag);
+  MK.beacon(g,0,8.55,0,0x7bd94a);
+  bmStatus(g,2.2,2.8,1.4);
+  g.userData.cableAnchor=new THREE.Vector3(2.4,2.2,-1.2);
+};
+function resetExploreRuntime(){
+  Object.keys(pois).forEach(function(k){ pois[k].forEach(function(p){ surfaceScene.remove(p.mesh); if(p.beam)surfaceScene.remove(p.beam); }); });
+  pois={}; poiSearch=null; poiPrompted={}; colonyCache={};
+}
+function galaxyColonyLine(p){
+  var w=WORLDS.filter(function(x){ return x.nm===p.nm; })[0]||null;
+  if(!w&&p.nm!==HOME_WORLD.nm)return "";
+  var st=colonyStats(w), pr=poiProgress(w);
+  return '<div class="ds" style="margin-top:6px">'+COLONY_LEVELS[st.level].nm+' &middot; '+st.buildings+' buildings &middot; '+pr.done+'/'+pr.total+' sites explored</div>';
 }
 
 renderBuildIcons();

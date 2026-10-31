@@ -2,6 +2,14 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.9.0] - 2026-10-31 — Exploration & Colonies
+
+### Added
+- Points of interest (crashed ship, abandoned facility, research station) on every world and at the colony, placed on dry flat ground in the walkable ring, with light beams, a timed search on E and tiered rewards (resources, alternate recipe, power shard, coupon); explored state is saved.
+- One rich deposit per world and at the colony (2.5x mining and hand-gathering), saved with the nodes.
+- Colony Core building (one per alien world) and colony levels (Outpost, Settlement +10%, Colony +20% machine speed); the Command Hub is the home colony's core.
+- Colonies section in the Factory overview and colony/exploration line in the galaxy map.
+
 ## [2.8.0] - 2026-10-31 — Unique Worlds
 
 ### Added
