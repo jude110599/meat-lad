@@ -2,7 +2,17 @@
 
 All notable changes to Space Conquest are documented here.
 
-## [2.10.0] - 2026-10-31 — Logistics
+## [2.11.0] - 2026-10-30 — Progression
+
+### Added
+- Technology tree (Engineering, Weapons, Energy, Automation, Exploration) with prerequisites and effects on hull, shields, damage, heat, missiles, solar output, power draw, battery capacity, belt throughput, robot arms, cargo capacity, hand-gathering and cruise speed; alternate recipes become the Production tab.
+- Flagship loadout (engine, shield, armour, weapon mod, utility) chosen at the Shipyard, unlocked by research, with a stat panel and ship preview; Repair Drone and Salvager utilities.
+- Fleet orders: Follow, Defend station, Patrol, Attack at will.
+
+### Changed
+- Flagship stats are recomputed from base stats, research and loadout whenever the ship is created or either changes.
+
+## [2.10.0] - 2026-10-30 — Logistics
 
 ### Added
 - Cargo routes: Shipment Launcher loads are flown by a visible hauler with a travel time (same world vs. between worlds) and a per-trip capacity; overflow at a full hub is flown back.
@@ -13,7 +23,7 @@ All notable changes to Space Conquest are documented here.
 ### Changed
 - Shipment Launchers no longer transfer instantly; in-flight cargo is saved back into the launcher.
 
-## [2.9.0] - 2026-10-31 — Exploration & Colonies
+## [2.9.0] - 2026-10-30 — Exploration & Colonies
 
 ### Added
 - Points of interest (crashed ship, abandoned facility, research station) on every world and at the colony, placed on dry flat ground in the walkable ring, with light beams, a timed search on E and tiered rewards (resources, alternate recipe, power shard, coupon); explored state is saved.
@@ -21,7 +31,7 @@ All notable changes to Space Conquest are documented here.
 - Colony Core building (one per alien world) and colony levels (Outpost, Settlement +10%, Colony +20% machine speed); the Command Hub is the home colony's core.
 - Colonies section in the Factory overview and colony/exploration line in the galaxy map.
 
-## [2.8.0] - 2026-10-31 — Unique Worlds
+## [2.8.0] - 2026-10-30 — Unique Worlds
 
 ### Added
 - Per-world terrain generators (Vesta terraced ice mesas and spires, Ember volcanoes with calderas and lava channels, Verdance hills with river valleys, Obsidian crater field and crystal ridges, Bastion mesas and dunes), applied over each world's whole terrain plate with the build clearing kept flat.
@@ -35,7 +45,7 @@ All notable changes to Space Conquest are documented here.
 ### Fixed
 - Foliage masking tracked a single hidden flag per item, so the second part of two-part plants (flower bulbs) stayed visible over obstacles.
 
-## [2.7.0] - 2026-10-31 — Landing
+## [2.7.0] - 2026-10-30 — Landing
 
 ### Added
 - A built-in landing pad per world and at the colony (position chosen clear of buildings and deposits, saved); player-built Landing Pads also count.
