@@ -142,6 +142,11 @@ body:not(.pc-mode) #fleetHud{bottom:auto;top:calc(118px + env(safe-area-inset-to
 #bLandNow{position:absolute;left:50%;bottom:calc(110px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:7;padding:12px 26px;border-radius:12px;
   border:1px solid rgba(123,217,74,.7);background:rgba(12,30,14,.82);color:#bff0a0;font-family:inherit;font-weight:800;font-size:14px;letter-spacing:.14em;cursor:pointer;backdrop-filter:blur(4px)}
 #bLandNow.hide{display:none}
+#padHud{position:absolute;left:50%;bottom:calc(170px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:7;display:none;align-items:center;gap:10px;padding:8px 16px 8px 10px;border-radius:30px;
+  background:rgba(8,20,12,.8);border:1px solid rgba(123,217,74,.6);color:#bff0a0;font-weight:800;font-size:13px;letter-spacing:.12em;pointer-events:none}
+#padHud.show{display:flex}
+#padRing{width:30px;height:30px;border-radius:50%;position:relative} #padRing i{position:absolute;inset:4px;border-radius:50%;background:rgba(8,20,12,.95)}
+.sceneFade.entry{transition:opacity .6s ease}
 #bLandNow.on{border-color:var(--amber);color:var(--amber2);background:rgba(40,28,8,.85)}
 .fcHp{height:5px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden;margin:6px 0 8px}
 .fcHp i{display:block;height:100%;background:linear-gradient(90deg,#a3101c,var(--green))}
@@ -604,6 +609,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
   <div class="stickArt" id="artL"><i></i></div>
   <div class="stickArt" id="artR"><i></i></div>
   <button id="bLandNow" class="hide">LAND (L)</button>
+  <div id="padHud"><div id="padRing"><i></i></div><span id="padTxt">LANDING PAD</span></div>
   <div id="mobActions">
     <div class="mbtn accent" id="mbFire" style="display:none;border-color:#ff6a3a;color:#ffb08a">FIRE</div>
     <div class="mbtn accent" id="mbInteract">INTERACT</div>
@@ -620,7 +626,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.6 · Combat</div>
+      <div class="armadaBadge">v2.7 · Landing</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -630,6 +636,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Landing pads on every world: hold 3 seconds over one and your ship lands itself</li>
           <li>Combat rebuilt: shots that land, weapon heat, visible damage and enemy pilots with roles</li>
           <li>Ships now have momentum and their own handling, with a smooth chase camera</li>
           <li>Rebuilt conveyor belts with smooth curves, a placement preview and Auto-belt</li>
@@ -888,8 +895,16 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.6.0";
+var VERSION="2.7.0";
 var CHANGELOG=[
+  {v:"2.7.0",t:"Landing: landing pads on every world, 3-second auto-landing and atmospheric entry",items:[
+    "A LANDING PAD ON EVERY WORLD. The colony and every planet now have their own landing pad, and any Landing Pad you build counts too. Coming down from space brings you in hovering right over the world's pad, with the throttle cut",
+    "HOLD 3 SECONDS TO LAND. Keep your ship over any landing pad for three seconds and it lands itself: a countdown appears, then the ship slides to the middle of the deck, turns to line up with the pad and settles gently onto it. Fly off the pad during the countdown and it cancels. Arriving from space and doing nothing now simply lands you on the pad",
+    "SHIPS SIT ON THE PAD. A ship parked on a landing pad used to sink into the deck; it now rests on top of it (and flying low over a pad respects its height)",
+    "ATMOSPHERIC ENTRY. While your ship locks on to a world its hull glows and streams re-entry heat, and the jump down to the surface (and back up to space) washes through the planet's own sky colour instead of cutting to black",
+    "SEE WHAT'S DOWN THERE. The approach marker in space now shows how many landing pads a world has and how many of your buildings are on it",
+    "The area around a world's landing pad is kept clear: buildings can't be placed on it and plants don't grow through it"
+  ]},
   {v:"2.6.0",t:"Combat: shots that land, weapon heat, real damage and smarter enemies",items:[
     "SHOTS LAND WHERE YOU AIM. Bolts move about 300 units every frame, and hits were only checked at the end of each step, so many shots passed straight through ships. Hits are now checked along the whole path a shot travels (in testing, 20 of 20 shots at a target 1,500 units ahead landed)",
     "WEAPON HEAT. Guns build heat as you fire and overheat after about six seconds of continuous fire, locking out for a moment while they cool. A HEAT bar sits under your hull and shield, and the crosshair turns orange when you are running hot",
@@ -3068,7 +3083,8 @@ function updateArrivalAnim(dt){
      this point, just leveling into free flight, so a dust cloud floating in midair below it
      would look disconnected. The real touchdown (updateLandingAnim, actually at ground level)
      still has its own dust burst. */
-  if(t>=1)arrivalAnim=null;
+  /* arrive hovering over the pad (throttle cut), so doing nothing lands you on it */
+  if(t>=1){ arrivalAnim=null; pShip.throttle=0; pShip.curSpeedFrac=0; pShip.vel.set(0,0,0); }
 }
 /* final touchdown: a brief steady glide-down-and-hover instead of an instant snap the moment
    the settle timer fills, so landing actually reads as landing */
@@ -3149,6 +3165,7 @@ function updateSurfaceFlight(dt){
   playerDamageFrame(dt);
   if(arrivalAnim){ updateArrivalAnim(dt); return; }
   if(landingAnim){ updateLandingAnim(dt); return; }
+  if(padLanding){ updatePadLanding(dt); return; }
   var pc=document.body.classList.contains("pc-mode");
   var fwd=0,strafe=0,turn=0;
   /* auto-land (L key / LAND button): cut the throttle, brake, descend and touch down right here.
@@ -3211,7 +3228,7 @@ function updateSurfaceFlight(dt){
     pShip.pos.x=clamp(pShip.pos.x,currentWorld.cx-wr,currentWorld.cx+wr);
     pShip.pos.z=clamp(pShip.pos.z,currentWorld.cz-wr,currentWorld.cz+wr);
   }
-  var groundY=terrainHeight(pShip.pos.x,pShip.pos.z);
+  var groundY=landingGroundY(pShip.pos.x,pShip.pos.z);
   pShip.pos.y=clamp(pShip.pos.y,groundY+shipClearance(),groundY+45);
   pShip.mesh.position.copy(pShip.pos);
   /* bank into turns and pitch with forward/vertical speed — brings low flight up to the same
@@ -3271,6 +3288,8 @@ function updateSurfaceFlight(dt){
   /* measured from the bottom of the landing gear, not from the ship's origin: the flight floor
      above is groundY+shipClearance(), and since the v2.1 models stand on taller gear that floor
      (2.5 for the Fighter) sat above the old fixed 1.8 touchdown height, so no ship could land */
+  updatePadHold(dt,speed);
+  if(padLanding)return;
   var gearAlt=alt-shipClearance();
   if(!pShip.liftedOff&&gearAlt>SURF_LAND_ALT*2)pShip.liftedOff=true;
   var ready=pShip.liftedOff&&gearAlt<SURF_LAND_ALT&&speed<SURF_LAND_SPEED;
@@ -5369,6 +5388,8 @@ function canPlaceAt3D(type,x,z,rotY){
     if(dupe)return "Already something on that edge";
     return null;
   }
+  var padSpot=worldPadSpots[(worldAt(x,z)||{id:"home"}).id];
+  if(padSpot&&type!=="foundation"&&Math.hypot(padSpot.x-x,padSpot.z-z)<PAD_R+(d.radius||1)*1.45)return "Keep the landing pad clear";
   for(var i=0;i<buildings.length;i++){
     var b=buildings[i], dx=b.x-x,dz=b.z-z;
     if(BUILD_DEFS[b.type].edge)continue;
@@ -8059,7 +8080,8 @@ function saveGame(){
       fleetIdSeq:fleetIdSeq, fleetFormation:fleetFormation,
       fortress:{ringDestroyed:!!fortressWorld().ringDestroyed,state:fortressSaveState()},
       campsCleared:WORLDS.filter(function(w){ return w.campCleared; }).map(function(w){ return w.id; }),
-      factory:factorySaveState()
+      factory:factorySaveState(),
+      worldPads:worldPadSpots
     };
     var json=JSON.stringify(data);
     var prev=null; try{ prev=localStorage.getItem(SKEY); }catch(e){}
@@ -8081,6 +8103,7 @@ function newColony(){
   unlocked={belt2:false,refinery:false,foundry:false,assembler:false,hangar:false,robotics:false,fleetcmd:false,
     sink:false,indstorage:false,elevator:false,battery:false,research:false,manufacturer:false,oilextractor:false,waterextractor:false,oilrefinery:false,fuelgen:false,belt3:false,statue:false};
   factoryReset();
+  Object.keys(worldPadMeshes).forEach(function(k){ surfaceScene.remove(worldPadMeshes[k]); }); worldPadMeshes={}; worldPadSpots={};
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=[{name:"Default",color:0x384454,parts:{}}]; activePresetIdx=0;
@@ -8180,6 +8203,8 @@ function applySaveData(data){
   unlocked=data.unlocked||{belt2:false,refinery:false};
   ["foundry","assembler","hangar","robotics","fleetcmd","sink","indstorage","elevator","battery","research","manufacturer","oilextractor","waterextractor","oilrefinery","fuelgen","belt3","statue"].forEach(function(k){ if(unlocked[k]==null)unlocked[k]=false; });
   factoryLoadState(data.factory);
+  Object.keys(worldPadMeshes).forEach(function(k){ surfaceScene.remove(worldPadMeshes[k]); }); worldPadMeshes={};
+  worldPadSpots=data.worldPads||{};
   playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454,parts:{}}];
@@ -8870,6 +8895,7 @@ function updatePlanetTargeting(dt){
   var guarded=!!(target.hasGuardian&&!target.guardianDefeated)||!!(target.hasFortress&&!target.ringDestroyed);
   var settling=near&&lowEnough&&!guarded;
   landProgress=settling?Math.min(1,landProgress+dt/LAND_SETTLE_TIME):Math.max(0,landProgress-dt*2);
+  if(settling)entryHeatFX(dt,landProgress);
   var v=new THREE.Vector3(target.sx,4,target.sz).project(camera);
   if(v.z>=1||v.z<=-1){ elTarget.classList.add("hide"); }
   else{
@@ -8883,7 +8909,9 @@ function updatePlanetTargeting(dt){
     else if(settling)hint=" — LOCKING ON";
     else if(near&&!lowEnough)hint=" — DESCEND (Q)";
     else hint=" — FLY CLOSER TO LAND";
-    elTarget.querySelector(".ptName").textContent=nameTxt+hint;
+    if(!target._infoT||target._infoT<=0){ target._infoT=0.5; var np=padsOn(target), nb=buildingsOn(target); target._info=" · "+np+" LANDING PAD"+(np>1?"S":"")+(nb?" · "+nb+" OF YOUR BUILDINGS":""); }
+    target._infoT-=dt;
+    elTarget.querySelector(".ptName").textContent=nameTxt+hint+((target.isHome||target.discovered)?target._info:"");
     elTarget.querySelector(".ptRing").style.background=
       "conic-gradient(var(--green) "+(landProgress*360)+"deg, rgba(255,255,255,.18) 0deg)";
     elTarget.classList.toggle("locked",settling);
@@ -8893,7 +8921,7 @@ function updatePlanetTargeting(dt){
     if(target.isHome){
       landProgress=0;
       forceCloseMenus();
-      fadeTransition(function(){ enterHomeSurfaceFlight(); landTransitioning=false; },550);
+      entryTransition(function(){ enterHomeSurfaceFlight(); landTransitioning=false; },LIGHT_PROFILES.home.horizon,650);
     } else {
       var padR=target.radius+LAND_RANGE_PAD;
       lastLandOffset.x=clamp((pShip.pos.x-target.sx)/padR,-1,1)*(target.zoneR-12);
@@ -8934,7 +8962,7 @@ function landOnPlanet(world){
   world.discovered=true;
   toast("Approaching "+world.nm+"...");
   sfx.build();
-  fadeTransition(function(){ enterSurfaceFlight(world); landTransitioning=false; },550);
+  entryTransition(function(){ enterSurfaceFlight(world); landTransitioning=false; },lightProfile(world).horizon,650);
 }
 /* the descent used to only ever touch pShip.pos.y — x/z sat completely fixed at the landing spot
    the whole time, so "gliding down from altitude" was actually a dead-straight vertical drop with
@@ -8969,8 +8997,9 @@ function enterSurfaceFlight(world){
   resetMovementKeys();
   spaceScene.remove(pShip.mesh);
   surfaceScene.add(pShip.mesh);
-  var ox=lastLandOffset.x, oz=lastLandOffset.z;
-  var gx=world.cx+ox, gz=world.cz+oz;
+  /* arrive over the world's landing pad */
+  var ap=arrivalPoint(world);
+  var gx=ap.x, gz=ap.z;
   /* was +9 — barely above the ground at all next to the ~45-unit ceiling free low-altitude
      flight is clamped to, so the arrival glide dropped you right down next to the terrain the
      instant it finished instead of leaving you somewhere you could actually look around from.
@@ -8992,8 +9021,9 @@ function enterSurfaceFlight(world){
 function touchDown(){
   surfaceFlying=false;
   pShip.vel.set(0,0,0);
-  pShip.pos.y=terrainHeight(pShip.pos.x,pShip.pos.z)+shipClearance();
+  pShip.pos.y=landingGroundY(pShip.pos.x,pShip.pos.z)+shipClearance();
   pShip.mesh.position.copy(pShip.pos);
+  padHudShow(false); padHoldT=0;
   /* was hardcoding rotation to (-0.32,0,0) — a permanent nose-down tilt AND a yaw of exactly 0
      regardless of which way the ship was actually facing on approach, so it always landed pointed
      the same fixed direction with its nose stuck in the ground instead of sitting flat, facing
@@ -9027,7 +9057,7 @@ function enterHomeSurfaceFlight(){
   resetMovementKeys();
   spaceScene.remove(pShip.mesh);
   surfaceScene.add(pShip.mesh);
-  var sp=homeSpawnPoint();
+  var sp=arrivalPoint(null);
   var hoverY=terrainHeight(sp.x,sp.z)+25;
   pShip.vel.set(0,0,0);
   atOutpost=true; currentWorld=null; state="surface"; surfaceFlying=true; landSettleT=0; pShip.liftedOff=true;
@@ -9067,7 +9097,7 @@ function exitToSpace(){
   resetMovementKeys();
   toast("Breaking for space...");
   sfx.build();
-  fadeTransition(function(){
+  entryTransition(function(){
     atOutpost=false; currentWorld=null;
     restoreHomeAtmosphere();
     $("hud").classList.remove("show"); $("mobActions").classList.remove("show");
@@ -9095,7 +9125,7 @@ function exitToSpace(){
       state="space";
     }
     saveGame();
-  });
+  },0x050a18,650);
 }
 /* kept only as a safety fallback (e.g. old saves / debug) — the normal way out is boarding the
    parked ship and flying it up past EXIT_ALT yourself, handled inside updateSurfaceFlight */
@@ -12220,12 +12250,13 @@ function foliageObstacles(region){
   nodes.forEach(function(n){ if((worldAt(n.x,n.z)||null)===w)obs.push({x:n.x,z:n.z,r:3.4}); });
   if(w){ var cp=npcCamps[w.id]; if(cp){ obs.push({x:cp.x,z:cp.z,r:7.5}); if(cp.tower)obs.push({x:cp.tower.x,z:cp.tower.z,r:2.8}); cp.cover.forEach(function(cv){ obs.push({x:cv.x,z:cv.z,r:2.0}); }); } }
   else obs.push({x:0,z:-4,r:6.5});
+  var ps=worldPadSpots[region.id]; if(ps)obs.push({x:ps.x,z:ps.z,r:PAD_R+0.8});
   buildings.forEach(function(b){ var d=BUILD_DEFS[b.type]; if(!d||d.tool)return; obs.push({x:b.x,z:b.z,r:(d.edge?1.2:(d.radius||1.5)*1.45)+0.4}); });
   return obs;
 }
 function foliageObstacleSig(region){
   var w=region.id==="home"?null:worldById(region.id), cp=w&&npcCamps[w.id];
-  return nodes.length+":"+(cp?cp.cover.length+1:0)+":"+buildings.length+":"+buildings.reduce(function(a,b){ return a+b.x*3+b.z*7; },0);
+  return (worldPadSpots[region.id]?"p":"")+nodes.length+":"+(cp?cp.cover.length+1:0)+":"+buildings.length+":"+buildings.reduce(function(a,b){ return a+b.x*3+b.z*7; },0);
 }
 function maskFoliage(region){
   var sig=foliageObstacleSig(region); if(sig===region.maskSig)return; region.maskSig=sig;
@@ -12298,6 +12329,141 @@ ensureFoliageFor(null);
 gfxMarkShadows(surfaceScene);
 applyPlayerColors();
 loadMeta();
+
+/* ═════════════ LANDING v2.7 ═════════════ */
+/* Every world (and the colony) has a designated landing pad, and any Landing Pad you build counts
+   too. Arriving from space now brings you in over that pad. Hold your ship over any pad for three
+   seconds and it lands itself: it brakes, slides over the deck, turns to line up with the pad and
+   settles onto it (flying off the pad cancels the countdown). The trip between space and a world
+   is an atmospheric entry instead of a black cut: the hull glows as you lock on, and the screen
+   washes through the planet's own sky colour rather than going black. */
+var PAD_DECK=0.62, PAD_R=9.2, PAD_HOLD=3;
+var worldPadSpots={};   /* world id -> {x,z}, saved */
+var worldPadMeshes={};
+function padCandidateSpots(w){
+  var cx=w?w.cx:0, cz=w?w.cz:0, R=w?worldBuildR(w):BUILD_ZONE_R;
+  var out=[];
+  [[0,0.45],[0.45,0],[-0.45,0],[0,-0.45],[0.55,0.55],[-0.55,0.55],[0.55,-0.55],[-0.55,-0.55],[0,0.7],[0.7,0],[-0.7,0],[0,-0.7]].forEach(function(f){ out.push({x:snapGrid(cx+f[0]*R),z:snapGrid(cz+f[1]*R)}); });
+  return out;
+}
+function padSpotClear(p,w){
+  if(buildings.some(function(b){ var d=BUILD_DEFS[b.type]; if(!d||d.tool)return false; return Math.hypot(b.x-p.x,b.z-p.z)<(d.radius||1.5)*1.45+PAD_R+2; }))return false;
+  if(nodes.some(function(n){ return Math.hypot(n.x-p.x,n.z-p.z)<PAD_R+4; }))return false;
+  if(!w&&Math.hypot(p.x,p.z+4)<PAD_R+10)return false;
+  return true;
+}
+function ensureWorldPad(w){
+  var id=w?w.id:"home";
+  if(!worldPadSpots[id]){
+    var spots=padCandidateSpots(w), pick=null;
+    for(var i=0;i<spots.length&&!pick;i++)if(padSpotClear(spots[i],w))pick=spots[i];
+    worldPadSpots[id]=pick||spots[0];
+  }
+  if(!worldPadMeshes[id]){
+    var s=worldPadSpots[id], m=buildBuildingMesh("landingpad");
+    m.scale.setScalar(1.45); m.position.set(s.x,terrainHeight(s.x,s.z),s.z);
+    addContactShadow(m,"landingpad");
+    gfxMarkShadows(m); surfaceScene.add(m); worldPadMeshes[id]=m;
+  }
+  return worldPadSpots[id];
+}
+/* every pad on the ground you're over: the world's own plus any you've built there */
+function landingPads(){
+  var w=currentWorld||null, pads=[];
+  var s=ensureWorldPad(w);
+  pads.push({x:s.x,z:s.z,yaw:0,builtin:true});
+  buildings.forEach(function(b){ if(b.type==="landingpad"&&(worldAt(b.x,b.z)||null)===w)pads.push({x:b.x,z:b.z,yaw:b.rotY||0,b:b}); });
+  return pads;
+}
+function padUnder(x,z){
+  var best=null,bd=PAD_R;
+  landingPads().forEach(function(p){ var d=Math.hypot(p.x-x,p.z-z); if(d<bd){ bd=d; best=p; } });
+  return best;
+}
+/* the deck is ~0.6 above the ground: ships and the flight floor sit on it, not inside it */
+function landingGroundY(x,z){
+  var g=terrainHeight(x,z);
+  return padUnder(x,z)?g+PAD_DECK:g;
+}
+function padsOn(world){
+  var n=1;
+  buildings.forEach(function(b){ if(b.type==="landingpad"&&(worldAt(b.x,b.z)||null)===(world&&!world.isHome?world:null))n++; });
+  return n;
+}
+function buildingsOn(world){
+  var w=world&&!world.isHome?world:null;
+  return buildings.filter(function(b){ var d=BUILD_DEFS[b.type]; return d&&!d.tool&&(worldAt(b.x,b.z)||null)===w; }).length;
+}
+/* the arrival glide aims at the world's pad */
+function arrivalPoint(world){ var s=ensureWorldPad(world); return {x:s.x,z:s.z}; }
+
+/* ── the 3-second hold and the pad landing itself ── */
+var padHoldT=0, padLanding=null;
+function padHudShow(on,frac,txt){
+  var el=$("padHud"); if(!el)return;
+  el.classList.toggle("show",on);
+  if(on){ $("padRing").style.background="conic-gradient(var(--green) "+(frac*360)+"deg, rgba(255,255,255,.16) 0deg)"; $("padTxt").textContent=txt; }
+}
+function updatePadHold(dt,speed){
+  if(!pShip||pShip.autoLand){ padHoldT=0; padHudShow(false); return; }
+  var pad=padUnder(pShip.pos.x,pShip.pos.z);
+  var alt=pShip.pos.y-landingGroundY(pShip.pos.x,pShip.pos.z)-shipClearance();
+  if(pad&&pShip.liftedOff&&alt<34&&speed<shipSurfSpd()*0.75){
+    padHoldT+=dt;
+    var left=Math.max(0,PAD_HOLD-padHoldT);
+    padHudShow(true,clamp(padHoldT/PAD_HOLD,0,1),left>0?("LANDING PAD — HOLD "+Math.ceil(left)):"LANDING");
+    if(padHoldT>=PAD_HOLD){ startPadLanding(pad); padHoldT=0; }
+  } else {
+    if(padHoldT>0.4)toast("Landing cancelled — stay over the pad");
+    padHoldT=0; padHudShow(false);
+  }
+}
+function startPadLanding(pad){
+  /* line up with the nearest of the pad's six edges (multiples of 60°), so the turn is never more
+     than 30° */
+  var step=Math.PI/3, rel=((pShip.yaw-pad.yaw)%step+step)%step;
+  padLanding={pad:pad,t:0,dur:2.4,fx:pShip.pos.x,fz:pShip.pos.z,fy:pShip.pos.y,fyaw:pShip.yaw,
+    tyaw:pShip.yaw-(rel>step/2?rel-step:rel),
+    ty:terrainHeight(pad.x,pad.z)+PAD_DECK+shipClearance(),tilt:pShip.mesh.rotation.x,roll:pShip.roll||0};
+  pShip.vel.set(0,0,0); pShip.autoLand=false;
+  padHudShow(true,1,"LANDING");
+  toast("Pad lock — landing"); tone(660,990,0.18,"sine",0.04);
+}
+function updatePadLanding(dt){
+  var a=padLanding; a.t+=dt;
+  var t=clamp(a.t/a.dur,0,1);
+  var mv=clamp(t/0.6,0,1), me=mv*mv*(3-2*mv);
+  var dv=clamp((t-0.25)/0.75,0,1), de=dv*dv*(3-2*dv);
+  pShip.pos.x=a.fx+(a.pad.x-a.fx)*me;
+  pShip.pos.z=a.fz+(a.pad.z-a.fz)*me;
+  pShip.pos.y=a.fy+(a.ty-a.fy)*de+Math.sin(t*Math.PI)*0.4*(1-t);
+  pShip.yaw=lerpAngle(a.fyaw,a.tyaw,me);
+  pShip.roll=a.roll*(1-me);
+  pShip.mesh.position.copy(pShip.pos);
+  pShip.mesh.rotation.set(a.tilt*(1-me),pShip.yaw,pShip.roll);
+  updateEngineFlames(pShip.mesh,dt,t<0.9?0.7*(1-t)+0.2:0,false);
+  updateShipNavLights(pShip.mesh);
+  if(t>0.55&&Math.random()<0.6)spawnSurfaceParticle(new THREE.Vector3(pShip.pos.x+rnd(-1.5,1.5),a.ty-shipClearance()+0.1,pShip.pos.z+rnd(-1.5,1.5)),new THREE.Vector3(rnd(-3,3),rnd(0.2,1),rnd(-3,3)),rnd(0.3,0.55),0xcfc4b0);
+  shipChaseCam(dt,shipHandling().cam*0.9,13,0,4);
+  if(t>=1){ padLanding=null; padHudShow(false); touchDown(); }
+}
+
+/* ── atmospheric entry/exit ── */
+function entryTransition(midCallback,colHex,ms){
+  var el=$("sceneFade"), c=new THREE.Color(colHex==null?0x000000:colHex);
+  el.style.background="radial-gradient(ellipse at 50% 60%, rgba(255,255,255,.9) 0%, #"+c.getHexString()+" 55%, #"+c.clone().multiplyScalar(0.55).getHexString()+" 100%)";
+  el.classList.add("entry");
+  fadeTransition(function(){ midCallback(); setTimeout(function(){ el.classList.remove("entry"); },600); },ms||650);
+  setTimeout(function(){ el.style.background=""; },(ms||650)+900);
+}
+function entryHeatFX(dt,frac){
+  if(!pShip||frac<=0.05)return;
+  var fwd=new THREE.Vector3(Math.sin(pShip.yaw),0,Math.cos(pShip.yaw));
+  var nose=pShip.pos.clone().addScaledVector(fwd,18).add(new THREE.Vector3(0,-6,0));
+  if(Math.random()<frac*1.2)spawnThrustParticle(nose.clone().add(new THREE.Vector3(rnd(-8,8),rnd(-4,4),rnd(-8,8))),fwd.clone().multiplyScalar(-rnd(400,900)).add(new THREE.Vector3(0,rnd(50,200),0)),rnd(2,4)*(0.5+frac),Math.random()<0.5?0xff8a30:0xffd070);
+  if(frac>0.5)addCamShake(0.02*frac);
+}
+
 
 /* ═════════════ COMBAT v2.6 ═════════════ */
 /* Shots are tested along the whole path they travelled this frame (a bolt at 18000 units/sec moves

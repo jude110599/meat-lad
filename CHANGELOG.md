@@ -2,6 +2,19 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.7.0] - 2026-10-31 — Landing
+
+### Added
+- A built-in landing pad per world and at the colony (position chosen clear of buildings and deposits, saved); player-built Landing Pads also count.
+- Hold-over-pad auto-landing: 3-second countdown HUD, then a slide/align/descend animation onto the deck; leaving the pad cancels.
+- Atmospheric entry/exit transition tinted by the destination sky, and re-entry heat particles while locking on.
+- Approach marker shows landing pad and building counts.
+
+### Changed
+- Arrival from space glides in over the world's pad and ends hovering with the throttle cut.
+- Ships rest on the pad deck (flight floor and touchdown use the deck height).
+- Building placement and foliage keep the built-in pad clear.
+
 ## [2.6.0] - 2026-10-30 — Combat
 
 ### Added
