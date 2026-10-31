@@ -2,6 +2,20 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.8.0] - 2026-10-31 — Unique Worlds
+
+### Added
+- Per-world terrain generators (Vesta terraced ice mesas and spires, Ember volcanoes with calderas and lava channels, Verdance hills with river valleys, Obsidian crater field and crystal ridges, Bastion mesas and dunes), applied over each world's whole terrain plate with the build clearing kept flat.
+- Ember volcano smoke plumes; Bastion spire-cacti.
+
+### Changed
+- World terrain beyond the playable square uses the world's own generator instead of the colony's.
+- Enemy camp structures sit at the lowest point of their footprint.
+- Alien world fog starts further out.
+
+### Fixed
+- Foliage masking tracked a single hidden flag per item, so the second part of two-part plants (flower bulbs) stayed visible over obstacles.
+
 ## [2.7.0] - 2026-10-31 — Landing
 
 ### Added

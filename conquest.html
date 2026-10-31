@@ -626,7 +626,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.7 · Landing</div>
+      <div class="armadaBadge">v2.8 · Unique Worlds</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -636,6 +636,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Every planet has its own landscape: ice mesas, volcanoes, jungle rivers, craters and desert mesas</li>
           <li>Landing pads on every world: hold 3 seconds over one and your ship lands itself</li>
           <li>Combat rebuilt: shots that land, weapon heat, visible damage and enemy pilots with roles</li>
           <li>Ships now have momentum and their own handling, with a smooth chase camera</li>
@@ -895,8 +896,20 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.7.0";
+var VERSION="2.8.0";
 var CHANGELOG=[
+  {v:"2.8.0",t:"Unique worlds: every planet has its own landscape",items:[
+    "EVERY WORLD HAS ITS OWN LANDSCAPE. The planets used to share the colony's hills, just flattened and recoloured. Each now has its own terrain, while the buildable clearing in the middle stays flat:",
+    "VESTA FROST: stepped ice mesas with sheer terraced cliffs, frozen lakes in the low ground and fields of jagged ice spires",
+    "EMBER REACH: three volcanoes with craters at the top and smoke pouring from them, lava channels running across the plain and jagged basalt ground",
+    "VERDANT HOLLOW: tall rounded jungle hills cut through by winding river valleys full of swamp water",
+    "OBSIDIAN MOON: a cratered plain (impact craters with raised rims, some filled with void liquid) under sharp glowing crystal ridgelines",
+    "BASTION PRIME: flat-topped desert mesas with cliff walls, dune-rippled canyon floors, and new spire-cacti with flowering crowns",
+    "The far edges of each world now continue its own landscape out to the horizon instead of switching to the colony's terrain",
+    "Enemy camps sit flat on uneven ground instead of hanging over dips",
+    "Clearer air on the alien worlds: the haze starts further away so you can see the landscape",
+    "FIXED: the glowing bulbs of some flowers still showed through ore deposits, camps and buildings after the rest of the plant was cleared away"
+  ]},
   {v:"2.7.0",t:"Landing: landing pads on every world, 3-second auto-landing and atmospheric entry",items:[
     "A LANDING PAD ON EVERY WORLD. The colony and every planet now have their own landing pad, and any Landing Pad you build counts too. Coming down from space brings you in hovering right over the world's pad, with the throttle cut",
     "HOLD 3 SECONDS TO LAND. Keep your ship over any landing pad for three seconds and it lands itself: a countdown appears, then the ship slides to the middle of the deck, turns to line up with the pad and settles gently onto it. Fly off the pad during the countdown and it cancels. Arriving from space and doing nothing now simply lands you on the pad",
@@ -2679,15 +2692,124 @@ function worldAt(x,z){
   return null;
 }
 function worldBuildR(w){ return w.zoneR*0.55; }
+/* ═════════════ WORLD TERRAIN v2.8: a different landscape on every world ═════════════ */
+/* Every world used to share the colony's heightfield, just scaled down and recoloured (and past
+   the edge of the playable square its terrain even fell back to the colony's own formula). Each
+   world now has its own generator, applied across its whole terrain plate, while the buildable
+   clearing in the middle stays flat:
+     Vesta Frost     — stepped ice mesas with sheer terraced cliffs, frozen lakes and ice spires
+     Ember Reach     — three volcanoes with smoking calderas, lava channels, jagged basalt ground
+     Verdant Hollow  — tall rounded jungle hills cut by winding river valleys full of swamp water
+     Obsidian Moon   — a cratered plain with sharp crystal ridgelines
+     Bastion Prime   — flat-topped desert mesas with cliff walls and dune-rippled canyon floors */
+function tHash(i,j,s){ var v=Math.sin(i*127.1+j*311.7+s*74.7)*43758.5453; return v-Math.floor(v); }
+function smoothstepN(a,b,v){ var t=clamp((v-a)/(b-a),0,1); return t*t*(3-2*t); }
+var EMBER_VOLCANOES=[{x:250,z:-270,r:160,h:62},{x:-310,z:190,r:140,h:52},{x:390,z:330,r:180,h:74}];
+function worldPlateAt(x,z){
+  for(var i=0;i<WORLDS.length;i++){ var w=WORLDS[i], R=w.zoneR*2.6; if(Math.abs(x-w.cx)<=R&&Math.abs(z-w.cz)<=R)return w; }
+  return null;
+}
+function worldShape(w,x,z){
+  var lx=x-w.cx, lz=z-w.cz;
+  if(w.id==="vesta"){
+    var n=fbm2(x*0.0052+11,z*0.0052+7,8192,4,91);
+    var base=(n-0.44)*78;
+    var step=7, q=base/step, f=q-Math.floor(q);
+    var terr=(Math.floor(q)+smoothstepN(0.72,0.94,f))*step;
+    var r=1-Math.abs(fbm2(x*0.021+3,z*0.021+5,8192,3,93)*2-1);
+    var spire=Math.pow(Math.max(0,r-0.88)/0.12,2.2)*26*smoothstepN(0.35,0.6,n);
+    return terr+spire+(vnoise2(x*0.09,z*0.09,8192,2)-0.5)*0.8;
+  }
+  if(w.id==="ember"){
+    var g=(fbm2(x*0.009+5,z*0.009+9,8192,4,95)-0.5)*16;
+    var rr=1-Math.abs(fbm2(x*0.004+1,z*0.004+2,8192,4,97)*2-1); g+=rr*rr*rr*18;
+    g+=(vnoise2(x*0.13,z*0.13,8192,3)-0.5)*2.2;
+    var ch=Math.abs(fbm2(x*0.0036+7,z*0.0036+3,8192,3,99)*2-1);
+    g-=(1-smoothstepN(0.0,0.06,ch))*9;
+    for(var v=0;v<EMBER_VOLCANOES.length;v++){
+      var V=EMBER_VOLCANOES[v], d=Math.hypot(lx-V.x,lz-V.z);
+      if(d<V.r){
+        var u=1-d/V.r, cone=V.h*Math.pow(u,1.5);
+        var ang=Math.atan2(lz-V.z,lx-V.x); cone*=1+Math.sin(ang*9+v)*0.05*u;
+        var cal=V.r*0.2; if(d<cal)cone-=V.h*0.42*Math.pow(1-d/cal,0.8);
+        g=Math.max(g,cone+g*0.3);
+      }
+    }
+    return g;
+  }
+  if(w.id==="verdance"){
+    var hills=(fbm2(x*0.0042+21,z*0.0042+17,8192,4,101)-0.42)*62;
+    hills=Math.max(hills,-4)+(fbm2(x*0.02,z*0.02,8192,2,103)-0.5)*4;
+    var rv=Math.abs(fbm2(x*0.0052+33,z*0.0052+29,8192,3,105)*2-1);
+    var river=smoothstepN(0.03,0.13,rv);
+    return hills*river+(-6.5)*(1-river);
+  }
+  if(w.id==="obsidian"){
+    var h=(fbm2(x*0.008+41,z*0.008+43,8192,3,107)-0.5)*7;
+    var rg=1-Math.abs(fbm2(x*0.006+45,z*0.006+47,8192,4,109)*2-1);
+    h+=Math.pow(rg,7)*34;
+    var C=90, ci=Math.floor(x/C), cj=Math.floor(z/C);
+    for(var di=-1;di<=1;di++)for(var dj=-1;dj<=1;dj++){
+      var ii=ci+di, jj=cj+dj;
+      if(tHash(ii,jj,1)<0.35)continue;
+      var cx=(ii+0.2+tHash(ii,jj,2)*0.6)*C, cz=(jj+0.2+tHash(ii,jj,3)*0.6)*C, cr=16+tHash(ii,jj,4)*30, dep=5+tHash(ii,jj,5)*11;
+      var dd=Math.hypot(x-cx,z-cz)/cr;
+      if(dd<1.35){ if(dd<1)h-=dep*(1-dd*dd); h+=dep*0.32*Math.exp(-Math.pow((dd-1)*4.5,2)); }
+    }
+    return h;
+  }
+  if(w.id==="bastion"){
+    var m=fbm2(x*0.0048+51,z*0.0048+53,8192,4,111);
+    var plateau=smoothstepN(0.52,0.545,m)*22+smoothstepN(0.64,0.66,m)*13;
+    var floorN=fbm2(x*0.012+55,z*0.012+57,8192,3,113);
+    var dunes=Math.sin(x*0.07+floorN*7)*Math.cos(z*0.02+floorN*3)*1.6*(1-smoothstepN(0.45,0.52,m));
+    var erosion=(vnoise2(x*0.08,z*0.08,8192,3)-0.5)*1.4;
+    return plateau+dunes+erosion-3.4;
+  }
+  return terrainRaw(x,z)*0.55;
+}
+/* desert spire-cacti for Bastion Prime: a ribbed trunk with upturned arms and a flowering crown */
+function cactusGeo(col,flower){
+  var parts=[];
+  var trunk=new THREE.CylinderGeometry(0.26,0.32,3.2,10,4); parts.push({geo:trunk,matrix:MK.mtx(0,1.6,0),color:col,shade:function(x,y,z){ return 0.82+Math.abs(Math.sin(Math.atan2(z,x)*5))*0.22; }});
+  [[1,1.3,0.95],[-1,1.9,0.75]].forEach(function(a){
+    parts.push({geo:new THREE.CylinderGeometry(0.15,0.17,0.7,8),matrix:MK.mtx(a[0]*0.42,a[1],0,0,0,Math.PI/2),color:col});
+    parts.push({geo:new THREE.CylinderGeometry(0.14,0.16,a[2],8),matrix:MK.mtx(a[0]*0.74,a[1]+a[2]/2-0.05,0),color:col});
+  });
+  parts.push({geo:new THREE.SphereGeometry(0.28,10,8),matrix:MK.mtx(0,3.25,0,0,0,0,1,0.6,1),color:col});
+  for(var i=0;i<5;i++){ var an=i/5*6.28; parts.push({geo:new THREE.ConeGeometry(0.07,0.22,5),matrix:MK.mtx(Math.cos(an)*0.16,3.42,Math.sin(an)*0.16,Math.cos(an)*0.6,0,-Math.sin(an)*0.6),color:flower}); }
+  return MK.merge(parts);
+}
+/* ── Ember Reach: smoke plumes rising from every caldera ── */
+var plumes=[], plumeMat=null;
+function worldFX(dt){
+  if(!currentWorld||currentWorld.id!=="ember"){ if(plumes.length){ plumes.forEach(function(p){ surfaceScene.remove(p.s); }); plumes=[]; } return; }
+  if(!plumeMat)plumeMat=new THREE.SpriteMaterial({map:smokeTex,color:0x3a302c,transparent:true,depthWrite:false,opacity:0.5,fog:true});
+  EMBER_VOLCANOES.forEach(function(V,vi){
+    if(Math.random()<dt*2.2&&plumes.length<70){
+      var x=currentWorld.cx+V.x+rnd(-6,6), z=currentWorld.cz+V.z+rnd(-6,6);
+      var s=new THREE.Sprite(plumeMat.clone()); s.position.set(x,terrainHeight(currentWorld.cx+V.x,currentWorld.cz+V.z)+V.h*0.55,z);
+      s.scale.setScalar(rnd(14,22)); s.userData.noShadow=true; surfaceScene.add(s);
+      plumes.push({s:s,age:0,life:rnd(9,13),vx:rnd(1,3),vz:rnd(-1,1)});
+    }
+  });
+  for(var i=plumes.length-1;i>=0;i--){
+    var p=plumes[i]; p.age+=dt; var t=p.age/p.life;
+    if(t>=1){ surfaceScene.remove(p.s); plumes.splice(i,1); continue; }
+    p.s.position.y+=dt*(7-t*3); p.s.position.x+=p.vx*dt; p.s.position.z+=p.vz*dt;
+    p.s.scale.setScalar(p.s.scale.x+dt*5);
+    p.s.material.opacity=0.55*Math.sin(Math.min(1,t*4)*Math.PI/2)*(1-t);
+  }
+}
 function terrainHeight(x,z){
-  var w=worldAt(x,z);
+  var w=worldAt(x,z)||worldPlateAt(x,z);
   if(w){
     var lx=x-w.cx, lz=z-w.cz;
     var buildR=worldBuildR(w);
     var d=Math.max(Math.abs(lx),Math.abs(lz));
     var t=clamp((d-buildR)/(w.zoneR-buildR),0,1);
     var smooth=t*t*(3-2*t);
-    return terrainRaw(x,z)*smooth*0.55;
+    return worldShape(w,x,z)*smooth;
   }
   var hd=Math.sqrt(x*x+z*z);
   var ht=clamp((hd-BUILD_ZONE_R)/(TERRAIN_BLEND_R-BUILD_ZONE_R),0,1);
@@ -7386,6 +7508,8 @@ function buildCoverMesh(fac,big){
   return g;
 }
 /* lay out a world's camp once: barracks, tower + sniper, a ring of cover, the starting squad */
+/* the lowest ground under a footprint, so a structure on uneven ground never hangs in the air */
+function footMinY(x,z,r){ var m=terrainHeight(x,z); for(var a=0;a<6.28;a+=0.785){ m=Math.min(m,terrainHeight(x+Math.cos(a)*r,z+Math.sin(a)*r)); } return m-0.05; }
 function ensureNPCCamp(w){
   if(npcCamps[w.id])return npcCamps[w.id];
   var fac=npcFaction(w);
@@ -7393,16 +7517,16 @@ function ensureNPCCamp(w){
   var cx=w.cx+ox, cz=w.cz+oz;
   var camp={w:w,fac:fac,x:cx,z:cz,cover:[],alertT:0,barracks:null,spawnT:6,cleared:!!(w.campCleared)};
   if(!camp.cleared){
-    var bm=buildBarracksMesh(fac); bm.position.set(cx,terrainHeight(cx,cz),cz); bm.rotation.y=Math.atan2(w.cx-cx,w.cz-cz); surfaceScene.add(bm); gfxMarkShadows(bm);
+    var bm=buildBarracksMesh(fac); bm.position.set(cx,footMinY(cx,cz,5.5),cz); bm.rotation.y=Math.atan2(w.cx-cx,w.cz-cz); surfaceScene.add(bm); gfxMarkShadows(bm);
     camp.barracks={mesh:bm,hp:w.id==="bastion"?900:450,max:w.id==="bastion"?900:450,alive:true,x:cx,z:cz};
   }
   var tx=cx+14, tz=cz-10;
-  var tm=buildTowerMesh(fac); tm.position.set(tx,terrainHeight(tx,tz),tz); surfaceScene.add(tm); gfxMarkShadows(tm);
+  var tm=buildTowerMesh(fac); tm.position.set(tx,footMinY(tx,tz,1.8),tz); surfaceScene.add(tm); gfxMarkShadows(tm);
   camp.tower={x:tx,z:tz,y:terrainHeight(tx,tz)+7.25,mesh:tm};
   for(var i=0;i<10;i++){
     var a=i/10*Math.PI*2+rnd(-0.2,0.2), r=rnd(12,24);
     var px=cx+Math.cos(a)*r, pz=cz+Math.sin(a)*r, big=Math.random()<0.4;
-    var cm=buildCoverMesh(fac,big); cm.position.set(px,terrainHeight(px,pz),pz); cm.rotation.y=a+Math.PI/2; surfaceScene.add(cm); gfxMarkShadows(cm);
+    var cm=buildCoverMesh(fac,big); cm.position.set(px,footMinY(px,pz,1.2),pz); cm.rotation.y=a+Math.PI/2; surfaceScene.add(cm); gfxMarkShadows(cm);
     camp.cover.push({x:px,z:pz,r:big?1.3:1.4,mesh:cm});
   }
   npcCamps[w.id]=camp;
@@ -7922,6 +8046,7 @@ function biomeFoliage(id){
       {kind:"cover",geo:grassClumpGeo(0.28,0.04,4,0x2a2a26,0x6a6050),mat:grassMat(),n:2000,s:[0.7,1.2],inZone:true,noCast:true},
       {kind:"tree",geo:deadTreeGeo(0x2a2622),mat:std({roughness:0.95}),n:140,s:[0.6,1.3],clump:0.5},
       {kind:"rock",geo:rockClusterGeo(19,0x4a4a50),mat:std({roughness:0.9,flatShading:true}),n:520,s:[0.5,2.4]},
+      {kind:"cactus",geo:cactusGeo(0x4a6a3a,0xff8a5a),mat:std({roughness:0.7}),n:240,s:[0.7,1.7],clump:0.5},
       {kind:"wreck",geo:wreckGeo(),mat:new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.55,metalness:0.7,map:GFX_METAL.map}),n:160,s:[0.8,2.2]}
     ]
   };
@@ -12022,15 +12147,15 @@ var LIGHT_PROFILES={
   home:{stars:0.7,top:0x24163e,horizon:0xa06878,fog:0x8a5c6c,ground:0x5a3a3a,sun:0xffe2c8,sunI:3.3,hemiSky:0xc8b8e8,hemiGround:0x7a5048,hemiI:2.125,amb:0xd8cce8,ambI:0.743,rim:0xb070ff,rimI:0.55,
     exposure:1.0,sat:1.0,lift:0.045,contrast:1.05,tint:[1.0,0.98,1.0],fogNear:170,fogFar:780,mtnFar:0x8a6a86,mtnNear:0x5a3c4c,cloud:0xf0d0e0,particles:"dust",pcol:0xf0d4d8,giant:true,moon:true},
   vesta:{stars:0.0,top:0x1c3a62,horizon:0xb8cce0,fog:0xa8bed4,ground:0x8aa0b8,sun:0xf6f8ff,sunI:2.5,hemiSky:0xd4e4f8,hemiGround:0x8494aa,hemiI:1.438,amb:0xe4ecf8,ambI:0.472,rim:0x7fd4ff,rimI:0.45,
-    exposure:0.5,sat:0.95,lift:0.022,contrast:1.06,tint:[0.98,1.0,1.03],fogNear:70,fogFar:820,mtnFar:0x9ab2cc,mtnNear:0x6a84a2,cloud:0xf4f8ff,particles:"snow",pcol:0xffffff,moon:true},
+    exposure:0.5,sat:0.95,lift:0.022,contrast:1.06,tint:[0.98,1.0,1.03],fogNear:120,fogFar:940,mtnFar:0x9ab2cc,mtnNear:0x6a84a2,cloud:0xf4f8ff,particles:"snow",pcol:0xffffff,moon:true},
   ember:{stars:0.22,top:0x2a0c08,horizon:0xb0583a,fog:0x8a4630,ground:0x4a2216,sun:0xffd8b0,sunI:3.4,hemiSky:0xe8c0a8,hemiGround:0x5a2a1c,hemiI:2.188,amb:0xf0d8c8,ambI:0.945,rim:0xff6a30,rimI:0.55,
-    exposure:1.12,sat:0.82,lift:0.06,contrast:1.04,tint:[1.0,0.97,0.95],fogNear:70,fogFar:780,mtnFar:0x7a3a2a,mtnNear:0x3e1c14,cloud:0x8a5a4a,particles:"embers",pcol:0xffa048},
+    exposure:1.12,sat:0.82,lift:0.06,contrast:1.04,tint:[1.0,0.97,0.95],fogNear:120,fogFar:900,mtnFar:0x7a3a2a,mtnNear:0x3e1c14,cloud:0x8a5a4a,particles:"embers",pcol:0xffa048},
   verdance:{stars:0.12,top:0x0c2a1a,horizon:0x78a87e,fog:0x5a8a66,ground:0x2a4a2a,sun:0xf4ffe8,sunI:3.2,hemiSky:0xc8ecd0,hemiGround:0x2e4e2e,hemiI:2.062,amb:0xdcf0dc,ambI:0.837,rim:0x50ff98,rimI:0.38,
-    exposure:1.06,sat:0.86,lift:0.053,contrast:1.04,tint:[0.99,1.0,0.98],fogNear:60,fogFar:720,mtnFar:0x5a8a6a,mtnNear:0x264a30,cloud:0xe0f0e0,particles:"spores",pcol:0xb8ff9a},
+    exposure:1.06,sat:0.86,lift:0.053,contrast:1.04,tint:[0.99,1.0,0.98],fogNear:120,fogFar:840,mtnFar:0x5a8a6a,mtnNear:0x264a30,cloud:0xe0f0e0,particles:"spores",pcol:0xb8ff9a},
   obsidian:{stars:0.85,top:0x100a24,horizon:0x7464a0,fog:0x54447a,ground:0x3a2a58,sun:0xece2ff,sunI:3.4,hemiSky:0xc8bcf4,hemiGround:0x3e2e5e,hemiI:2.5,amb:0xd8d0f4,ambI:1.215,rim:0xa064ff,rimI:0.6,
-    exposure:1.24,sat:0.86,lift:0.09,contrast:1.03,tint:[0.99,0.98,1.02],fogNear:70,fogFar:760,mtnFar:0x5c4c86,mtnNear:0x2c2048,cloud:0x8a7ab0,particles:"void",pcol:0xc0a0ff,giant:true},
+    exposure:1.24,sat:0.86,lift:0.09,contrast:1.03,tint:[0.99,0.98,1.02],fogNear:120,fogFar:880,mtnFar:0x5c4c86,mtnNear:0x2c2048,cloud:0x8a7ab0,particles:"void",pcol:0xc0a0ff,giant:true},
   bastion:{stars:0.3,top:0x1c0c0a,horizon:0x946250,fog:0x704c3c,ground:0x4a3028,sun:0xffe4c8,sunI:3.3,hemiSky:0xdcc4b4,hemiGround:0x4a3028,hemiI:2.125,amb:0xe4d4c8,ambI:0.945,rim:0xff7a3a,rimI:0.45,
-    exposure:1.1,sat:0.85,lift:0.06,contrast:1.04,tint:[1.0,0.98,0.96],fogNear:70,fogFar:780,mtnFar:0x6a4a3c,mtnNear:0x34221c,cloud:0x8a6a5a,particles:"ash",pcol:0xb4a49a}
+    exposure:1.1,sat:0.85,lift:0.06,contrast:1.04,tint:[1.0,0.98,0.96],fogNear:120,fogFar:900,mtnFar:0x6a4a3c,mtnNear:0x34221c,cloud:0x8a6a5a,particles:"ash",pcol:0xb4a49a}
 };
 var LIGHT_BASE_EXPOSURE=1.3, LIGHT_SURF_GAIN=1.48;
 var LIGHT_BRIGHT=1;
@@ -12267,10 +12392,13 @@ function maskFoliage(region){
   var zero=new THREE.Matrix4().makeScale(0,0,0);
   region.cover.forEach(function(c){
     var changed=false;
+    /* hidden state is tracked per instanced part: a plant drawn in two parts (stem + glowing bulbs)
+       shares one item list, and a flag on the shared item hid only the first part */
+    if(!c.hid)c.hid=new Uint8Array(c.items.length);
     c.items.forEach(function(it,i){
       var cell=grid[Math.floor(it.x/G)+","+Math.floor(it.z/G)], hidden=false;
       if(cell)for(var j=0;j<cell.length;j++){ var o=cell[j], dx=it.x-o.x, dz=it.z-o.z, rr=o.r+(c.zone?0:it.s*0.5); if(dx*dx+dz*dz<rr*rr){ hidden=true; break; } }
-      if(hidden!==!!it.hid){ it.hid=hidden; c.im.setMatrixAt(i,hidden?zero:it.m); changed=true; }
+      if(hidden!==!!c.hid[i]){ c.hid[i]=hidden?1:0; c.im.setMatrixAt(i,hidden?zero:it.m); changed=true; }
     });
     if(changed)c.im.instanceMatrix.needsUpdate=true;
   });
@@ -12305,6 +12433,7 @@ function lightingFrame(dt){
   SKY_OBJS.forEach(function(o){ var b=o.userData.skyBase; if(!b)return; if(o===skyboxMesh)o.position.copy(cp); else o.position.set(cp.x+b.x,b.y,cp.z+b.z); });
   atmFrame(dt);
   localLightsFrame(dt);
+  worldFX(dt);
 }
 function setBrightness(v){
   LIGHT_BRIGHT=clamp(v,0.5,1.6);
