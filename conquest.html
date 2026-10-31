@@ -149,6 +149,8 @@ body:not(.pc-mode) #fleetHud{bottom:auto;top:calc(118px + env(safe-area-inset-to
 .sceneFade.entry{transition:opacity .6s ease}
 #bLandNow.on{border-color:var(--amber);color:var(--amber2);background:rgba(40,28,8,.85)}
 .colList{display:flex;flex-direction:column;gap:6px}
+.routeChip{display:inline-flex;align-items:center;gap:5px;margin:0 6px 6px 0;padding:4px 9px;border-radius:14px;border:1px solid var(--line);background:var(--panel);font-size:11px;cursor:pointer;opacity:.55}
+.routeChip svg{width:16px;height:16px} .routeChip.on{opacity:1;border-color:rgba(123,217,74,.6);background:rgba(123,217,74,.1)}
 .colRow{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .colNm{display:flex;justify-content:space-between;align-items:center;gap:8px} .colNm b{font-size:13px}
 .colLvl{font-size:10px;font-weight:800;letter-spacing:.1em;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.06);color:var(--dim)}
@@ -632,7 +634,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
     <div class="page">
       <h1 class="logo"><span class="a">SPACE</span><span class="b">CONQUEST</span></h1>
       <div class="tag">Build. Automate. Launch. Conquer.</div>
-      <div class="armadaBadge">v2.9 · Exploration</div>
+      <div class="armadaBadge">v2.10 · Logistics</div>
       <div class="stack">
         <button class="btn" id="bStart">Land<small>Touch down and start a new empire from nothing</small></button>
         <button class="btn sub hide" id="bNewColony">Abandon &amp; Start New</button>
@@ -642,6 +644,7 @@ body:not(.pc-mode) #mobActions.show{display:flex}
       <div class="whatsNew">
         <div class="wnHead">New in 2.3, 2.2 &amp; 2.1</div>
         <ul>
+          <li>Cargo routes flown by haulers between worlds, and robot arms that load and unload machines</li>
           <li>Explore crashed ships, abandoned facilities and research stations; claim worlds with a Colony Core</li>
           <li>Every planet has its own landscape: ice mesas, volcanoes, jungle rivers, craters and desert mesas</li>
           <li>Landing pads on every world: hold 3 seconds over one and your ship lands itself</li>
@@ -879,6 +882,11 @@ body:not(.pc-mode) #mobActions.show{display:flex}
         <div id="slContents"></div>
         <div class="cat" style="margin:10px 2px 4px">Destination</div>
         <div id="slHubList"></div>
+        <div class="cat" style="margin:10px 2px 4px">Cargo</div>
+        <div id="slFilter"></div>
+        <div class="cat" style="margin:10px 2px 4px">Hauler</div>
+        <div id="slShip"></div>
+        <div id="slStats"></div>
       </div>
     </div>
   </div>
@@ -903,8 +911,17 @@ body:not(.pc-mode) #mobActions.show{display:flex}
 /* CONQUEST POLISH PATCH 2026-08-16 */
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 "use strict";
-var VERSION="2.9.0";
+var VERSION="2.10.0";
 var CHANGELOG=[
+  {v:"2.10.0",t:"Logistics: real cargo routes between worlds and robotic arms",items:[
+    "CARGO ROUTES. A Shipment Launcher aimed at a Shipment Hub is now a real cargo route instead of an instant teleport: every load is flown by a hauler you can watch lift off, fly over and land (about 10–20 seconds on the same world, about 40 seconds to another world), carrying 60 items a trip",
+    "ASSIGN SHIPS TO ROUTES. Pick any ship from your Hangar in the launcher to fly the route: a Frigate carries about two and a half times as much, a Bomber nearly double, a Scout less but 60% faster. A ship on a route stays out of combat sorties",
+    "CHOOSE WHAT SHIPS. Tap items in the launcher to ship only those; tap again or choose Ship everything to clear it",
+    "ROUTE STATUS AND ALERTS. Each launcher shows whether it is loading, in flight (with an ETA), waiting for cargo, out of power or blocked by a full hub, plus items per minute, total delivered and trips. You get an alert when a route stalls or its destination is full (whatever doesn't fit is flown back). Every route is also listed in the Factory overview",
+    "ROBOTIC LOADER (Tier 3). A robot arm that keeps every machine within 14 m stocked with its inputs, and generators with fuel, straight from your stockpile, so you can run a factory without belts",
+    "ROBOTIC UNLOADER (Tier 3). A robot arm that empties the outputs of Miners, extractors, machines and storage within 14 m into your stockpile, leaving anything a belt is already carrying",
+    "Cargo in flight is kept when you save and reload"
+  ]},
   {v:"2.9.0",t:"Exploration and colonies: places to discover and worlds to settle",items:[
     "PLACES TO EXPLORE. Out past the build clearing on every world (and around the colony) there are now sites to find, each marked by a tall beam of light until you've been there: CRASHED SHIPS to salvage for parts, steel, hull plating, circuits and motors; ABANDONED FACILITIES that hand you a new alternate recipe plus computers, modular frames and wire; and RESEARCH STATIONS that give a Power Shard, an AWESOME coupon, quartz crystals and quickwire. Walk up and press E (INTERACT) to search; it takes a few seconds and you have to stay close. Further-out worlds pay more",
     "RICH DEPOSITS. Every world, and the colony, has one rich deposit of its native ore: bigger, ringed with light and marked by a short beam, and it mines two and a half times faster (by Miner or by hand)",
@@ -5961,6 +5978,7 @@ function updateBuildings(dt){
   }
   computePowerNetworks();
   statTick(dt);
+  updateCargo(dt);
   buildings.forEach(function(b){
     var d=BUILD_DEFS[b.type];
     var powOk=d.powerDraw<=0||b.powered;
@@ -6047,23 +6065,7 @@ function updateBuildings(dt){
         if(move>0){ b.in[k]-=move; b.out[k]=(b.out[k]||0)+move; }
       });
     } else if(b.type==="shiplauncher"){
-      var hasCargo=Object.keys(b.in).some(function(k){return (b.in[k]||0)>0.01;});
-      if(powOk&&b.targetHub&&hasCargo&&buildings.indexOf(b.targetHub)>=0){
-        b._shipT=b._shipT==null?SHIP_INTERVAL:b._shipT-dt;
-        if(b._shipT<=0){
-          var hub=b.targetHub, shippedAny=false;
-          Object.keys(b.in).forEach(function(k){
-            var amt=b.in[k]||0; if(amt<=0.01)return;
-            var cap=destCapFor(hub,k), room=Math.max(0,cap-(hub.out[k]||0));
-            var move=Math.min(amt,room);
-            if(move>0){ hub.out[k]=(hub.out[k]||0)+move; b.in[k]-=move; shippedAny=true; }
-          });
-          b._shipT=SHIP_INTERVAL;
-          if(shippedAny){ toast("Shipment launched to "+(hub.name||BUILD_DEFS.shiphub.nm)); sfx.build(); b._launchFlashT=0.6; }
-        }
-      } else {
-        b._shipT=SHIP_INTERVAL;
-      }
+      launcherTick(b,powOk,dt);
       if(b._launchFlashT>0){
         b._launchFlashT-=dt;
         if(b.mesh&&b.mesh.userData.glowMesh)b.mesh.userData.glowMesh.material.emissiveIntensity=2.2;
@@ -6345,7 +6347,7 @@ function flyFleetShip(f){
   var sy=shipyard(); if(sy)mountDockedShip(sy);
   syncHangarShips(); sfx.build(); toast(shipModelDef(shipModelKey).nm+" is now your flagship");
 }
-function sortieShips(){ return fleet.filter(function(f){ return f.robot&&f.sortie&&!f.flying&&f.hp>0; }); }
+function sortieShips(){ return fleet.filter(function(f){ return f.robot&&f.sortie&&!f.flying&&f.hp>0&&!f.route; }); }
 
 /* ── formation geometry: offsets in the leader's frame (x right, y up, z forward) ── */
 function formationOffset(k,n,spacing){
@@ -8194,11 +8196,11 @@ function saveGame(){
       stock:stock,
       nodes:nodes.map(function(n){return n.rich?{x:n.x,z:n.z,restype:n.restype,rich:true}:{x:n.x,z:n.z,restype:n.restype};}),
       buildings:buildings.map(function(b){
-        return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.in,out:b.out,recipe:b.recipe,
+        return {type:b.type,x:b.x,z:b.z,rotY:b.rotY,nodeIdx:b.node?nodes.indexOf(b.node):-1,in:b.type==="shiplauncher"?launcherInWithRuns(b):b.in,out:b.out,recipe:b.recipe,
           targetMode:b.targetMode,targetQty:b.targetQty,producedCount:b.producedCount,
           job:b.job?{model:b.job.model,timeLeft:b.job.timeLeft,total:b.job.total,started:!!b.job.started}:null,
           name:b.name,targetHubIdx:b.targetHub?buildings.indexOf(b.targetHub):-1,doorMode:b.doorMode,paintColor:b.paintColor,paintParts:b.paintParts,
-          clock:b.clock,shards:b.shards,charge:b.charge};
+          clock:b.clock,shards:b.shards,charge:b.charge,filter:b.filter||null,routeShipId:b.routeShipId||null};
       }),
       belts:belts.map(function(bl){return {fromIdx:buildings.indexOf(bl.from),toIdx:buildings.indexOf(bl.to),res:bl.res,tier:bl.tier||1,outSlot:bl._outSlot,inSlot:bl._inSlot};}),
       cables:cables.map(function(c){return {fromIdx:buildings.indexOf(c.from),toIdx:buildings.indexOf(c.to)};}),
@@ -8220,7 +8222,7 @@ function saveGame(){
       discoveredWorlds:WORLDS.map(function(w){return w.discovered?w.id:null;}).filter(function(x){return x;}),
       guardiansDefeated:WORLDS.map(function(w){return w.hasGuardian&&w.guardianDefeated?w.id:null;}).filter(function(x){return x;}),
       unlocked:unlocked, playerColors:playerColors, colorPresets:colorPresets,
-      fleet:fleet.map(function(f){ return {id:f.id,model:f.model,name:f.name,robot:f.robot,sortie:f.sortie,hp:wingmen.filter(function(w){return w.f===f;})[0]?wingmen.filter(function(w){return w.f===f;})[0].hp:f.hp}; }),
+      fleet:fleet.map(function(f){ return {id:f.id,model:f.model,name:f.name,robot:f.robot,sortie:f.sortie,route:f.route?(buildings.filter(function(x){ return x.id===f.route; })[0]?buildings.indexOf(buildings.filter(function(x){ return x.id===f.route; })[0]):-1):-1,hp:wingmen.filter(function(w){return w.f===f;})[0]?wingmen.filter(function(w){return w.f===f;})[0].hp:f.hp}; }),
       fleetIdSeq:fleetIdSeq, fleetFormation:fleetFormation,
       fortress:{ringDestroyed:!!fortressWorld().ringDestroyed,state:fortressSaveState()},
       campsCleared:WORLDS.filter(function(w){ return w.campCleared; }).map(function(w){ return w.id; }),
@@ -8249,7 +8251,7 @@ function newColony(){
     sink:false,indstorage:false,elevator:false,battery:false,research:false,manufacturer:false,oilextractor:false,waterextractor:false,oilrefinery:false,fuelgen:false,belt3:false,statue:false};
   factoryReset();
   Object.keys(worldPadMeshes).forEach(function(k){ surfaceScene.remove(worldPadMeshes[k]); }); worldPadMeshes={}; worldPadSpots={};
-  resetExploreRuntime(); poiExplored={};
+  resetExploreRuntime(); poiExplored={}; resetCargoRuntime();
   playerColors={body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=[{name:"Default",color:0x384454,parts:{}}]; activePresetIdx=0;
@@ -8312,6 +8314,7 @@ function applySaveData(data){
     if(bd.job)b.job=bd.job;
     if(bd.name)b.name=bd.name;
     if(bd.doorMode)b.doorMode=bd.doorMode;
+    if(bd.filter)b.filter=bd.filter; if(bd.routeShipId)b.routeShipId=bd.routeShipId;
     if(bd.clock!=null)b.clock=bd.clock; if(bd.shards)b.shards=bd.shards; if(bd.charge)b.charge=bd.charge;
     if(bd.paintColor!=null)paintBuilding(b,bd.paintColor,bd.paintParts);
     b._targetHubIdx=bd.targetHubIdx!=null?bd.targetHubIdx:-1;
@@ -8352,7 +8355,7 @@ function applySaveData(data){
   factoryLoadState(data.factory);
   Object.keys(worldPadMeshes).forEach(function(k){ surfaceScene.remove(worldPadMeshes[k]); }); worldPadMeshes={};
   worldPadSpots=data.worldPads||{};
-  resetExploreRuntime(); poiExplored=(data.explore&&data.explore.explored)||{};
+  resetExploreRuntime(); poiExplored=(data.explore&&data.explore.explored)||{}; resetCargoRuntime();
   playerColors=data.playerColors||{body:0xffb545,arms:0xffb545,legs:0xffb545,head:0x0b0f18,eyes:0x4fd3ff};
   applyPlayerColors();
   colorPresets=data.colorPresets&&data.colorPresets.length?data.colorPresets:[{name:"Default",color:0x384454,parts:{}}];
@@ -8363,7 +8366,7 @@ function applySaveData(data){
   playerVelY=0; playerJumpY=0; playerGrounded=true;
   var loadedSy=shipyard();
   if(loadedSy&&shipBuilt)mountDockedShip(loadedSy);
-  fleet=(data.fleet||[]).map(function(f){ var st=SHIP_STATS[f.model]||SHIP_STATS.fighter; return {id:f.id,model:f.model,name:f.name,robot:!!f.robot,sortie:f.sortie!==false,hp:clamp(f.hp||st.maxhp,1,st.maxhp),maxhp:st.maxhp,flying:false}; });
+  fleet=(data.fleet||[]).map(function(f){ var st=SHIP_STATS[f.model]||SHIP_STATS.fighter; return {id:f.id,model:f.model,name:f.name,robot:!!f.robot,sortie:f.sortie!==false,hp:clamp(f.hp||st.maxhp,1,st.maxhp),maxhp:st.maxhp,flying:false,route:(f.route!=null&&f.route>=0&&buildings[f.route])?buildings[f.route].id:null}; });
   fleetIdSeq=data.fleetIdSeq||(fleet.reduce(function(m,f){ return Math.max(m,f.id); },0)+1);
   fleetFormation=data.fleetFormation||"vee"; fleetFree=false;
   syncHangarShips();
@@ -11482,7 +11485,9 @@ function renderShipLauncher(){
     };
   }
   var next=b._shipT!=null?Math.max(0,Math.ceil(b._shipT)):SHIP_INTERVAL;
-  $("slStatus").textContent=b.targetHub?("Next shipment in "+next+"s to "+(b.targetHub.name||"Shipment Hub")):"Pick a destination Shipment Hub below.";
+  var rst=routeStatus(b);
+  $("slStatus").innerHTML=b.targetHub?('<span style="color:'+rst.col+';font-weight:700;letter-spacing:.06em">&#9679; '+rst.txt+'</span><span style="margin-left:auto">to '+(b.targetHub.name||"Shipment Hub")+' &middot; '+Math.round(routeDuration(b,b.targetHub)/routeMods(b).spd)+'s flight</span>'):"Pick a destination Shipment Hub below.";
+  renderRouteExtras(b);
 }
 $("bShipLauncherClose").onclick=function(){ sfx.click(); closeShipLauncher(); };
 
@@ -11995,6 +12000,7 @@ function frame(now){
         if(state==="storage"&&!stgDragging)renderStorage();
         if(state==="build"){ renderBuildResources(); refreshBuildGridLive(); renderBuildDetail(); }
         if(state==="shipyard")renderShipyard();
+        if(state==="shiplauncher")renderShipLauncher();
       }
     }
     if(state==="space"||state==="launching")updateSpace(dt);
@@ -13400,6 +13406,7 @@ function clockPower(b){ return Math.pow(clockOf(b),1.32); }
 var CLOCKABLE={miner:1,miner2:1,oilextractor:1,waterextractor:1,smelter:1,foundry:1,constructor:1,assembler:1,manufacturer:1,oilrefinery:1,refinery:1,robotics:1};
 /* ── the unified machine tick, called from updateBuildings ── */
 function factoryTick(b,d,powOk,dt){
+  if(b.type==="loader"||b.type==="unloader"){ armTick(b,d,powOk,dt); return true; }
   var ck=clockOf(b)*colonyBonusFor(b);
   if(d.autoBank&&!powOk){ b.recipeActive=false; return true; }
   if(d.extractor||d.extractAny){
@@ -13487,7 +13494,7 @@ function renderFactory(){
     keys.map(function(k){ var m=R.made[k]||0,u=R.used[k]||0,n=m-u;
       return '<div class="fxRow"><span>'+(RES_ICONS[k]||'')+RES[k].nm+'</span><span>'+m.toFixed(1)+'</span><span>'+u.toFixed(1)+'</span><span class="'+(n>=0?'pos':'neg')+'">'+(n>=0?'+':'')+n.toFixed(1)+'</span><span>'+Math.floor(stock[k]||0)+'</span></div>'; }).join('')+
     (keys.length?'':'<div class="ds" style="padding:8px">Nothing produced in the last minute. Belted machine outputs and stockpiled outputs both count here.</div>')+'</div>';
-  $("factoryList").innerHTML=html+coloniesHtml();
+  $("factoryList").innerHTML=html+cargoRoutesHtml()+coloniesHtml();
 }
 /* ── AWESOME Sink panel ── */
 var sinkTarget=null;
@@ -14125,6 +14132,240 @@ function galaxyColonyLine(p){
   var st=colonyStats(w), pr=poiProgress(w);
   return '<div class="ds" style="margin-top:6px">'+COLONY_LEVELS[st.level].nm+' &middot; '+st.buildings+' buildings &middot; '+pr.done+'/'+pr.total+' sites explored</div>';
 }
+
+
+/* ═════════════ LOGISTICS v2.10: cargo routes and robotic arms ═════════════ */
+/* A Shipment Launcher and the Hub it's aimed at now form a real cargo route instead of a
+   teleport: each load is flown by a hauler that lifts off, flies over (or out to space and back
+   down at another world) and lands at the hub, carrying a limited load. Assign a hangar ship to a
+   route and it flies the run itself, faster or with more room depending on its class. Each route
+   can carry everything or only the items you pick, keeps delivery stats, and tells you when it
+   stalls. The Robotic Loader and Unloader are two new arms: the loader keeps nearby machines fed
+   from your stockpile, the unloader empties nearby outputs into it, so a factory can run with no
+   belts at all. */
+var ROUTE_BASE_CAP=60, ROUTE_SAME_T=10, ROUTE_FAR_T=40;
+var ROUTE_SHIP={scout:{spd:1.6,cap:0.6},fighter:{spd:1.3,cap:0.8},warhawk:{spd:1.2,cap:1.0},vanguard:{spd:1.1,cap:1.2},bomber:{spd:1.0,cap:1.8},frigate:{spd:0.9,cap:2.6}};
+var cargoRuns=[];
+function routeShip(b){ return b.routeShipId?fleet.filter(function(f){ return f.id===b.routeShipId; })[0]||null:null; }
+function routeMods(b){ var f=routeShip(b); var M=f&&ROUTE_SHIP[f.model]; return {spd:M?M.spd:1,cap:M?M.cap:1,model:f?f.model:"scout",ship:f}; }
+function routeDuration(from,to){
+  var same=(worldAt(from.x,from.z)||null)===(worldAt(to.x,to.z)||null);
+  var d=Math.hypot(from.x-to.x,from.z-to.z);
+  return same?ROUTE_SAME_T+d/40:ROUTE_FAR_T;
+}
+function routeStatus(b){
+  if(!b.targetHub||buildings.indexOf(b.targetHub)<0)return {txt:"NO DESTINATION",col:"#8a92a5",bad:false};
+  var run=cargoRuns.filter(function(r){ return r.from===b; })[0];
+  if(run)return {txt:"IN FLIGHT — ETA "+Math.ceil(run.dur-run.t)+"s",col:"#4fd3ff",bad:false};
+  var d=BUILD_DEFS[b.type];
+  if(d.powerDraw>0&&!b.powered)return {txt:"NO POWER",col:"#ff9d3c",bad:true};
+  if(b._routeFull)return {txt:"DESTINATION FULL",col:"#ff4d5e",bad:true};
+  if(!routeCargoKeys(b).length)return {txt:"WAITING FOR CARGO",col:"#ffb545",bad:true};
+  return {txt:"LOADING — LAUNCH IN "+Math.max(0,Math.ceil(b._shipT||0))+"s",col:"#7bd94a",bad:false};
+}
+function routeCargoKeys(b){
+  return Object.keys(b.in).filter(function(k){ return (b.in[k]||0)>=1&&(!b.filter||b.filter[k]); });
+}
+function routeRatePerMin(b){
+  var h=b._routeHist||[], now=performance.now()/1000, sum=0;
+  h.forEach(function(e){ if(now-e.t<300)sum+=e.n; });
+  return sum/5;
+}
+/* ── the hauler you see ── */
+function makeHaulerMesh(model){
+  var m=buildShipMesh(model||"scout",{noLights:true});
+  m.scale.multiplyScalar(0.55); return m;
+}
+function launchCargo(b){
+  var hub=b.targetHub, mods=routeMods(b), cap=Math.round(ROUTE_BASE_CAP*mods.cap), load={}, n=0;
+  var keys=routeCargoKeys(b);
+  /* fill the hold evenly across the item types waiting to go */
+  for(var pass=0;pass<4&&n<cap;pass++){
+    keys.forEach(function(k){
+      var share=Math.max(1,Math.floor((cap-n)/keys.length)), take=Math.min(share,Math.floor(b.in[k]||0),cap-n);
+      if(take>0){ b.in[k]-=take; load[k]=(load[k]||0)+take; n+=take; }
+    });
+  }
+  if(!n)return false;
+  var dur=routeDuration(b,hub)/mods.spd;
+  var mesh=makeHaulerMesh(mods.model); surfaceScene.add(mesh); mesh.visible=false;
+  cargoRuns.push({from:b,to:hub,load:load,n:n,t:0,dur:dur,mesh:mesh,same:(worldAt(b.x,b.z)||null)===(worldAt(hub.x,hub.z)||null)});
+  if(mods.ship)mods.ship.hauling=true;
+  return true;
+}
+function cargoDeliver(r){
+  var hub=r.to, back=0, got=0;
+  Object.keys(r.load).forEach(function(k){
+    var cap=destCapFor(hub,k), room=Math.max(0,cap-(hub.out[k]||0)), put=Math.min(room,r.load[k]);
+    hub.out[k]=(hub.out[k]||0)+put; got+=put;
+    var rest=r.load[k]-put; if(rest>0){ r.from.in[k]=(r.from.in[k]||0)+rest; back+=rest; }
+  });
+  r.from._routeFull=back>0&&got===0;
+  r.from._routeHist=(r.from._routeHist||[]).filter(function(e){ return performance.now()/1000-e.t<300; });
+  r.from._routeHist.push({t:performance.now()/1000,n:got});
+  r.from._routeTotal=(r.from._routeTotal||0)+got; r.from._routeTrips=(r.from._routeTrips||0)+1;
+  if(back>0)routeAlert(r.from,(hub.name||"Shipment Hub")+" is full — "+Math.round(back)+" items flown back");
+}
+function routeAlert(b,msg){
+  var now=performance.now()/1000;
+  if(b._alertT&&now-b._alertT<90)return;
+  b._alertT=now; toast("CARGO ROUTE: "+msg); tone(440,330,0.25,"square",0.035);
+}
+function updateCargo(dt){
+  for(var i=cargoRuns.length-1;i>=0;i--){
+    var r=cargoRuns[i];
+    if(buildings.indexOf(r.from)<0||buildings.indexOf(r.to)<0){ surfaceScene.remove(r.mesh); cargoRuns.splice(i,1); continue; }
+    r.t+=dt;
+    var u=clamp(r.t/r.dur,0,1), m=r.mesh;
+    var A={x:r.from.x,y:terrainHeight(r.from.x,r.from.z)+2,z:r.from.z}, B={x:r.to.x,y:terrainHeight(r.to.x,r.to.z)+2,z:r.to.z};
+    var cw=currentWorld||null, here=function(p){ return (worldAt(p.x,p.z)||null)===cw; };
+    var p=null, yaw=Math.atan2(B.x-A.x,B.z-A.z);
+    if(u<0.15){ var a=u/0.15; p={x:A.x,y:A.y+a*a*70,z:A.z}; if(!here(A))p=null; }
+    else if(u>0.85){ var c=(u-0.85)/0.15, e=1-(1-c)*(1-c); p={x:B.x,y:B.y+(1-e)*70,z:B.z}; if(!here(B))p=null; }
+    else if(r.same){ var s=(u-0.15)/0.7, ease=s*s*(3-2*s); p={x:A.x+(B.x-A.x)*ease,y:Math.max(A.y,B.y)+70+Math.sin(s*Math.PI)*20,z:A.z+(B.z-A.z)*ease}; if(!here(A))p=null; }
+    if(p&&(state==="surface"||state==="factory"||state==="shiplauncher"||state==="shiphub"||state==="build")){
+      m.visible=true; m.position.set(p.x,p.y,p.z); m.rotation.set(u<0.15||u>0.85?0:-0.08,yaw,0);
+      updateEngineFlames(m,dt,u<0.15||u>0.85?0.8:1,false);
+      if(Math.random()<0.4)spawnSurfaceParticle(new THREE.Vector3(p.x,p.y-1,p.z),new THREE.Vector3(rnd(-0.5,0.5),u<0.15?-3:rnd(-0.5,0.5),rnd(-0.5,0.5)),rnd(0.3,0.6),0x9fd8ff);
+    } else m.visible=false;
+    if(u>=1){
+      cargoDeliver(r); surfaceScene.remove(m); cargoRuns.splice(i,1);
+      var f=routeShip(r.from); if(f)f.hauling=false;
+      if(here(B))tone(520,780,0.15,"sine",0.03);
+    }
+  }
+}
+/* replaces the old instant launch in updateBuildings */
+function launcherTick(b,powOk,dt){
+  var flying=cargoRuns.some(function(r){ return r.from===b; });
+  if(!b.targetHub||buildings.indexOf(b.targetHub)<0){ b._shipT=SHIP_INTERVAL; return; }
+  if(flying){ b._shipT=SHIP_INTERVAL; b._idleT=0; return; }
+  var has=routeCargoKeys(b).length>0;
+  if(!powOk||!has){
+    b._shipT=SHIP_INTERVAL; b._idleT=(b._idleT||0)+dt;
+    if(b._routeTrips&&b._idleT>60)routeAlert(b,(b.name||"A Shipment Launcher")+" has stalled — "+(!powOk?"it has no power":"no cargo is arriving"));
+    return;
+  }
+  b._idleT=0;
+  b._shipT=(b._shipT==null?SHIP_INTERVAL:b._shipT)-dt;
+  if(b._shipT<=0){ if(launchCargo(b)){ b._launchFlashT=0.6; sfx.build(); } b._shipT=SHIP_INTERVAL; }
+}
+function cargoRoutesHtml(){
+  var ls=buildings.filter(function(b){ return b.type==="shiplauncher"; });
+  if(!ls.length)return "";
+  return '<div class="cat" style="margin:12px 2px 6px">Cargo routes</div><div class="colList">'+ls.map(function(b,i){
+    var st=routeStatus(b), dest=b.targetHub?(b.targetHub.name||"Shipment Hub"):"—", f=routeShip(b);
+    var from=(worldAt(b.x,b.z)||{nm:"Colony"}).nm, to=b.targetHub?(worldAt(b.targetHub.x,b.targetHub.z)||{nm:"Colony"}).nm:"—";
+    return '<div class="colRow"><div class="colNm"><b>'+from+' &rarr; '+to+' ('+dest+')</b><span class="colLvl" style="color:'+st.col+'">'+st.txt+'</span></div>'+
+      '<div class="colStats"><span>'+routeRatePerMin(b).toFixed(1)+' items/min</span><span>'+Math.round(b._routeTotal||0)+' delivered</span><span>'+(b._routeTrips||0)+' trips</span><span>'+(f?f.name+' ('+f.model+')':'Drone hauler')+'</span></div></div>';
+  }).join('')+'</div>';
+}
+
+/* ── robotic loader / unloader ── */
+var ARM_RANGE=14;
+Object.assign(BUILD_DEFS,{
+  loader:{nm:"Robotic Loader",cat:"Logistics",ds:"A robot arm that keeps every machine within 14 m stocked with its inputs (and generators with fuel) straight from your stockpile, 8 items a second. Needs power.",cost:{steel:10,motor:2,circuit:2},powerDraw:8,radius:1.6,produces:[],accepts:[],unlockable:true},
+  unloader:{nm:"Robotic Unloader",cat:"Logistics",ds:"A robot arm that empties the outputs of extractors, machines and storage within 14 m into your stockpile, 10 items a second. It leaves anything a belt is already carrying. Needs power.",cost:{steel:10,motor:2,circuit:2},powerDraw:8,radius:1.6,produces:[],accepts:[],unlockable:true}
+});
+UPGRADES.loader={tier:3,nm:"Robotic Loader",ds:"Tier 3 — Fleet Logistics. Feeds nearby machines from your stockpile, no belts needed.",cost:{parts:30,motor:4,circuit:4}};
+UPGRADES.unloader={tier:3,nm:"Robotic Unloader",ds:"Tier 3 — Fleet Logistics. Empties nearby outputs into your stockpile.",cost:{parts:30,motor:4,circuit:4}};
+if(unlocked.loader==null)unlocked.loader=false; if(unlocked.unloader==null)unlocked.unloader=false;
+BUILD_ORDER.splice(BUILD_ORDER.indexOf("merger")+1,0,"loader","unloader");
+function armBuilder(col){
+  return function(g,P){
+    MK.rbox(g,2.2,0.4,2.2,P.conc,0,0.2,0,0.06);
+    MK.cyl(g,0.75,0.85,0.5,P.dark,0,0.65,0,18);
+    var turret=new THREE.Group(); turret.position.y=0.9; g.add(turret);
+    MK.cyl(turret,0.55,0.6,0.35,MK.mat(col,0.45,0.4),0,0.18,0,16);
+    var shoulder=new THREE.Group(); shoulder.position.y=0.4; turret.add(shoulder);
+    MK.sph(shoulder,0.28,P.steel,0,0,0,12,8);
+    var upper=new THREE.Group(); shoulder.add(upper); upper.rotation.x=-0.6;
+    MK.rbox(upper,0.26,1.9,0.3,MK.mat(col,0.45,0.4),0,0.95,0,0.06);
+    var elbow=new THREE.Group(); elbow.position.y=1.9; upper.add(elbow);
+    MK.sph(elbow,0.2,P.steel,0,0,0,10,8);
+    var fore=new THREE.Group(); elbow.add(fore); fore.rotation.x=1.5;
+    MK.rbox(fore,0.2,1.5,0.24,P.light,0,0.75,0,0.05);
+    MK.cyl(fore,0.12,0.16,0.25,P.dark,0,1.6,0,10);
+    [-1,1].forEach(function(s){ MK.box(fore,0.05,0.3,0.12,P.chrome,s*0.1,1.8,0); });
+    g.userData.arm={turret:turret,upper:upper,fore:fore};
+    bmStatus(g,0.85,0.75,0.6,col);
+    g.userData.cableAnchor=new THREE.Vector3(-0.8,0.6,-0.6);
+  };
+}
+BUILDERS.loader=armBuilder(0xe2a02c);
+BUILDERS.unloader=armBuilder(0x4fd3ff);
+function armNeighbours(b){
+  return buildings.filter(function(o){ return o!==b&&Math.hypot(o.x-b.x,o.z-b.z)<ARM_RANGE+(BUILD_DEFS[o.type].radius||1)*1.45; });
+}
+function armTick(b,d,powOk,dt){
+  b._armT=(b._armT||0)-dt; b._armBusy=Math.max(0,(b._armBusy||0)-dt);
+  if(!powOk){ b.recipeActive=false; return; }
+  if(b._armT<=0){
+    b._armT=0.25;
+    var budget=(b.type==="loader"?8:10)*0.25, moved=0, target=null;
+    armNeighbours(b).forEach(function(o){
+      if(budget<=0)return;
+      var od=BUILD_DEFS[o.type];
+      if(b.type==="loader"){
+        var keys=od.fueled?[od.fuel||"coal"]:(activeRecipe(o)?Object.keys(activeRecipe(o).in):[]);
+        keys.forEach(function(k){
+          if(budget<=0)return;
+          var cap=destCapFor(o,k), want=cap*0.6-(o.in[k]||0); if(want<1)return;
+          var n=Math.min(want,budget,Math.floor(stock[k]||0)); if(n<1)return;
+          stock[k]-=n; o.in[k]=(o.in[k]||0)+n; budget-=n; moved+=n; target=o;
+        });
+      } else {
+        var src=(o.type==="storage"||o.type==="indstorage")?o.in:o.out; if(!src)return;
+        var belted={}; belts.forEach(function(bl){ if(bl.from===o)belted[bl.res]=true; });
+        Object.keys(src).forEach(function(k){
+          if(budget<=0||belted[k])return;
+          var n=Math.min(budget,Math.floor(src[k]||0)); if(n<1)return;
+          src[k]-=n; stock[k]=(stock[k]||0)+n; budget-=n; moved+=n; target=o;
+        });
+      }
+    });
+    if(moved>0){ b._armBusy=0.6; b._armTarget=target; }
+  }
+  b.recipeActive=b._armBusy>0;
+  var A=b.mesh&&b.mesh.userData.arm;
+  if(A){
+    var t=performance.now()/1000;
+    var aim=b._armTarget?Math.atan2(b._armTarget.x-b.x,b._armTarget.z-b.z)-(b.rotY||0):A.turret.rotation.y;
+    var swing=b.recipeActive?Math.sin(t*3.2)*0.9:0;
+    A.turret.rotation.y+=(aim+swing-A.turret.rotation.y)*Math.min(1,dt*4);
+    A.upper.rotation.x=-0.6+(b.recipeActive?Math.sin(t*4.2)*0.25:0);
+    A.fore.rotation.x=1.5+(b.recipeActive?Math.cos(t*4.2)*0.35:0);
+  }
+}
+/* ── launcher panel extras: cargo filter, hauler ship, stats ── */
+function renderRouteExtras(b){
+  var keys=Object.keys(RES).filter(function(k){ return (b.in[k]||0)>=1||(b.filter&&b.filter[k]); });
+  $("slFilter").innerHTML=(keys.length?keys.map(function(k){ var on=!b.filter||b.filter[k];
+    return '<span class="routeChip'+(on?' on':'')+'" data-k="'+k+'">'+(RES_ICONS[k]||'')+RES[k].nm+'</span>'; }).join(''):'<div class="ds">Items appear here once they are loaded.</div>')+
+    '<div class="ds" style="margin-top:4px">'+(b.filter?'Only the highlighted items are shipped. <a href="#" id="slAll">Ship everything</a>':'Shipping everything. Tap an item to ship only that.')+'</div>';
+  $("slFilter").querySelectorAll("[data-k]").forEach(function(el){ el.onclick=function(){ var k=el.getAttribute("data-k");
+    if(!b.filter){ b.filter={}; b.filter[k]=true; } else { if(b.filter[k])delete b.filter[k]; else b.filter[k]=true; if(!Object.keys(b.filter).length)b.filter=null; }
+    sfx.click(); renderShipLauncher(); }; });
+  var all=$("slAll"); if(all)all.onclick=function(e){ e.preventDefault(); b.filter=null; sfx.click(); renderShipLauncher(); };
+  var cur=routeShip(b);
+  var opts=[{id:0,nm:"Drone hauler",ds:"60 items, standard speed"}].concat(fleet.map(function(f){ var M=ROUTE_SHIP[f.model]||{spd:1,cap:1};
+    var busy=f.route&&f.route!==b.id; return {id:f.id,nm:f.name+" ("+f.model+")",ds:Math.round(ROUTE_BASE_CAP*M.cap)+" items, "+Math.round(M.spd*100)+"% speed"+(busy?" — flying another route":""),busy:busy}; }));
+  $("slShip").innerHTML=opts.map(function(o){ var sel=(o.id===0&&!cur)||(cur&&cur.id===o.id);
+    return '<div class="slot" style="margin-bottom:6px;cursor:pointer'+(o.busy?';opacity:.5':'')+'" data-ship="'+o.id+'"><div class="info"><span class="nm">'+o.nm+'</span><span class="qty" style="font-size:11px;color:'+(sel?'var(--green)':'var(--dim)')+'">'+(sel?'ASSIGNED · ':'')+o.ds+'</span></div></div>'; }).join('')+
+    (fleet.length?'':'<div class="ds">Ships parked in a Hangar can be assigned to fly this route.</div>');
+  $("slShip").querySelectorAll("[data-ship]").forEach(function(el){ el.onclick=function(){
+    var id=parseInt(el.getAttribute("data-ship"),10), old=routeShip(b);
+    if(old){ old.route=null; }
+    if(id){ var f=fleet.filter(function(x){ return x.id===id; })[0]; if(!f)return; if(f.route&&f.route!==b.id){ var ol=buildings.filter(function(x){ return x.id===f.route; })[0]; if(ol)ol.routeShipId=null; } f.route=b.id; b.routeShipId=f.id; toast(f.name+" now flies this cargo route (it won't join sorties)"); }
+    else b.routeShipId=null;
+    sfx.click(); renderShipLauncher(); }; });
+  $("slStats").innerHTML='<div class="colStats" style="margin-top:6px"><span>'+routeRatePerMin(b).toFixed(1)+' items/min</span><span>'+Math.round(b._routeTotal||0)+' delivered</span><span>'+(b._routeTrips||0)+' trips</span><span>'+Math.round(ROUTE_BASE_CAP*routeMods(b).cap)+' per trip</span></div>';
+}
+function launcherInWithRuns(b){
+  var runs=cargoRuns.filter(function(r){ return r.from===b; }); if(!runs.length)return b.in;
+  var o=Object.assign({},b.in); runs.forEach(function(r){ for(var k in r.load)o[k]=(o[k]||0)+r.load[k]; }); return o;
+}
+function resetCargoRuntime(){ cargoRuns.forEach(function(r){ surfaceScene.remove(r.mesh); }); cargoRuns=[]; }
 
 renderBuildIcons();
 renderItemIcons();

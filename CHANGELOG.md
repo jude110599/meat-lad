@@ -2,6 +2,17 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.10.0] - 2026-10-31 — Logistics
+
+### Added
+- Cargo routes: Shipment Launcher loads are flown by a visible hauler with a travel time (same world vs. between worlds) and a per-trip capacity; overflow at a full hub is flown back.
+- Hangar ships can be assigned to a route (per-class capacity and speed) and are excluded from sorties.
+- Per-route cargo filter, status, items/min, totals, trips and stall/full alerts; routes listed in the Factory overview.
+- Robotic Loader and Robotic Unloader buildings (Tier 3) with animated arms.
+
+### Changed
+- Shipment Launchers no longer transfer instantly; in-flight cargo is saved back into the launcher.
+
 ## [2.9.0] - 2026-10-31 — Exploration & Colonies
 
 ### Added
