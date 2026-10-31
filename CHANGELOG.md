@@ -2,6 +2,22 @@
 
 All notable changes to Space Conquest are documented here.
 
+## [2.12.0] - 2026-10-30 — Polish
+
+### Added
+- Audio mixer with separate Effects and Music volume sliders (saved); distance-based factory hum and belt rattle; per-world ambience; generated music that follows context (building, exploring, space, combat).
+- Alert feed for power shortages, blocked conveyors, machines waiting on inputs, production targets reached and station attacks, with per-alert cooldowns.
+- Controls screen (H) listing every action, with key rebinding saved to the browser and a reset button; one-time first-use tips.
+- Build menu search by name, category or description.
+- Cargo routes between worlds drawn on the galaxy map, coloured by route status.
+
+### Changed
+- Buildings, belts and cables on worlds other than the current one are hidden and skip animation while still simulating.
+- Text fields no longer pass keystrokes to game controls.
+
+### Fixed
+- Saves are verified by reading them back before they replace the previous save; the game also saves on tab hide and page close; a save that fails to load falls back to the backup copy.
+
 ## [2.11.0] - 2026-10-30 — Progression
 
 ### Added
